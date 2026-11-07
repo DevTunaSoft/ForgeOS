@@ -67,6 +67,20 @@ class Ollama:
             raise ValueError('Starter only permits the local Ollama endpoint')
         self.base, self.model = base, model
 
+    def generate_edits(self, prompt: str) -> str:
+        """Request complete JSON edits rather than a planning essay."""
+        payload = json.dumps({'model': self.model, 'prompt': prompt,
+                              'stream': False, 'format': 'json',
+                              'options': {'num_ctx': 8192, 'num_predict': 4096}}).encode()
+        req = Request(self.base + '/api/generate', data=payload,
+                      headers={'Content-Type': 'application/json'})
+        with urlopen(req, timeout=180) as response:
+            body = json.load(response)
+        result = body.get('response', '')
+        if not isinstance(result, str) or not result.strip():
+            raise RuntimeError('Ollama returned no edits')
+        return result
+
     def plan(self, description: str) -> str:
         prompt = ('You are a software planning assistant. Produce a concise, testable plan. '
                   'Do not claim to have executed code. Include risks and acceptance tests.\n\nTask:\n' + description)
