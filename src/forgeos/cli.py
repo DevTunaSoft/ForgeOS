@@ -15,6 +15,8 @@ def main(argv=None):
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
     evidence.add_argument('operation',choices=['show'])
     evidence.add_argument('reference')
+    memory=sub.add_parser('learning',help='Show local verified repair learning statistics')
+    memory.add_argument('operation',choices=['stats'])
     recover_edits=sub.add_parser('recover-edits',help='Safely roll back a pending edit journal')
     recover_edits.add_argument('workspace')
     add=sub.add_parser('add'); add.add_argument('project'); add.add_argument('description')
@@ -41,6 +43,11 @@ def main(argv=None):
     if args.action == 'diagnostics':
         from .diagnostics import EvidenceStore
         print(EvidenceStore().get(args.reference),end='')
+        return 0
+    if args.action == 'learning':
+        from .error_learning import RepairMemory
+        path=Path(args.db).expanduser().resolve().with_name('repair_memory.sqlite3')
+        print(json.dumps(RepairMemory(path).stats(),indent=2))
         return 0
     store=Store(args.db)
     try:

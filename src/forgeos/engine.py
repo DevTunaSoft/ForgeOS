@@ -246,11 +246,23 @@ def _execute_task(
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
+            previous_failure = last_output
             last_output = outcome["output"]
             if outcome["passed"]:
+                learned = None
+                if attempt > 0 and previous_failure:
+                    try:
+                        from .error_learning import RepairMemory
+                        learned = RepairMemory(store.path.with_name(
+                            "repair_memory.sqlite3")).record(
+                            previous_failure, preset=preset, model=model_name,
+                            verified_success=True)
+                    except (OSError, ValueError) as exc:
+                        learned = {"recorded": False, "reason": type(exc).__name__}
                 result = {"passed": True, "workspace": str(ws.path),
                           "branch": ws.branch, "edited": paths,
-                          "iterations": attempt + 1, "test": outcome}
+                          "iterations": attempt + 1, "test": outcome,
+                          "learning": learned}
                 store.update(task_id, "passed", result=json.dumps(result))
                 return result
             prompt = (
