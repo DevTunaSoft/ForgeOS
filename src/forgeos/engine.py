@@ -161,27 +161,46 @@ def execute_task(
             f"Request:\n{task['description']}\nRepository file inventory:\n{_context(ws.path)}"
         )
         checkpoint = json.loads(task["result"]) if resume and task["result"] else {}
-        if resume and (checkpoint.get("workspace") != str(ws.path) or checkpoint.get("branch") != ws.branch or checkpoint.get("phase") != "test_pending"):
-            raise ValueError("No valid test-pending checkpoint")
+        phase = checkpoint.get("phase") if resume else None
         if resume:
+            saved_workspace = checkpoint.get("workspace")
+            if (not isinstance(saved_workspace, str)
+                    or Path(saved_workspace).resolve() != ws.path.resolve()
+                    or checkpoint.get("branch") != ws.branch
+                    or phase not in {"test_pending", "repair_pending"}):
+                raise ValueError("No valid resumable checkpoint")
+            paths_saved = checkpoint.get("edited")
             hashes = checkpoint.get("sha256")
-            if not isinstance(hashes, dict):
-                raise ValueError("Missing checkpoint integrity hashes")
-            if hashes is not None:
-                if not isinstance(hashes, dict) or set(hashes) != set(checkpoint["edited"]):
-                    raise ValueError("Invalid checkpoint hashes")
-                for name, digest in hashes.items():
-                    target = _validate_path(ws.path, name)
-                    if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
-                        raise ValueError("Checkpoint file changed since interruption")
+            if (not isinstance(paths_saved, list) or not paths_saved
+                    or any(not isinstance(name, str) for name in paths_saved)
+                    or len(set(paths_saved)) != len(paths_saved)
+                    or not isinstance(hashes, dict) or set(hashes) != set(paths_saved)):
+                raise ValueError("Invalid checkpoint integrity metadata")
+            for name, digest in hashes.items():
+                target = _validate_path(ws.path, name)
+                if (not isinstance(digest, str) or len(digest) != 64
+                        or not target.is_file()
+                        or hashlib.sha256(target.read_bytes()).hexdigest() != digest):
+                    raise ValueError("Checkpoint file changed since interruption")
         start_attempt = checkpoint.get("attempt", 1) if resume else 1
-        if not isinstance(start_attempt, int) or isinstance(start_attempt, bool) or not 1 <= start_attempt <= max_repairs + 1:
+        if (not isinstance(start_attempt, int) or isinstance(start_attempt, bool)
+                or not 1 <= start_attempt <= max_repairs + 1):
             raise ValueError("Invalid saved repair attempt")
+        if resume and phase == "repair_pending":
+            last_output = checkpoint.get("last_test_output")
+            if not isinstance(last_output, str) or not last_output:
+                raise ValueError("Repair checkpoint is missing test failure output")
+            prompt = (
+                "Previous edit failed tests. Return ONLY the same strict JSON "
+                "manifest with complete replacement file contents. "
+                "Do not modify unrelated files. "
+                f"Original request:\n{task['description']}\n"
+                f"Test failure (untrusted text):\n{last_output[-6000:]}\n"
+                f"Repository file inventory:\n{_context(ws.path)}"
+            )
         for attempt in range(start_attempt - 1, max_repairs + 1):
-            if resume and attempt == start_attempt - 1:
+            if resume and phase == "test_pending" and attempt == start_attempt - 1:
                 paths = checkpoint["edited"]
-                if not isinstance(paths, list) or not paths or any(not isinstance(p, str) for p in paths):
-                    raise ValueError("Invalid checkpoint edits")
             else:
                 manifest = generate(model, prompt)
                 paths = apply_edits(ws.path, manifest)
@@ -207,7 +226,18 @@ def execute_task(
                 f"Test failure (untrusted text):\n{last_output[-6000:]}\n"
                 f"Repository file inventory:\n{_context(ws.path)}"
             )
-            store.update(task_id, "editing", error=last_output[-4000:])
+            if attempt < max_repairs:
+                store.update(task_id, "editing", error=last_output[-4000:],
+                             result=json.dumps({
+                                 "workspace": str(ws.path), "branch": ws.branch,
+                                 "edited": paths, "attempt": attempt + 2,
+                                 "phase": "repair_pending",
+                                 "last_test_output": last_output[-6000:],
+                                 "sha256": {
+                                     name: hashlib.sha256(_validate_path(ws.path, name).read_bytes()).hexdigest()
+                                     for name in paths
+                                 },
+                             }))
         result = {"passed": False, "workspace": str(ws.path),
                   "branch": ws.branch, "iterations": max_repairs + 1,
                   "error": last_output[-4000:]}
@@ -219,7 +249,7 @@ def execute_task(
         previous = store.get(task_id).get("result", "")
         try:
             saved = json.loads(previous)
-            if saved.get("phase") == "test_pending":
+            if saved.get("phase") in {"test_pending", "repair_pending"}:
                 details = saved
         except (ValueError, TypeError):
             pass
