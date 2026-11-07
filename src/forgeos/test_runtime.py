@@ -13,7 +13,7 @@ from pathlib import Path
 import shutil
 import stat
 
-MARKER = ".forgeos-execution-runtime.json"
+MARKER = ".forgeos-execution-owner.json"
 RUNTIME_DIR = ".forgeos-runtime"
 VERSION = 1
 
@@ -33,8 +33,12 @@ def _delete_readonly(func, path, _exc):
     func(path)
 
 
-def _validate_marker(runtime: Path, workspace: Path) -> None:
-    marker = runtime / MARKER
+def _marker_path(runtime: Path) -> Path:
+    return runtime.with_name(runtime.name + MARKER)
+
+
+def _validate_marker(runtime: Path, workspace: Path) -> Path:
+    marker = _marker_path(runtime)
     if not marker.is_file() or marker.is_symlink():
         raise ValueError(f"Refusing to remove unowned execution directory: {runtime}")
     try:
@@ -42,19 +46,26 @@ def _validate_marker(runtime: Path, workspace: Path) -> None:
     except (OSError, ValueError, TypeError) as exc:
         raise ValueError("Execution runtime marker is invalid") from exc
     if (not isinstance(data, dict) or data.get("version") != VERSION
-            or data.get("workspace") != str(workspace)):
+            or data.get("workspace") != str(workspace)
+            or data.get("runtime") != str(runtime)):
         raise ValueError("Execution runtime ownership marker mismatch")
+    return marker
 
 
 def remove_test_snapshot(workspace: str | Path) -> bool:
     source = Path(workspace).expanduser().resolve(strict=True)
     runtime = _runtime_path(source)
+    marker = _marker_path(runtime)
     if not runtime.exists():
+        if marker.exists():
+            _validate_marker(runtime, source)
+            marker.unlink()
         return False
     if runtime.is_symlink() or not runtime.is_dir():
         raise ValueError("Execution runtime path is not a real directory")
-    _validate_marker(runtime, source)
+    marker = _validate_marker(runtime, source)
     shutil.rmtree(runtime, onerror=_delete_readonly)
+    marker.unlink()
     return True
 
 
@@ -64,8 +75,6 @@ def _ignore_runtime_metadata(_directory, names):
         ignored.add(".forgeos")
     if RUNTIME_DIR in names:
         ignored.add(RUNTIME_DIR)
-    if MARKER in names:
-        ignored.add(MARKER)
     return ignored
 
 
@@ -121,12 +130,14 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     runtime = _runtime_path(source)
     if runtime == source or runtime.is_relative_to(source):
         raise ValueError("Execution runtime must be outside the editable workspace")
-    if runtime.exists():
+    marker = _marker_path(runtime)
+    if runtime.exists() or marker.exists():
         remove_test_snapshot(source)
     runtime.mkdir(parents=False)
-    (runtime / MARKER).write_text(json.dumps({
+    marker.write_text(json.dumps({
         "version": VERSION,
         "workspace": str(source),
+        "runtime": str(runtime),
     }, sort_keys=True), encoding="utf-8")
     try:
         shutil.copytree(
