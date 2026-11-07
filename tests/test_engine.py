@@ -402,3 +402,18 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.assertEqual(result["iterations"], 2)
         self.assertEqual((Path(result["workspace"]) / "app.py").read_text(),
                          "def value():\n return 42\n")
+
+    def test_resume_rejects_changed_execution_contract(self):
+        from unittest.mock import patch
+        response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=lambda model, prompt: response)
+        self.store.recover()
+        before = self.store.get(self.task)["result"]
+        with self.assertRaisesRegex(ValueError, "execution contract mismatch"):
+            execute_task(self.store, self.task, self.root, preset="python-pytest",
+                         allow_host_tests=True, resume=True)
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+        self.assertEqual(self.store.get(self.task)["result"], before)
