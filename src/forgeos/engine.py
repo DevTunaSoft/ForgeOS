@@ -165,6 +165,8 @@ def execute_task(
             raise ValueError("No valid test-pending checkpoint")
         if resume:
             hashes = checkpoint.get("sha256")
+            if not isinstance(hashes, dict):
+                raise ValueError("Missing checkpoint integrity hashes")
             if hashes is not None:
                 if not isinstance(hashes, dict) or set(hashes) != set(checkpoint["edited"]):
                     raise ValueError("Invalid checkpoint hashes")
@@ -172,8 +174,11 @@ def execute_task(
                     target = _validate_path(ws.path, name)
                     if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
                         raise ValueError("Checkpoint file changed since interruption")
-        for attempt in range(max_repairs + 1):
-            if resume and attempt == 0:
+        start_attempt = checkpoint.get("attempt", 1) if resume else 1
+        if not isinstance(start_attempt, int) or isinstance(start_attempt, bool) or not 1 <= start_attempt <= max_repairs + 1:
+            raise ValueError("Invalid saved repair attempt")
+        for attempt in range(start_attempt - 1, max_repairs + 1):
+            if resume and attempt == start_attempt - 1:
                 paths = checkpoint["edited"]
                 if not isinstance(paths, list) or not paths or any(not isinstance(p, str) for p in paths):
                     raise ValueError("Invalid checkpoint edits")
