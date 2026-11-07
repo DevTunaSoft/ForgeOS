@@ -206,7 +206,7 @@ def _execute_test_process(argv, root: Path, timeout: int, *,
     return {
         'passed': result.returncode == 0,
         'returncode': result.returncode,
-        'output': (result.stdout + '\n' + result.stderr)[-16000:],
+        'output': result.stdout + '\n' + result.stderr,
         'containment': 'none',
     }
 
@@ -235,9 +235,11 @@ def run_test(project: str, command: str, timeout: int = 180, *,
     if not root.is_dir() or not (root / '.git').exists():
         raise ValueError('Not a local Git repository')
     try:
-        return _execute_test_process(
+        from .diagnostics import optimize_test_result
+        execution = _execute_test_process(
             allowed[command], root, timeout,
             low_integrity=low_integrity, env=env)
+        return optimize_test_result(execution, command)
     except subprocess.TimeoutExpired:
         return {'passed': False, 'returncode': None,
                 'output': f'Test timed out after {timeout}s',

@@ -12,6 +12,9 @@ def main(argv=None):
     parser.add_argument('--db',default=str(default_db()))
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
+    evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
+    evidence.add_argument('operation',choices=['show'])
+    evidence.add_argument('reference')
     recover_edits=sub.add_parser('recover-edits',help='Safely roll back a pending edit journal')
     recover_edits.add_argument('workspace')
     add=sub.add_parser('add'); add.add_argument('project'); add.add_argument('description')
@@ -35,6 +38,10 @@ def main(argv=None):
     if args.action=='gui':
         from .gui import launch
         return launch(args.db)
+    if args.action == 'diagnostics':
+        from .diagnostics import EvidenceStore
+        print(EvidenceStore().get(args.reference),end='')
+        return 0
     store=Store(args.db)
     try:
         if args.action=='add':
