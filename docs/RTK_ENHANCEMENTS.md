@@ -6,7 +6,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 ## AI efficiency & token optimization (10)
 
 - [x] Intelligent output compression (prototype integrated)
-- [ ] Smart test summaries
+- [x] Smart test summaries (structured counts plus failure-aware text)
 - [ ] Optimized Git command output
 - [x] Relevant source code reading (bounded AST metadata prototype)
 - [ ] Optimized project search
@@ -39,7 +39,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 
 ## Reliability, diagnostics & recovery (10)
 
-- [ ] Complete raw-output retention (bounded prototype integrated)
+- [x] Complete raw-output retention (bounded to 32 MiB per archive)
 - [x] Retrieval of original diagnostic evidence (prototype integrated)
 - [x] Structured/text/raw parsing tiers (baseline implemented)
 - [x] Error classifications (initial taxonomy)
@@ -54,10 +54,10 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 
 - [x] AI efficiency dashboard (basic activity tab totals)
 - [ ] Development performance metrics
-- [ ] Raw vs summarized output comparison
-- [ ] Learning activity view
-- [ ] Model routing visibility
-- [ ] Optimization health
+- [x] Raw vs summarized output comparison (explicit local GUI view)
+- [x] Learning activity view (read-only repair candidates)
+- [x] Model routing visibility (recorded model in task results and GUI)
+- [x] Optimization health (trusted filter status and raw-parser metrics)
 - [ ] Unified settings
 
 ## QA, performance & security (10)
@@ -141,3 +141,26 @@ The trust record is under ~/.forgeos/trusted_output_filters.json. This
 provides user consent and tamper evidence, not a same-user security boundary.
 No optimization is allowed to overwrite the original diagnostic archive or
 the test exit status.
+
+
+## Phase 3: repair insights and GUI evidence comparison
+
+- src/forgeos/failure_types.py identifies broad failure families from bounded
+  local logs. Categories are advisory only and never supersede the authoritative
+  process return code, containment status, or test pass/fail value.
+- src/forgeos/insights.py builds validated, bounded diagnostic comparison data
+  for selected tasks, supporting both directly tested tasks and autonomous
+  test/repair tasks.
+- The existing GUI now offers a side-by-side view of the optimized model input
+  and verified original evidence, requested explicitly for the selected task.
+  Original output can contain sensitive information; it is never displayed
+  automatically. Large results have a bounded UI preview and full CLI retrieval.
+- The local model selected for autonomous tasks is persisted in the result.
+  The Activity tab also shows read-only learning candidates and filter status.
+- Tests include taxonomy classification, oversized/malformed task metadata,
+  malicious evidence references, model-identity persistence, and preview bounds.
+
+This phase does not imply learned fixes can execute automatically, nor that
+the physical Windows GUI has passed real-device acceptance. The Windows
+AppContainer security boundary remains the sole supported frozen production
+test mechanism. No Docker or paid model API is required.

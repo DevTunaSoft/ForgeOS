@@ -326,3 +326,30 @@ recall reference costs more bytes than raw output, return raw output instead.
 Tests for modified rules, error-preserving dedup, Unicode, symlink rejection,
 invalid configurations, and small-output noninflation.
 Block merge until Ubuntu and Windows 3.10/3.12 CI + packaged secure smoke pass.
+
+
+## RTK Phase 3 — diagnostic comparison and recorded model identity (CI pending)
+
+Source branch feat/rtk-phase3-repair-insights. New modules:
+- src/forgeos/failure_types.py: deterministic, bounded advisory failure
+  categories (security boundary, resource, permission, timeout, dependency,
+  syntax, assertion, network, environment and build); no raw secrets returned.
+- src/forgeos/insights.py: validated task result parsing and compact/raw
+  comparison models, read original evidence by content-addressed SHA-256 only,
+  bounded previews, rejects malformed identifiers and oversize JSON.
+- src/forgeos/gui.py: explicit compare button opens two read-only side-by-side
+  views within the existing ForgeOS Tkinter application. The efficiency panel
+  reports read-only repair candidates, current filter trust health, and
+  saved-byte metrics; no separate app is required.
+- src/forgeos/engine.py: persists the exact selected local model string in
+  completed and failed task results for audit.
+- src/forgeos/diagnostics.py: failure classification attached alongside parsed
+  test counts. It never changes real process outcomes.
+- Tests: tests/test_insights.py, tests/test_failure_types.py, and
+  updated tests/test_engine.py.
+
+Important: the returned GUI evidence may contain secrets; reveal only upon
+explicit action and do not export private archives to GitHub or release ZIPs.
+Real Windows GUI interaction, renderer behavior, full local Ollama operations,
+and comprehensive data exfiltration review remain unverified. Never describe
+the integration as production-ready based only on headless package smoke.

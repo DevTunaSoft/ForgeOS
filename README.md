@@ -97,3 +97,20 @@ original output. Custom filters are a locally pinned JSON configuration:
 Changes to the filter file invalidate its trust hash and disable the rules.
 No filter code or shell commands may run. This is consent and tamper evidence,
 not a same-user attacker security boundary.
+
+
+### Diagnose and compare task results (experimental)
+
+1. In the Development tab, select a task that has run tests.
+2. Open Activity & diagnostics.
+3. Choose "Compare selected task: original vs AI summary".
+4. The left pane shows what the AI received; the right shows the original
+   SHA-256 verified raw evidence, if successfully archived. Original output can
+   contain sensitive data, so opening it is always an explicit user action.
+5. Choose "AI efficiency and repair learning" for measured output reductions,
+   candidate repair success statistics, and custom filter trust health.
+
+The GUI records which installed local model handled a task and labels
+failure categories as advisory heuristics. It does not automatically apply
+learned repair candidates. Large original logs have a bounded GUI preview;
+use the diagnostics CLI to retrieve the complete retained evidence.
