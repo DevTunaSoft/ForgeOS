@@ -7,6 +7,7 @@ and verifies the resulting process token before reporting the feature usable.
 from __future__ import annotations
 
 import ctypes
+from contextlib import contextmanager
 from ctypes import wintypes
 import os
 from pathlib import Path
@@ -246,11 +247,23 @@ def _create_probe_profile():
     return profile_name, sid
 
 
+@contextmanager
+def _temporary_probe_profile():
+    profile_name, sid = _create_probe_profile()
+    try:
+        yield profile_name, sid
+    finally:
+        if sid:
+            wc.advapi32.FreeSid(sid)
+        _delete_probe_profile(profile_name)
+
+
 def probe_appcontainer(timeout: int = 15) -> dict:
     """Probe classic AppContainer launch and verify the resulting child token.
 
     No network or other capability SID is granted. This function never falls
-    back to the ordinary restricted-token runner.
+    back to the ordinary restricted-token runner. A successful result is only
+    returned after the temporary profile has been deleted and verified absent.
     """
     if os.name != "nt":
         return {
@@ -261,92 +274,19 @@ def probe_appcontainer(timeout: int = 15) -> dict:
     if (not isinstance(timeout, int) or isinstance(timeout, bool)
             or not 1 <= timeout <= 60):
         raise ValueError("timeout must be 1..60 seconds")
-
-    profile_name = "ForgeOS.Probe." + uuid.uuid4().hex
-    sid = ctypes.c_void_p()
-    profile_created = False
-    process = None
-    thread = None
-    token = wintypes.HANDLE()
-    startup = None
     try:
-        hr = int(userenv.CreateAppContainerProfile(
-            profile_name, "ForgeOS Probe", "Temporary ForgeOS capability probe",
-            None, 0, ctypes.byref(sid))) & 0xFFFFFFFF
-        if _failed_hresult(hr):
-            return {
-                "available": False,
-                "verified": False,
-                "reason": f"CreateAppContainerProfile failed: 0x{hr:08X}",
-            }
-        profile_created = True
-
-        startup, attribute_buffer, security_capabilities = (
-            _startup_with_security_capabilities(sid))
-        info = wc.PROCESS_INFORMATION()
         command = os.environ.get(
             "ComSpec",
             str(Path(os.environ.get("SystemRoot", r"C:\Windows"))
                 / "System32" / "cmd.exe"))
-        command_line = ctypes.create_unicode_buffer(
-            subprocess.list2cmdline([command, "/d", "/c", "exit", "0"]))
-        flags = (wc.CREATE_SUSPENDED | wc.CREATE_NO_WINDOW
-                 | wc.EXTENDED_STARTUPINFO_PRESENT)
-        try:
-            created = wc.kernel32.CreateProcessW(
-                None, command_line, None, None, False, flags, None, None,
-                ctypes.cast(ctypes.byref(startup),
-                            ctypes.POINTER(wc.STARTUPINFOW)),
-                ctypes.byref(info))
-        finally:
-            if startup.lpAttributeList:
-                wc.kernel32.DeleteProcThreadAttributeList(
-                    startup.lpAttributeList)
-                startup.lpAttributeList = None
-        if not created:
-            return {
-                "available": False,
-                "verified": False,
-                "reason": str(wc._win_error("CreateProcessW(AppContainer)")),
-            }
-
-        process, thread = info.hProcess, info.hThread
-        if not wc.advapi32.OpenProcessToken(
-                process, wc.TOKEN_QUERY, ctypes.byref(token)):
-            raise wc._win_error("OpenProcessToken(AppContainer child)")
-        is_appcontainer = _token_dword(token, TokenIsAppContainer)
-        capability_count = _token_capability_count(token)
-        if is_appcontainer != 1:
-            raise OSError("Child token is not an AppContainer")
-        if capability_count != 0:
-            raise OSError(
-                f"Zero-capability probe unexpectedly has {capability_count} capabilities")
-
-        if wc.kernel32.ResumeThread(thread) == 0xFFFFFFFF:
-            raise wc._win_error("ResumeThread(AppContainer)")
-        wc.kernel32.CloseHandle(thread)
-        thread = None
-        status = wc.kernel32.WaitForSingleObject(process, timeout * 1000)
-        if status == wc.WAIT_TIMEOUT:
-            wc.kernel32.TerminateProcess(process, 124)
-            wc.kernel32.WaitForSingleObject(process, 5000)
-            return {
-                "available": False,
-                "verified": False,
-                "reason": "AppContainer probe process timed out",
-            }
-        if status != wc.WAIT_OBJECT_0:
-            raise wc._win_error("WaitForSingleObject(AppContainer)")
-        exit_code = wintypes.DWORD()
-        if not wc.kernel32.GetExitCodeProcess(
-                process, ctypes.byref(exit_code)):
-            raise wc._win_error("GetExitCodeProcess(AppContainer)")
-        if exit_code.value != 0:
-            return {
-                "available": False,
-                "verified": False,
-                "reason": f"AppContainer probe exited {exit_code.value}",
-            }
+        profile_name = None
+        with _temporary_probe_profile() as (profile_name, sid):
+            launched = _launch_appcontainer_process(
+                sid, [command, "/d", "/c", "exit", "0"],
+                timeout=timeout)
+            if launched["returncode"] != 0:
+                raise OSError(
+                    f"AppContainer probe exited {launched['returncode']}")
         return {
             "available": True,
             "verified": True,
@@ -354,28 +294,14 @@ def probe_appcontainer(timeout: int = 15) -> dict:
             "capability_count": 0,
             "network_capabilities_granted": False,
             "profile": profile_name,
+            "profile_deleted": True,
         }
-    except OSError as exc:
+    except (OSError, subprocess.TimeoutExpired) as exc:
         return {
             "available": False,
             "verified": False,
             "reason": str(exc),
         }
-    finally:
-        if token:
-            wc.kernel32.CloseHandle(token)
-        if thread:
-            wc.kernel32.TerminateProcess(process, 125)
-            wc.kernel32.CloseHandle(thread)
-        if process:
-            wc.kernel32.CloseHandle(process)
-        if sid:
-            wc.advapi32.FreeSid(sid)
-        if profile_created:
-            try:
-                _delete_probe_profile(profile_name)
-            except OSError:
-                pass
 
 
 def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
@@ -386,60 +312,58 @@ def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
             "verified": False,
             "reason": "AppContainer probing is Windows-only",
         }
-    profile_name = None
-    sid = ctypes.c_void_p()
+    if (not isinstance(timeout, int) or isinstance(timeout, bool)
+            or not 1 <= timeout <= 60):
+        raise ValueError("timeout must be 1..60 seconds")
     try:
-        profile_name, sid = _create_probe_profile()
-        sid_string = _sid_to_string(sid)
-        command = os.environ.get(
-            "ComSpec",
-            str(Path(os.environ.get("SystemRoot", r"C:\Windows"))
-                / "System32" / "cmd.exe"))
-        with tempfile.TemporaryDirectory(prefix="forgeos-appcontainer-") as tmp:
-            root = Path(tmp)
-            allowed = root / "allowed"
-            allowed.mkdir()
-            outside = root / "outside-secret.txt"
-            outside.write_text("must-not-be-readable", encoding="utf-8")
-            _grant_probe_access(root, allowed, sid_string)
+        with _temporary_probe_profile() as (profile_name, sid):
+            sid_string = _sid_to_string(sid)
+            command = os.environ.get(
+                "ComSpec",
+                str(Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                    / "System32" / "cmd.exe"))
+            with tempfile.TemporaryDirectory(
+                    prefix="forgeos-appcontainer-") as tmp:
+                root = Path(tmp)
+                allowed = root / "allowed"
+                allowed.mkdir()
+                outside = root / "outside-secret.txt"
+                outside.write_text(
+                    "must-not-be-readable", encoding="utf-8")
+                _grant_probe_access(root, allowed, sid_string)
 
-            created = allowed / "created-by-appcontainer.txt"
-            write_command = "echo appcontainer-write>created-by-appcontainer.txt"
-            write_result = _launch_appcontainer_process(
-                sid, [command, "/d", "/c", write_command],
-                cwd=allowed, timeout=timeout)
-            if write_result["returncode"] != 0 or not created.is_file():
-                raise OSError(
-                    f"AppContainer could not write explicitly granted workspace "
-                    f"(exit {write_result['returncode']})")
+                created = allowed / "created-by-appcontainer.txt"
+                write_result = _launch_appcontainer_process(
+                    sid, [command, "/d", "/c",
+                          "echo appcontainer-write>created-by-appcontainer.txt"],
+                    cwd=allowed, timeout=timeout)
+                if (write_result["returncode"] != 0
+                        or not created.is_file()):
+                    raise OSError(
+                        "AppContainer could not write explicitly granted "
+                        f"workspace (exit {write_result['returncode']})")
 
-            read_result = _launch_appcontainer_process(
-                sid, [command, "/d", "/c",
-                      'type "..\\outside-secret.txt" >nul'],
-                cwd=allowed, timeout=timeout)
-            if read_result["returncode"] == 0:
-                raise OSError(
-                    "AppContainer unexpectedly read an ungranted sibling file")
-            return {
-                "available": True,
-                "verified": True,
-                "workspace_write": True,
-                "ungranted_sibling_read_blocked": True,
-                "token_is_appcontainer": True,
-                "capability_count": 0,
-                "network_capabilities_granted": False,
-            }
+                read_result = _launch_appcontainer_process(
+                    sid, [command, "/d", "/c",
+                          'type "..\\outside-secret.txt" >nul'],
+                    cwd=allowed, timeout=timeout)
+                if read_result["returncode"] == 0:
+                    raise OSError(
+                        "AppContainer unexpectedly read an ungranted "
+                        "sibling file")
+        return {
+            "available": True,
+            "verified": True,
+            "workspace_write": True,
+            "ungranted_sibling_read_blocked": True,
+            "token_is_appcontainer": True,
+            "capability_count": 0,
+            "network_capabilities_granted": False,
+            "profile_deleted": True,
+        }
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {
             "available": False,
             "verified": False,
             "reason": str(exc),
         }
-    finally:
-        if sid:
-            wc.advapi32.FreeSid(sid)
-        if profile_name:
-            try:
-                _delete_probe_profile(profile_name)
-            except OSError:
-                pass
