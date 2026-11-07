@@ -48,14 +48,19 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
     if not getattr(sys, "frozen", False):
         raise RuntimeError(
             "Production AppContainer runner requires the frozen ForgeOS runtime")
-    if preset != "python-unittest":
+    child_modes = {
+        "python-unittest": "--sandbox-unittest",
+        "python-pytest": "--sandbox-pytest",
+    }
+    child_mode = child_modes.get(preset)
+    if child_mode is None:
         raise RuntimeError(
             f"Secure Windows runner does not yet support preset: {preset}")
     executable = Path(sys.executable).resolve(strict=True)
     output_file = runtime.path / RUNTIME_DIR / "test-output.txt"
     env = _bootstrap_environment(runtime)
     env["FORGEOS_TEST_OUTPUT_FILE"] = str(output_file)
-    argv = [str(executable), "--sandbox-unittest"]
+    argv = [str(executable), child_mode]
     result = run_secure_appcontainer(
         argv, runtime.path, env,
         executable=executable, timeout=timeout)
