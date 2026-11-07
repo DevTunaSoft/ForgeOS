@@ -37,7 +37,18 @@ if os.name == "nt":
     TOKEN_ASSIGN_PRIMARY = 0x0001
     TOKEN_DUPLICATE = 0x0002
     TOKEN_QUERY = 0x0008
+    TOKEN_ADJUST_DEFAULT = 0x0080
     DISABLE_MAX_PRIVILEGE = 0x00000001
+    SE_GROUP_INTEGRITY = 0x00000020
+    TokenIntegrityLevel = 25
+    WinLowLabelSid = 66
+    SECURITY_MAX_SID_SIZE = 68
+
+    class SID_AND_ATTRIBUTES(ctypes.Structure):
+        _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
+
+    class TOKEN_MANDATORY_LABEL(ctypes.Structure):
+        _fields_ = [("Label", SID_AND_ATTRIBUTES)]
 
     class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
         _fields_ = [
@@ -137,6 +148,15 @@ if os.name == "nt":
         ctypes.POINTER(wintypes.HANDLE)]
     advapi32.CreateRestrictedToken.restype = wintypes.BOOL
     advapi32.IsTokenRestricted.argtypes = [wintypes.HANDLE]
+    advapi32.CreateWellKnownSid.argtypes = [
+        ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.POINTER(wintypes.DWORD)]
+    advapi32.CreateWellKnownSid.restype = wintypes.BOOL
+    advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+    advapi32.GetLengthSid.restype = wintypes.DWORD
+    advapi32.SetTokenInformation.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    advapi32.SetTokenInformation.restype = wintypes.BOOL
     advapi32.IsTokenRestricted.restype = wintypes.BOOL
     advapi32.CreateProcessAsUserW.argtypes = [
         wintypes.HANDLE, wintypes.LPCWSTR, wintypes.LPWSTR,
@@ -152,13 +172,32 @@ def _win_error(operation: str) -> OSError:
 
 
 
-def _create_restricted_primary_token():
+def _set_low_integrity(token):
+    """Lower a primary token to Windows Low mandatory integrity."""
+    sid_buffer = ctypes.create_string_buffer(SECURITY_MAX_SID_SIZE)
+    sid_size = wintypes.DWORD(SECURITY_MAX_SID_SIZE)
+    if not advapi32.CreateWellKnownSid(
+            WinLowLabelSid, None, sid_buffer, ctypes.byref(sid_size)):
+        raise _win_error("CreateWellKnownSid(WinLowLabelSid)")
+    sid = ctypes.cast(sid_buffer, ctypes.c_void_p)
+    label = TOKEN_MANDATORY_LABEL()
+    label.Label.Sid = sid
+    label.Label.Attributes = SE_GROUP_INTEGRITY
+    information_size = ctypes.sizeof(TOKEN_MANDATORY_LABEL) + int(
+        advapi32.GetLengthSid(sid))
+    if not advapi32.SetTokenInformation(
+            token, TokenIntegrityLevel, ctypes.byref(label), information_size):
+        raise _win_error("SetTokenInformation(TokenIntegrityLevel)")
+
+
+def _create_restricted_primary_token(*, low_integrity: bool = False):
     """Return a privilege-reduced version of the current process token."""
     if os.name != "nt":
         raise OSError("Restricted tokens are only available on Windows")
     current = wintypes.HANDLE()
     restricted = wintypes.HANDLE()
-    desired = TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY
+    desired = (TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY
+               | TOKEN_ADJUST_DEFAULT)
     if not advapi32.OpenProcessToken(
             kernel32.GetCurrentProcess(), desired, ctypes.byref(current)):
         raise _win_error("OpenProcessToken")
@@ -168,6 +207,8 @@ def _create_restricted_primary_token():
                 current, flags, 0, None, 0, None, 0, None,
                 ctypes.byref(restricted)):
             raise _win_error("CreateRestrictedToken")
+        if low_integrity:
+            _set_low_integrity(restricted)
         return restricted
     finally:
         kernel32.CloseHandle(current)
@@ -177,7 +218,8 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
                   active_process_limit: int = 64,
                   process_memory_bytes: int = 1024 * 1024 * 1024,
                   job_memory_bytes: int = 2 * 1024 * 1024 * 1024,
-                  restrict_privileges: bool = True):
+                  restrict_privileges: bool = True,
+                  low_integrity: bool = False):
     """Run one command in a Windows Job Object and capture combined output."""
     if os.name != "nt":
         raise OSError("Windows Job Object containment is only available on Windows")
@@ -196,6 +238,10 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
     if not isinstance(argv, (list, tuple)) or not argv or any(
             not isinstance(item, str) or not item for item in argv):
         raise ValueError("argv must contain nonempty strings")
+    if not isinstance(low_integrity, bool):
+        raise ValueError("low_integrity must be boolean")
+    if low_integrity and not restrict_privileges:
+        raise ValueError("low_integrity requires privilege-reduced execution")
 
     job = kernel32.CreateJobObjectW(None, None)
     if not job:
@@ -240,7 +286,8 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         if not isinstance(restrict_privileges, bool):
             raise ValueError("restrict_privileges must be boolean")
         if restrict_privileges:
-            restricted_token = _create_restricted_primary_token()
+            restricted_token = _create_restricted_primary_token(
+                low_integrity=low_integrity)
             created = advapi32.CreateProcessAsUserW(
                 restricted_token, None, command_line, None, None, True,
                 flags, None, str(root), ctypes.byref(startup), ctypes.byref(info))
@@ -288,8 +335,12 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             "passed": code.value == 0,
             "returncode": int(code.value),
             "output": text[-16000:],
-            "containment": ("windows-restricted-token+job-object"
-                            if restrict_privileges else "windows-job-object"),
+            "containment": (
+                "windows-restricted-token+job-object+low-integrity"
+                if low_integrity else
+                ("windows-restricted-token+job-object"
+                 if restrict_privileges else "windows-job-object")
+            ),
         }
     finally:
         try:
@@ -310,3 +361,26 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             kernel32.CloseHandle(job)
         devnull.close()
         output.close()
+
+
+def prepare_low_integrity_workspace(root: str | Path):
+    """Label a disposable workspace tree Low integrity for Low-IL writers.
+
+    This must only be used on a ForgeOS-owned disposable workspace, never on the
+    user's source repository. The caller remains responsible for cleanup.
+    """
+    if os.name != "nt":
+        raise OSError("Low-integrity workspace labels are only available on Windows")
+    path = Path(root).resolve(strict=True)
+    if not path.is_dir() or Path(root).is_symlink():
+        raise ValueError("Low-integrity workspace must be a real directory")
+    result = subprocess.run(
+        ["icacls.exe", str(path), "/setintegritylevel", "(OI)(CI)L",
+         "/T", "/L", "/Q"],
+        capture_output=True, text=True, timeout=60, shell=False,
+        errors="replace",
+    )
+    if result.returncode != 0:
+        detail = (result.stdout + "\n" + result.stderr)[-4000:]
+        raise OSError(f"Failed to label low-integrity workspace: {detail}")
+    return path
