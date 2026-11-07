@@ -25,6 +25,7 @@ def main(argv=None):
     run.add_argument('--model',default='qwen2.5-coder:3b')
     run.add_argument('--max-repairs',type=int,default=2)
     run.add_argument('--allow-host-tests',action='store_true',help='Explicitly permit running repository code on this machine')
+    run.add_argument('--resume',action='store_true',help='Resume an interrupted test-pending checkpoint')
     args=parser.parse_args(argv)
     if args.action=='gui':
         from .gui import launch
@@ -55,7 +56,7 @@ def main(argv=None):
             from .engine import execute_task
             result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,
                                 model=Ollama(model=args.model),max_repairs=args.max_repairs,
-                                allow_host_tests=args.allow_host_tests)
+                                allow_host_tests=args.allow_host_tests,resume=args.resume)
             print(json.dumps(result,indent=2))
             if not result['passed']:
                 return 1
