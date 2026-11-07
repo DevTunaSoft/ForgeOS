@@ -9,7 +9,7 @@ import time
 import subprocess
 import unittest
 
-from forgeos.windows_containment import run_contained
+from forgeos.windows_containment import prepare_low_integrity_workspace, run_contained
 
 
 @unittest.skipUnless(os.name == "nt", "Windows-only containment tests")
@@ -124,3 +124,40 @@ finally:
             self.root, timeout=15, restrict_privileges=False)
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["containment"], "windows-job-object")
+
+
+    def test_low_integrity_workspace_blocks_write_up(self):
+        workspace = self.root / "low-workspace"
+        workspace.mkdir()
+        outside = self.root / "medium-outside.txt"
+        prepare_low_integrity_workspace(workspace)
+        code = (
+            "from pathlib import Path\n"
+            "Path('inside.txt').write_text('inside')\n"
+            f"outside=Path({str(outside)!r})\n"
+            "try:\n"
+            "    outside.write_text('escaped')\n"
+            "except OSError as exc:\n"
+            "    print('outside=blocked:' + type(exc).__name__)\n"
+            "else:\n"
+            "    print('outside=wrote')\n"
+        )
+        result = run_contained(
+            [sys.executable, "-c", code], workspace, timeout=15,
+            low_integrity=True)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(
+            result["containment"],
+            "windows-restricted-token+job-object+low-integrity")
+        self.assertEqual((workspace / "inside.txt").read_text(), "inside")
+        self.assertFalse(outside.exists(), result)
+        self.assertIn("outside=blocked:", result["output"])
+        self.assertNotIn("outside=wrote", result["output"])
+
+    def test_low_integrity_requires_privilege_reduction(self):
+        workspace = self.root / "low-workspace-invalid"
+        workspace.mkdir()
+        with self.assertRaisesRegex(ValueError, "requires privilege-reduced"):
+            run_contained(
+                [sys.executable, "-c", "pass"], workspace, timeout=15,
+                low_integrity=True, restrict_privileges=False)
