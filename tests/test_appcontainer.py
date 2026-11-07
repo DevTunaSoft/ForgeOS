@@ -2,7 +2,8 @@
 import os
 import unittest
 
-from forgeos.appcontainer import probe_appcontainer, probe_appcontainer_filesystem
+from forgeos.appcontainer import (probe_appcontainer, probe_appcontainer_filesystem,
+                                  probe_appcontainer_network)
 
 
 class AppContainerProbeContractTests(unittest.TestCase):
@@ -33,6 +34,18 @@ class WindowsAppContainerProbeTests(unittest.TestCase):
         self.assertTrue(result["verified"], result)
         self.assertTrue(result["workspace_write"], result)
         self.assertTrue(result["ungranted_sibling_read_blocked"], result)
+        self.assertTrue(result["token_is_appcontainer"], result)
+        self.assertEqual(result["capability_count"], 0, result)
+        self.assertFalse(result["network_capabilities_granted"], result)
+        self.assertTrue(result["profile_deleted"], result)
+
+
+    def test_zero_capability_appcontainer_blocks_loopback_network(self):
+        result = probe_appcontainer_network()
+        self.assertTrue(result["available"], result)
+        self.assertTrue(result["verified"], result)
+        self.assertTrue(result["client_executable_verified"], result)
+        self.assertTrue(result["loopback_connection_blocked"], result)
         self.assertTrue(result["token_is_appcontainer"], result)
         self.assertEqual(result["capability_count"], 0, result)
         self.assertFalse(result["network_capabilities_granted"], result)
