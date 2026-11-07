@@ -6,7 +6,7 @@ name = "forgeos"
 version = "0.1.0"
 description = "Local-first autonomous software development manager starter"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["pytest>=9.2,<10"]
 [project.scripts]
 forgeos = "forgeos.cli:main"
 [tool.setuptools.packages.find]
