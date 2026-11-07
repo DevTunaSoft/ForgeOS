@@ -230,3 +230,12 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Windows EXE CI now runs a frozen secure-boundary smoke test before artifact upload. The smoke attempts: write outside the snapshot, inherit a parent secret, and connect to a parent localhost listener. All must be blocked.
 - Added source regression coverage proving the frozen engine route cannot call the weaker runner, unsupported secure presets fail closed, sandbox output cannot escape the snapshot, and parent-secret environment inheritance is blocked.
 - Remaining work after this PR: validate the frozen smoke on Windows CI, repair any PyInstaller/AppContainer-specific defects, then expand ForgeOS-owned secure runtimes to pytest/npm/cargo/Go/.NET and add deeper registry/process/IPC/reparse-point escape testing.
+
+### PR #27 frozen AppContainer bootstrap defect and correction
+
+- First packaged secure smoke reached the real AppContainer process-creation path and failed closed with Windows error 203 (`ERROR_ENVVAR_NOT_FOUND`) before any generated test code executed.
+- Root cause was the deliberately minimal child environment omitting `LOCALAPPDATA`. On Windows AppContainer startup, `CreateProcessW` needs the caller's real LocalAppData location to resolve the temporary AppContainer package profile.
+- Correction: the production secure runner injects the validated host `LOCALAPPDATA` plus a one-use `FORGEOS_BOOTSTRAP_LOCALAPPDATA=1` marker only into the AppContainer creation environment.
+- The hidden frozen sandbox child requires that marker, removes it before unittest discovery, and replaces `LOCALAPPDATA` and `APPDATA` with directories owned by the disposable execution snapshot. Generated project code therefore never sees the host LocalAppData path.
+- Source tests verify the bootstrap contract and scrub. The frozen secure smoke now additionally asserts the marker is absent and both AppData variables resolve inside the disposable snapshot before project tests execute.
+- No fallback was enabled as part of this correction; launch failure continues to block the secure production path.
