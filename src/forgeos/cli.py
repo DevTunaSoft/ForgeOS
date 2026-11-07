@@ -25,7 +25,7 @@ def main(argv=None):
     run.add_argument('--model',default='qwen2.5-coder:3b')
     run.add_argument('--max-repairs',type=int,default=2)
     run.add_argument('--allow-host-tests',action='store_true',help='Explicitly permit running repository code on this machine')
-    run.add_argument('--resume',action='store_true',help='Resume an interrupted test-pending checkpoint')
+    run.add_argument('--resume',action='store_true',help='Resume an interrupted test-pending or repair-pending checkpoint')
     resume_all=sub.add_parser('resume-safe',help='Recover and resume eligible interrupted tasks (host execution opt-in required)')
     resume_all.add_argument('--workspace-parent',required=True)
     resume_all.add_argument('--allow-host-tests',action='store_true')
