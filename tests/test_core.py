@@ -6,6 +6,7 @@ import tempfile
 import random
 import string
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from forgeos.core import Store, Ollama, run_test
@@ -103,6 +104,37 @@ class ForgeOSTests(unittest.TestCase):
     def test_bad_status(self):
         a=self.store.add(str(self.repo),'one')
         with self.assertRaises(ValueError): self.store.update(a,'invented')
+
+
+    def test_task_lease_exclusion_release_and_transition(self):
+        task=self.store.add(str(self.repo),'lease test')
+        self.store.update(task,'blocked',result='checkpoint')
+        self.assertTrue(self.store.acquire_lease(task,'owner-a'))
+        other=Store(self.root/'state'/'tasks.sqlite3')
+        self.addCleanup(other.close)
+        self.assertFalse(other.acquire_lease(task,'owner-b'))
+        self.assertFalse(other.release_lease(task,'owner-b'))
+        self.assertTrue(self.store.transition(task,{'blocked'},'editing',increment=True))
+        self.assertEqual(self.store.get(task)['result'],'checkpoint')
+        self.assertFalse(other.transition(task,{'blocked'},'testing'))
+        self.assertTrue(self.store.release_lease(task,'owner-a'))
+        self.assertTrue(other.acquire_lease(task,'owner-b'))
+        self.assertTrue(other.release_lease(task,'owner-b'))
+
+    def test_recover_preserves_live_lease_then_reclaims_stale(self):
+        task=self.store.add(str(self.repo),'stale lease')
+        self.store.update(task,'testing',result='checkpoint')
+        self.assertTrue(self.store.acquire_lease(task,'worker'))
+        self.assertEqual(self.store.recover(stale_after=30),0)
+        self.assertEqual(self.store.get(task)['status'],'testing')
+        with self.store.db:
+            self.store.db.execute('UPDATE task_leases SET heartbeat=? WHERE task_id=?',
+                                  (time.time()-120,task))
+        self.assertEqual(self.store.recover(stale_after=30),1)
+        self.assertEqual(self.store.get(task)['status'],'blocked')
+        self.assertEqual(self.store.get(task)['result'],'checkpoint')
+        self.assertTrue(self.store.acquire_lease(task,'replacement'))
+        self.assertTrue(self.store.release_lease(task,'replacement'))
 
 if __name__=='__main__': unittest.main()
 
