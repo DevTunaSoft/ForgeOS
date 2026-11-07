@@ -111,15 +111,17 @@ class ForgeOSTests(unittest.TestCase):
         self.store.update(task,'blocked',result='checkpoint')
         self.assertTrue(self.store.acquire_lease(task,'owner-a'))
         other=Store(self.root/'state'/'tasks.sqlite3')
-        self.addCleanup(other.close)
-        self.assertFalse(other.acquire_lease(task,'owner-b'))
-        self.assertFalse(other.release_lease(task,'owner-b'))
-        self.assertTrue(self.store.transition(task,{'blocked'},'editing',increment=True))
-        self.assertEqual(self.store.get(task)['result'],'checkpoint')
-        self.assertFalse(other.transition(task,{'blocked'},'testing'))
-        self.assertTrue(self.store.release_lease(task,'owner-a'))
-        self.assertTrue(other.acquire_lease(task,'owner-b'))
-        self.assertTrue(other.release_lease(task,'owner-b'))
+        try:
+            self.assertFalse(other.acquire_lease(task,'owner-b'))
+            self.assertFalse(other.release_lease(task,'owner-b'))
+            self.assertTrue(self.store.transition(task,{'blocked'},'editing',increment=True))
+            self.assertEqual(self.store.get(task)['result'],'checkpoint')
+            self.assertFalse(other.transition(task,{'blocked'},'testing'))
+            self.assertTrue(self.store.release_lease(task,'owner-a'))
+            self.assertTrue(other.acquire_lease(task,'owner-b'))
+            self.assertTrue(other.release_lease(task,'owner-b'))
+        finally:
+            other.close()
 
     def test_recover_preserves_live_lease_then_reclaims_stale(self):
         task=self.store.add(str(self.repo),'stale lease')
