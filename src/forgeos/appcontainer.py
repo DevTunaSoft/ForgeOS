@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from ctypes import wintypes
 import os
 import socket
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -439,3 +440,70 @@ def probe_appcontainer_network(timeout: int = 15) -> dict:
         }
     finally:
         listener.close()
+
+
+def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
+    """Probe whether the active Python runtime can execute inside AppContainer."""
+    if os.name != "nt":
+        return {
+            "available": False,
+            "verified": False,
+            "reason": "AppContainer Python probing is Windows-only",
+        }
+    if (not isinstance(timeout, int) or isinstance(timeout, bool)
+            or not 3 <= timeout <= 60):
+        raise ValueError("timeout must be 3..60 seconds")
+    executable = Path(sys.executable).resolve()
+    if not executable.is_file():
+        return {
+            "available": False,
+            "verified": False,
+            "reason": f"Python executable missing: {executable}",
+        }
+    try:
+        with _temporary_probe_profile() as (_profile_name, sid):
+            sid_string = _sid_to_string(sid)
+            with tempfile.TemporaryDirectory(
+                    prefix="forgeos-appcontainer-python-") as tmp:
+                root = Path(tmp)
+                allowed = root / "allowed"
+                allowed.mkdir()
+                _grant_probe_access(root, allowed, sid_string)
+
+                startup = _launch_appcontainer_process(
+                    sid, [str(executable), "-I", "-S", "-c", "pass"],
+                    cwd=allowed, timeout=timeout)
+                if startup["returncode"] != 0:
+                    raise OSError(
+                        "Python could not initialize inside AppContainer "
+                        f"(exit {startup['returncode']})")
+
+                created = allowed / "python-created.txt"
+                writer = _launch_appcontainer_process(
+                    sid, [str(executable), "-I", "-S", "-c",
+                          "open('python-created.txt','w').write('ok')"],
+                    cwd=allowed, timeout=timeout)
+                if writer["returncode"] != 0 or not created.is_file():
+                    raise OSError(
+                        "Python could not write explicitly granted AppContainer "
+                        f"workspace (exit {writer['returncode']})")
+                if created.read_text(encoding="utf-8") != "ok":
+                    raise OSError("Python AppContainer write verification failed")
+        return {
+            "available": True,
+            "verified": True,
+            "python_executable": str(executable),
+            "python_startup": True,
+            "workspace_write": True,
+            "token_is_appcontainer": True,
+            "capability_count": 0,
+            "network_capabilities_granted": False,
+            "profile_deleted": True,
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "available": False,
+            "verified": False,
+            "python_executable": str(executable),
+            "reason": str(exc),
+        }
