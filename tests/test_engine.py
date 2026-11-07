@@ -293,3 +293,23 @@ class TransactionRecoveryTests(unittest.TestCase):
             recover_edits(self.root)
         self.assertEqual(outside.read_text(), "untouched")
         self.assertTrue(txn.exists())
+
+@unittest.skipUnless(shutil.which("git"), "Git required")
+class CheckpointResumeTests(EngineIntegrationTests):
+    def test_resume_pending_test_without_regeneration(self):
+        from unittest.mock import patch
+        response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=lambda model, prompt: response)
+        self.assertEqual(self.store.get(self.task)["status"], "testing")
+        self.store.recover()
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+        with patch("forgeos.engine.run_test", return_value={"passed": True, "returncode": 0, "output": "ok"}):
+            result = execute_task(self.store, self.task, self.root,
+                                  allow_host_tests=True, resume=True,
+                                  generate=lambda model, prompt: (_ for _ in ()).throw(
+                                      AssertionError("Unexpected regeneration")))
+        self.assertTrue(result["passed"])
+        self.assertEqual(self.store.get(self.task)["status"], "passed")
