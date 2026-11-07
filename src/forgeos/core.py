@@ -151,6 +151,9 @@ class Ollama:
 
     def generate_edits(self, prompt: str) -> str:
         """Request complete JSON edits rather than a planning essay."""
+        if self.model == "auto":
+            from .model_routing import choose_installed_model
+            self.model = choose_installed_model(prompt)
         payload = json.dumps({
             'model': self.model, 'prompt': prompt, 'stream': False, 'format': 'json',
             'options': {'num_ctx': 8192, 'num_predict': 4096},
@@ -165,6 +168,9 @@ class Ollama:
         return result
 
     def plan(self, description: str) -> str:
+        if self.model == "auto":
+            from .model_routing import choose_installed_model
+            self.model = choose_installed_model(description)
         prompt = (
             'You are a software planning assistant. Produce a concise, testable plan. '
             'Do not claim to have executed code. Include risks and acceptance tests.\n\nTask:\n'

@@ -168,6 +168,11 @@ def _execute_task(
             ws = create_workspace(task["project"], task_id, destination)
         model = model or Ollama()
         model_name = getattr(model, "model", None)
+        if model_name == "auto":
+            from .model_routing import choose_installed_model
+            # Pin the specific installed model before saving the checkpoint.
+            model_name = choose_installed_model(task["description"])
+            model.model = model_name
         if not isinstance(model_name, str) or not model_name.strip():
             raise ValueError("Model must expose a stable model identifier")
         contract = {"preset": preset, "max_repairs": max_repairs, "model": model_name}
