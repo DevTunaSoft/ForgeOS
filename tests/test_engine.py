@@ -313,3 +313,30 @@ class CheckpointResumeTests(EngineIntegrationTests):
                                       AssertionError("Unexpected regeneration")))
         self.assertTrue(result["passed"])
         self.assertEqual(self.store.get(self.task)["status"], "passed")
+
+    def test_resume_refuses_missing_workspace(self):
+        self.store.update(self.task, "blocked", result=json.dumps({
+            "workspace": str(self.root / f"task-{self.task}"),
+            "branch": f"forgeos/task-{self.task}", "phase": "test_pending",
+            "edited": ["app.py"]}))
+        with self.assertRaisesRegex(ValueError, "existing workspace"):
+            execute_task(self.store, self.task, self.root, resume=True,
+                         allow_host_tests=True)
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+
+    def test_resume_refuses_unverified_checkpoint(self):
+        response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        from unittest.mock import patch
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=lambda model, prompt: response)
+        self.store.recover()
+        self.store.update(self.task, "blocked", result=json.dumps({
+            "workspace": str(self.root / f"task-{self.task}"),
+            "branch": f"forgeos/task-{self.task}", "phase": "generating",
+            "edited": ["app.py"]}))
+        with self.assertRaisesRegex(ValueError, "test-pending checkpoint"):
+            execute_task(self.store, self.task, self.root, resume=True,
+                         allow_host_tests=True)
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
