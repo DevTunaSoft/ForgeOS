@@ -101,6 +101,8 @@ class EngineIntegrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             execute_task(self.store, self.task, self.root)
         self.assertEqual(self.store.get(self.task)["status"], "queued")
+        self.assertEqual(
+            self.store.db.execute("SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
 
     def test_invalid_model_response_blocks_and_preserves_source(self):
         with self.assertRaises(EditError):
