@@ -161,3 +161,14 @@ finally:
             run_contained(
                 [sys.executable, "-c", "pass"], workspace, timeout=15,
                 low_integrity=True, restrict_privileges=False)
+
+
+    def test_controlled_environment_reaches_child(self):
+        env = dict(os.environ)
+        env["FORGEOS_ENV_PROBE"] = "isolated-value"
+        result = run_contained(
+            [sys.executable, "-c",
+             "import os; print(os.environ.get('FORGEOS_ENV_PROBE','missing'))"],
+            self.root, timeout=15, env=env)
+        self.assertTrue(result["passed"], result)
+        self.assertIn("isolated-value", result["output"])

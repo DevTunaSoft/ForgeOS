@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -442,3 +443,38 @@ class CheckpointResumeTests(EngineIntegrationTests):
                              generate=lambda model, prompt: response)
         self.assertTrue(self.store.acquire_lease(self.task, "probe"))
         self.assertTrue(self.store.release_lease(self.task, "probe"))
+
+
+    @unittest.skipUnless(os.name == "nt", "Windows Low-integrity runtime required")
+    def test_windows_snapshot_blocks_write_back_to_editable_worktree(self):
+        escape_test = (
+            "import os, unittest\n"
+            "from pathlib import Path\n"
+            "class EscapeTest(unittest.TestCase):\n"
+            " def test_editable_worktree_is_write_protected(self):\n"
+            "  self.assertEqual(os.environ.get('FORGEOS_EXECUTION_SNAPSHOT'), '1')\n"
+            "  runtime = Path(__file__).resolve().parent\n"
+            "  self.assertTrue(runtime.name.startswith('.forgeos-exec-'))\n"
+            "  editable = runtime.parent / runtime.name.replace('.forgeos-exec-', '', 1)\n"
+            "  target = editable / 'escaped-from-test.txt'\n"
+            "  with self.assertRaises(OSError):\n"
+            "   target.write_text('escape')\n"
+        )
+        (self.repo / "test_escape.py").write_text(escape_test)
+        subprocess.run(["git", "add", "test_escape.py"], cwd=self.repo,
+                       check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "add escape regression"],
+                       cwd=self.repo, check=True, capture_output=True)
+        response = json.dumps({"files": [{"path": "app.py",
+                               "content": "def value():\n return 42\n"}]})
+        result = execute_task(
+            self.store, self.task, self.root, allow_host_tests=True,
+            generate=lambda model, prompt: response)
+        self.assertTrue(result["passed"], result)
+        workspace = Path(result["workspace"])
+        self.assertFalse((workspace / "escaped-from-test.txt").exists())
+        runtime = workspace.parent / f".forgeos-exec-{workspace.name}"
+        self.assertFalse(runtime.exists())
+        self.assertFalse(
+            runtime.with_name(
+                runtime.name + ".forgeos-execution-owner.json").exists())

@@ -158,3 +158,17 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Security boundary: Windows Mandatory Integrity Control prevents Low-integrity subjects from writing to Medium-integrity objects, but this does not prevent reading Medium-integrity files and does not block network access. This is a meaningful no-write-up boundary, not a complete sandbox.
 - Integration remains deliberately staged because some build tools use caches/temp directories outside the Git worktree. Before enabling Low integrity by default, ForgeOS must create dedicated writable Low-integrity temp/cache locations and redirect supported toolchains into those locations.
 - Verification evidence required before merge: Linux regression tests remain green; Windows 3.10 and 3.12 must both prove the inside-write/outside-block behavior; final PR must also pass Windows EXE packaging and frozen smoke validation.
+
+## PR #24 candidate — autonomous engine Low-integrity execution snapshots (2026-11-07)
+
+- The autonomous Windows engine no longer runs generated project tests in the editable Git worktree. Each test attempt creates a fresh sibling execution snapshot and runs the test suite against that copy.
+- The execution snapshot is labeled Windows Low integrity and the child process uses the existing privilege-reduced token plus Job Object process-tree containment. The editable worktree remains normal Medium integrity.
+- Added a direct adversarial engine regression: test code running from the snapshot deliberately locates the real editable worktree and attempts to create a file there. Windows must deny that write, the test must still complete, and ForgeOS verifies the editable worktree and runtime cleanup remain unchanged.
+- Snapshot mutations and build artifacts are disposable. A fresh snapshot is recreated for every test attempt so artifacts from a failed iteration cannot contaminate the next repair cycle.
+- ForgeOS internal transaction metadata under `.forgeos` is excluded from the snapshot, preventing test code from directly mutating edit-recovery journals in the copied tree.
+- Snapshot ownership metadata is stored **outside** the Low-integrity directory. The Low child therefore cannot delete or forge ForgeOS's ownership marker. Cleanup refuses to remove a preexisting directory without the exact marker and workspace/runtime identity.
+- Common writable toolchain paths are redirected into `.forgeos-runtime` inside the disposable snapshot: TEMP/TMP, Python bytecode/cache, pip, npm, Cargo/target, Go GOPATH/GOCACHE, .NET/NuGet, Gradle, HOME and XDG cache.
+- Windows process creation now supports an explicit UTF-16 environment block so those redirected paths reach the restricted child without shell invocation.
+- `.env*` files are omitted from execution copies as defense-in-depth. **This is not a confidentiality sandbox:** Low integrity blocks write-up but still permits reading Medium-integrity files, including files outside the snapshot if generated code discovers them. Outbound networking is also still available.
+- Direct/manual `run_test` behavior is unchanged by default. The Low-integrity disposable snapshot is used automatically only by the autonomous ForgeOS worktree engine on Windows.
+- Remaining major security work: isolate read access and networking (preferably using a stronger Windows-native principal/container boundary), then validate supported Python/npm/Cargo/Go/.NET toolchains in the isolated runtime. Snapshot copy performance for very large repositories also needs profiling/optimization.

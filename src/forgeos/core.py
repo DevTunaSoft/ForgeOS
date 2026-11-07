@@ -184,12 +184,24 @@ class Ollama:
         return result
 
 
-def _execute_test_process(argv, root: Path, timeout: int):
+def _containment_name(low_integrity: bool) -> str:
+    if os.name != 'nt':
+        return 'none'
+    return ('windows-restricted-token+job-object+low-integrity'
+            if low_integrity else 'windows-restricted-token+job-object')
+
+
+def _execute_test_process(argv, root: Path, timeout: int, *,
+                          low_integrity: bool = False,
+                          env: dict[str, str] | None = None):
     if os.name == 'nt':
         from .windows_containment import run_contained
-        return run_contained(argv, root, timeout=timeout)
+        return run_contained(
+            argv, root, timeout=timeout, low_integrity=low_integrity, env=env)
+    if low_integrity:
+        raise ValueError('Low-integrity execution is only available on Windows')
     result = subprocess.run(
-        argv, cwd=root, capture_output=True, text=True,
+        argv, cwd=root, capture_output=True, text=True, env=env,
         timeout=timeout, shell=False, errors='replace')
     return {
         'passed': result.returncode == 0,
@@ -199,8 +211,10 @@ def _execute_test_process(argv, root: Path, timeout: int):
     }
 
 
-def run_test(project: str, command: str, timeout: int = 180):
-    """Run an allowlisted test preset; Windows uses Job Object containment."""
+def run_test(project: str, command: str, timeout: int = 180, *,
+             low_integrity: bool = False,
+             env: dict[str, str] | None = None):
+    """Run an allowlisted test preset under the requested containment level."""
     allowed = {
         'python-unittest': ['python', '-m', 'unittest', 'discover'],
         'python-pytest': ['python', '-m', 'pytest'],
@@ -213,16 +227,22 @@ def run_test(project: str, command: str, timeout: int = 180):
         raise ValueError('Unknown test preset')
     if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
         raise ValueError('timeout must be a positive integer')
+    if not isinstance(low_integrity, bool):
+        raise ValueError('low_integrity must be boolean')
+    if env is not None and not isinstance(env, dict):
+        raise ValueError('env must be a dictionary or None')
     root = Path(project).expanduser().resolve(strict=True)
     if not root.is_dir() or not (root / '.git').exists():
         raise ValueError('Not a local Git repository')
     try:
-        return _execute_test_process(allowed[command], root, timeout)
+        return _execute_test_process(
+            allowed[command], root, timeout,
+            low_integrity=low_integrity, env=env)
     except subprocess.TimeoutExpired:
         return {'passed': False, 'returncode': None,
                 'output': f'Test timed out after {timeout}s',
-                'containment': 'windows-restricted-token+job-object' if os.name == 'nt' else 'none'}
+                'containment': _containment_name(low_integrity)}
     except OSError as exc:
         return {'passed': False, 'returncode': None,
                 'output': f'Test executable unavailable: {exc}',
-                'containment': 'windows-job-object' if os.name == 'nt' else 'none'}
+                'containment': _containment_name(low_integrity)}
