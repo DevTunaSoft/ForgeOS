@@ -152,6 +152,10 @@ def execute_task(
         else:
             ws = create_workspace(task["project"], task_id, destination)
         model = model or Ollama()
+        model_name = getattr(model, "model", None)
+        if not isinstance(model_name, str) or not model_name.strip():
+            raise ValueError("Model must expose a stable model identifier")
+        contract = {"preset": preset, "max_repairs": max_repairs, "model": model_name}
         prompt = (
             "Return ONLY strict JSON with exactly this schema: "
             '{"files":[{"path":"relative/file.py","content":"complete replacement text"}]}. '
@@ -169,6 +173,9 @@ def execute_task(
                     or checkpoint.get("branch") != ws.branch
                     or phase not in {"test_pending", "repair_pending"}):
                 raise ValueError("No valid test-pending checkpoint or repair-pending checkpoint")
+            saved_contract = checkpoint.get("contract")
+            if saved_contract != contract:
+                raise ValueError("Checkpoint execution contract mismatch")
             paths_saved = checkpoint.get("edited")
             hashes = checkpoint.get("sha256")
             if (not isinstance(paths_saved, list) or not paths_saved
@@ -207,6 +214,7 @@ def execute_task(
             store.update(task_id, "testing", result=json.dumps({
                 "workspace": str(ws.path), "branch": ws.branch,
                 "edited": paths, "attempt": attempt + 1, "phase": "test_pending",
+                "contract": contract,
                 "sha256": {name: hashlib.sha256(_validate_path(ws.path, name).read_bytes()).hexdigest()
                            for name in paths},
             }))
@@ -232,6 +240,7 @@ def execute_task(
                                  "workspace": str(ws.path), "branch": ws.branch,
                                  "edited": paths, "attempt": attempt + 2,
                                  "phase": "repair_pending",
+                                 "contract": contract,
                                  "last_test_output": last_output[-6000:],
                                  "sha256": {
                                      name: hashlib.sha256(_validate_path(ws.path, name).read_bytes()).hexdigest()
