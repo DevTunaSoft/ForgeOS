@@ -1,0 +1,44 @@
+name: Windows executable
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install package and PyInstaller
+        run: python -m pip install --upgrade pip "pyinstaller>=6.0,<7" .
+      - name: Validate Python sources
+        run: python -m compileall -q src tests
+      - name: Execute regression tests
+        run: python -m unittest discover -s tests -v
+      - name: Package GUI executable
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src packaging/launcher.py
+      - name: Check executable exists and is nonempty
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist/ForgeOS.exe")) { throw "Executable missing" }
+          $size = (Get-Item "dist/ForgeOS.exe").Length
+          if ($size -lt 1000000) { throw "Executable unexpectedly small: $size" }
+          Write-Host "Packaged executable bytes: $size"
+      - name: Headless frozen executable smoke test
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList "--smoke" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Frozen smoke test failed: $($process.ExitCode)" }
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForgeOS-Windows-EXE
+          path: dist/ForgeOS.exe
+          if-no-files-found: error
+          retention-days: 14
