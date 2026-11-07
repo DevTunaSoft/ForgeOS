@@ -293,3 +293,41 @@ class TransactionRecoveryTests(unittest.TestCase):
             recover_edits(self.root)
         self.assertEqual(outside.read_text(), "untouched")
         self.assertTrue(txn.exists())
+
+class IsolatedExecutionTests(unittest.TestCase):
+    def test_no_docker_fails_closed(self):
+        from unittest.mock import patch
+        from forgeos.isolation import isolated_test
+        with patch("forgeos.isolation.shutil.which", return_value=None):
+            outcome = isolated_test(str(self._repo()), "python-unittest")
+        self.assertFalse(outcome["passed"])
+        self.assertIn("refusing host execution", outcome["output"])
+
+    def _repo(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        (root / ".git").mkdir()
+        return root
+
+    def test_reject_unsupported_preset(self):
+        from forgeos.isolation import isolated_test
+        with self.assertRaises(ValueError):
+            isolated_test(".", "npm-test")
+
+    def test_docker_command_has_restrictions(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from forgeos.isolation import isolated_test
+        repo = self._repo()
+        with patch("forgeos.isolation.shutil.which", return_value="docker"), patch(
+                "forgeos.isolation.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout="ok", stderr="")) as run:
+            self.assertTrue(isolated_test(str(repo), "python-unittest")["passed"])
+        cmd = run.call_args.args[0]
+        self.assertIn("none", cmd)
+        self.assertIn("--read-only", cmd)
+        self.assertIn("--cap-drop", cmd)
+        self.assertIn("--memory", cmd)
+        self.assertIn("readonly", " ".join(cmd))
+        self.assertFalse(run.call_args.kwargs["shell"])
