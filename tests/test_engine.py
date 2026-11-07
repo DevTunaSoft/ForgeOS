@@ -276,3 +276,20 @@ class TransactionRecoveryTests(unittest.TestCase):
                 "after": _digest(b"new") }]}))
         self.assertTrue(recover_edits(self.root))
         self.assertFalse((self.root / "created.py").exists())
+
+
+    def test_tampered_journal_path_cannot_escape_workspace(self):
+        from forgeos.transactions import recover_edits, _digest
+        outside = self.root.parent / ("forgeos-outside-" + self.root.name + ".py")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        outside.write_text("untouched")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "../" + outside.name, "before": None,
+                "after": _digest(b"untouched") }]}))
+        with self.assertRaises(ValueError):
+            recover_edits(self.root)
+        self.assertEqual(outside.read_text(), "untouched")
+        self.assertTrue(txn.exists())
