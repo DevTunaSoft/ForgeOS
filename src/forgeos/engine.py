@@ -5,6 +5,7 @@ WARNING: tests execute project code on the host. This is not a sandbox.
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path, PurePosixPath
 import re
 from typing import Callable
@@ -133,7 +134,8 @@ def execute_task(
     ws = None
     last_output = ""
     try:
-        store.update(task_id, "editing", increment=True)
+        if not resume:
+            store.update(task_id, "editing", increment=True)
         if resume:
             from .workspace import _git, _repository_root
             source = _repository_root(task["project"])
@@ -161,6 +163,15 @@ def execute_task(
         checkpoint = json.loads(task["result"]) if resume and task["result"] else {}
         if resume and (checkpoint.get("workspace") != str(ws.path) or checkpoint.get("branch") != ws.branch or checkpoint.get("phase") != "test_pending"):
             raise ValueError("No valid test-pending checkpoint")
+        if resume:
+            hashes = checkpoint.get("sha256")
+            if hashes is not None:
+                if not isinstance(hashes, dict) or set(hashes) != set(checkpoint["edited"]):
+                    raise ValueError("Invalid checkpoint hashes")
+                for name, digest in hashes.items():
+                    target = _validate_path(ws.path, name)
+                    if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                        raise ValueError("Checkpoint file changed since interruption")
         for attempt in range(max_repairs + 1):
             if resume and attempt == 0:
                 paths = checkpoint["edited"]
@@ -172,6 +183,8 @@ def execute_task(
             store.update(task_id, "testing", result=json.dumps({
                 "workspace": str(ws.path), "branch": ws.branch,
                 "edited": paths, "attempt": attempt + 1, "phase": "test_pending",
+                "sha256": {name: hashlib.sha256(_validate_path(ws.path, name).read_bytes()).hexdigest()
+                           for name in paths},
             }))
             outcome = run_test(str(ws.path), preset)
             last_output = outcome["output"]
