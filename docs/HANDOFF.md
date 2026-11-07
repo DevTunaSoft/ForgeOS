@@ -100,3 +100,13 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - The recovery orchestrator now treats valid repair-pending checkpoints as eligible.
 - Added interruption injection covering a crash/KeyboardInterrupt during repair generation and successful continuation at attempt 2, plus orchestrator coverage for repair-pending eligibility.
 - Still not a security sandbox. Host test execution remains explicitly gated. Windows-native restricted execution and physical Windows/Ollama acceptance remain outstanding.
+
+## PR #19 — persisted execution-contract recovery (2026-11-07)
+
+- Resumable checkpoints now bind the task to the original execution contract: test preset, maximum repair budget, and local model identifier.
+- Direct engine resume fails closed if the caller supplies different execution settings from the saved checkpoint.
+- `resume-safe` now validates the saved contract and replays each task using its own preset, repair budget and Ollama model instead of applying one global default to every interrupted task.
+- Optional `resume-safe --preset` and `--max-repairs` arguments are now safety overrides: if supplied, they must match the checkpoint rather than silently changing behavior.
+- Legacy resumable checkpoints that predate contract persistence are deliberately skipped by automatic recovery because their original execution settings cannot be proven.
+- Added tests for per-task contract replay, mismatched overrides, missing contracts and direct-engine rejection of changed settings.
+- Host execution remains unsandboxed and explicitly gated; Windows-native restricted execution remains the next major security milestone.
