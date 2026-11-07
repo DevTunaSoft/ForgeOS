@@ -353,3 +353,25 @@ explicit action and do not export private archives to GitHub or release ZIPs.
 Real Windows GUI interaction, renderer behavior, full local Ollama operations,
 and comprehensive data exfiltration review remain unverified. Never describe
 the integration as production-ready based only on headless package smoke.
+
+
+## Enhancement-duplication checkpoint (52 outcomes, not 52 systems)
+
+The codebase and RTK enhancement tracker were audited together on 2026-11-07.
+The source-backed map is docs/ENHANCEMENT_DEDUP_AUDIT.md and covers 52/52
+outcomes: 22 existing baselines, 13 extensions of those systems, 12 genuinely
+new capability gaps, and 5 PR #31 items awaiting merge. These categories
+describe source ownership, not a verified percentage of production readiness.
+A new code subsystem must cite the relevant canonical owner and prove why
+extending it would not meet the acceptance requirement. No independent GUI,
+evidence store, command runner, configuration transaction engine, repair DB,
+or local model router should be built for an overlapping enhancement.
+
+During the audit the new standalone advisory failure classifier was removed
+from PR #31. Its implementation now lives in the existing
+src/forgeos/error_learning.py module; fingerprint() historical hashes,
+category values and SQLite schema remain unchanged. Diagnostics uses the
+unified owner. Added tests/test_enhancement_audit.py verifies 52/52 mapped
+outcomes, real source-owner paths, shared-group alignment and no shadow
+failure_types.py module. The changes must pass full CI and the Windows
+frozen security smoke on the final PR head before merge.
