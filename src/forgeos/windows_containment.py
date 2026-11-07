@@ -1,8 +1,8 @@
 """Windows-native process-tree containment for test execution.
 
-This module limits and cleans up a Windows process tree with Job Objects. It is
-not a security sandbox: it does not remove user privileges, isolate the
-filesystem, or block network access.
+This module limits and cleans up a Windows process tree with Job Objects and
+can strip token privileges before launch. It is not a complete security
+sandbox: it does not isolate the filesystem or block network access.
 """
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ if os.name == "nt":
     TOKEN_DUPLICATE = 0x0002
     TOKEN_QUERY = 0x0008
     DISABLE_MAX_PRIVILEGE = 0x00000001
-    LUA_TOKEN = 0x00000004
 
     class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
         _fields_ = [
