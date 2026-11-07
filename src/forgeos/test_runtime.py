@@ -132,6 +132,7 @@ def _build_environment(runtime: Path) -> dict[str, str]:
         "FORGEOS_EXECUTION_SNAPSHOT": "1",
         "PYTHONNOUSERSITE": "1",
         "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
     })
     return env
 

@@ -11,12 +11,17 @@ def main(argv=None):
                         help="Check packaged imports without opening a window")
     parser.add_argument("--sandbox-unittest", action="store_true",
                         help=argparse.SUPPRESS)
+    parser.add_argument("--sandbox-pytest", action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--secure-sandbox-smoke", action="store_true",
                         help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.sandbox_unittest:
         from forgeos.sandbox_runner import run_unittest
         return run_unittest()
+    if args.sandbox_pytest:
+        from forgeos.sandbox_runner import run_pytest
+        return run_pytest()
     if args.secure_sandbox_smoke:
         from forgeos.secure_smoke import run_secure_smoke
         return run_secure_smoke()

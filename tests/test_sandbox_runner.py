@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from forgeos.sandbox_runner import run_unittest
+from forgeos.sandbox_runner import run_unittest, run_pytest
 
 
 def _secure_env(root: Path, output: Path) -> dict[str, str]:
@@ -48,6 +50,26 @@ class SandboxRunnerTests(unittest.TestCase):
             finally:
                 os.chdir(previous)
             self.assertIn("OK", output.read_text(encoding="utf-8"))
+
+    def test_pytest_runner_uses_bundled_module_inside_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / ".forgeos-runtime" / "pytest.txt"
+            calls = []
+            fake = SimpleNamespace(main=lambda args: calls.append(args) or 0)
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.dict(os.environ, _secure_env(root, output), clear=True), \
+                     patch.dict(sys.modules, {"pytest": fake}):
+                    self.assertEqual(run_pytest(), 0)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(len(calls), 1)
+            self.assertIn(str(root.resolve()), calls[0])
+            self.assertIn("--capture=no", calls[0])
+            self.assertIn("--color=no", calls[0])
+            self.assertIn("--disable-warnings", calls[0])
 
     def test_rejects_output_path_escape(self):
         with tempfile.TemporaryDirectory() as tmp:
