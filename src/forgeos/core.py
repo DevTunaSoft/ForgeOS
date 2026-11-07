@@ -47,7 +47,7 @@ class Store:
         return dict(row)
 
     def update(self, task_id: int, status: str, *, error: str = '', result: str = '', increment: bool = False):
-        if status not in {'queued','planning','planned','testing','passed','failed','blocked'}:
+        if status not in {'queued','planning','planned','editing','testing','passed','failed','blocked'}:
             raise ValueError('Invalid status')
         with self.db:
             self.db.execute('UPDATE tasks SET status=?,updated=?,last_error=?,result=?,attempts=attempts+? WHERE id=?',
@@ -55,7 +55,7 @@ class Store:
 
     def recover(self) -> int:
         with self.db:
-            cur = self.db.execute("UPDATE tasks SET status='queued',updated=? WHERE status IN ('planning','testing')", (time.time(),))
+            cur = self.db.execute("UPDATE tasks SET status='queued',updated=? WHERE status IN ('planning','editing','testing')", (time.time(),))
         return cur.rowcount
 
     def close(self):

@@ -16,6 +16,13 @@ def main(argv=None):
     plan=sub.add_parser('plan'); plan.add_argument('id',type=int); plan.add_argument('--model',default='qwen2.5-coder:3b')
     test=sub.add_parser('test'); test.add_argument('id',type=int); test.add_argument('--preset',required=True,
          choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'])
+    run=sub.add_parser('run',help='Generate, test and repair edits in a Git worktree')
+    run.add_argument('id',type=int)
+    run.add_argument('--workspace-parent',required=True)
+    run.add_argument('--preset',default='python-unittest',choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'])
+    run.add_argument('--model',default='qwen2.5-coder:3b')
+    run.add_argument('--max-repairs',type=int,default=2)
+    run.add_argument('--allow-host-tests',action='store_true',help='Explicitly permit running repository code on this machine')
     args=parser.parse_args(argv)
     if args.action=='gui':
         from .gui import launch
@@ -38,6 +45,14 @@ def main(argv=None):
             except Exception as exc:
                 store.update(args.id,'blocked',error=str(exc))
                 raise
+        elif args.action=='run':
+            from .engine import execute_task
+            result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,
+                                model=Ollama(model=args.model),max_repairs=args.max_repairs,
+                                allow_host_tests=args.allow_host_tests)
+            print(json.dumps(result,indent=2))
+            if not result['passed']:
+                return 1
         elif args.action=='test':
             task=store.get(args.id)
             store.update(args.id,'testing',increment=True)
