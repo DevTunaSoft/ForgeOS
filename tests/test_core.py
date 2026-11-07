@@ -53,6 +53,7 @@ class ForgeOSTests(unittest.TestCase):
         (self.repo/'test_example.py').write_text('import unittest\nclass T(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
         result=run_test(str(self.repo),'python-unittest')
         self.assertTrue(result['passed'],result['output'])
+        self.assertIn(result['containment'], {'none','windows-job-object'})
     def test_unittest_preset_failure(self):
         (self.repo/'test_example.py').write_text('import unittest\nclass T(unittest.TestCase):\n def test_bad(self): self.assertTrue(False)\n')
         result=run_test(str(self.repo),'python-unittest')
@@ -90,13 +91,14 @@ class ForgeOSTests(unittest.TestCase):
                 run_test(str(self.repo),preset)
 
     def test_missing_test_executable_is_reported(self):
-        with patch('forgeos.core.subprocess.run',side_effect=FileNotFoundError('missing')):
+        with patch('forgeos.core._execute_test_process',side_effect=FileNotFoundError('missing')):
             result=run_test(str(self.repo),'npm-test')
         self.assertFalse(result['passed'])
         self.assertIn('unavailable',result['output'])
 
     def test_timeout_is_reported(self):
-        with patch('forgeos.core.subprocess.run',side_effect=subprocess.TimeoutExpired('python',1)):
+        with patch('forgeos.core._execute_test_process',
+                   side_effect=subprocess.TimeoutExpired('python',1)):
             result=run_test(str(self.repo),'python-unittest',timeout=1)
         self.assertFalse(result['passed'])
         self.assertIn('timed out',result['output'])
