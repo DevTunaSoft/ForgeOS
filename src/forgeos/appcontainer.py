@@ -387,8 +387,7 @@ def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
             _grant_probe_access(root, allowed, sid_string)
 
             created = allowed / "created-by-appcontainer.txt"
-            write_command = (
-                f'echo appcontainer-write>"{created}"')
+            write_command = "echo appcontainer-write>created-by-appcontainer.txt"
             write_result = _launch_appcontainer_process(
                 sid, [command, "/d", "/c", write_command],
                 cwd=allowed, timeout=timeout)
@@ -399,7 +398,7 @@ def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
 
             read_result = _launch_appcontainer_process(
                 sid, [command, "/d", "/c",
-                      f'type "{outside}" >nul'],
+                      'type "..\\outside-secret.txt" >nul'],
                 cwd=allowed, timeout=timeout)
             if read_result["returncode"] == 0:
                 raise OSError(
