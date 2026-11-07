@@ -8,7 +8,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [x] Intelligent output compression (prototype integrated)
 - [ ] Smart test summaries
 - [ ] Optimized Git command output
-- [ ] Relevant source code reading
+- [x] Relevant source code reading (bounded AST metadata prototype)
 - [ ] Optimized project search
 - [ ] Adaptive context budgets
 - [ ] Context-aware compression
@@ -29,13 +29,13 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 
 ## Intelligent local AI orchestration (7)
 
-- [ ] Complexity-aware model routing
+- [x] Complexity-aware model routing (opt-in installed Ollama models)
 - [ ] Lightweight summarization workers
 - [ ] Separate planning/coding/testing/review roles
 - [ ] Dynamic context allocation
 - [ ] Model performance benchmarking
 - [ ] Automatic escalation
-- [ ] Free local-first routing
+- [x] Free local-first routing (installed models only; opt-in)
 
 ## Reliability, diagnostics & recovery (10)
 
@@ -99,3 +99,24 @@ Source modules: src/forgeos/diagnostics.py, src/forgeos/error_learning.py, src/f
 CLI commands: python -m forgeos diagnostics stats; python -m forgeos learning stats. GUI Activity & diagnostics tab includes a button to view local aggregate efficiency and validated repair counts.
 
 Windows CI uncovered leaked SQLite connections; the connection managers now close handles explicitly after every transaction. Treat these fixes as pending verification until all required CI jobs pass on the final head commit.
+
+## Additional development cycle: source context + local model routing
+
+- src/forgeos/context_index.py: deterministic, ranked file metadata limited to
+  80 files and 8000 characters, with Python AST class and function signatures.
+  No values, source bodies, comments, hidden paths, .env files, or symlinks
+  are copied into the model prompt.
+- src/forgeos/model_routing.py: opt-in --model auto chooses from local Ollama
+  /api/tags on 127.0.0.1 only. No paid provider, downloads, or external API.
+  Code-model preference, task complexity, deterministic size ranking, and a
+  conservative 16 GiB model file limit. File size is NOT actual RAM usage.
+- The engine fixes a chosen model into the checkpoint execution contract
+  before generating edits, so resumption checks the same identity.
+- Test modules added: test_context_index.py, test_model_routing.py.
+- Repair-memory accounting now records failed repair attempts as well as
+  successful verified corrections, so confidence estimates are not inflated.
+
+Remaining work includes actual project-source context with explicit privacy
+controls; CI proof for the latest commit; trusted filter rules; robust model
+availability/performance probes; dynamic escalation; bounded output streaming;
+Windows ACL/encryption; and full real-user Windows acceptance.
