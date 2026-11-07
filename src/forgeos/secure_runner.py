@@ -13,9 +13,13 @@ from .appcontainer import run_secure_appcontainer
 from .test_runtime import RUNTIME_DIR, TestRuntime
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def run_secure_windows_test(runtime: TestRuntime, preset: str,
                             timeout: int = 180) -> dict:
-    if os.name != "nt":
+    if not _is_windows():
         raise OSError("Secure Windows execution requires Windows")
     if not getattr(sys, "frozen", False):
         raise RuntimeError(
