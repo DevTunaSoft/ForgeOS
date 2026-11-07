@@ -10,6 +10,7 @@ import ctypes
 from contextlib import contextmanager
 from ctypes import wintypes
 import os
+import socket
 from pathlib import Path
 import subprocess
 import tempfile
@@ -367,3 +368,76 @@ def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
             "verified": False,
             "reason": str(exc),
         }
+
+
+def probe_appcontainer_network(timeout: int = 15) -> dict:
+    """Prove a zero-capability AppContainer cannot reach a loopback listener."""
+    if os.name != "nt":
+        return {
+            "available": False,
+            "verified": False,
+            "reason": "AppContainer probing is Windows-only",
+        }
+    if (not isinstance(timeout, int) or isinstance(timeout, bool)
+            or not 3 <= timeout <= 60):
+        raise ValueError("timeout must be 3..60 seconds")
+    curl = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "curl.exe"
+    if not curl.is_file():
+        return {
+            "available": False,
+            "verified": False,
+            "reason": "Windows curl.exe is unavailable",
+        }
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    listener.settimeout(0.5)
+    port = listener.getsockname()[1]
+    try:
+        with _temporary_probe_profile() as (_profile_name, sid):
+            client_check = _launch_appcontainer_process(
+                sid, [str(curl), "--version"], timeout=timeout)
+            if client_check["returncode"] != 0:
+                raise OSError(
+                    "curl.exe could not execute inside zero-capability "
+                    f"AppContainer (exit {client_check['returncode']})")
+
+            request = _launch_appcontainer_process(
+                sid, [str(curl), "--silent", "--show-error",
+                      "--max-time", "2", "--output", "NUL",
+                      f"http://127.0.0.1:{port}/"],
+                timeout=timeout)
+            connected = False
+            try:
+                connection, _address = listener.accept()
+            except socket.timeout:
+                pass
+            else:
+                connected = True
+                connection.close()
+            if connected:
+                raise OSError(
+                    "Zero-capability AppContainer reached localhost listener")
+            if request["returncode"] == 0:
+                raise OSError(
+                    "curl unexpectedly reported network success from "
+                    "zero-capability AppContainer")
+        return {
+            "available": True,
+            "verified": True,
+            "client_executable_verified": True,
+            "loopback_connection_blocked": True,
+            "token_is_appcontainer": True,
+            "capability_count": 0,
+            "network_capabilities_granted": False,
+            "profile_deleted": True,
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "available": False,
+            "verified": False,
+            "reason": str(exc),
+        }
+    finally:
+        listener.close()
