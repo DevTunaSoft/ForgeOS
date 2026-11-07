@@ -1,7 +1,6 @@
 """Secure runner orchestration tests that do not require Windows."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import sys
 import tempfile
@@ -23,13 +22,13 @@ class SecureRunnerContractTests(unittest.TestCase):
             env={"FORGEOS_EXECUTION_SNAPSHOT": "1", "TEMP": str(self.root)})
 
     def test_requires_frozen_forgeos_runtime(self):
-        with patch("forgeos.secure_runner.os.name", "nt"), \
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
              patch.object(sys, "frozen", False, create=True):
             with self.assertRaisesRegex(RuntimeError, "frozen ForgeOS"):
                 run_secure_windows_test(self.runtime, "python-unittest")
 
     def test_unsupported_preset_fails_closed_without_appcontainer_call(self):
-        with patch("forgeos.secure_runner.os.name", "nt"), \
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
              patch.object(sys, "frozen", True, create=True), \
              patch("forgeos.secure_runner.run_secure_appcontainer") as runner:
             with self.assertRaisesRegex(RuntimeError, "does not yet support"):
@@ -44,10 +43,8 @@ class SecureRunnerContractTests(unittest.TestCase):
             "containment": "windows-zero-capability-appcontainer+job-object",
             "capability_count": 0, "network_capabilities_granted": False,
         }
-        with patch("forgeos.secure_runner.os.name", "nt"), \
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
              patch.object(sys, "frozen", True, create=True), \
-             patch("forgeos.secure_runner.Path.resolve",
-                   return_value=Path(sys.executable)), \
              patch("forgeos.secure_runner.run_secure_appcontainer",
                    return_value=fake) as runner:
             result = run_secure_windows_test(
