@@ -58,9 +58,11 @@ class TestRuntimeTests(unittest.TestCase):
 
     def test_refuses_tampered_ownership_marker(self):
         runtime = create_test_snapshot(self.workspace)
-        (runtime.path / MARKER).write_text(json.dumps({
+        runtime.path.with_name(runtime.path.name + MARKER).write_text(json.dumps({
             "version": 1, "workspace": str(self.root / "other"),
         }))
         with self.assertRaisesRegex(ValueError, "ownership marker"):
             remove_test_snapshot(self.workspace)
         self.assertTrue(runtime.path.exists())
+        self.assertTrue(
+            runtime.path.with_name(runtime.path.name + MARKER).exists())
