@@ -5,14 +5,25 @@ import os
 from pathlib import Path
 import socket
 import tempfile
+import traceback
 
 from .secure_runner import run_secure_windows_test
 from .test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
 
 
+def _write_report(message: str) -> None:
+    raw = os.environ.get("FORGEOS_SECURE_SMOKE_REPORT")
+    if not raw:
+        return
+    try:
+        Path(raw).write_text(message, encoding="utf-8", errors="replace")
+    except OSError:
+        pass
+
+
 def run_secure_smoke() -> int:
     if os.name != "nt":
-        print("Secure sandbox smoke is Windows-only")
+        _write_report("Secure sandbox smoke is Windows-only")
         return 2
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -57,16 +68,18 @@ def run_secure_smoke() -> int:
             finally:
                 remove_test_snapshot(workspace)
             if not result.get("passed"):
-                print(result.get("output", "secure runner failed"))
+                _write_report(
+                    "Secure sandbox tests failed.\n"
+                    + result.get("output", "no test output"))
                 return 3
             if result.get("capability_count") != 0:
-                print("Secure runner unexpectedly received capabilities")
+                _write_report("Secure runner unexpectedly received capabilities")
                 return 4
             if result.get("network_capabilities_granted"):
-                print("Secure runner unexpectedly received network capability")
+                _write_report("Secure runner unexpectedly received network capability")
                 return 5
             if outside.exists():
-                print("Secure runner wrote outside disposable snapshot")
+                _write_report("Secure runner wrote outside disposable snapshot")
                 return 6
             try:
                 connection, _ = listener.accept()
@@ -74,10 +87,18 @@ def run_secure_smoke() -> int:
                 pass
             else:
                 connection.close()
-                print("Secure runner reached parent localhost listener")
+                _write_report("Secure runner reached parent localhost listener")
                 return 7
-            print("ForgeOS secure AppContainer smoke OK")
+            _write_report(
+                "ForgeOS secure AppContainer smoke OK\n"
+                + result.get("output", ""))
             return 0
+    except BaseException as exc:
+        _write_report(
+            "Secure smoke raised "
+            + type(exc).__name__ + ": " + str(exc) + "\n"
+            + traceback.format_exc())
+        return 20
     finally:
         if old_secret is None:
             os.environ.pop("FORGEOS_SMOKE_PARENT_SECRET", None)
