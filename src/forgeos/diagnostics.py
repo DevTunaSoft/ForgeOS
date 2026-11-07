@@ -131,6 +131,64 @@ def _focus(text: str, failed: bool, budget: int) -> str:
     return summary
 
 
+
+def parse_test_summary(text: str, preset: str) -> dict[str, Any]:
+    """Three-tier non-authoritative test analytics: JSON, text, or raw fallback.
+
+    The parser never changes return codes or test pass/fail conclusions.
+    Unsupported, malformed, or ambiguous formats degrade without raising.
+    """
+    import json
+    if not isinstance(text, str):
+        return {"tier": "raw", "counts": {}}
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict):
+        # Common reporter shapes. Only accept explicit nonnegative integer counts.
+        data = parsed.get("summary", parsed)
+        if isinstance(data, dict):
+            names = {
+                "passed": ("passed", "numPassedTests"),
+                "failed": ("failed", "numFailedTests"),
+                "skipped": ("skipped", "numPendingTests"),
+                "total": ("total", "numTotalTests"),
+            }
+            counts = {}
+            for label, alternatives in names.items():
+                for key in alternatives:
+                    value = data.get(key)
+                    if type(value) is int and value >= 0:
+                        counts[label] = value
+                        break
+            if counts:
+                return {"tier": "json", "counts": counts}
+    counts: dict[str, int] = {}
+    if preset == "python-unittest":
+        total = re.search(r"(?m)^Ran\s+(\d+)\s+tests?\s+in\s+", text)
+        if total:
+            counts["total"] = int(total.group(1))
+        failed = re.search(r"(?m)^FAILED\s*\(([^)]*)\)", text)
+        if failed:
+            for key, number in re.findall(r"\b(failures|errors|skipped)=(\d+)\b", failed.group(1)):
+                counts[{"failures": "failed", "errors": "errors", "skipped": "skipped"}[key]] = int(number)
+        if counts.get("total") is not None and (re.search(r"(?m)^OK(?:\s*\(|$)", text) or failed):
+            return {"tier": "text", "counts": counts}
+    elif preset in {"python-pytest", "npm-test", "cargo-test", "go-test", "dotnet-test"}:
+        # Non-Python runners differ; a generic line is only a partial hint.
+        summary_lines = [line for line in text.splitlines()[-30:]
+                         if re.search(r"\b\d+\s+(passed|failed|skipped|errors?)\b", line, re.I)]
+        if summary_lines:
+            for number, label in re.findall(
+                r"\b(\d+)\s+(passed|failed|skipped|errors?)\b",
+                summary_lines[-1], re.I
+            ):
+                counts[label.lower()] = int(number)
+            if counts:
+                return {"tier": "text", "counts": counts}
+    return {"tier": "degraded" if counts else "raw", "counts": counts}
+
 def optimize_test_result(result: dict[str, Any], preset: str, *,
                          store: EvidenceStore | None = None,
                          budget: int = DEFAULT_BUDGET) -> dict[str, Any]:
@@ -141,6 +199,7 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
     if not isinstance(output, str):
         return dict(result)
     outcome = dict(result)
+    outcome["parsed_test"] = parse_test_summary(output, preset)
     raw_bytes = len(output.encode("utf-8"))
     try:
         reference = (store if store is not None else EvidenceStore()).put(output)

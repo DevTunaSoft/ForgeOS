@@ -78,6 +78,31 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(result["optimization"]["reference"],
                          hashlib.sha256(raw.encode()).hexdigest())
 
+    def test_json_and_text_parsing_non_authoritative(self):
+        from forgeos.diagnostics import parse_test_summary
+        self.assertEqual(parse_test_summary('{"summary":{"total":5,"passed":4,"failed":1}}',
+                                            "python-pytest"),
+                         {"tier": "json", "counts": {"passed": 4, "failed": 1, "total": 5}})
+        self.assertEqual(parse_test_summary("Ran 9 tests in 0.13s\n\nFAILED (failures=2, errors=1)",
+                                            "python-unittest"),
+                         {"tier": "text", "counts": {"total": 9, "failed": 2, "errors": 1}})
+        self.assertEqual(parse_test_summary("===== 3 passed, 1 failed in 1.2s =====",
+                                            "python-pytest"),
+                         {"tier": "text", "counts": {"passed": 3, "failed": 1}})
+        self.assertEqual(parse_test_summary("random output", "unknown"),
+                         {"tier": "raw", "counts": {}})
+        self.assertEqual(parse_test_summary('{"summary":{"passed":true}}', "python-pytest"),
+                         {"tier": "raw", "counts": {}})
+
+    def test_parser_never_rewrites_authoritative_exit_code(self):
+        raw = "Ran 8 tests in 0.5s\nOK\n"
+        result = optimize_test_result(
+            {"passed": False, "returncode": 99, "output": raw},
+            "python-unittest", store=self.store)
+        self.assertEqual(result["parsed_test"]["tier"], "text")
+        self.assertEqual(result["returncode"], 99)
+        self.assertFalse(result["passed"])
+
     def test_bad_budget(self):
         with self.assertRaises(ValueError):
             optimize_test_result({"output": "x"}, "test", store=self.store, budget=0)
