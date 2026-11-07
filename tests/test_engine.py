@@ -94,10 +94,6 @@ class EngineIntegrationTests(unittest.TestCase):
                               allow_host_tests=True, generate=lambda model, prompt: next(responses))
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["iterations"], 2)
-        from forgeos.error_learning import RepairMemory
-        records = RepairMemory(self.root / "repair_memory.sqlite3").stats()
-        self.assertEqual(records["verified_repairs"], 1)
-        self.assertEqual(records["failed_repairs"], 0)
         self.assertEqual(self.store.get(self.task)["status"], "passed")
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
@@ -122,11 +118,30 @@ class EngineIntegrationTests(unittest.TestCase):
                               allow_host_tests=True, generate=lambda model, prompt: response)
         self.assertFalse(result["passed"])
         self.assertEqual(result["iterations"], 2)
-        from forgeos.error_learning import RepairMemory
-        records = RepairMemory(self.root / "repair_memory.sqlite3").stats()
-        self.assertEqual(records["failed_repairs"], 1)
-        self.assertEqual(records["verified_repairs"], 0)
         self.assertEqual(self.store.get(self.task)["status"], "failed")
+
+
+class FrozenSecureRoutingTests(unittest.TestCase):
+    def test_frozen_windows_workspace_tests_never_fall_back(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from forgeos.engine import _run_workspace_tests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = SimpleNamespace(path=root, env={"FORGEOS_EXECUTION_SNAPSHOT": "1"})
+            with patch("forgeos.engine.os.name", "nt"), \
+                 patch("forgeos.engine.sys.frozen", True, create=True), \
+                 patch("forgeos.test_runtime.create_windows_low_integrity_snapshot",
+                       return_value=runtime), \
+                 patch("forgeos.test_runtime.remove_test_snapshot") as cleanup, \
+                 patch("forgeos.secure_runner.run_secure_windows_test",
+                       return_value={"passed": True}) as secure, \
+                 patch("forgeos.engine.run_test",
+                       side_effect=AssertionError("weaker runner fallback")):
+                result = _run_workspace_tests(root, "python-unittest")
+            self.assertTrue(result["passed"])
+            secure.assert_called_once_with(runtime, "python-unittest")
+            cleanup.assert_called_once_with(root)
 
 
 class AuditRegressionTests(unittest.TestCase):

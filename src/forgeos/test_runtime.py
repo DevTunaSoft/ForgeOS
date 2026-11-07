@@ -98,14 +98,25 @@ def _build_environment(runtime: Path) -> dict[str, str]:
     }
     for path in directories.values():
         path.mkdir(parents=True, exist_ok=True)
-    env = {str(k): str(v) for k, v in os.environ.items()
-           if isinstance(k, str) and isinstance(v, str)
-           and k and "\x00" not in k and "\x00" not in v and "=" not in k}
+
+    # Do not inherit the parent's arbitrary environment. Autonomous test code
+    # must not receive API keys, access tokens, cloud credentials, or unrelated
+    # application state simply because ForgeOS itself was launched with them.
+    allowed_host = {
+        "SystemRoot", "WINDIR", "ComSpec", "OS", "PROCESSOR_ARCHITECTURE",
+        "PROCESSOR_IDENTIFIER", "NUMBER_OF_PROCESSORS", "LANG", "LC_ALL",
+    }
+    env = {}
+    for key in allowed_host:
+        value = os.environ.get(key)
+        if isinstance(value, str) and value and "\x00" not in value:
+            env[key] = value
     env.update({
         "TEMP": str(directories["tmp"]),
         "TMP": str(directories["tmp"]),
         "TMPDIR": str(directories["tmp"]),
         "HOME": str(directories["home"]),
+        "USERPROFILE": str(directories["home"]),
         "XDG_CACHE_HOME": str(directories["cache"]),
         "PYTHONPYCACHEPREFIX": str(directories["pycache"]),
         "PIP_CACHE_DIR": str(directories["pip"]),
@@ -119,6 +130,8 @@ def _build_environment(runtime: Path) -> dict[str, str]:
         "NUGET_PACKAGES": str(directories["nuget"]),
         "GRADLE_USER_HOME": str(directories["gradle"]),
         "FORGEOS_EXECUTION_SNAPSHOT": "1",
+        "PYTHONNOUSERSITE": "1",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
     })
     return env
 
