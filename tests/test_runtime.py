@@ -18,6 +18,8 @@ class TestRuntimeTests(unittest.TestCase):
         self.workspace.mkdir()
         (self.workspace / ".git").write_text("gitdir: example")
         (self.workspace / "app.py").write_text("print('source')\n")
+        (self.workspace / ".env").write_text("SECRET=do-not-copy")
+        (self.workspace / ".env.local").write_text("TOKEN=do-not-copy")
         internal = self.workspace / ".forgeos"
         internal.mkdir()
         (internal / "secret-journal").write_text("do-not-copy")
@@ -27,6 +29,8 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertFalse(runtime.path.is_relative_to(self.workspace))
         self.assertEqual((runtime.path / "app.py").read_text(), "print('source')\n")
         self.assertFalse((runtime.path / ".forgeos").exists())
+        self.assertFalse((runtime.path / ".env").exists())
+        self.assertFalse((runtime.path / ".env.local").exists())
         self.assertEqual(runtime.env["FORGEOS_EXECUTION_SNAPSHOT"], "1")
         self.assertTrue(Path(runtime.env["TEMP"]).is_relative_to(runtime.path))
         self.assertTrue(Path(runtime.env["GOCACHE"]).is_relative_to(runtime.path))
