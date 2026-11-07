@@ -110,3 +110,14 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Legacy resumable checkpoints that predate contract persistence are deliberately skipped by automatic recovery because their original execution settings cannot be proven.
 - Added tests for per-task contract replay, mismatched overrides, missing contracts and direct-engine rejection of changed settings.
 - Host execution remains unsandboxed and explicitly gated; Windows-native restricted execution remains the next major security milestone.
+
+## PR #20 — task execution leases and race-condition hardening (2026-11-07)
+
+- Added SQLite-backed per-task execution leases with a 10-minute stale threshold, owner tokens, heartbeats, explicit release, and cleanup of implausible future timestamps.
+- Added an atomic status transition that preserves persisted checkpoint/result data while preventing stale read-then-write races.
+- The autonomous engine now acquires one exclusive lease per task, transitions the task atomically, refreshes the lease around long model/test calls, and releases the lease in a `finally` block so KeyboardInterrupt does not strand a live lease.
+- `Store.recover()` no longer quarantines editing/testing tasks that still have a live execution lease. Stale leases are removed and their tasks can then be safely blocked for inspection.
+- Duplicate execution of the same task fails closed before workspace mutation.
+- Unauthorized host execution is rejected before any lease-table mutation, and leases cannot be created for nonexistent tasks.
+- Added regression tests covering lease exclusion across separate SQLite connections, checkpoint-preserving atomic transitions, stale-lease reclamation, duplicate-run rejection, KeyboardInterrupt cleanup, unauthorized execution, and unknown task IDs.
+- This protects task coordination and recovery correctness; it is not an OS security sandbox. Windows-native restricted execution remains the next major security milestone.
