@@ -107,6 +107,8 @@ if os.name == "nt":
     kernel32.TerminateJobObject.restype = wintypes.BOOL
     kernel32.ResumeThread.argtypes = [wintypes.HANDLE]
     kernel32.ResumeThread.restype = wintypes.DWORD
+    kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.TerminateProcess.restype = wintypes.BOOL
     kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel32.WaitForSingleObject.restype = wintypes.DWORD
     kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
@@ -154,6 +156,7 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
 
     process = None
     thread = None
+    assigned = False
     output = tempfile.TemporaryFile(mode="w+b")
     devnull = open(os.devnull, "rb")
     out_handle = msvcrt.get_osfhandle(output.fileno())
@@ -196,6 +199,7 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
 
         if not kernel32.AssignProcessToJobObject(job, process):
             raise _win_error("AssignProcessToJobObject")
+        assigned = True
         previous_suspend_count = kernel32.ResumeThread(thread)
         if previous_suspend_count == 0xFFFFFFFF:
             raise _win_error("ResumeThread")
@@ -233,6 +237,9 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             os.set_handle_inheritable(in_handle, False)
         except OSError:
             pass
+        if process and not assigned:
+            kernel32.TerminateProcess(process, 125)
+            kernel32.WaitForSingleObject(process, 5000)
         if thread:
             kernel32.CloseHandle(thread)
         if process:
