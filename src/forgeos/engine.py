@@ -257,7 +257,8 @@ def _execute_task(
                             "repair_memory.sqlite3")).record(
                             previous_failure, preset=preset, model=model_name,
                             verified_success=True)
-                    except (OSError, ValueError) as exc:
+                    except Exception as exc:
+                        # Noncritical learning must not change a verified pass.
                         learned = {"recorded": False, "reason": type(exc).__name__}
                 result = {"passed": True, "workspace": str(ws.path),
                           "branch": ws.branch, "edited": paths,

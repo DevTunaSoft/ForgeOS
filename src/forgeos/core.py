@@ -239,7 +239,14 @@ def run_test(project: str, command: str, timeout: int = 180, *,
         execution = _execute_test_process(
             allowed[command], root, timeout,
             low_integrity=low_integrity, env=env)
-        return optimize_test_result(execution, command)
+        outcome = optimize_test_result(execution, command)
+        try:
+            from .optimizer_metrics import OptimizationMetrics
+            OptimizationMetrics().record(outcome)
+        except (OSError, ValueError):
+            # Metrics must never change the outcome of a test.
+            outcome["metrics_recorded"] = False
+        return outcome
     except subprocess.TimeoutExpired:
         return {'passed': False, 'returncode': None,
                 'output': f'Test timed out after {timeout}s',

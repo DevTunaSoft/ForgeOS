@@ -13,8 +13,8 @@ def main(argv=None):
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
-    evidence.add_argument('operation',choices=['show'])
-    evidence.add_argument('reference')
+    evidence.add_argument('operation',choices=['show','stats'])
+    evidence.add_argument('reference',nargs='?')
     memory=sub.add_parser('learning',help='Show local verified repair learning statistics')
     memory.add_argument('operation',choices=['stats'])
     recover_edits=sub.add_parser('recover-edits',help='Safely roll back a pending edit journal')
@@ -41,8 +41,14 @@ def main(argv=None):
         from .gui import launch
         return launch(args.db)
     if args.action == 'diagnostics':
-        from .diagnostics import EvidenceStore
-        print(EvidenceStore().get(args.reference),end='')
+        if args.operation == 'show':
+            from .diagnostics import EvidenceStore
+            if args.reference is None:
+                parser.error('diagnostics show requires a 64-character reference')
+            print(EvidenceStore().get(args.reference),end='')
+        else:
+            from .optimizer_metrics import OptimizationMetrics
+            print(json.dumps(OptimizationMetrics().stats(),indent=2))
         return 0
     if args.action == 'learning':
         from .error_learning import RepairMemory
