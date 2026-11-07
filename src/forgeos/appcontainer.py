@@ -224,17 +224,15 @@ def _launch_appcontainer_process(appcontainer_sid, argv, *,
 
 
 def _delete_probe_profile(profile_name: str) -> None:
+    """Delete a temporary profile and require the documented S_OK result.
+
+    Windows does not expose a supported independent "profile exists" query;
+    SID derivation is deterministic and therefore cannot verify deletion.
+    """
     hr = int(userenv.DeleteAppContainerProfile(profile_name)) & 0xFFFFFFFF
     if _failed_hresult(hr):
         raise OSError(
             f"DeleteAppContainerProfile failed: 0x{hr:08X}")
-    probe_sid = ctypes.c_void_p()
-    derived = int(userenv.DeriveAppContainerSidFromAppContainerName(
-        profile_name, ctypes.byref(probe_sid))) & 0xFFFFFFFF
-    if probe_sid:
-        wc.advapi32.FreeSid(probe_sid)
-    if not _failed_hresult(derived):
-        raise OSError("Temporary AppContainer profile still exists after deletion")
 
 
 def _create_probe_profile():
