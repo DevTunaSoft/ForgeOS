@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import tempfile
+import os
 import unittest
 
 from forgeos.test_runtime import (
@@ -51,6 +52,22 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertEqual(first.path, second.path)
         self.assertFalse((second.path / "artifact.tmp").exists())
         self.assertEqual((second.path / "app.py").read_text(), "print('source')\n")
+
+    def test_snapshot_environment_does_not_inherit_parent_secrets(self):
+        key = "FORGEOS_PARENT_SECRET_TEST"
+        previous = os.environ.get(key)
+        os.environ[key] = "must-not-leak"
+        try:
+            runtime = create_test_snapshot(self.workspace)
+        finally:
+            if previous is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous
+        self.assertNotIn(key, runtime.env)
+        self.assertEqual(runtime.env["FORGEOS_EXECUTION_SNAPSHOT"], "1")
+        self.assertEqual(runtime.env["PYTHONNOUSERSITE"], "1")
+        self.assertTrue(Path(runtime.env["USERPROFILE"]).is_relative_to(runtime.path))
 
     def test_refuses_to_delete_unowned_existing_directory(self):
         runtime = self.root / ".forgeos-exec-task-7"
