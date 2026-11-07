@@ -61,3 +61,14 @@ class RecoveryTests(unittest.TestCase):
         report = resume_safe(store, self.parent, allow_host_tests=True, execute=runner)
         self.assertEqual(len(report["skipped"]), 1)
         runner.assert_not_called()
+
+    def test_repair_pending_checkpoint_is_eligible(self):
+        checkpoint = {"phase": "repair_pending",
+                      "workspace": str(self.parent / "task-4")}
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(FakeStore([self.task(4, checkpoint)]), self.parent,
+                             allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [4])
+        self.assertEqual(report["failed"], [])
+        self.assertEqual(report["skipped"], [])
+        self.assertEqual(runner.call_count, 1)

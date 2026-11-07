@@ -368,3 +368,37 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.store.update(self.task, "blocked", result=json.dumps(checkpoint))
         with self.assertRaisesRegex(ValueError, "integrity hashes"):
             execute_task(self.store, self.task, self.root, allow_host_tests=True, resume=True)
+
+    def test_resume_repair_pending_after_generation_interrupt(self):
+        from unittest.mock import patch
+        failing = json.dumps({"files": [{"path": "app.py", "content": "def value():\n return 0\n"}]})
+        repaired = json.dumps({"files": [{"path": "app.py", "content": "def value():\n return 42\n"}]})
+        calls = []
+
+        def interrupted_generator(model, prompt):
+            calls.append(prompt)
+            if len(calls) == 1:
+                return failing
+            raise KeyboardInterrupt()
+
+        with patch("forgeos.engine.run_test",
+                   return_value={"passed": False, "returncode": 1, "output": "expected 42, got 0"}):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             max_repairs=2, generate=interrupted_generator)
+        saved = json.loads(self.store.get(self.task)["result"])
+        self.assertEqual(self.store.get(self.task)["status"], "editing")
+        self.assertEqual(saved["phase"], "repair_pending")
+        self.assertEqual(saved["attempt"], 2)
+        self.assertIn("expected 42", saved["last_test_output"])
+
+        self.store.recover()
+        with patch("forgeos.engine.run_test",
+                   return_value={"passed": True, "returncode": 0, "output": "ok"}):
+            result = execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                                  max_repairs=2, resume=True,
+                                  generate=lambda model, prompt: repaired)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["iterations"], 2)
+        self.assertEqual((Path(result["workspace"]) / "app.py").read_text(),
+                         "def value():\n return 42\n")
