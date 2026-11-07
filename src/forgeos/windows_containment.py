@@ -39,13 +39,6 @@ if os.name == "nt":
     TOKEN_QUERY = 0x0008
     DISABLE_MAX_PRIVILEGE = 0x00000001
     LUA_TOKEN = 0x00000004
-    TokenUser = 1
-    WinWorldSid = 1
-    WinRestrictedCodeSid = 18
-    SECURITY_MAX_SID_SIZE = 68
-
-    class SID_AND_ATTRIBUTES(ctypes.Structure):
-        _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
 
     class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
         _fields_ = [
@@ -145,14 +138,6 @@ if os.name == "nt":
         ctypes.POINTER(wintypes.HANDLE)]
     advapi32.CreateRestrictedToken.restype = wintypes.BOOL
     advapi32.IsTokenRestricted.argtypes = [wintypes.HANDLE]
-    advapi32.GetTokenInformation.argtypes = [
-        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
-        wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
-    advapi32.GetTokenInformation.restype = wintypes.BOOL
-    advapi32.CreateWellKnownSid.argtypes = [
-        ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
-        ctypes.POINTER(wintypes.DWORD)]
-    advapi32.CreateWellKnownSid.restype = wintypes.BOOL
     advapi32.IsTokenRestricted.restype = wintypes.BOOL
     advapi32.CreateProcessAsUserW.argtypes = [
         wintypes.HANDLE, wintypes.LPCWSTR, wintypes.LPWSTR,
@@ -179,44 +164,11 @@ def _create_restricted_primary_token():
             kernel32.GetCurrentProcess(), desired, ctypes.byref(current)):
         raise _win_error("OpenProcessToken")
     try:
-        needed = wintypes.DWORD()
-        advapi32.GetTokenInformation(
-            current, TokenUser, None, 0, ctypes.byref(needed))
-        if not needed.value:
-            raise _win_error("GetTokenInformation(size)")
-        user_buffer = ctypes.create_string_buffer(needed.value)
-        if not advapi32.GetTokenInformation(
-                current, TokenUser, user_buffer, needed.value,
-                ctypes.byref(needed)):
-            raise _win_error("GetTokenInformation(TokenUser)")
-        user_sid = ctypes.cast(
-            user_buffer, ctypes.POINTER(SID_AND_ATTRIBUTES)).contents.Sid
-
-        sid_buffers = []
-        restriction_sids = (SID_AND_ATTRIBUTES * 3)()
-        restriction_sids[0].Sid = user_sid
-        restriction_sids[0].Attributes = 0
-        for index, sid_type in enumerate(
-                (WinWorldSid, WinRestrictedCodeSid), start=1):
-            sid_buffer = ctypes.create_string_buffer(SECURITY_MAX_SID_SIZE)
-            sid_size = wintypes.DWORD(SECURITY_MAX_SID_SIZE)
-            if not advapi32.CreateWellKnownSid(
-                    sid_type, None, sid_buffer, ctypes.byref(sid_size)):
-                raise _win_error("CreateWellKnownSid")
-            sid_buffers.append(sid_buffer)
-            restriction_sids[index].Sid = ctypes.cast(
-                sid_buffer, ctypes.c_void_p)
-            restriction_sids[index].Attributes = 0
-
         flags = DISABLE_MAX_PRIVILEGE | LUA_TOKEN
         if not advapi32.CreateRestrictedToken(
-                current, flags, 0, None, 0, None,
-                len(restriction_sids), restriction_sids,
+                current, flags, 0, None, 0, None, 0, None,
                 ctypes.byref(restricted)):
             raise _win_error("CreateRestrictedToken")
-        if not advapi32.IsTokenRestricted(restricted):
-            kernel32.CloseHandle(restricted)
-            raise OSError("Restricted token is missing restricting SIDs")
         return restricted
     finally:
         kernel32.CloseHandle(current)
