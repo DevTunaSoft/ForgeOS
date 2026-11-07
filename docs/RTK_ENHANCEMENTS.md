@@ -145,7 +145,7 @@ the test exit status.
 
 ## Phase 3: repair insights and GUI evidence comparison
 
-- src/forgeos/failure_types.py identifies broad failure families from bounded
+- src/forgeos/error_learning.py also identifies broad failure families from bounded
   local logs. Categories are advisory only and never supersede the authoritative
   process return code, containment status, or test pass/fail value.
 - src/forgeos/insights.py builds validated, bounded diagnostic comparison data

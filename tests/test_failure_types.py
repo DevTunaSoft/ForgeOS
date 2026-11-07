@@ -1,7 +1,7 @@
 """Classification cannot replace test status, infer secrets, or execute content."""
 import random
 import unittest
-from forgeos.failure_types import classify_failure
+from forgeos.error_learning import classify_failure
 
 class FailureTypeTests(unittest.TestCase):
     def test_common_error_categories(self):

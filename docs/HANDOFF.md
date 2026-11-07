@@ -331,7 +331,7 @@ Block merge until Ubuntu and Windows 3.10/3.12 CI + packaged secure smoke pass.
 ## RTK Phase 3 — diagnostic comparison and recorded model identity (CI pending)
 
 Source branch feat/rtk-phase3-repair-insights. New modules:
-- src/forgeos/failure_types.py: deterministic, bounded advisory failure
+- src/forgeos/error_learning.py: consolidated deterministic, bounded advisory failure
   categories (security boundary, resource, permission, timeout, dependency,
   syntax, assertion, network, environment and build); no raw secrets returned.
 - src/forgeos/insights.py: validated task result parsing and compact/raw
