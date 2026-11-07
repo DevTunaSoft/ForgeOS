@@ -8,6 +8,7 @@ import json
 import hashlib
 from pathlib import Path, PurePosixPath
 import re
+import uuid
 from typing import Callable
 
 from .core import Ollama, Store, run_test
@@ -102,12 +103,12 @@ def _generate(model: Ollama, prompt: str) -> str:
     return model.generate_edits(prompt)
 
 
-def execute_task(
+def _execute_task(
     store: Store, task_id: int, workspace_parent: Path, *,
     preset: str = "python-unittest", model: Ollama | None = None,
     max_repairs: int = 2, allow_host_tests: bool = False,
     generate: Callable[[Ollama, str], str] = _generate,
-    resume: bool = False,
+    resume: bool = False, lease_owner: str = "",
 ) -> dict:
     """Run one task in a new worktree; preserve workspace for inspection.
 
@@ -119,7 +120,8 @@ def execute_task(
     if not isinstance(max_repairs, int) or isinstance(max_repairs, bool) or not 0 <= max_repairs <= 5:
         raise ValueError("max_repairs must be 0..5")
     task = store.get(task_id)
-    if task["status"] not in ({"blocked"} if resume else {"queued", "planned"}):
+    eligible_statuses = {"blocked"} if resume else {"queued", "planned"}
+    if task["status"] not in eligible_statuses:
         raise ValueError("Task is not eligible to run")
     parent = Path(workspace_parent).expanduser().resolve(strict=True)
     if not parent.is_dir():
@@ -133,9 +135,14 @@ def execute_task(
         raise ValueError("Resume requires existing workspace")
     ws = None
     last_output = ""
+    def heartbeat():
+        if not store.heartbeat_lease(task_id, lease_owner):
+            raise RuntimeError("Task execution lease was lost")
+
     try:
-        if not resume:
-            store.update(task_id, "editing", increment=True)
+        if not store.transition(task_id, eligible_statuses, "editing", increment=not resume):
+            raise ValueError("Task status changed before execution")
+        heartbeat()
         if resume:
             from .workspace import _git, _repository_root
             source = _repository_root(task["project"])
@@ -209,7 +216,9 @@ def execute_task(
             if resume and phase == "test_pending" and attempt == start_attempt - 1:
                 paths = checkpoint["edited"]
             else:
+                heartbeat()
                 manifest = generate(model, prompt)
+                heartbeat()
                 paths = apply_edits(ws.path, manifest)
             store.update(task_id, "testing", result=json.dumps({
                 "workspace": str(ws.path), "branch": ws.branch,
@@ -218,7 +227,9 @@ def execute_task(
                 "sha256": {name: hashlib.sha256(_validate_path(ws.path, name).read_bytes()).hexdigest()
                            for name in paths},
             }))
+            heartbeat()
             outcome = run_test(str(ws.path), preset)
+            heartbeat()
             last_output = outcome["output"]
             if outcome["passed"]:
                 result = {"passed": True, "workspace": str(ws.path),
@@ -264,3 +275,27 @@ def execute_task(
             pass
         store.update(task_id, "blocked", error=str(exc), result=json.dumps(details))
         raise
+
+
+def execute_task(
+    store: Store, task_id: int, workspace_parent: Path, *,
+    preset: str = "python-unittest", model: Ollama | None = None,
+    max_repairs: int = 2, allow_host_tests: bool = False,
+    generate: Callable[[Ollama, str], str] = _generate,
+    resume: bool = False,
+) -> dict:
+    """Acquire an exclusive task lease, then run the guarded task engine."""
+    if not allow_host_tests:
+        raise ValueError("Host test execution requires explicit --allow-host-tests")
+    store.get(task_id)
+    owner = uuid.uuid4().hex
+    if not store.acquire_lease(task_id, owner):
+        raise ValueError("Task already has an active execution lease")
+    try:
+        return _execute_task(
+            store, task_id, workspace_parent, preset=preset, model=model,
+            max_repairs=max_repairs, allow_host_tests=allow_host_tests,
+            generate=generate, resume=resume, lease_owner=owner,
+        )
+    finally:
+        store.release_lease(task_id, owner)
