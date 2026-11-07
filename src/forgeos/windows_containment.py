@@ -409,30 +409,29 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             environment_pointer = ctypes.cast(environment, ctypes.c_void_p)
         if not isinstance(restrict_privileges, bool):
             raise ValueError("restrict_privileges must be boolean")
-        if restrict_privileges:
-            restricted_token = _create_restricted_primary_token(
-                low_integrity=low_integrity)
-            try:
+        try:
+            if restrict_privileges:
+                restricted_token = _create_restricted_primary_token(
+                    low_integrity=low_integrity)
                 created = advapi32.CreateProcessAsUserW(
                     restricted_token, None, command_line, None, None, True,
                     flags, environment_pointer, str(root),
                     ctypes.cast(ctypes.byref(startup),
                                 ctypes.POINTER(STARTUPINFOW)),
                     ctypes.byref(info))
-            finally:
-                kernel32.DeleteProcThreadAttributeList(startup.lpAttributeList)
-            operation = "CreateProcessAsUserW"
-        else:
-            try:
+                operation = "CreateProcessAsUserW"
+            else:
                 created = kernel32.CreateProcessW(
                     None, command_line, None, None, True, flags,
                     environment_pointer, str(root),
                     ctypes.cast(ctypes.byref(startup),
                                 ctypes.POINTER(STARTUPINFOW)),
                     ctypes.byref(info))
-            finally:
+                operation = "CreateProcessW"
+        finally:
+            if startup.lpAttributeList:
                 kernel32.DeleteProcThreadAttributeList(startup.lpAttributeList)
-            operation = "CreateProcessW"
+                startup.lpAttributeList = None
         if not created:
             raise _win_error(operation)
         process, thread = info.hProcess, info.hThread
