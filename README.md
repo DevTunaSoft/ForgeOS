@@ -40,3 +40,8 @@ PowerShell:
 This prototype runs tests directly on the host and does not sandbox project code. Use only trusted local repositories. No encryption at rest or authentication boundary is implemented. Do not put passwords or tokens in task descriptions. Ollama connection is restricted to localhost. Runtime interaction with a real Windows GUI has not yet been verified.
 
 See docs/REQUIREMENTS.md, docs/ROADMAP.md and docs/HANDOFF.md.
+
+
+### Windows EXE (prototype)
+
+A Windows PyInstaller build workflow is available under GitHub Actions. See [Windows build instructions](docs/WINDOWS_BUILD.md). A successful build is not proof of full desktop functionality or safe unattended execution.
