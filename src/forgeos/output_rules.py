@@ -75,16 +75,7 @@ class TrustedOutputRules:
         return {}
 
     def status(self) -> str:
-        if not self.config.exists():
-            return "not-configured"
-        try:
-            raw = _read_safe(self.config)
-            _parse(raw)
-            expected = self._entries().get(str(self.config.resolve()))
-            return ("trusted" if expected == hashlib.sha256(raw).hexdigest()
-                    else "untrusted-or-modified")
-        except (OSError, ValueError):
-            return "invalid"
+        return self.enabled_rules()[1]
 
     def trust_config(self) -> str:
         raw = _read_safe(self.config)
@@ -112,11 +103,16 @@ class TrustedOutputRules:
         return digest
 
     def enabled_rules(self) -> tuple[list[dict], str]:
-        status = self.status()
-        if status != "trusted":
-            return [], status
+        if not self.config.exists():
+            return [], "not-configured"
         try:
-            return _parse(_read_safe(self.config)), "trusted"
+            # Read once, parse those exact bytes, and validate their exact hash.
+            raw = _read_safe(self.config)
+            rules = _parse(raw)
+            expected = self._entries().get(str(self.config.resolve()))
+            if expected != hashlib.sha256(raw).hexdigest():
+                return [], "untrusted-or-modified"
+            return rules, "trusted"
         except (OSError, ValueError):
             return [], "invalid"
 
