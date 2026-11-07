@@ -33,7 +33,8 @@ def resume_safe(store, workspace_parent: Path, *, preset="python-unittest",
         if not isinstance(checkpoint, dict) or checkpoint.get("phase") != "test_pending":
             report["skipped"].append({"id": task["id"], "reason": "No test-pending checkpoint"})
             continue
-        if checkpoint.get("workspace") != str(parent / f"task-{task['id']}"):
+        if (not isinstance(checkpoint.get("workspace"), str) or
+                Path(checkpoint["workspace"]).resolve() != (parent / f"task-{task['id']}").resolve()):
             report["skipped"].append({"id": task["id"], "reason": "Workspace location mismatch"})
             continue
         try:
