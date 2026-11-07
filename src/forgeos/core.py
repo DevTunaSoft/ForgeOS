@@ -243,7 +243,7 @@ def run_test(project: str, command: str, timeout: int = 180, *,
         try:
             from .optimizer_metrics import OptimizationMetrics
             OptimizationMetrics().record(outcome)
-        except (OSError, ValueError):
+        except Exception:
             # Metrics must never change the outcome of a test.
             outcome["metrics_recorded"] = False
         return outcome

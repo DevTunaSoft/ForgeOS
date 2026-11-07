@@ -14,15 +14,15 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Context-aware compression
 - [ ] Repeated log deduplication
 - [ ] Configurable rules
-- [ ] Token and savings analytics
+- [x] Token and savings analytics (local aggregate prototype)
 
 ## Learning & autonomous improvement (8)
 
-- [ ] Persistent error learning
+- [x] Persistent error learning (test-verified signatures only)
 - [ ] Automatic command correction
 - [ ] Reusable repair knowledge
-- [ ] Recurring failure pattern detection
-- [ ] Correction confidence scoring
+- [x] Recurring failure pattern detection (fingerprint baseline)
+- [x] Correction confidence scoring (review threshold baseline)
 - [ ] Development session analysis
 - [ ] Automatic optimization discovery
 - [ ] Validated optimization improvements
@@ -41,8 +41,8 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 
 - [ ] Complete raw-output retention (bounded prototype integrated)
 - [x] Retrieval of original diagnostic evidence (prototype integrated)
-- [ ] Structured/text/raw parsing tiers
-- [ ] Error classifications
+- [x] Structured/text/raw parsing tiers (baseline implemented)
+- [x] Error classifications (initial taxonomy)
 - [x] SHA-256 diagnostic integrity (prototype integrated)
 - [ ] Safe command interpretation
 - [ ] Transactional configuration updates
@@ -52,7 +52,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 
 ## ForgeOS GUI & visibility (7)
 
-- [ ] AI efficiency dashboard
+- [x] AI efficiency dashboard (basic activity tab totals)
 - [ ] Development performance metrics
 - [ ] Raw vs summarized output comparison
 - [ ] Learning activity view
@@ -91,3 +91,11 @@ Threat model and release restrictions:
 - New code is not release-ready until CI, Windows packaging and interactive acceptance are verified.
 
 Next: structured parsers for common test frameworks; chunked output capture and disk retention policy; learned failure signatures; model-routing evidence; GUI metrics.
+
+## Phase 1 additional integration (pending final CI)
+
+Source modules: src/forgeos/diagnostics.py, src/forgeos/error_learning.py, src/forgeos/optimizer_metrics.py. Test modules: tests/test_diagnostics.py, tests/test_error_learning.py, tests/test_optimizer_metrics.py. Verified repair outcomes are persisted only as normalized SHA-256 signatures, classification, model/preset labels and numerical counters; never store original log text in the learning database. No automatic application of past fixes is enabled.
+
+CLI commands: python -m forgeos diagnostics stats; python -m forgeos learning stats. GUI Activity & diagnostics tab includes a button to view local aggregate efficiency and validated repair counts.
+
+Windows CI uncovered leaked SQLite connections; the connection managers now close handles explicitly after every transaction. Treat these fixes as pending verification until all required CI jobs pass on the final head commit.

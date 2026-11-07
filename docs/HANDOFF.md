@@ -215,3 +215,38 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Every temporary runtime ACE is removed in a `finally` path. After revocation, the probe reruns Python and requires runtime visibility to return exactly to its pre-grant state. Cleanup failure makes the probe unavailable rather than silently continuing.
 - This experiment intentionally modifies the ephemeral CI Python ACL only during the probe. Production ForgeOS should not ACL arbitrary user/global toolchains. The intended production architecture is a ForgeOS-owned/bundled runtime whose ACL can be permanently and narrowly designed for AppContainer execution.
 - This establishes technical feasibility for a future Python AppContainer backend: zero network capabilities, explicit snapshot ACL only, narrow runtime RX, no broad user-file grants.
+
+
+## RTK-inspired integration PR #28 (in progress, 2026-11-07)
+
+Branch: feat/rtk-inspired-diagnostics. Base: main.
+Scope tracker: docs/RTK_ENHANCEMENTS.md (52-feature program).
+
+Code:
+- diagnostics.py: atomic gzip evidence archive, SHA-256 validation,
+  on-demand recall, bounded error-centric output summary, JSON/text/raw parsers.
+- error_learning.py: private aggregate repair memory storing signature hashes
+  and verified outcomes only. Review eligibility requires repeated success.
+- optimizer_metrics.py: aggregate context byte reduction, estimated token savings,
+  and fallback health counts, without storing raw output or project paths.
+- core.py and windows_containment.py: full test output reaches optimizer instead of
+  silent 16K-character tail truncation, preserve authoritative test outcomes.
+- engine.py: record verified repair outcomes after successful retest only.
+- gui.py and cli.py: one GUI efficiency display and recovery/stats commands.
+- tests/test_diagnostics.py, test_error_learning.py, test_optimizer_metrics.py:
+  roundtrip/fidelity/corruption/symlink/Unicode/concurrency/regression coverage.
+
+Evidence:
+- Earlier diagnostic-only commits passed Ubuntu/Windows 3.10/3.12 CI and
+  Windows packaging.
+- Additional learning integration revealed Windows SQLite connection leaks in
+  GitHub Actions. Both learning and metrics stores now close connections with
+  a contextmanager/finally. The final-head CI must be inspected before merging.
+- No interactive user Windows installation has been exercised; no claim of
+  production-ready autonomy. Separate AppContainer security PR #27 is still
+  subject to its own acceptance gates.
+
+Immediate next steps: verify all four CI matrix jobs and Windows packaging on
+the latest head; fix root causes, run regression, audit logging privacy and
+repository merge interactions with PR #27, then proceed to bounded streaming
+capture, retention policies, secure model routing, and GUI diagnostics.
