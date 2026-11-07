@@ -133,3 +133,16 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - `core.run_test` automatically routes Windows allowlisted test presets through this containment layer. Linux behavior remains ordinary no-shell subprocess execution.
 - This is **containment, not a security sandbox**. Job Objects do not remove the user's token privileges, prevent filesystem access, or block networking. Host-test execution therefore remains explicitly gated. Restricted-token / ACL / network-boundary work remains required before claiming safe unattended execution of untrusted generated code.
 - Required verification: Windows 3.10/3.12 runtime tests, timeout/child cleanup, process-limit behavior, full regression suite, PyInstaller Windows EXE smoke. Physical Windows acceptance remains separate.
+
+## PR #22 — Windows privilege-reduced child token (2026-11-07)
+
+- Extended the Windows Job Object runner to create a restricted copy of the current primary token with `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)` and launch the suspended test process with `CreateProcessAsUserW` before Job Object assignment/resume.
+- Microsoft documents `DISABLE_MAX_PRIVILEGE` as disabling every privilege except `SeChangeNotifyPrivilege`. The Windows runtime test queries the child token's `TokenPrivileges` information and requires at most one privilege to remain.
+- Two more aggressive variants were tested and rejected during CI hardening:
+  - adding restricting SIDs caused Python to fail DLL initialization because the second ACL access check blocked required runtime files;
+  - adding `LUA_TOKEN` also caused DLL initialization failure on the GitHub Windows runner because filtered group access no longer matched the toolchain installation ACLs.
+  Both failures were root-caused and the incompatible settings were removed rather than bypassed with an unrestricted fallback.
+- There is **no automatic fallback** from privilege-reduced launch to unrestricted launch. If `CreateRestrictedToken` or `CreateProcessAsUserW` fails, the test run fails closed. An unrestricted Job Object mode exists only as an explicit diagnostic parameter and is not used by `core.run_test`.
+- The privilege-reduced token is combined with the PR #21 Job Object process-tree/memory/process-count/timeout controls.
+- This materially reduces process privileges but is still not a complete sandbox: the child retains the user's ordinary filesystem and network access, and group/SID filtering is not yet enabled. Host execution remains explicitly gated.
+- Next security layers: workspace-specific ACL boundary, deny access to sensitive ForgeOS/user paths where feasible, then outbound network restriction or a stronger Windows-native isolation primitive. Each layer must preserve supported build tools and be proven on Windows CI before it becomes mandatory.
