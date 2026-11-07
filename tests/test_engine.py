@@ -354,3 +354,17 @@ class CheckpointResumeTests(EngineIntegrationTests):
         with self.assertRaisesRegex(ValueError, "Checkpoint file changed"):
             execute_task(self.store, self.task, self.root, allow_host_tests=True, resume=True)
         self.assertEqual((workspace / "app.py").read_text(), "tampered")
+
+    def test_resume_rejects_missing_integrity_hashes(self):
+        from unittest.mock import patch
+        response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=lambda model, prompt: response)
+        self.store.recover()
+        checkpoint = json.loads(self.store.get(self.task)["result"])
+        checkpoint.pop("sha256")
+        self.store.update(self.task, "blocked", result=json.dumps(checkpoint))
+        with self.assertRaisesRegex(ValueError, "integrity hashes"):
+            execute_task(self.store, self.task, self.root, allow_host_tests=True, resume=True)
