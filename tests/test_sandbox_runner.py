@@ -10,6 +10,15 @@ from unittest.mock import patch
 from forgeos.sandbox_runner import run_unittest
 
 
+def _secure_env(root: Path, output: Path) -> dict[str, str]:
+    return {
+        "FORGEOS_EXECUTION_SNAPSHOT": "1",
+        "FORGEOS_TEST_OUTPUT_FILE": str(output),
+        "FORGEOS_BOOTSTRAP_LOCALAPPDATA": "1",
+        "LOCALAPPDATA": str(root.parent / "host-local-appdata"),
+    }
+
+
 class SandboxRunnerTests(unittest.TestCase):
     def test_refuses_without_snapshot_marker(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -28,11 +37,14 @@ class SandboxRunnerTests(unittest.TestCase):
             previous = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.dict(os.environ, {
-                    "FORGEOS_EXECUTION_SNAPSHOT": "1",
-                    "FORGEOS_TEST_OUTPUT_FILE": str(output),
-                }, clear=True):
+                with patch.dict(os.environ, _secure_env(root, output), clear=True):
                     self.assertEqual(run_unittest(), 0)
+                    self.assertNotIn(
+                        "FORGEOS_BOOTSTRAP_LOCALAPPDATA", os.environ)
+                    self.assertTrue(
+                        Path(os.environ["LOCALAPPDATA"]).is_relative_to(root))
+                    self.assertTrue(
+                        Path(os.environ["APPDATA"]).is_relative_to(root))
             finally:
                 os.chdir(previous)
             self.assertIn("OK", output.read_text(encoding="utf-8"))
@@ -45,11 +57,27 @@ class SandboxRunnerTests(unittest.TestCase):
             previous = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.dict(os.environ, {
-                    "FORGEOS_EXECUTION_SNAPSHOT": "1",
-                    "FORGEOS_TEST_OUTPUT_FILE": str(outside),
-                }, clear=True):
+                with patch.dict(
+                        os.environ, _secure_env(root, outside), clear=True):
                     self.assertEqual(run_unittest(), 92)
             finally:
                 os.chdir(previous)
             self.assertFalse(outside.exists())
+
+    def test_refuses_missing_bootstrap_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / ".forgeos-runtime" / "out.txt"
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.dict(os.environ, {
+                    "FORGEOS_EXECUTION_SNAPSHOT": "1",
+                    "FORGEOS_TEST_OUTPUT_FILE": str(output),
+                }, clear=True):
+                    self.assertEqual(run_unittest(), 92)
+            finally:
+                os.chdir(previous)
+            self.assertIn(
+                "bootstrap marker",
+                output.read_text(encoding="utf-8").lower())
