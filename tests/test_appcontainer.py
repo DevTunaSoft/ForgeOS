@@ -3,7 +3,8 @@ import os
 import unittest
 
 from forgeos.appcontainer import (probe_appcontainer, probe_appcontainer_filesystem,
-                                  probe_appcontainer_network)
+                                  probe_appcontainer_network,
+                                  probe_appcontainer_python_runtime)
 
 
 class AppContainerProbeContractTests(unittest.TestCase):
@@ -46,6 +47,18 @@ class WindowsAppContainerProbeTests(unittest.TestCase):
         self.assertTrue(result["verified"], result)
         self.assertTrue(result["client_executable_verified"], result)
         self.assertTrue(result["loopback_connection_blocked"], result)
+        self.assertTrue(result["token_is_appcontainer"], result)
+        self.assertEqual(result["capability_count"], 0, result)
+        self.assertFalse(result["network_capabilities_granted"], result)
+        self.assertTrue(result["profile_deleted"], result)
+
+
+    def test_active_python_runtime_runs_inside_appcontainer(self):
+        result = probe_appcontainer_python_runtime()
+        self.assertTrue(result["available"], result)
+        self.assertTrue(result["verified"], result)
+        self.assertTrue(result["python_startup"], result)
+        self.assertTrue(result["workspace_write"], result)
         self.assertTrue(result["token_is_appcontainer"], result)
         self.assertEqual(result["capability_count"], 0, result)
         self.assertFalse(result["network_capabilities_granted"], result)
