@@ -23,7 +23,9 @@ if os.name == "nt":
     CREATE_SUSPENDED = 0x00000004
     CREATE_NO_WINDOW = 0x08000000
     CREATE_UNICODE_ENVIRONMENT = 0x00000400
+    EXTENDED_STARTUPINFO_PRESENT = 0x00080000
     STARTF_USESTDHANDLES = 0x00000100
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
     WAIT_OBJECT_0 = 0x00000000
     WAIT_TIMEOUT = 0x00000102
     WAIT_FAILED = 0xFFFFFFFF
@@ -33,7 +35,27 @@ if os.name == "nt":
     JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
     JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+    JobObjectBasicUIRestrictions = 4
     JobObjectExtendedLimitInformation = 9
+
+    JOB_OBJECT_UILIMIT_HANDLES = 0x00000001
+    JOB_OBJECT_UILIMIT_READCLIPBOARD = 0x00000002
+    JOB_OBJECT_UILIMIT_WRITECLIPBOARD = 0x00000004
+    JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS = 0x00000008
+    JOB_OBJECT_UILIMIT_DISPLAYSETTINGS = 0x00000010
+    JOB_OBJECT_UILIMIT_GLOBALATOMS = 0x00000020
+    JOB_OBJECT_UILIMIT_DESKTOP = 0x00000040
+    JOB_OBJECT_UILIMIT_EXITWINDOWS = 0x00000080
+    FORGEOS_UI_RESTRICTIONS = (
+        JOB_OBJECT_UILIMIT_HANDLES
+        | JOB_OBJECT_UILIMIT_READCLIPBOARD
+        | JOB_OBJECT_UILIMIT_WRITECLIPBOARD
+        | JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS
+        | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS
+        | JOB_OBJECT_UILIMIT_GLOBALATOMS
+        | JOB_OBJECT_UILIMIT_DESKTOP
+        | JOB_OBJECT_UILIMIT_EXITWINDOWS
+    )
 
     TOKEN_ASSIGN_PRIMARY = 0x0001
     TOKEN_DUPLICATE = 0x0002
@@ -50,6 +72,9 @@ if os.name == "nt":
 
     class TOKEN_MANDATORY_LABEL(ctypes.Structure):
         _fields_ = [("Label", SID_AND_ATTRIBUTES)]
+
+    class JOBOBJECT_BASIC_UI_RESTRICTIONS(ctypes.Structure):
+        _fields_ = [("UIRestrictionsClass", wintypes.DWORD)]
 
     class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
         _fields_ = [
@@ -106,6 +131,12 @@ if os.name == "nt":
             ("hStdError", wintypes.HANDLE),
         ]
 
+    class STARTUPINFOEXW(ctypes.Structure):
+        _fields_ = [
+            ("StartupInfo", STARTUPINFOW),
+            ("lpAttributeList", ctypes.c_void_p),
+        ]
+
     class PROCESS_INFORMATION(ctypes.Structure):
         _fields_ = [
             ("hProcess", wintypes.HANDLE),
@@ -119,6 +150,20 @@ if os.name == "nt":
     kernel32.SetInformationJobObject.argtypes = [
         wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
     kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    kernel32.QueryInformationJobObject.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+    kernel32.InitializeProcThreadAttributeList.argtypes = [
+        ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_size_t)]
+    kernel32.InitializeProcThreadAttributeList.restype = wintypes.BOOL
+    kernel32.UpdateProcThreadAttribute.argtypes = [
+        ctypes.c_void_p, wintypes.DWORD, ctypes.c_size_t, ctypes.c_void_p,
+        ctypes.c_size_t, ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.UpdateProcThreadAttribute.restype = wintypes.BOOL
+    kernel32.DeleteProcThreadAttributeList.argtypes = [ctypes.c_void_p]
+    kernel32.DeleteProcThreadAttributeList.restype = None
     kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
     kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
     kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
@@ -234,13 +279,69 @@ def _environment_block(env):
     return ctypes.create_unicode_buffer(block)
 
 
+
+def _startup_with_handle_allowlist(in_handle, out_handle):
+    """Build STARTUPINFOEX that inherits only stdin and combined stdout/stderr."""
+    size = ctypes.c_size_t()
+    kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+    if not size.value:
+        raise _win_error("InitializeProcThreadAttributeList(size)")
+    buffer = ctypes.create_string_buffer(size.value)
+    attribute_list = ctypes.cast(buffer, ctypes.c_void_p)
+    if not kernel32.InitializeProcThreadAttributeList(
+            attribute_list, 1, 0, ctypes.byref(size)):
+        raise _win_error("InitializeProcThreadAttributeList")
+    handles = (wintypes.HANDLE * 2)(
+        wintypes.HANDLE(in_handle), wintypes.HANDLE(out_handle))
+    try:
+        if not kernel32.UpdateProcThreadAttribute(
+                attribute_list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                ctypes.cast(handles, ctypes.c_void_p), ctypes.sizeof(handles),
+                None, None):
+            raise _win_error("UpdateProcThreadAttribute(HANDLE_LIST)")
+    except BaseException:
+        kernel32.DeleteProcThreadAttributeList(attribute_list)
+        raise
+    startup = STARTUPINFOEXW()
+    startup.StartupInfo.cb = ctypes.sizeof(STARTUPINFOEXW)
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES
+    startup.StartupInfo.hStdInput = wintypes.HANDLE(in_handle)
+    startup.StartupInfo.hStdOutput = wintypes.HANDLE(out_handle)
+    startup.StartupInfo.hStdError = wintypes.HANDLE(out_handle)
+    startup.lpAttributeList = attribute_list
+    return startup, buffer, handles
+
+
+def _apply_ui_restrictions(job, enabled: bool) -> int:
+    if not isinstance(enabled, bool):
+        raise ValueError("restrict_ui must be boolean")
+    if not enabled:
+        return 0
+    requested = JOBOBJECT_BASIC_UI_RESTRICTIONS(FORGEOS_UI_RESTRICTIONS)
+    if not kernel32.SetInformationJobObject(
+            job, JobObjectBasicUIRestrictions, ctypes.byref(requested),
+            ctypes.sizeof(requested)):
+        raise _win_error("SetInformationJobObject(UIRestrictions)")
+    actual = JOBOBJECT_BASIC_UI_RESTRICTIONS()
+    returned = wintypes.DWORD()
+    if not kernel32.QueryInformationJobObject(
+            job, JobObjectBasicUIRestrictions, ctypes.byref(actual),
+            ctypes.sizeof(actual), ctypes.byref(returned)):
+        raise _win_error("QueryInformationJobObject(UIRestrictions)")
+    if actual.UIRestrictionsClass != FORGEOS_UI_RESTRICTIONS:
+        raise OSError(
+            "Windows Job Object UI restrictions were not applied exactly")
+    return int(actual.UIRestrictionsClass)
+
+
 def run_contained(argv, cwd: str | Path, *, timeout: int,
                   active_process_limit: int = 64,
                   process_memory_bytes: int = 1024 * 1024 * 1024,
                   job_memory_bytes: int = 2 * 1024 * 1024 * 1024,
                   restrict_privileges: bool = True,
                   low_integrity: bool = False,
-                  env: dict[str, str] | None = None):
+                  env: dict[str, str] | None = None,
+                  restrict_ui: bool = True):
     """Run one command in a Windows Job Object and capture combined output."""
     if os.name != "nt":
         raise OSError("Windows Job Object containment is only available on Windows")
@@ -294,17 +395,14 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
                 job, JobObjectExtendedLimitInformation,
                 ctypes.byref(limits), ctypes.sizeof(limits)):
             raise _win_error("SetInformationJobObject")
+        ui_restrictions = _apply_ui_restrictions(job, restrict_ui)
 
-        startup = STARTUPINFOW()
-        startup.cb = ctypes.sizeof(startup)
-        startup.dwFlags = STARTF_USESTDHANDLES
-        startup.hStdInput = wintypes.HANDLE(in_handle)
-        startup.hStdOutput = wintypes.HANDLE(out_handle)
-        startup.hStdError = wintypes.HANDLE(out_handle)
+        startup, attribute_buffer, allowed_handles = _startup_with_handle_allowlist(
+            in_handle, out_handle)
         info = PROCESS_INFORMATION()
         command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
         environment = _environment_block(env)
-        flags = CREATE_SUSPENDED | CREATE_NO_WINDOW
+        flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT
         environment_pointer = None
         if environment is not None:
             flags |= CREATE_UNICODE_ENVIRONMENT
@@ -314,16 +412,26 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         if restrict_privileges:
             restricted_token = _create_restricted_primary_token(
                 low_integrity=low_integrity)
-            created = advapi32.CreateProcessAsUserW(
-                restricted_token, None, command_line, None, None, True,
-                flags, environment_pointer, str(root),
-                ctypes.byref(startup), ctypes.byref(info))
+            try:
+                created = advapi32.CreateProcessAsUserW(
+                    restricted_token, None, command_line, None, None, True,
+                    flags, environment_pointer, str(root),
+                    ctypes.cast(ctypes.byref(startup),
+                                ctypes.POINTER(STARTUPINFOW)),
+                    ctypes.byref(info))
+            finally:
+                kernel32.DeleteProcThreadAttributeList(startup.lpAttributeList)
             operation = "CreateProcessAsUserW"
         else:
-            created = kernel32.CreateProcessW(
-                None, command_line, None, None, True, flags,
-                environment_pointer, str(root),
-                ctypes.byref(startup), ctypes.byref(info))
+            try:
+                created = kernel32.CreateProcessW(
+                    None, command_line, None, None, True, flags,
+                    environment_pointer, str(root),
+                    ctypes.cast(ctypes.byref(startup),
+                                ctypes.POINTER(STARTUPINFOW)),
+                    ctypes.byref(info))
+            finally:
+                kernel32.DeleteProcThreadAttributeList(startup.lpAttributeList)
             operation = "CreateProcessW"
         if not created:
             raise _win_error(operation)
@@ -363,6 +471,8 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             "passed": code.value == 0,
             "returncode": int(code.value),
             "output": text[-16000:],
+            "ui_restrictions": ui_restrictions,
+            "handle_allowlist": True,
             "containment": (
                 "windows-restricted-token+job-object+low-integrity"
                 if low_integrity else
