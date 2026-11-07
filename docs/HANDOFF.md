@@ -239,3 +239,13 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - The hidden frozen sandbox child requires that marker, removes it before unittest discovery, and replaces `LOCALAPPDATA` and `APPDATA` with directories owned by the disposable execution snapshot. Generated project code therefore never sees the host LocalAppData path.
 - Source tests verify the bootstrap contract and scrub. The frozen secure smoke now additionally asserts the marker is absent and both AppData variables resolve inside the disposable snapshot before project tests execute.
 - No fallback was enabled as part of this correction; launch failure continues to block the secure production path.
+
+## PR #28 — bundled secure pytest runtime (2026-11-07)
+
+- Added pytest as a packaged ForgeOS dependency (`pytest>=9.2,<10`); runtime execution does not require a separately installed host pytest command.
+- Added hidden frozen child mode `--sandbox-pytest`. The child runs `pytest.main(...)` inside the disposable execution snapshot and writes bounded test output to the existing validated snapshot-owned result file.
+- The production secure runner now maps both `python-unittest` and `python-pytest` to ForgeOS-owned child modes inside the same zero-capability AppContainer boundary. Unsupported stacks still fail closed with no weaker fallback.
+- Execution snapshots set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`, preventing pytest from auto-loading unrelated third-party entry-point plugins from the packaged/runtime environment. Project `conftest.py` and project test code still execute as expected inside the sandbox.
+- The frozen secure acceptance smoke now runs the same isolation checks through both unittest and native pytest, including outside-snapshot write denial, parent-secret noninheritance, bootstrap-environment scrubbing, and localhost network denial.
+- Added source tests for secure pytest child-mode selection, pytest sandbox invocation, and plugin-autoload isolation.
+- Current secure production Python coverage after this PR: `python-unittest` and `python-pytest`. npm/cargo/Go/.NET still require ForgeOS-owned secure toolchains before they may use the production autonomous path.
