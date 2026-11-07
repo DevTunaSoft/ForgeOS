@@ -1,13 +1,14 @@
-"""Minimal test entry point used only inside ForgeOS secure execution."""
+"""Minimal test entry points used only inside ForgeOS secure execution."""
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
 import os
 from pathlib import Path
 import sys
 import unittest
 
 
-def _output_stream(root: Path):
+def _output_path(root: Path) -> Path:
     raw = os.environ.get("FORGEOS_TEST_OUTPUT_FILE", "")
     if not raw:
         raise RuntimeError("secure test output path is missing")
@@ -18,7 +19,12 @@ def _output_stream(root: Path):
     if not target.is_relative_to(root):
         raise RuntimeError("secure test output path escapes execution snapshot")
     target.parent.mkdir(parents=True, exist_ok=True)
-    return target.open("w", encoding="utf-8", errors="replace")
+    return target
+
+
+def _output_stream(root: Path):
+    return _output_path(root).open(
+        "w", encoding="utf-8", errors="replace")
 
 
 def _scrub_bootstrap_environment(root: Path) -> None:
@@ -35,17 +41,39 @@ def _scrub_bootstrap_environment(root: Path) -> None:
     os.environ["APPDATA"] = str(roaming)
 
 
+def _prepare() -> tuple[Path, list[str]]:
+    if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
+        raise PermissionError("execution snapshot marker missing")
+    root = Path.cwd().resolve()
+    if not root.is_dir():
+        raise NotADirectoryError("invalid execution snapshot")
+    _scrub_bootstrap_environment(root)
+    original_path = list(sys.path)
+    sys.path.insert(0, str(root))
+    return root, original_path
+
+
+def _record_failure(root: Path | None, exc: BaseException) -> None:
+    if root is None:
+        return
+    try:
+        target = _output_path(root)
+        target.write_text(
+            "ForgeOS secure test runner failed: "
+            + type(exc).__name__ + ": " + str(exc),
+            encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
 def run_unittest() -> int:
     """Discover and run unittest tests from the granted execution snapshot."""
     if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
         return 90
-    root = Path.cwd().resolve()
-    if not root.is_dir():
-        return 91
-    original_path = list(sys.path)
+    root = None
+    original_path = None
     try:
-        _scrub_bootstrap_environment(root)
-        sys.path.insert(0, str(root))
+        root, original_path = _prepare()
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
             suite = loader.discover(str(root))
@@ -54,17 +82,34 @@ def run_unittest() -> int:
             stream.flush()
             return 0 if result.wasSuccessful() else 1
     except BaseException as exc:
-        try:
-            raw = os.environ.get("FORGEOS_TEST_OUTPUT_FILE", "")
-            target = Path(raw).resolve() if raw else None
-            if target is not None and target.is_relative_to(root):
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(
-                    "ForgeOS secure test runner failed: "
-                    + type(exc).__name__ + ": " + str(exc),
-                    encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+        _record_failure(root, exc)
         return 92
     finally:
-        sys.path[:] = original_path
+        if original_path is not None:
+            sys.path[:] = original_path
+
+
+def run_pytest() -> int:
+    """Run bundled pytest inside the granted execution snapshot."""
+    if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
+        return 90
+    root = None
+    original_path = None
+    try:
+        root, original_path = _prepare()
+        # Imported only in the packaged pytest path. PyInstaller still sees the
+        # static import and bundles pytest plus its hook-discovered internals.
+        import pytest
+        with _output_stream(root) as stream, \
+                redirect_stdout(stream), redirect_stderr(stream):
+            code = pytest.main([
+                "-q", "--color=no", "--disable-warnings", str(root),
+            ])
+            stream.flush()
+        return int(code)
+    except BaseException as exc:
+        _record_failure(root, exc)
+        return 92
+    finally:
+        if original_path is not None:
+            sys.path[:] = original_path
