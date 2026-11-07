@@ -41,16 +41,11 @@ def _scrub_bootstrap_environment(root: Path) -> None:
     os.environ["APPDATA"] = str(roaming)
 
 
-def _prepare() -> tuple[Path, list[str]]:
-    if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
-        raise PermissionError("execution snapshot marker missing")
+def _snapshot_root() -> Path:
     root = Path.cwd().resolve()
     if not root.is_dir():
         raise NotADirectoryError("invalid execution snapshot")
-    _scrub_bootstrap_environment(root)
-    original_path = list(sys.path)
-    sys.path.insert(0, str(root))
-    return root, original_path
+    return root
 
 
 def _record_failure(root: Path | None, exc: BaseException) -> None:
@@ -73,7 +68,10 @@ def run_unittest() -> int:
     root = None
     original_path = None
     try:
-        root, original_path = _prepare()
+        root = _snapshot_root()
+        original_path = list(sys.path)
+        _scrub_bootstrap_environment(root)
+        sys.path.insert(0, str(root))
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
             suite = loader.discover(str(root))
@@ -96,7 +94,10 @@ def run_pytest() -> int:
     root = None
     original_path = None
     try:
-        root, original_path = _prepare()
+        root = _snapshot_root()
+        original_path = list(sys.path)
+        _scrub_bootstrap_environment(root)
+        sys.path.insert(0, str(root))
         # Imported only in the packaged pytest path. PyInstaller still sees the
         # static import and bundles pytest plus its hook-discovered internals.
         import pytest
