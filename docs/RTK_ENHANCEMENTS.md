@@ -1,6 +1,6 @@
 # ForgeOS / RTK integration: 52-enhancement implementation program
 
-Status: **in progress**. Items here are scope commitments, not claims of finished implementation.
+Status: **in progress**. Items here are scope commitments, not claims of finished implementation. For source-level existing/new/overlap classification and canonical ownership of all 52 items, see [ENHANCEMENT_DEDUP_AUDIT.md](ENHANCEMENT_DEDUP_AUDIT.md).
 The intended application is a single local-first ForgeOS Windows app; no Docker, paid APIs or second interface required.
 
 ## AI efficiency & token optimization (10)
@@ -164,3 +164,8 @@ This phase does not imply learned fixes can execute automatically, nor that
 the physical Windows GUI has passed real-device acceptance. The Windows
 AppContainer security boundary remains the sole supported frozen production
 test mechanism. No Docker or paid model API is required.
+
+## Duplication-audit policy
+
+The 52 lines above are acceptance outcomes, not 52 independent packages.
+**Before implementing anything new**, consult the [deduplication and ownership audit](ENHANCEMENT_DEDUP_AUDIT.md). Existing baselines stay in their current modules, partly completed items are extended in place, and only genuine gaps require new code. Do not count multiple UI views of the same backend feature as separate backends.
