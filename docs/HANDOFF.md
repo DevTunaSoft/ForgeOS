@@ -326,3 +326,52 @@ recall reference costs more bytes than raw output, return raw output instead.
 Tests for modified rules, error-preserving dedup, Unicode, symlink rejection,
 invalid configurations, and small-output noninflation.
 Block merge until Ubuntu and Windows 3.10/3.12 CI + packaged secure smoke pass.
+
+
+## RTK Phase 3 — diagnostic comparison and recorded model identity (CI pending)
+
+Source branch feat/rtk-phase3-repair-insights. New modules:
+- src/forgeos/error_learning.py: consolidated deterministic, bounded advisory failure
+  categories (security boundary, resource, permission, timeout, dependency,
+  syntax, assertion, network, environment and build); no raw secrets returned.
+- src/forgeos/insights.py: validated task result parsing and compact/raw
+  comparison models, read original evidence by content-addressed SHA-256 only,
+  bounded previews, rejects malformed identifiers and oversize JSON.
+- src/forgeos/gui.py: explicit compare button opens two read-only side-by-side
+  views within the existing ForgeOS Tkinter application. The efficiency panel
+  reports read-only repair candidates, current filter trust health, and
+  saved-byte metrics; no separate app is required.
+- src/forgeos/engine.py: persists the exact selected local model string in
+  completed and failed task results for audit.
+- src/forgeos/diagnostics.py: failure classification attached alongside parsed
+  test counts. It never changes real process outcomes.
+- Tests: tests/test_insights.py, tests/test_failure_types.py, and
+  updated tests/test_engine.py.
+
+Important: the returned GUI evidence may contain secrets; reveal only upon
+explicit action and do not export private archives to GitHub or release ZIPs.
+Real Windows GUI interaction, renderer behavior, full local Ollama operations,
+and comprehensive data exfiltration review remain unverified. Never describe
+the integration as production-ready based only on headless package smoke.
+
+
+## Enhancement-duplication checkpoint (52 outcomes, not 52 systems)
+
+The codebase and RTK enhancement tracker were audited together on 2026-11-07.
+The source-backed map is docs/ENHANCEMENT_DEDUP_AUDIT.md and covers 52/52
+outcomes: 22 existing baselines, 13 extensions of those systems, 12 genuinely
+new capability gaps, and 5 PR #31 items awaiting merge. These categories
+describe source ownership, not a verified percentage of production readiness.
+A new code subsystem must cite the relevant canonical owner and prove why
+extending it would not meet the acceptance requirement. No independent GUI,
+evidence store, command runner, configuration transaction engine, repair DB,
+or local model router should be built for an overlapping enhancement.
+
+During the audit the new standalone advisory failure classifier was removed
+from PR #31. Its implementation now lives in the existing
+src/forgeos/error_learning.py module; fingerprint() historical hashes,
+category values and SQLite schema remain unchanged. Diagnostics uses the
+unified owner. Added tests/test_enhancement_audit.py verifies 52/52 mapped
+outcomes, real source-owner paths, shared-group alignment and no shadow
+failure_types.py module. The changes must pass full CI and the Windows
+frozen security smoke on the final PR head before merge.

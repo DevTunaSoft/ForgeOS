@@ -93,6 +93,7 @@ class EngineIntegrationTests(unittest.TestCase):
         result = execute_task(self.store, self.task, self.root, max_repairs=2,
                               allow_host_tests=True, generate=lambda model, prompt: next(responses))
         self.assertTrue(result["passed"], result)
+        self.assertEqual(result["model"], "qwen2.5-coder:3b")
         self.assertEqual(result["iterations"], 2)
         from forgeos.error_learning import RepairMemory
         records = RepairMemory(self.root / "repair_memory.sqlite3").stats()
@@ -121,6 +122,7 @@ class EngineIntegrationTests(unittest.TestCase):
         result = execute_task(self.store, self.task, self.root, max_repairs=1,
                               allow_host_tests=True, generate=lambda model, prompt: response)
         self.assertFalse(result["passed"])
+        self.assertEqual(result["model"], "qwen2.5-coder:3b")
         self.assertEqual(result["iterations"], 2)
         from forgeos.error_learning import RepairMemory
         records = RepairMemory(self.root / "repair_memory.sqlite3").stats()

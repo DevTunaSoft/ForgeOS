@@ -1,10 +1,10 @@
 # ForgeOS — Autonomous Software Engineering Platform
 
-**Status: v0.1.0 foundation prototype, not a complete autonomous software builder or production release.**
+**Status: evolving local-first prototype. Git worktree edits, bounded test/repair loops, diagnostics, and Windows frozen AppContainer unittest isolation exist; full autonomous application delivery and interactive Windows acceptance are not yet complete.**
 
 ForgeOS is a local-first Windows-oriented desktop application being developed to transform natural-language requirements into tested software. The long-term goal includes AI planning, safe code changes, GitHub workflows, Windows EXE / Android APK / web builds, automated tests and self-repair, recovery, and complete source and handoff exports through one beginner-friendly interface.
 
-**Implemented in this milestone:** SQLite-backed persistent task queue, Tkinter GUI, local Ollama planning, explicit allowlisted test presets, CLI, startup task recovery and foundation tests. Autonomous code editing, EXE/APK builds, direct GitHub integration and self-repair are not yet implemented.
+**Implemented prototypes:** SQLite task queue and checkpoints, one Tkinter GUI, local Ollama planning and JSON code edits, isolated Git workspaces, journaled edits, bounded test/repair loops and resume checks, SHA-256 diagnostic evidence, repair-learning statistics, local model selection, Windows EXE CI packaging, and fail-closed frozen AppContainer execution for Python unittest. GitHub management *inside ForgeOS*, Android APK/web builders, broad production preset isolation, reliable backup/restore and interactive acceptance remain unfinished.
 
 ## Start on Windows (PowerShell)
 
@@ -16,8 +16,8 @@ Requirements: Python 3.10+ and Git; optional Ollama for planning.
 
 1. Select an existing local Git repository folder.
 2. Enter a task description and select Add task.
-3. Optionally install Ollama and pull qwen2.5-coder:3b, then click Generate plan with Ollama.
-4. Select a task and a test preset, then click Run selected test.
+3. Optionally install Ollama and pull an available local coding model. Select it under Local model or use auto routing.
+4. Select a task and its test preset, then use Build / test / repair. In source development mode, host test execution requires an explicit opt-in. Frozen Windows builds require supported AppContainer isolation.
 5. Tasks persist at ~/.forgeos/tasks.sqlite3 across restarts.
 
 ## Command line
@@ -37,7 +37,7 @@ PowerShell:
 
 ## Security and limitations
 
-This prototype runs tests directly on the host and does not sandbox project code. Use only trusted local repositories. No encryption at rest or authentication boundary is implemented. Do not put passwords or tokens in task descriptions. Ollama connection is restricted to localhost. Runtime interaction with a real Windows GUI has not yet been verified.
+Source/development-mode tests may run repository code on the host only after explicit permission; do not run untrusted repositories that way. The packaged Windows executable uses a fail-closed AppContainer runner for the supported Python-unittest preset; other frozen presets need their own secure runtime implementations. This boundary has passed the hosted Windows security smoke, not every real-world Windows configuration. Evidence files may contain unencrypted secrets; do not upload them, or place passwords/tokens in task descriptions. Ollama requests remain local. Real Windows GUI/Ollama end-to-end acceptance remains outstanding.
 
 See docs/REQUIREMENTS.md, docs/ROADMAP.md and docs/HANDOFF.md.
 
@@ -47,11 +47,9 @@ See docs/REQUIREMENTS.md, docs/ROADMAP.md and docs/HANDOFF.md.
 A Windows PyInstaller build workflow is available under GitHub Actions. See [Windows build instructions](docs/WINDOWS_BUILD.md). A successful build is not proof of full desktop functionality or safe unattended execution.
 
 
-## Experimental RTK-inspired diagnostics and repair efficiency (PR #28)
+## RTK-inspired diagnostics and repair efficiency (merged phases 1 and 2)
 
-Development is taking place on a separate feature branch for the agreed
-52-enhancement program. See docs/RTK_ENHANCEMENTS.md for the full checklist.
-These capabilities are not yet part of the stable main branch.
+PRs #28 and #30 merged the first diagnostic, learning, routing and trusted-filter prototypes into main. See docs/RTK_ENHANCEMENTS.md for the 52-outcome tracker and docs/ENHANCEMENT_DEDUP_AUDIT.md for the source-backed review of duplicated/overlapping capabilities. PR #31 extends the existing learning backend and GUI; changes under review are not yet part of main.
 
 The new test runner archives original output locally before selecting important
 diagnostic lines for local AI. It includes structured/text/raw parsing fallback
@@ -97,3 +95,20 @@ original output. Custom filters are a locally pinned JSON configuration:
 Changes to the filter file invalidate its trust hash and disable the rules.
 No filter code or shell commands may run. This is consent and tamper evidence,
 not a same-user attacker security boundary.
+
+
+### Diagnose and compare task results (experimental)
+
+1. In the Development tab, select a task that has run tests.
+2. Open Activity & diagnostics.
+3. Choose "Compare selected task: original vs AI summary".
+4. The left pane shows what the AI received; the right shows the original
+   SHA-256 verified raw evidence, if successfully archived. Original output can
+   contain sensitive data, so opening it is always an explicit user action.
+5. Choose "AI efficiency and repair learning" for measured output reductions,
+   candidate repair success statistics, and custom filter trust health.
+
+The GUI records which installed local model handled a task and labels
+failure categories as advisory heuristics. It does not automatically apply
+learned repair candidates. Large original logs have a bounded GUI preview;
+use the diagnostics CLI to retrieve the complete retained evidence.

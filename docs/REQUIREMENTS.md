@@ -19,4 +19,4 @@ One turnkey, beginner-friendly, local-first Windows application for building Win
 SQLite task store, recovery, Tkinter GUI, CLI, local-only Ollama planning, manually triggered allowlisted test presets and baseline tests.
 
 ## Not yet implemented
-Autonomous coding, self-repair, GitHub integration inside ForgeOS, sandboxing, APK/EXE builders, signed installers, secure secrets vault and real Windows GUI verification.
+GitHub integration inside ForgeOS, APK/web builders, broad supported AppContainer runtimes, signed installers, secure secrets vault, actual Windows GUI/Ollama acceptance, and production-tested backup/restore. Since version 0.1.0, working prototypes of worktree code editing, bounded repair and Windows frozen unittest AppContainer isolation have been added; they are not yet a finished product.
