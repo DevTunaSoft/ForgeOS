@@ -15,6 +15,7 @@ IMPORTANT = re.compile(
     r"assert|critical|fatal|passed|skipped|tests?|timeout|denied|security)\b"
 )
 PRESET = re.compile(r"(?:[a-z][a-z0-9-]{0,59}|\*)\Z")
+SAFE_NOISE = re.compile(r"(?i)^\s*(?:INFO\b|DEBUG\b|TRACE\b|Downloading\b|Progress\b|Fetching\b)")
 
 
 def _read_safe(path: Path) -> bytes:
@@ -133,10 +134,14 @@ def deduplicate_output(raw: str, preset: str, rules: list[dict] | None = None
             end += 1
         repetitions = end - i
         threshold = 5
+        eligible = SAFE_NOISE.match(line) is not None
         for rule in rules or ():
             if rule["preset"] in ("*", preset) and rule["contains"] in line:
+                eligible = True
                 threshold = min(threshold, rule["min_repeats"])
-        if repetitions >= threshold and line.strip() and not IMPORTANT.search(line):
+        # Unknown lines might be uncategorized faults: preserve verbatim.
+        if (eligible and repetitions >= threshold and line.strip()
+                and not IMPORTANT.search(line)):
             output.append(line)
             output.append(f"[ForgeOS: {repetitions - 1} repeated noncritical lines omitted]\n")
             suppressed += repetitions - 1
