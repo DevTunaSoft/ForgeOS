@@ -38,11 +38,15 @@ jobs:
       - name: Frozen secure AppContainer boundary smoke test
         shell: pwsh
         run: |
+          $report = "$PWD/secure-smoke-report.txt"
+          $env:FORGEOS_SECURE_SMOKE_REPORT = $report
           $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList "--secure-sandbox-smoke" -PassThru
           if (-not $process.WaitForExit(120000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path $report) { Get-Content $report }
             throw "Frozen secure AppContainer smoke exceeded 120-second outer watchdog"
           }
+          if (Test-Path $report) { Get-Content $report }
           if ($process.ExitCode -ne 0) { throw "Frozen secure AppContainer smoke failed: $($process.ExitCode)" }
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
