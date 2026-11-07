@@ -105,7 +105,7 @@ def _context(root: Path) -> str:
 
 def _generate(model: Ollama, prompt: str) -> str:
     # The local Ollama API is already the only endpoint allowed by Ollama.
-    return model.plan(prompt)
+    return model.generate_edits(prompt)
 
 
 def execute_task(
@@ -124,11 +124,16 @@ def execute_task(
     if not isinstance(max_repairs, int) or isinstance(max_repairs, bool) or not 0 <= max_repairs <= 5:
         raise ValueError("max_repairs must be 0..5")
     task = store.get(task_id)
-    if task["status"] not in {"queued", "failed", "blocked", "planned"}:
+    if task["status"] not in {"queued", "planned"}:
         raise ValueError("Task is not eligible to run")
     parent = Path(workspace_parent).expanduser().resolve(strict=True)
     if not parent.is_dir():
         raise ValueError("Workspace parent must be a directory")
+    # A prior interrupted run can leave a registered worktree and branch.
+    # Refuse to overwrite it or silently re-run a completed/failed task.
+    destination = parent / f"task-{task_id}"
+    if destination.exists():
+        raise ValueError(f"Existing task workspace requires inspection: {destination}")
     ws = None
     last_output = ""
     try:

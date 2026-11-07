@@ -116,3 +116,45 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["iterations"], 2)
         self.assertEqual(self.store.get(self.task)["status"], "failed")
+
+
+class AuditRegressionTests(unittest.TestCase):
+    def test_generator_uses_edit_api_not_plan(self):
+        from forgeos.engine import _generate
+        class FakeModel:
+            def generate_edits(self, prompt):
+                return '{"files":[{"path":"app.py","content":"pass"}]}'
+            def plan(self, prompt):
+                raise AssertionError("Planning endpoint used for code generation")
+        self.assertIn('"files"', _generate(FakeModel(), "request"))
+
+    def test_interrupted_workspace_requires_inspection(self):
+        import shutil
+        if not shutil.which("git"):
+            self.skipTest("Git required")
+        import subprocess
+        from forgeos.core import Store
+        from forgeos.engine import execute_task
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            for args in (("init", "-q", "-b", "main"),
+                         ("config", "user.name", "Test"),
+                         ("config", "user.email", "test@example.invalid")):
+                subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+            (repo / "app.py").write_text("pass\n")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "commit", "-qm", "initial"], cwd=repo, check=True, capture_output=True)
+            store = Store(root / "state.sqlite")
+            try:
+                task = store.add(str(repo), "Edit app")
+                existing = root / f"task-{task}"
+                existing.mkdir()
+                (existing / "important.txt").write_text("preserve")
+                with self.assertRaisesRegex(ValueError, "requires inspection"):
+                    execute_task(store, task, root, allow_host_tests=True)
+                self.assertEqual((existing / "important.txt").read_text(), "preserve")
+                self.assertEqual(store.get(task)["status"], "queued")
+            finally:
+                store.close()
