@@ -1,0 +1,25 @@
+name: ForgeOS foundation tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  unit-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Python compilation
+        run: python -m compileall -q src tests
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
