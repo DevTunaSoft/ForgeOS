@@ -30,8 +30,8 @@ def resume_safe(store, workspace_parent: Path, *, preset="python-unittest",
         except (ValueError, TypeError):
             report["skipped"].append({"id": task["id"], "reason": "No structured checkpoint"})
             continue
-        if not isinstance(checkpoint, dict) or checkpoint.get("phase") != "test_pending":
-            report["skipped"].append({"id": task["id"], "reason": "No test-pending checkpoint"})
+        if not isinstance(checkpoint, dict) or checkpoint.get("phase") not in {"test_pending", "repair_pending"}:
+            report["skipped"].append({"id": task["id"], "reason": "No resumable checkpoint"})
             continue
         if (not isinstance(checkpoint.get("workspace"), str) or
                 Path(checkpoint["workspace"]).resolve() != (parent / f"task-{task['id']}").resolve()):
