@@ -27,6 +27,8 @@ class WindowsContainmentTests(unittest.TestCase):
         self.assertEqual(result["returncode"], 0)
         self.assertIn("contained-ok", result["output"])
         self.assertEqual(result["containment"], "windows-restricted-token+job-object")
+        self.assertTrue(result["handle_allowlist"])
+        self.assertEqual(result["ui_restrictions"], 0xFF)
 
     def test_nonzero_exit_is_reported(self):
         result = run_contained(
@@ -172,3 +174,42 @@ finally:
             self.root, timeout=15, env=env)
         self.assertTrue(result["passed"], result)
         self.assertIn("isolated-value", result["output"])
+
+
+    def test_unlisted_inheritable_file_handle_does_not_reach_child(self):
+        import msvcrt
+        leak_path = self.root / "parent-only-handle.bin"
+        with leak_path.open("w+b") as stream:
+            handle = msvcrt.get_osfhandle(stream.fileno())
+            os.set_handle_inheritable(handle, True)
+            code = f"""
+import ctypes
+from ctypes import wintypes
+kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+kernel32.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p,
+                               wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+                               ctypes.c_void_p]
+kernel32.WriteFile.restype = wintypes.BOOL
+payload = ctypes.create_string_buffer(b'LEAKED')
+written = wintypes.DWORD()
+ok = kernel32.WriteFile(wintypes.HANDLE({handle}), payload, 6,
+                         ctypes.byref(written), None)
+print('write=' + str(int(bool(ok))))
+"""
+            try:
+                result = run_contained(
+                    [sys.executable, "-c", code], self.root, timeout=15)
+            finally:
+                os.set_handle_inheritable(handle, False)
+            self.assertTrue(result["passed"], result)
+            self.assertIn("write=0", result["output"])
+            stream.flush()
+            stream.seek(0)
+            self.assertEqual(stream.read(), b"")
+
+    def test_ui_restrictions_can_only_be_disabled_explicitly(self):
+        result = run_contained(
+            [sys.executable, "-c", "print('diagnostic-ui')"],
+            self.root, timeout=15, restrict_ui=False)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["ui_restrictions"], 0)
