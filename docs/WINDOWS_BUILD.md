@@ -31,7 +31,7 @@ Those require interactive Windows acceptance testing.
 From the repository root on Windows:
 
     py -3.12 -m pip install "pyinstaller>=6.0,<7" .
-    py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src packaging/launcher.py
+    py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src forgeos_build/launcher.py
 
 The output is dist/ForgeOS.exe. Do not distribute the build as production
 ready until the desktop acceptance tests pass. Generated code and test

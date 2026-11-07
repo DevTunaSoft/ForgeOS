@@ -3,7 +3,7 @@ import io
 import unittest
 from unittest.mock import patch
 
-from packaging.launcher import main
+from forgeos_build.launcher import main
 
 
 class LauncherTests(unittest.TestCase):

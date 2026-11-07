@@ -22,7 +22,7 @@ jobs:
       - name: Execute regression tests
         run: python -m unittest discover -s tests -v
       - name: Package GUI executable
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src packaging/launcher.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src forgeos_build/launcher.py
       - name: Check executable exists and is nonempty
         shell: pwsh
         run: |
