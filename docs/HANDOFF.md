@@ -146,3 +146,15 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - The privilege-reduced token is combined with the PR #21 Job Object process-tree/memory/process-count/timeout controls.
 - This materially reduces process privileges but is still not a complete sandbox: the child retains the user's ordinary filesystem and network access, and group/SID filtering is not yet enabled. Host execution remains explicitly gated.
 - Next security layers: workspace-specific ACL boundary, deny access to sensitive ForgeOS/user paths where feasible, then outbound network restriction or a stronger Windows-native isolation primitive. Each layer must preserve supported build tools and be proven on Windows CI before it becomes mandatory.
+
+## PR #23 candidate — Windows Low-integrity workspace boundary (2026-11-07)
+
+- Added an optional Mandatory Integrity Control capability on top of the existing privilege-reduced token and Job Object containment.
+- A Low-integrity child token is produced by applying `TokenIntegrityLevel` with the Windows `WinLowLabelSid` to the already privilege-reduced primary token before process creation.
+- Added `prepare_low_integrity_workspace()`, which uses the built-in Windows `icacls.exe /setintegritylevel (OI)(CI)L /T /L /Q` command with `shell=False` to label a ForgeOS-owned disposable workspace and its descendants Low integrity.
+- This helper is intentionally **not** wired into every task yet. It must never be applied automatically to the user's source repository. It is designed for disposable ForgeOS task worktrees/workspaces only.
+- Added a Windows runtime boundary test: the same Low-integrity child successfully writes `inside.txt` inside the Low-labeled workspace, then attempts to create a file in the normal Medium-integrity parent. The outside write must fail and the marker must remain absent.
+- Low-integrity execution requires privilege-reduced execution; ForgeOS rejects the combination `low_integrity=True, restrict_privileges=False`.
+- Security boundary: Windows Mandatory Integrity Control prevents Low-integrity subjects from writing to Medium-integrity objects, but this does not prevent reading Medium-integrity files and does not block network access. This is a meaningful no-write-up boundary, not a complete sandbox.
+- Integration remains deliberately staged because some build tools use caches/temp directories outside the Git worktree. Before enabling Low integrity by default, ForgeOS must create dedicated writable Low-integrity temp/cache locations and redirect supported toolchains into those locations.
+- Verification evidence required before merge: Linux regression tests remain green; Windows 3.10 and 3.12 must both prove the inside-write/outside-block behavior; final PR must also pass Windows EXE packaging and frozen smoke validation.
