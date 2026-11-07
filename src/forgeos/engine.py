@@ -263,6 +263,16 @@ def _execute_task(
                           "learning": learned}
                 store.update(task_id, "passed", result=json.dumps(result))
                 return result
+            if attempt > 0 and previous_failure:
+                try:
+                    from .error_learning import RepairMemory
+                    RepairMemory(store.path.with_name(
+                        "repair_memory.sqlite3")).record(
+                        previous_failure, preset=preset, model=model_name,
+                        verified_success=False)
+                except Exception:
+                    # Repair statistics are never a substitute for test outcomes.
+                    pass
             prompt = (
                 "Previous edit failed tests. Return ONLY the same strict JSON "
                 "manifest with complete replacement file contents. "
