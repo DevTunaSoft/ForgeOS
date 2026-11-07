@@ -7,6 +7,7 @@ and verifies the resulting process token before reporting the feature usable.
 from __future__ import annotations
 
 import ctypes
+import locale
 from contextlib import contextmanager
 from ctypes import wintypes
 import os
@@ -107,9 +108,9 @@ def _grant_path_read_execute(path: Path, sid_string: str) -> None:
         _icacls(path, "/grant", f"*{sid_string}:(RX)", "/Q")
 
 
-def _revoke_path_grant(path: Path, sid_string: str) -> None:
+def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -> None:
     arguments = ["/remove:g", f"*{sid_string}"]
-    if path.is_dir():
+    if recursive and path.is_dir():
         arguments.append("/T")
     arguments.append("/Q")
     _icacls(path, *arguments)
@@ -590,3 +591,278 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
             "python_executable": str(executable),
             "reason": str(exc),
         }
+
+
+def _startup_with_appcontainer_and_handles(appcontainer_sid, in_handle, out_handle):
+    """Build STARTUPINFOEX with zero-capability AppContainer + handle allowlist."""
+    size = ctypes.c_size_t()
+    wc.kernel32.InitializeProcThreadAttributeList(
+        None, 2, 0, ctypes.byref(size))
+    if not size.value:
+        raise wc._win_error("InitializeProcThreadAttributeList(size)")
+    buffer = ctypes.create_string_buffer(size.value)
+    attribute_list = ctypes.cast(buffer, ctypes.c_void_p)
+    if not wc.kernel32.InitializeProcThreadAttributeList(
+            attribute_list, 2, 0, ctypes.byref(size)):
+        raise wc._win_error("InitializeProcThreadAttributeList")
+
+    capabilities = SECURITY_CAPABILITIES()
+    capabilities.AppContainerSid = appcontainer_sid
+    capabilities.Capabilities = None
+    capabilities.CapabilityCount = 0
+    capabilities.Reserved = 0
+    handles = (wintypes.HANDLE * 2)(
+        wintypes.HANDLE(in_handle), wintypes.HANDLE(out_handle))
+    try:
+        if not wc.kernel32.UpdateProcThreadAttribute(
+                attribute_list, 0,
+                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+                ctypes.byref(capabilities), ctypes.sizeof(capabilities),
+                None, None):
+            raise wc._win_error(
+                "UpdateProcThreadAttribute(SECURITY_CAPABILITIES)")
+        if not wc.kernel32.UpdateProcThreadAttribute(
+                attribute_list, 0, wc.PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                ctypes.cast(handles, ctypes.c_void_p), ctypes.sizeof(handles),
+                None, None):
+            raise wc._win_error("UpdateProcThreadAttribute(HANDLE_LIST)")
+    except BaseException:
+        wc.kernel32.DeleteProcThreadAttributeList(attribute_list)
+        raise
+
+    startup = wc.STARTUPINFOEXW()
+    startup.StartupInfo.cb = ctypes.sizeof(wc.STARTUPINFOEXW)
+    startup.StartupInfo.dwFlags = wc.STARTF_USESTDHANDLES
+    startup.StartupInfo.hStdInput = wintypes.HANDLE(in_handle)
+    startup.StartupInfo.hStdOutput = wintypes.HANDLE(out_handle)
+    startup.StartupInfo.hStdError = wintypes.HANDLE(out_handle)
+    startup.lpAttributeList = attribute_list
+    return startup, buffer, capabilities, handles
+
+
+def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
+                              env: dict[str, str], timeout: int = 180,
+                              active_process_limit: int = 64,
+                              process_memory_bytes: int = 1024 * 1024 * 1024,
+                              job_memory_bytes: int = 2 * 1024 * 1024 * 1024) -> dict:
+    """Run a process tree in a zero-capability AppContainer and Job Object."""
+    if os.name != "nt":
+        raise OSError("Secure AppContainer execution is Windows-only")
+    if (not isinstance(timeout, int) or isinstance(timeout, bool)
+            or not 1 <= timeout <= 3600):
+        raise ValueError("timeout must be 1..3600 seconds")
+    if (not isinstance(active_process_limit, int)
+            or isinstance(active_process_limit, bool)
+            or not 1 <= active_process_limit <= 256):
+        raise ValueError("active_process_limit must be 1..256")
+    if process_memory_bytes < 64 * 1024 * 1024:
+        raise ValueError("process_memory_bytes is too small")
+    if job_memory_bytes < process_memory_bytes:
+        raise ValueError("job_memory_bytes must be >= process_memory_bytes")
+    root = Path(cwd).resolve(strict=True)
+    if not root.is_dir() or Path(cwd).is_symlink():
+        raise ValueError("AppContainer cwd must be a real directory")
+    if not isinstance(argv, (list, tuple)) or not argv or any(
+            not isinstance(item, str) or not item for item in argv):
+        raise ValueError("argv must contain nonempty strings")
+    environment = wc._environment_block(env)
+    environment_pointer = ctypes.cast(environment, ctypes.c_void_p)
+    command_line = ctypes.create_unicode_buffer(
+        subprocess.list2cmdline(list(argv)))
+
+    job = wc.kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise wc._win_error("CreateJobObjectW(AppContainer)")
+    process = None
+    thread = None
+    assigned = False
+    output = tempfile.TemporaryFile(mode="w+b")
+    devnull = open(os.devnull, "rb")
+    out_handle = wc.msvcrt.get_osfhandle(output.fileno())
+    in_handle = wc.msvcrt.get_osfhandle(devnull.fileno())
+    os.set_handle_inheritable(out_handle, True)
+    os.set_handle_inheritable(in_handle, True)
+    token = wintypes.HANDLE()
+
+    try:
+        limits = wc.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        limits.BasicLimitInformation.LimitFlags = (
+            wc.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | wc.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            | wc.JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            | wc.JOB_OBJECT_LIMIT_JOB_MEMORY
+        )
+        limits.BasicLimitInformation.ActiveProcessLimit = active_process_limit
+        limits.ProcessMemoryLimit = process_memory_bytes
+        limits.JobMemoryLimit = job_memory_bytes
+        if not wc.kernel32.SetInformationJobObject(
+                job, wc.JobObjectExtendedLimitInformation,
+                ctypes.byref(limits), ctypes.sizeof(limits)):
+            raise wc._win_error("SetInformationJobObject(AppContainer)")
+        ui_restrictions = wc._apply_ui_restrictions(job, True)
+
+        startup, attribute_buffer, security_caps, allowed_handles = (
+            _startup_with_appcontainer_and_handles(
+                appcontainer_sid, in_handle, out_handle))
+        info = wc.PROCESS_INFORMATION()
+        flags = (wc.CREATE_SUSPENDED | wc.CREATE_NO_WINDOW
+                 | wc.EXTENDED_STARTUPINFO_PRESENT
+                 | wc.CREATE_UNICODE_ENVIRONMENT)
+        try:
+            created = wc.kernel32.CreateProcessW(
+                None, command_line, None, None, True, flags,
+                environment_pointer, str(root),
+                ctypes.cast(ctypes.byref(startup),
+                            ctypes.POINTER(wc.STARTUPINFOW)),
+                ctypes.byref(info))
+        finally:
+            if startup.lpAttributeList:
+                wc.kernel32.DeleteProcThreadAttributeList(
+                    startup.lpAttributeList)
+                startup.lpAttributeList = None
+        if not created:
+            raise wc._win_error("CreateProcessW(Secure AppContainer)")
+        process, thread = info.hProcess, info.hThread
+        os.set_handle_inheritable(out_handle, False)
+        os.set_handle_inheritable(in_handle, False)
+
+        if not wc.advapi32.OpenProcessToken(
+                process, wc.TOKEN_QUERY, ctypes.byref(token)):
+            raise wc._win_error("OpenProcessToken(Secure AppContainer)")
+        if _token_dword(token, TokenIsAppContainer) != 1:
+            raise OSError("Secure child token is not an AppContainer")
+        capability_count = _token_capability_count(token)
+        if capability_count != 0:
+            raise OSError(
+                f"Secure child unexpectedly has {capability_count} capabilities")
+
+        if not wc.kernel32.AssignProcessToJobObject(job, process):
+            raise wc._win_error("AssignProcessToJobObject(Secure AppContainer)")
+        assigned = True
+        if wc.kernel32.ResumeThread(thread) == 0xFFFFFFFF:
+            raise wc._win_error("ResumeThread(Secure AppContainer)")
+        wc.kernel32.CloseHandle(thread)
+        thread = None
+
+        status = wc.kernel32.WaitForSingleObject(
+            process, min(timeout * 1000, 0xFFFFFFFE))
+        if status == wc.WAIT_TIMEOUT:
+            if not wc.kernel32.TerminateJobObject(job, 124):
+                raise wc._win_error("TerminateJobObject(Secure AppContainer)")
+            wc.kernel32.WaitForSingleObject(process, 5000)
+            raise subprocess.TimeoutExpired(list(argv), timeout)
+        if status == wc.WAIT_FAILED:
+            raise wc._win_error("WaitForSingleObject(Secure AppContainer)")
+        if status != wc.WAIT_OBJECT_0:
+            raise OSError(
+                f"Unexpected secure AppContainer wait status: {status}")
+
+        code = wintypes.DWORD()
+        if not wc.kernel32.GetExitCodeProcess(
+                process, ctypes.byref(code)):
+            raise wc._win_error("GetExitCodeProcess(Secure AppContainer)")
+        output.flush()
+        output.seek(0)
+        encoding = locale.getpreferredencoding(False) or "utf-8"
+        text = output.read().decode(encoding, errors="replace")
+        return {
+            "passed": code.value == 0,
+            "returncode": int(code.value),
+            "output": text[-16000:],
+            "containment": "windows-zero-capability-appcontainer+job-object",
+            "token_is_appcontainer": True,
+            "capability_count": 0,
+            "network_capabilities_granted": False,
+            "handle_allowlist": True,
+            "ui_restrictions": ui_restrictions,
+        }
+    finally:
+        try:
+            os.set_handle_inheritable(out_handle, False)
+            os.set_handle_inheritable(in_handle, False)
+        except OSError:
+            pass
+        if process and not assigned:
+            wc.kernel32.TerminateProcess(process, 125)
+            wc.kernel32.WaitForSingleObject(process, 5000)
+        if token:
+            wc.kernel32.CloseHandle(token)
+        if thread:
+            wc.kernel32.CloseHandle(thread)
+        if process:
+            wc.kernel32.CloseHandle(process)
+        if job:
+            wc.kernel32.CloseHandle(job)
+        devnull.close()
+        output.close()
+
+
+def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
+                            executable: str | Path,
+                            timeout: int = 180) -> dict:
+    """Run autonomous code with zero capabilities and no weaker fallback.
+
+    Only the disposable execution snapshot and the ForgeOS-owned executable are
+    explicitly granted to the temporary AppContainer SID. Grants are revoked
+    before the temporary profile is deleted.
+    """
+    if os.name != "nt":
+        raise OSError("Secure AppContainer execution is Windows-only")
+    root = Path(cwd).expanduser()
+    if root.is_symlink():
+        raise ValueError("Secure execution snapshot must not be a symlink")
+    root = root.resolve(strict=True)
+    runner = Path(executable).expanduser()
+    if runner.is_symlink():
+        raise ValueError("Secure runner executable must not be a symlink")
+    runner = runner.resolve(strict=True)
+    if not root.is_dir() or not runner.is_file():
+        raise ValueError("Secure execution paths are invalid")
+    if not isinstance(env, dict):
+        raise ValueError("Secure execution environment must be a dictionary")
+
+    result = None
+    with _temporary_probe_profile() as (_profile_name, sid):
+        sid_string = _sid_to_string(sid)
+        grants: list[tuple[Path, bool]] = []
+        seen = set()
+
+        def grant(path: Path, permission: str, *, recursive: bool = False):
+            key = (str(path).casefold(), permission, recursive)
+            if key in seen:
+                return
+            seen.add(key)
+            if recursive:
+                _icacls(
+                    path, "/grant",
+                    f"*{sid_string}:(OI)(CI)({permission})",
+                    "/T", "/Q")
+            else:
+                _icacls(
+                    path, "/grant", f"*{sid_string}:({permission})", "/Q")
+            grants.append((path, recursive))
+
+        try:
+            grant(root.parent, "RX")
+            grant(root, "M", recursive=True)
+            if runner.parent != root.parent:
+                grant(runner.parent, "RX")
+            grant(runner, "RX")
+            result = _run_appcontainer_process(
+                sid, argv, cwd=root, env=env, timeout=timeout)
+        finally:
+            cleanup_errors = []
+            for path, recursive in reversed(grants):
+                try:
+                    _revoke_path_grant(
+                        path, sid_string, recursive=recursive)
+                except OSError as exc:
+                    cleanup_errors.append(str(exc))
+            if cleanup_errors:
+                raise OSError(
+                    "Failed to revoke secure AppContainer grants: "
+                    + "; ".join(cleanup_errors))
+    if result is None:
+        raise OSError("Secure AppContainer did not produce a result")
+    result["profile_deleted"] = True
+    return result
