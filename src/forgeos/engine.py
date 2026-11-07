@@ -87,7 +87,7 @@ def apply_edits(root: Path, response: str) -> list[str]:
     for target, content in edits:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-    return [str(p.relative_to(root)) for p, _ in edits]
+    return [p.relative_to(root).as_posix() for p, _ in edits]
 
 
 def _context(root: Path) -> str:
