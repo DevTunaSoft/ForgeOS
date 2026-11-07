@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+import subprocess
 import unittest
 
 from forgeos.windows_containment import run_contained
@@ -25,7 +26,7 @@ class WindowsContainmentTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["returncode"], 0)
         self.assertIn("contained-ok", result["output"])
-        self.assertEqual(result["containment"], "windows-job-object")
+        self.assertEqual(result["containment"], "windows-restricted-token+job-object")
 
     def test_nonzero_exit_is_reported(self):
         result = run_contained(
@@ -47,10 +48,9 @@ class WindowsContainmentTests(unittest.TestCase):
             "time.sleep(30)"
         )
         start = time.monotonic()
-        with self.assertRaises(Exception) as caught:
+        with self.assertRaises(subprocess.TimeoutExpired):
             run_contained([sys.executable, "-c", parent_code],
                           self.root, timeout=1)
-        self.assertIn("TimeoutExpired", type(caught.exception).__name__)
         self.assertLess(time.monotonic() - start, 10)
         time.sleep(5)
         self.assertFalse(marker.exists(), "child process escaped the terminated job")
@@ -73,3 +73,54 @@ class WindowsContainmentTests(unittest.TestCase):
                    if line.strip().isdigit()]
         self.assertTrue(numbers)
         self.assertLessEqual(numbers[-1], 1)
+
+    def test_child_privileges_are_reduced(self):
+        code = r"""
+import ctypes
+from ctypes import wintypes
+kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
+kernel32.GetCurrentProcess.argtypes = []
+kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                      ctypes.POINTER(wintypes.HANDLE)]
+advapi32.OpenProcessToken.restype = wintypes.BOOL
+advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                         ctypes.c_void_p, wintypes.DWORD,
+                                         ctypes.POINTER(wintypes.DWORD)]
+advapi32.GetTokenInformation.restype = wintypes.BOOL
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.CloseHandle.restype = wintypes.BOOL
+token = wintypes.HANDLE()
+if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008,
+                                 ctypes.byref(token)):
+    raise OSError(ctypes.get_last_error(), 'OpenProcessToken failed')
+try:
+    needed = wintypes.DWORD()
+    advapi32.GetTokenInformation(token, 3, None, 0, ctypes.byref(needed))
+    buf = ctypes.create_string_buffer(needed.value)
+    if not advapi32.GetTokenInformation(token, 3, buf, needed.value,
+                                         ctypes.byref(needed)):
+        raise OSError(ctypes.get_last_error(), 'GetTokenInformation failed')
+    count = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD)).contents.value
+    print('privileges=' + str(count))
+finally:
+    kernel32.CloseHandle(token)
+"""
+        result = run_contained([sys.executable, "-c", code],
+                               self.root, timeout=15)
+        self.assertTrue(result["passed"], result)
+        counts = [int(line.split("=", 1)[1])
+                  for line in result["output"].splitlines()
+                  if line.startswith("privileges=")]
+        self.assertEqual(len(counts), 1, result)
+        self.assertLessEqual(counts[0], 1, result)
+        self.assertEqual(result["containment"],
+                         "windows-restricted-token+job-object")
+
+    def test_unrestricted_mode_is_explicit_only(self):
+        result = run_contained(
+            [sys.executable, "-c", "print('diagnostic-unrestricted')"],
+            self.root, timeout=15, restrict_privileges=False)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["containment"], "windows-job-object")

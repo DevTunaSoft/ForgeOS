@@ -1,8 +1,8 @@
 """Windows-native process-tree containment for test execution.
 
-This module limits and cleans up a Windows process tree with Job Objects. It is
-not a security sandbox: it does not remove user privileges, isolate the
-filesystem, or block network access.
+This module limits and cleans up a Windows process tree with Job Objects and
+can strip token privileges before launch. It is not a complete security
+sandbox: it does not isolate the filesystem or block network access.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ if os.name == "nt":
     import msvcrt
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
 
     CREATE_SUSPENDED = 0x00000004
     CREATE_NO_WINDOW = 0x08000000
@@ -32,6 +33,11 @@ if os.name == "nt":
     JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
     JobObjectExtendedLimitInformation = 9
+
+    TOKEN_ASSIGN_PRIMARY = 0x0001
+    TOKEN_DUPLICATE = 0x0002
+    TOKEN_QUERY = 0x0008
+    DISABLE_MAX_PRIVILEGE = 0x00000001
 
     class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
         _fields_ = [
@@ -120,6 +126,24 @@ if os.name == "nt":
         wintypes.BOOL, wintypes.DWORD, ctypes.c_void_p, wintypes.LPCWSTR,
         ctypes.POINTER(STARTUPINFOW), ctypes.POINTER(PROCESS_INFORMATION)]
     kernel32.CreateProcessW.restype = wintypes.BOOL
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.CreateRestrictedToken.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p,
+        ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.CreateRestrictedToken.restype = wintypes.BOOL
+    advapi32.IsTokenRestricted.argtypes = [wintypes.HANDLE]
+    advapi32.IsTokenRestricted.restype = wintypes.BOOL
+    advapi32.CreateProcessAsUserW.argtypes = [
+        wintypes.HANDLE, wintypes.LPCWSTR, wintypes.LPWSTR,
+        ctypes.c_void_p, ctypes.c_void_p, wintypes.BOOL, wintypes.DWORD,
+        ctypes.c_void_p, wintypes.LPCWSTR,
+        ctypes.POINTER(STARTUPINFOW), ctypes.POINTER(PROCESS_INFORMATION)]
+    advapi32.CreateProcessAsUserW.restype = wintypes.BOOL
 
 
 def _win_error(operation: str) -> OSError:
@@ -127,10 +151,33 @@ def _win_error(operation: str) -> OSError:
     return OSError(code, f"{operation} failed: {ctypes.FormatError(code).strip()}")
 
 
+
+def _create_restricted_primary_token():
+    """Return a privilege-reduced version of the current process token."""
+    if os.name != "nt":
+        raise OSError("Restricted tokens are only available on Windows")
+    current = wintypes.HANDLE()
+    restricted = wintypes.HANDLE()
+    desired = TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY
+    if not advapi32.OpenProcessToken(
+            kernel32.GetCurrentProcess(), desired, ctypes.byref(current)):
+        raise _win_error("OpenProcessToken")
+    try:
+        flags = DISABLE_MAX_PRIVILEGE
+        if not advapi32.CreateRestrictedToken(
+                current, flags, 0, None, 0, None, 0, None,
+                ctypes.byref(restricted)):
+            raise _win_error("CreateRestrictedToken")
+        return restricted
+    finally:
+        kernel32.CloseHandle(current)
+
+
 def run_contained(argv, cwd: str | Path, *, timeout: int,
                   active_process_limit: int = 64,
                   process_memory_bytes: int = 1024 * 1024 * 1024,
-                  job_memory_bytes: int = 2 * 1024 * 1024 * 1024):
+                  job_memory_bytes: int = 2 * 1024 * 1024 * 1024,
+                  restrict_privileges: bool = True):
     """Run one command in a Windows Job Object and capture combined output."""
     if os.name != "nt":
         raise OSError("Windows Job Object containment is only available on Windows")
@@ -157,6 +204,7 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
     process = None
     thread = None
     assigned = False
+    restricted_token = None
     output = tempfile.TemporaryFile(mode="w+b")
     devnull = open(os.devnull, "rb")
     out_handle = msvcrt.get_osfhandle(output.fileno())
@@ -189,10 +237,21 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         info = PROCESS_INFORMATION()
         command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
         flags = CREATE_SUSPENDED | CREATE_NO_WINDOW
-        if not kernel32.CreateProcessW(
+        if not isinstance(restrict_privileges, bool):
+            raise ValueError("restrict_privileges must be boolean")
+        if restrict_privileges:
+            restricted_token = _create_restricted_primary_token()
+            created = advapi32.CreateProcessAsUserW(
+                restricted_token, None, command_line, None, None, True,
+                flags, None, str(root), ctypes.byref(startup), ctypes.byref(info))
+            operation = "CreateProcessAsUserW"
+        else:
+            created = kernel32.CreateProcessW(
                 None, command_line, None, None, True, flags, None,
-                str(root), ctypes.byref(startup), ctypes.byref(info)):
-            raise _win_error("CreateProcessW")
+                str(root), ctypes.byref(startup), ctypes.byref(info))
+            operation = "CreateProcessW"
+        if not created:
+            raise _win_error(operation)
         process, thread = info.hProcess, info.hThread
         os.set_handle_inheritable(out_handle, False)
         os.set_handle_inheritable(in_handle, False)
@@ -229,7 +288,8 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             "passed": code.value == 0,
             "returncode": int(code.value),
             "output": text[-16000:],
-            "containment": "windows-job-object",
+            "containment": ("windows-restricted-token+job-object"
+                            if restrict_privileges else "windows-job-object"),
         }
     finally:
         try:
@@ -244,6 +304,8 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             kernel32.CloseHandle(thread)
         if process:
             kernel32.CloseHandle(process)
+        if restricted_token:
+            kernel32.CloseHandle(restricted_token)
         if job:
             kernel32.CloseHandle(job)
         devnull.close()

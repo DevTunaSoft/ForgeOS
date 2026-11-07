@@ -221,7 +221,7 @@ def run_test(project: str, command: str, timeout: int = 180):
     except subprocess.TimeoutExpired:
         return {'passed': False, 'returncode': None,
                 'output': f'Test timed out after {timeout}s',
-                'containment': 'windows-job-object' if os.name == 'nt' else 'none'}
+                'containment': 'windows-restricted-token+job-object' if os.name == 'nt' else 'none'}
     except OSError as exc:
         return {'passed': False, 'returncode': None,
                 'output': f'Test executable unavailable: {exc}',
