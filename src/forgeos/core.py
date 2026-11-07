@@ -87,6 +87,8 @@ class Store:
         if (not isinstance(stale_after, int) or isinstance(stale_after, bool)
                 or not 30 <= stale_after <= 86400):
             raise ValueError('Invalid lease duration')
+        if self.db.execute('SELECT 1 FROM tasks WHERE id=?', (task_id,)).fetchone() is None:
+            raise ValueError(f'No task #{task_id}')
         now = time.time()
         with self.db:
             self.db.execute(
