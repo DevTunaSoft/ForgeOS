@@ -285,6 +285,9 @@ def execute_task(
     resume: bool = False,
 ) -> dict:
     """Acquire an exclusive task lease, then run the guarded task engine."""
+    if not allow_host_tests:
+        raise ValueError("Host test execution requires explicit --allow-host-tests")
+    store.get(task_id)
     owner = uuid.uuid4().hex
     if not store.acquire_lease(task_id, owner):
         raise ValueError("Task already has an active execution lease")
