@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+import subprocess
 import unittest
 
 from forgeos.windows_containment import run_contained
@@ -47,10 +48,9 @@ class WindowsContainmentTests(unittest.TestCase):
             "time.sleep(30)"
         )
         start = time.monotonic()
-        with self.assertRaises(Exception) as caught:
+        with self.assertRaises(subprocess.TimeoutExpired):
             run_contained([sys.executable, "-c", parent_code],
                           self.root, timeout=1)
-        self.assertIn("TimeoutExpired", type(caught.exception).__name__)
         self.assertLess(time.monotonic() - start, 10)
         time.sleep(5)
         self.assertFalse(marker.exists(), "child process escaped the terminated job")
