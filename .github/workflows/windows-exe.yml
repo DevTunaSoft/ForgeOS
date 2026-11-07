@@ -35,6 +35,11 @@ jobs:
         run: |
           $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList "--smoke" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Frozen smoke test failed: $($process.ExitCode)" }
+      - name: Frozen secure AppContainer boundary smoke test
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList "--secure-sandbox-smoke" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Frozen secure AppContainer smoke failed: $($process.ExitCode)" }
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
