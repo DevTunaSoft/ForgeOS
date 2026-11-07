@@ -136,5 +136,12 @@ class ForgeOSTests(unittest.TestCase):
         self.assertTrue(self.store.acquire_lease(task,'replacement'))
         self.assertTrue(self.store.release_lease(task,'replacement'))
 
+
+    def test_unknown_task_cannot_receive_lease(self):
+        with self.assertRaisesRegex(ValueError,'No task'):
+            self.store.acquire_lease(999,'ghost')
+        self.assertEqual(self.store.db.execute(
+            'SELECT COUNT(*) FROM task_leases').fetchone()[0],0)
+
 if __name__=='__main__': unittest.main()
 
