@@ -34,7 +34,7 @@ class SecureRunnerContractTests(unittest.TestCase):
              patch.object(sys, "frozen", True, create=True), \
              patch("forgeos.secure_runner.run_secure_appcontainer") as runner:
             with self.assertRaisesRegex(RuntimeError, "does not yet support"):
-                run_secure_windows_test(self.runtime, "python-pytest")
+                run_secure_windows_test(self.runtime, "npm-test")
             runner.assert_not_called()
 
     def test_bootstrap_environment_adds_only_localappdata_marker(self):
@@ -46,6 +46,27 @@ class SecureRunnerContractTests(unittest.TestCase):
         self.assertEqual(env["FORGEOS_BOOTSTRAP_LOCALAPPDATA"], "1")
         self.assertEqual(env["FORGEOS_EXECUTION_SNAPSHOT"], "1")
         self.assertNotIn("APPDATA", env)
+
+    def test_frozen_pytest_uses_bundled_child_mode(self):
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        output.write_text("pytest ok", encoding="utf-8")
+        fake = {
+            "passed": True, "returncode": 0, "output": "",
+            "containment": "windows-zero-capability-appcontainer+job-object",
+            "capability_count": 0, "network_capabilities_granted": False,
+        }
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=fake) as runner:
+            result = run_secure_windows_test(
+                self.runtime, "python-pytest", timeout=23)
+        self.assertTrue(result["passed"])
+        args, kwargs = runner.call_args
+        self.assertEqual(args[0][1], "--sandbox-pytest")
+        self.assertEqual(kwargs["timeout"], 23)
 
     def test_frozen_unittest_uses_appcontainer_and_owned_output_path(self):
         output = self.root / RUNTIME_DIR / "test-output.txt"
