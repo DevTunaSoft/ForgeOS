@@ -124,8 +124,11 @@ def _build_environment(runtime: Path) -> dict[str, str]:
 
 def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     """Create a fresh, guarded copy of one ForgeOS worktree."""
-    source = Path(workspace).expanduser().resolve(strict=True)
-    if not source.is_dir() or source.is_symlink():
+    raw = Path(workspace).expanduser()
+    if raw.is_symlink():
+        raise ValueError("Workspace must not be a symlink")
+    source = raw.resolve(strict=True)
+    if not source.is_dir():
         raise ValueError("Workspace must be a real directory")
     runtime = _runtime_path(source)
     if runtime == source or runtime.is_relative_to(source):
