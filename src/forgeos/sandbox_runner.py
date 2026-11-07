@@ -21,6 +21,20 @@ def _output_stream(root: Path):
     return target.open("w", encoding="utf-8", errors="replace")
 
 
+def _scrub_bootstrap_environment(root: Path) -> None:
+    """Remove host-only launch values before any generated project code runs."""
+    marker = os.environ.pop("FORGEOS_BOOTSTRAP_LOCALAPPDATA", None)
+    if marker != "1":
+        raise RuntimeError("secure AppContainer bootstrap marker is missing")
+    appdata_root = root / ".forgeos-runtime" / "home" / "AppData"
+    local = appdata_root / "Local"
+    roaming = appdata_root / "Roaming"
+    local.mkdir(parents=True, exist_ok=True)
+    roaming.mkdir(parents=True, exist_ok=True)
+    os.environ["LOCALAPPDATA"] = str(local)
+    os.environ["APPDATA"] = str(roaming)
+
+
 def run_unittest() -> int:
     """Discover and run unittest tests from the granted execution snapshot."""
     if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
@@ -29,8 +43,9 @@ def run_unittest() -> int:
     if not root.is_dir():
         return 91
     original_path = list(sys.path)
-    sys.path.insert(0, str(root))
     try:
+        _scrub_bootstrap_environment(root)
+        sys.path.insert(0, str(root))
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
             suite = loader.discover(str(root))
