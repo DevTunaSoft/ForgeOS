@@ -104,7 +104,7 @@ def run_pytest() -> int:
         with _output_stream(root) as stream, \
                 redirect_stdout(stream), redirect_stderr(stream):
             code = pytest.main([
-                "-q", "--color=no", "--disable-warnings", str(root),
+                "-q", "--capture=no", "--color=no", "--disable-warnings", str(root),
             ])
             stream.flush()
         return int(code)
