@@ -33,6 +33,7 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertFalse((runtime.path / ".env").exists())
         self.assertFalse((runtime.path / ".env.local").exists())
         self.assertEqual(runtime.env["FORGEOS_EXECUTION_SNAPSHOT"], "1")
+        self.assertEqual(runtime.env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"], "1")
         self.assertTrue(Path(runtime.env["TEMP"]).is_relative_to(runtime.path))
         self.assertTrue(Path(runtime.env["GOCACHE"]).is_relative_to(runtime.path))
         self.assertTrue(remove_test_snapshot(self.workspace))
