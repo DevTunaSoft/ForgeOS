@@ -184,8 +184,23 @@ class Ollama:
         return result
 
 
+def _execute_test_process(argv, root: Path, timeout: int):
+    if os.name == 'nt':
+        from .windows_containment import run_contained
+        return run_contained(argv, root, timeout=timeout)
+    result = subprocess.run(
+        argv, cwd=root, capture_output=True, text=True,
+        timeout=timeout, shell=False, errors='replace')
+    return {
+        'passed': result.returncode == 0,
+        'returncode': result.returncode,
+        'output': (result.stdout + '\n' + result.stderr)[-16000:],
+        'containment': 'none',
+    }
+
+
 def run_test(project: str, command: str, timeout: int = 180):
-    """Explicitly allowlisted executable forms, never through a shell."""
+    """Run an allowlisted test preset; Windows uses Job Object containment."""
     allowed = {
         'python-unittest': ['python', '-m', 'unittest', 'discover'],
         'python-pytest': ['python', '-m', 'pytest'],
@@ -196,21 +211,18 @@ def run_test(project: str, command: str, timeout: int = 180):
     }
     if command not in allowed:
         raise ValueError('Unknown test preset')
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+        raise ValueError('timeout must be a positive integer')
     root = Path(project).expanduser().resolve(strict=True)
     if not root.is_dir() or not (root / '.git').exists():
         raise ValueError('Not a local Git repository')
     try:
-        result = subprocess.run(
-            allowed[command], cwd=root, capture_output=True, text=True,
-            timeout=timeout, shell=False, errors='replace')
-        return {
-            'passed': result.returncode == 0,
-            'returncode': result.returncode,
-            'output': (result.stdout + '\n' + result.stderr)[-16000:],
-        }
+        return _execute_test_process(allowed[command], root, timeout)
     except subprocess.TimeoutExpired:
         return {'passed': False, 'returncode': None,
-                'output': f'Test timed out after {timeout}s'}
+                'output': f'Test timed out after {timeout}s',
+                'containment': 'windows-job-object' if os.name == 'nt' else 'none'}
     except OSError as exc:
         return {'passed': False, 'returncode': None,
-                'output': f'Test executable unavailable: {exc}'}
+                'output': f'Test executable unavailable: {exc}',
+                'containment': 'windows-job-object' if os.name == 'nt' else 'none'}

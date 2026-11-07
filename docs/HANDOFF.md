@@ -121,3 +121,15 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Unauthorized host execution is rejected before any lease-table mutation, and leases cannot be created for nonexistent tasks.
 - Added regression tests covering lease exclusion across separate SQLite connections, checkpoint-preserving atomic transitions, stale-lease reclamation, duplicate-run rejection, KeyboardInterrupt cleanup, unauthorized execution, and unknown task IDs.
 - This protects task coordination and recovery correctness; it is not an OS security sandbox. Windows-native restricted execution remains the next major security milestone.
+
+## PR #21 — Windows Job Object process-tree containment (2026-11-07)
+
+- Added `src/forgeos/windows_containment.py`, a dependency-free ctypes wrapper around Windows Job Objects for allowlisted test execution.
+- Windows test processes are created **suspended**, then assigned to the configured Job Object before the primary thread is resumed. This prevents test code from running before ForgeOS attaches the containment policy.
+- Current limits: kill the full associated process tree when the Job Object closes, maximum 64 active processes, 1 GiB committed memory per process, and 2 GiB committed memory for the job.
+- Timeout handling terminates the entire Job Object rather than only the direct test process. A Windows runtime test deliberately spawns a delayed child and verifies that the child cannot survive timeout cleanup to write a marker later.
+- The Job Object is configured without breakaway flags so ordinary descendants remain associated with the process tree. Active-process-limit coverage verifies that excessive child creation is denied.
+- Failure hardening: if Windows creates a child suspended but Job Object assignment fails, ForgeOS explicitly terminates that suspended child before closing handles.
+- `core.run_test` automatically routes Windows allowlisted test presets through this containment layer. Linux behavior remains ordinary no-shell subprocess execution.
+- This is **containment, not a security sandbox**. Job Objects do not remove the user's token privileges, prevent filesystem access, or block networking. Host-test execution therefore remains explicitly gated. Restricted-token / ACL / network-boundary work remains required before claiming safe unattended execution of untrusted generated code.
+- Required verification: Windows 3.10/3.12 runtime tests, timeout/child cleanup, process-limit behavior, full regression suite, PyInstaller Windows EXE smoke. Physical Windows acceptance remains separate.
