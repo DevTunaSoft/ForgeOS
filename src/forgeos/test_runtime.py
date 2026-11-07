@@ -1,0 +1,160 @@
+"""Disposable execution snapshots for running generated code safely.
+
+The editable Git worktree remains the source of truth. Tests may mutate only a
+fresh execution copy. On Windows the copy can be labeled Low integrity before
+the child process starts.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import shutil
+import stat
+
+MARKER = ".forgeos-execution-runtime.json"
+RUNTIME_DIR = ".forgeos-runtime"
+VERSION = 1
+
+
+@dataclass(frozen=True)
+class TestRuntime:
+    path: Path
+    env: dict[str, str]
+
+
+def _runtime_path(workspace: Path) -> Path:
+    return workspace.parent / f".forgeos-exec-{workspace.name}"
+
+
+def _delete_readonly(func, path, _exc):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def _validate_marker(runtime: Path, workspace: Path) -> None:
+    marker = runtime / MARKER
+    if not marker.is_file() or marker.is_symlink():
+        raise ValueError(f"Refusing to remove unowned execution directory: {runtime}")
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError) as exc:
+        raise ValueError("Execution runtime marker is invalid") from exc
+    if (not isinstance(data, dict) or data.get("version") != VERSION
+            or data.get("workspace") != str(workspace)):
+        raise ValueError("Execution runtime ownership marker mismatch")
+
+
+def remove_test_snapshot(workspace: str | Path) -> bool:
+    source = Path(workspace).expanduser().resolve(strict=True)
+    runtime = _runtime_path(source)
+    if not runtime.exists():
+        return False
+    if runtime.is_symlink() or not runtime.is_dir():
+        raise ValueError("Execution runtime path is not a real directory")
+    _validate_marker(runtime, source)
+    shutil.rmtree(runtime, onerror=_delete_readonly)
+    return True
+
+
+def _ignore_runtime_metadata(_directory, names):
+    ignored = set()
+    if ".forgeos" in names:
+        ignored.add(".forgeos")
+    if RUNTIME_DIR in names:
+        ignored.add(RUNTIME_DIR)
+    if MARKER in names:
+        ignored.add(MARKER)
+    return ignored
+
+
+def _build_environment(runtime: Path) -> dict[str, str]:
+    writable = runtime / RUNTIME_DIR
+    directories = {
+        "tmp": writable / "tmp",
+        "home": writable / "home",
+        "cache": writable / "cache",
+        "pycache": writable / "pycache",
+        "pip": writable / "pip",
+        "npm": writable / "npm",
+        "cargo": writable / "cargo",
+        "cargo-target": writable / "cargo-target",
+        "gopath": writable / "gopath",
+        "gocache": writable / "gocache",
+        "dotnet": writable / "dotnet",
+        "nuget": writable / "nuget",
+        "gradle": writable / "gradle",
+    }
+    for path in directories.values():
+        path.mkdir(parents=True, exist_ok=True)
+    env = {str(k): str(v) for k, v in os.environ.items()
+           if isinstance(k, str) and isinstance(v, str)
+           and k and "\x00" not in k and "\x00" not in v and "=" not in k}
+    env.update({
+        "TEMP": str(directories["tmp"]),
+        "TMP": str(directories["tmp"]),
+        "TMPDIR": str(directories["tmp"]),
+        "HOME": str(directories["home"]),
+        "XDG_CACHE_HOME": str(directories["cache"]),
+        "PYTHONPYCACHEPREFIX": str(directories["pycache"]),
+        "PIP_CACHE_DIR": str(directories["pip"]),
+        "npm_config_cache": str(directories["npm"]),
+        "NPM_CONFIG_CACHE": str(directories["npm"]),
+        "CARGO_HOME": str(directories["cargo"]),
+        "CARGO_TARGET_DIR": str(directories["cargo-target"]),
+        "GOPATH": str(directories["gopath"]),
+        "GOCACHE": str(directories["gocache"]),
+        "DOTNET_CLI_HOME": str(directories["dotnet"]),
+        "NUGET_PACKAGES": str(directories["nuget"]),
+        "GRADLE_USER_HOME": str(directories["gradle"]),
+        "FORGEOS_EXECUTION_SNAPSHOT": "1",
+    })
+    return env
+
+
+def create_test_snapshot(workspace: str | Path) -> TestRuntime:
+    """Create a fresh, guarded copy of one ForgeOS worktree."""
+    source = Path(workspace).expanduser().resolve(strict=True)
+    if not source.is_dir() or source.is_symlink():
+        raise ValueError("Workspace must be a real directory")
+    runtime = _runtime_path(source)
+    if runtime == source or runtime.is_relative_to(source):
+        raise ValueError("Execution runtime must be outside the editable workspace")
+    if runtime.exists():
+        remove_test_snapshot(source)
+    runtime.mkdir(parents=False)
+    (runtime / MARKER).write_text(json.dumps({
+        "version": VERSION,
+        "workspace": str(source),
+    }, sort_keys=True), encoding="utf-8")
+    try:
+        shutil.copytree(
+            source, runtime, dirs_exist_ok=True, symlinks=True,
+            ignore=_ignore_runtime_metadata,
+        )
+        env = _build_environment(runtime)
+        return TestRuntime(path=runtime, env=env)
+    except BaseException:
+        try:
+            remove_test_snapshot(source)
+        except Exception:
+            pass
+        raise
+
+
+def create_windows_low_integrity_snapshot(workspace: str | Path) -> TestRuntime:
+    """Create and Low-label a disposable Windows execution snapshot."""
+    if os.name != "nt":
+        raise OSError("Windows Low-integrity snapshots require Windows")
+    runtime = create_test_snapshot(workspace)
+    from .windows_containment import prepare_low_integrity_workspace
+    try:
+        prepare_low_integrity_workspace(runtime.path)
+        return runtime
+    except BaseException:
+        try:
+            remove_test_snapshot(workspace)
+        except Exception:
+            pass
+        raise
