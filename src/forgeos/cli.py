@@ -26,6 +26,11 @@ def main(argv=None):
     run.add_argument('--max-repairs',type=int,default=2)
     run.add_argument('--allow-host-tests',action='store_true',help='Explicitly permit running repository code on this machine')
     run.add_argument('--resume',action='store_true',help='Resume an interrupted test-pending checkpoint')
+    resume_all=sub.add_parser('resume-safe',help='Recover and resume eligible interrupted tasks (host execution opt-in required)')
+    resume_all.add_argument('--workspace-parent',required=True)
+    resume_all.add_argument('--allow-host-tests',action='store_true')
+    resume_all.add_argument('--preset',default='python-unittest',choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'])
+    resume_all.add_argument('--max-repairs',type=int,default=2)
     args=parser.parse_args(argv)
     if args.action=='gui':
         from .gui import launch
@@ -52,6 +57,13 @@ def main(argv=None):
             except Exception as exc:
                 store.update(args.id,'blocked',error=str(exc))
                 raise
+        elif args.action=='resume-safe':
+            from .recovery import resume_safe
+            report=resume_safe(store,Path(args.workspace_parent),preset=args.preset,
+                               max_repairs=args.max_repairs,allow_host_tests=args.allow_host_tests)
+            print(json.dumps(report,indent=2))
+            if report['failed']:
+                return 1
         elif args.action=='run':
             from .engine import execute_task
             result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,
