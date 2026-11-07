@@ -43,7 +43,7 @@ def render_context(root: str | Path, question: str = "") -> str:
     origin = Path(root).resolve(strict=True)
     if not origin.is_dir():
         raise ValueError("Context root is not a directory")
-    query = set(re.findall(r"[a-z0-9]{3,}", question.lower()))
+    query = set(re.findall(r"[a-z0-9]{2,}", question.lower()))
     candidates, scanned = [], 0
     for directory, directories, filenames in os.walk(origin, followlinks=False):
         current = Path(directory)
