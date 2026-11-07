@@ -250,3 +250,32 @@ Immediate next steps: verify all four CI matrix jobs and Windows packaging on
 the latest head; fix root causes, run regression, audit logging privacy and
 repository merge interactions with PR #27, then proceed to bounded streaming
 capture, retention policies, secure model routing, and GUI diagnostics.
+
+
+## RTK integration continuation: AST context / local model routing
+
+Cumulative source branch: feat/rtk-inspired-diagnostics, draft PR #28.
+Additional source modules:
+- src/forgeos/context_index.py — privacy-preserving, bounded deterministic
+  file inventory and Python class/function AST signatures; engine calls
+  relevance selection on initial generation and all repair/resume prompts.
+- src/forgeos/model_routing.py — local-only opt-in selection of installed
+  Ollama models, size/complexity heuristic, no paid provider, pin before
+  checkpoint. Core Ollama plan/generate and engine support model=auto.
+- tests/test_context_index.py and tests/test_model_routing.py — relevance,
+  output bounds, symlink avoidance, model constraints and no remote endpoint.
+
+Root cause / resolved defects:
+- Initial UI query relevance used a three-letter minimum and missed "ui".
+  Corrected to two-letter tokens; later source-context CI and Windows EXE
+  packaging passed on commit 48f3a348.
+- SQLite connection leaks blocked Windows 3.12 test directory cleanup.
+  Close connections explicitly through contextmanager/finally, checked by
+  passing Linux/Windows CI and executable packaging on commit 55ec5eae.
+- Repair memory originally recorded only successful repairs; a follow-up
+  changed the engine to record failures of attempted repairs, with explicit
+  regression assertions (latest verification may still be running).
+
+Next action: check all tests and packaging for the current PR head, identify
+any failures, fix and rerun. PR #27 (AppContainer) is independently pending.
+Neither branch should be merged solely because a Windows build artifact exists.
