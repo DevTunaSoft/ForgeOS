@@ -219,3 +219,60 @@ class TransactionRecoveryTests(unittest.TestCase):
             recover_edits(self.root)
         self.assertEqual((self.root / "first.py").read_text(), "external change")
         self.assertTrue(txn.exists())
+
+
+    def test_corrupted_backup_blocks_recovery_without_mutation(self):
+        from forgeos.transactions import recover_edits, _digest, TransactionError
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (self.root / "first.py").write_text("new")
+        (txn / "0.bak").write_bytes(b"corrupt")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"old"),
+                "after": _digest(b"new") }]}))
+        with self.assertRaises(TransactionError):
+            recover_edits(self.root)
+        self.assertEqual((self.root / "first.py").read_text(), "new")
+        self.assertTrue(txn.exists())
+
+    def test_missing_manifest_preserves_journal(self):
+        from forgeos.transactions import recover_edits, TransactionError
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "0.bak").write_bytes(b"original")
+        with self.assertRaises(TransactionError):
+            recover_edits(self.root)
+        self.assertTrue((txn / "0.bak").exists())
+
+    def test_rollback_failure_preserves_journal_for_retry(self):
+        from unittest.mock import patch
+        from forgeos.transactions import recover_edits, _digest
+        import os
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (self.root / "first.py").write_text("new")
+        (txn / "0.bak").write_bytes(b"old")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"old"),
+                "after": _digest(b"new") }]}))
+        with patch("forgeos.transactions.os.replace", side_effect=OSError("disk locked")):
+            with self.assertRaises(OSError):
+                recover_edits(self.root)
+        self.assertTrue(txn.exists())
+        self.assertEqual((self.root / "first.py").read_text(), "new")
+        self.assertTrue(recover_edits(self.root))
+        self.assertEqual((self.root / "first.py").read_text(), "old")
+
+    def test_new_file_crash_rollback_removes_only_transaction_file(self):
+        from forgeos.transactions import recover_edits, _digest
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (self.root / "created.py").write_text("new")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "created.py", "before": None,
+                "after": _digest(b"new") }]}))
+        self.assertTrue(recover_edits(self.root))
+        self.assertFalse((self.root / "created.py").exists())
