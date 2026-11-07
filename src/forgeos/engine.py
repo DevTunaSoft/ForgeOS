@@ -168,14 +168,14 @@ def execute_task(
                     or Path(saved_workspace).resolve() != ws.path.resolve()
                     or checkpoint.get("branch") != ws.branch
                     or phase not in {"test_pending", "repair_pending"}):
-                raise ValueError("No valid resumable checkpoint")
+                raise ValueError("No valid test-pending checkpoint or repair-pending checkpoint")
             paths_saved = checkpoint.get("edited")
             hashes = checkpoint.get("sha256")
             if (not isinstance(paths_saved, list) or not paths_saved
                     or any(not isinstance(name, str) for name in paths_saved)
                     or len(set(paths_saved)) != len(paths_saved)
                     or not isinstance(hashes, dict) or set(hashes) != set(paths_saved)):
-                raise ValueError("Invalid checkpoint integrity metadata")
+                raise ValueError("Invalid checkpoint integrity hashes or metadata")
             for name, digest in hashes.items():
                 target = _validate_path(ws.path, name)
                 if (not isinstance(digest, str) or len(digest) != 64
