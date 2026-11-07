@@ -172,3 +172,15 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - `.env*` files are omitted from execution copies as defense-in-depth. **This is not a confidentiality sandbox:** Low integrity blocks write-up but still permits reading Medium-integrity files, including files outside the snapshot if generated code discovers them. Outbound networking is also still available.
 - Direct/manual `run_test` behavior is unchanged by default. The Low-integrity disposable snapshot is used automatically only by the autonomous ForgeOS worktree engine on Windows.
 - Remaining major security work: isolate read access and networking (preferably using a stronger Windows-native principal/container boundary), then validate supported Python/npm/Cargo/Go/.NET toolchains in the isolated runtime. Snapshot copy performance for very large repositories also needs profiling/optimization.
+
+## PR #25 candidate — explicit handle inheritance and UI isolation (2026-11-07)
+
+- Replaced broad inheritable-handle process startup with `STARTUPINFOEXW` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. Only ForgeOS's intended stdin handle and combined stdout/stderr handle are eligible for inheritance by the child.
+- This follows Microsoft's current process-creation security guidance: inheritable handles can expose sensitive file/socket/token resources, and processes that require inherited standard handles should use an explicit handle list rather than inheriting every inheritable parent handle.
+- Added an adversarial Windows runtime test: ForgeOS deliberately opens a separate parent-only file, marks that handle inheritable, passes its numeric handle value to the child, and the child attempts `WriteFile`. The write must fail and the parent file must remain empty.
+- Added all eight `JOBOBJECT_BASIC_UI_RESTRICTIONS` controls to the test Job Object: external USER handles, clipboard read, clipboard write, system-parameter changes, display settings, global atoms, desktop create/switch, and ExitWindows calls are restricted.
+- ForgeOS immediately queries `JobObjectBasicUIRestrictions` after setting the policy and fails closed unless the exact requested bitmask is active.
+- The Windows result records `handle_allowlist=True` and the verified UI restriction mask for diagnostics.
+- Extended process startup resources are cleaned on every path, including token-creation or process-creation failure. Option/environment validation occurs before the Job Object and attribute list are allocated.
+- These protections complement the existing Job Object resource limits, privilege-reduced token, Low-integrity execution snapshot, and write-back protection. They still do not block file reads or outbound networking.
+- Next major isolation candidate: AppContainer/LPAC via `STARTUPINFOEX` security capabilities, because Windows can create an AppContainer token/namespace at process creation. Compatibility with host-installed Python/npm/Cargo/Go/.NET binaries and explicit snapshot ACL grants must be proven before it can replace the current boundary.
