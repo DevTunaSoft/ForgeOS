@@ -200,6 +200,9 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
         return dict(result)
     outcome = dict(result)
     outcome["parsed_test"] = parse_test_summary(output, preset)
+    from .failure_types import classify_failure
+    outcome["failure_type"] = classify_failure(
+        output, passed=result.get("passed"))
     raw_bytes = len(output.encode("utf-8"))
     try:
         reference = (store if store is not None else EvidenceStore()).put(output)

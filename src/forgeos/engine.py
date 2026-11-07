@@ -276,7 +276,7 @@ def _execute_task(
                 result = {"passed": True, "workspace": str(ws.path),
                           "branch": ws.branch, "edited": paths,
                           "iterations": attempt + 1, "test": outcome,
-                          "learning": learned}
+                          "learning": learned, "model": model_name}
                 store.update(task_id, "passed", result=json.dumps(result))
                 return result
             if attempt > 0 and previous_failure:
@@ -311,7 +311,8 @@ def _execute_task(
                                  },
                              }))
         result = {"passed": False, "workspace": str(ws.path),
-                  "branch": ws.branch, "iterations": max_repairs + 1,
+                  "branch": ws.branch, "model": model_name,
+                  "iterations": max_repairs + 1,
                   "error": last_output[-4000:]}
         store.update(task_id, "failed", error=result["error"], result=json.dumps(result))
         return result
