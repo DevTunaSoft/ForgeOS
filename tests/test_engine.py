@@ -158,3 +158,64 @@ class AuditRegressionTests(unittest.TestCase):
                 self.assertEqual(store.get(task)["status"], "queued")
             finally:
                 store.close()
+
+
+class TransactionRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.manifest = lambda files: json.dumps({"files": files})
+
+    def test_multi_file_replace_failure_rolls_back(self):
+        from unittest.mock import patch
+        import os
+        (self.root / "first.py").write_text("original")
+        real_replace = os.replace
+        calls = {"n": 0}
+        def fail_second(source, target):
+            if str(source).endswith(".new"):
+                calls["n"] += 1
+                if calls["n"] == 2:
+                    raise OSError("simulated disk failure")
+            return real_replace(source, target)
+        with patch("forgeos.transactions.os.replace", side_effect=fail_second):
+            with self.assertRaises(OSError):
+                apply_edits(self.root, self.manifest([
+                    {"path": "first.py", "content": "changed"},
+                    {"path": "second.py", "content": "new"}]))
+        self.assertEqual((self.root / "first.py").read_text(), "original")
+        self.assertFalse((self.root / "second.py").exists())
+        self.assertFalse((self.root / ".forgeos" / "pending-edit").exists())
+
+    def test_manual_recovery_of_interrupted_journal(self):
+        from forgeos.transactions import recover_edits, _digest
+        (self.root / "first.py").write_text("original")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "0.bak").write_bytes(b"original")
+        (self.root / "first.py").write_text("changed")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"changed") }]}))
+        self.assertTrue(recover_edits(self.root))
+        self.assertEqual((self.root / "first.py").read_text(), "original")
+        self.assertFalse(txn.exists())
+        self.assertFalse(recover_edits(self.root))
+
+    def test_conflicting_external_change_preserved(self):
+        from forgeos.transactions import recover_edits, _digest, TransactionError
+        (self.root / "first.py").write_text("external change")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "0.bak").write_bytes(b"original")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"changed") }]}))
+        with self.assertRaises(TransactionError):
+            recover_edits(self.root)
+        self.assertEqual((self.root / "first.py").read_text(), "external change")
+        self.assertTrue(txn.exists())

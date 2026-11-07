@@ -11,6 +11,7 @@ from typing import Callable
 
 from .core import Ollama, Store, run_test
 from .workspace import Workspace, create_workspace
+from .transactions import apply_transaction, recover_edits
 
 MAX_FILES = 8
 MAX_FILE_BYTES = 128_000
@@ -79,15 +80,7 @@ def parse_edits(root: Path, response: str) -> list[tuple[Path, str]]:
 
 def apply_edits(root: Path, response: str) -> list[str]:
     edits = parse_edits(root, response)
-    # Prevent overwriting directories or symlinks added between validation
-    # and write; this is not a hostile concurrent-writer security boundary.
-    for target, _ in edits:
-        if target.is_symlink() or (target.exists() and not target.is_file()):
-            raise EditError("Target changed during validation")
-    for target, content in edits:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-    return [p.relative_to(root).as_posix() for p, _ in edits]
+    return apply_transaction(root, edits)
 
 
 def _context(root: Path) -> str:
