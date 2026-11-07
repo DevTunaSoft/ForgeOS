@@ -42,9 +42,9 @@ class SandboxRunnerTests(unittest.TestCase):
                     self.assertNotIn(
                         "FORGEOS_BOOTSTRAP_LOCALAPPDATA", os.environ)
                     self.assertTrue(
-                        Path(os.environ["LOCALAPPDATA"]).is_relative_to(root))
+                        Path(os.environ["LOCALAPPDATA"]).resolve().is_relative_to(root.resolve()))
                     self.assertTrue(
-                        Path(os.environ["APPDATA"]).is_relative_to(root))
+                        Path(os.environ["APPDATA"]).resolve().is_relative_to(root.resolve()))
             finally:
                 os.chdir(previous)
             self.assertIn("OK", output.read_text(encoding="utf-8"))
