@@ -362,8 +362,20 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         raise ValueError("argv must contain nonempty strings")
     if not isinstance(low_integrity, bool):
         raise ValueError("low_integrity must be boolean")
+    if not isinstance(restrict_privileges, bool):
+        raise ValueError("restrict_privileges must be boolean")
+    if not isinstance(restrict_ui, bool):
+        raise ValueError("restrict_ui must be boolean")
     if low_integrity and not restrict_privileges:
         raise ValueError("low_integrity requires privilege-reduced execution")
+    command_line = ctypes.create_unicode_buffer(
+        subprocess.list2cmdline(list(argv)))
+    environment = _environment_block(env)
+    flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT
+    environment_pointer = None
+    if environment is not None:
+        flags |= CREATE_UNICODE_ENVIRONMENT
+        environment_pointer = ctypes.cast(environment, ctypes.c_void_p)
 
     job = kernel32.CreateJobObjectW(None, None)
     if not job:
@@ -400,15 +412,6 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         startup, attribute_buffer, allowed_handles = _startup_with_handle_allowlist(
             in_handle, out_handle)
         info = PROCESS_INFORMATION()
-        command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
-        environment = _environment_block(env)
-        flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT
-        environment_pointer = None
-        if environment is not None:
-            flags |= CREATE_UNICODE_ENVIRONMENT
-            environment_pointer = ctypes.cast(environment, ctypes.c_void_p)
-        if not isinstance(restrict_privileges, bool):
-            raise ValueError("restrict_privileges must be boolean")
         try:
             if restrict_privileges:
                 restricted_token = _create_restricted_primary_token(
