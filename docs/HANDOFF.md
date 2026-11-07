@@ -206,3 +206,12 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - The probe frees every returned SID and closes process/thread/token handles before profile deletion. Cleanup failure turns the probe result into unavailable.
 - Current production boundary remains PR #24/#25: disposable Low-integrity snapshots + privilege reduction + Job Object limits/UI restrictions + explicit inherited-handle allowlist. AppContainer will only become a production backend after supported test runtimes can execute inside it without granting broad host filesystem access.
 - Next compatibility work: probe the actual Python test runtime under AppContainer, determine the narrow executable/library ACL grants or bundled-runtime strategy required, then repeat for npm/Cargo/Go/.NET. Do not globally ACL host toolchain installations merely to make the sandbox pass.
+
+### PR #26 additional Python-runtime compatibility evidence
+
+- The active GitHub-hosted CPython installation initially failed inside AppContainer with Windows status `0xC0000135` (`STATUS_DLL_NOT_FOUND`). This was treated as positive isolation evidence: AppContainer could not read the hosted Python runtime/DLL tree by default.
+- The probe was hardened rather than weakening AppContainer. It temporarily grants only the unique AppContainer SID read/execute access to the specific CPython runtime targets required for startup: the interpreter, Python DLLs, standard-library/DLL directories, version zip when present, and VC runtime files when present.
+- With those temporary SID-specific RX grants, isolated/no-site Python starts successfully and writes a verification file only in the explicitly granted AppContainer workspace on Windows Python 3.10 and 3.12.
+- Every temporary runtime ACE is removed in a `finally` path. After revocation, the probe reruns Python and requires runtime visibility to return exactly to its pre-grant state. Cleanup failure makes the probe unavailable rather than silently continuing.
+- This experiment intentionally modifies the ephemeral CI Python ACL only during the probe. Production ForgeOS should not ACL arbitrary user/global toolchains. The intended production architecture is a ForgeOS-owned/bundled runtime whose ACL can be permanently and narrowly designed for AppContainer execution.
+- This establishes technical feasibility for a future Python AppContainer backend: zero network capabilities, explicit snapshot ACL only, narrow runtime RX, no broad user-file grants.
