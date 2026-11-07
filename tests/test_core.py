@@ -53,7 +53,7 @@ class ForgeOSTests(unittest.TestCase):
         (self.repo/'test_example.py').write_text('import unittest\nclass T(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
         result=run_test(str(self.repo),'python-unittest')
         self.assertTrue(result['passed'],result['output'])
-        self.assertIn(result['containment'], {'none','windows-job-object'})
+        self.assertIn(result['containment'], {'none','windows-job-object','windows-restricted-token+job-object'})
     def test_unittest_preset_failure(self):
         (self.repo/'test_example.py').write_text('import unittest\nclass T(unittest.TestCase):\n def test_bad(self): self.assertTrue(False)\n')
         result=run_test(str(self.repo),'python-unittest')
