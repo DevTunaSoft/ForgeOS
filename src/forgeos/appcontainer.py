@@ -99,6 +99,47 @@ def _icacls(path: Path, *arguments: str) -> None:
         raise OSError(f"icacls failed for {path}: {detail}")
 
 
+def _grant_path_read_execute(path: Path, sid_string: str) -> None:
+    if path.is_dir():
+        _icacls(
+            path, "/grant", f"*{sid_string}:(OI)(CI)(RX)", "/T", "/Q")
+    else:
+        _icacls(path, "/grant", f"*{sid_string}:(RX)", "/Q")
+
+
+def _revoke_path_grant(path: Path, sid_string: str) -> None:
+    arguments = ["/remove:g", f"*{sid_string}"]
+    if path.is_dir():
+        arguments.append("/T")
+    arguments.append("/Q")
+    _icacls(path, *arguments)
+
+
+def _python_runtime_acl_targets() -> list[Path]:
+    executable = Path(sys.executable).resolve()
+    base = Path(sys.base_prefix).resolve()
+    version_tag = f"python{sys.version_info.major}{sys.version_info.minor}"
+    candidates = [
+        executable,
+        base / "python3.dll",
+        base / f"{version_tag}.dll",
+        base / "DLLs",
+        base / "Lib",
+        base / f"{version_tag}.zip",
+        base / "vcruntime140.dll",
+        base / "vcruntime140_1.dll",
+    ]
+    result = []
+    seen = set()
+    for path in candidates:
+        if path.exists():
+            key = str(path).casefold()
+            if key not in seen:
+                seen.add(key)
+                result.append(path)
+    return result
+
+
 def _grant_probe_access(root: Path, allowed: Path, sid_string: str) -> None:
     # Root gets traverse/read attributes only, without inheritance. The writable
     # child directory gets an inheritable modify ACE and Low mandatory label.
@@ -443,7 +484,13 @@ def probe_appcontainer_network(timeout: int = 15) -> dict:
 
 
 def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
-    """Probe whether the active Python runtime can execute inside AppContainer."""
+    """Prove Python works only after narrow read/execute runtime grants.
+
+    The probe records whether the host Python tree was already visible to the
+    AppContainer, grants this one temporary AppContainer SID read/execute on the
+    minimum runtime roots needed by CPython, then removes those ACEs and checks
+    that visibility returns to its pre-probe state.
+    """
     if os.name != "nt":
         return {
             "available": False,
@@ -470,31 +517,67 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
                 allowed.mkdir()
                 _grant_probe_access(root, allowed, sid_string)
 
-                startup = _launch_appcontainer_process(
-                    sid, [str(executable), "-I", "-S", "-c", "pass"],
-                    cwd=allowed, timeout=timeout)
-                if startup["returncode"] != 0:
-                    raise OSError(
-                        "Python could not initialize inside AppContainer "
-                        f"(exit {startup['returncode']})")
+                command = [str(executable), "-I", "-S", "-c", "pass"]
+                before = _launch_appcontainer_process(
+                    sid, command, cwd=allowed, timeout=timeout)
+                pregrant_visible = before["returncode"] == 0
 
-                created = allowed / "python-created.txt"
-                writer = _launch_appcontainer_process(
-                    sid, [str(executable), "-I", "-S", "-c",
-                          "open('python-created.txt','w').write('ok')"],
-                    cwd=allowed, timeout=timeout)
-                if writer["returncode"] != 0 or not created.is_file():
+                targets = _python_runtime_acl_targets()
+                if not targets:
+                    raise OSError("No Python runtime ACL targets were found")
+                granted = []
+                try:
+                    for target in targets:
+                        _grant_path_read_execute(target, sid_string)
+                        granted.append(target)
+
+                    startup = _launch_appcontainer_process(
+                        sid, command, cwd=allowed, timeout=timeout)
+                    if startup["returncode"] != 0:
+                        raise OSError(
+                            "Python could not initialize after runtime RX grants "
+                            f"(exit {startup['returncode']})")
+
+                    created = allowed / "python-created.txt"
+                    writer = _launch_appcontainer_process(
+                        sid, [str(executable), "-I", "-S", "-c",
+                              "open('python-created.txt','w').write('ok')"],
+                        cwd=allowed, timeout=timeout)
+                    if writer["returncode"] != 0 or not created.is_file():
+                        raise OSError(
+                            "Python could not write explicitly granted "
+                            f"AppContainer workspace (exit {writer['returncode']})")
+                    if created.read_text(encoding="utf-8") != "ok":
+                        raise OSError(
+                            "Python AppContainer write verification failed")
+                finally:
+                    cleanup_errors = []
+                    for target in reversed(granted):
+                        try:
+                            _revoke_path_grant(target, sid_string)
+                        except OSError as exc:
+                            cleanup_errors.append(str(exc))
+                    if cleanup_errors:
+                        raise OSError(
+                            "Failed to revoke temporary Python runtime ACEs: "
+                            + "; ".join(cleanup_errors))
+
+                after = _launch_appcontainer_process(
+                    sid, command, cwd=allowed, timeout=timeout)
+                postgrant_visible = after["returncode"] == 0
+                if postgrant_visible != pregrant_visible:
                     raise OSError(
-                        "Python could not write explicitly granted AppContainer "
-                        f"workspace (exit {writer['returncode']})")
-                if created.read_text(encoding="utf-8") != "ok":
-                    raise OSError("Python AppContainer write verification failed")
+                        "Python runtime access did not return to its pre-probe "
+                        "state after ACL revocation")
         return {
             "available": True,
             "verified": True,
             "python_executable": str(executable),
             "python_startup": True,
             "workspace_write": True,
+            "host_runtime_preexposed": pregrant_visible,
+            "runtime_acl_targets": [str(path) for path in targets],
+            "temporary_runtime_grants_revoked": True,
             "token_is_appcontainer": True,
             "capability_count": 0,
             "network_capabilities_granted": False,
