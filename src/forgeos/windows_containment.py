@@ -22,6 +22,7 @@ if os.name == "nt":
 
     CREATE_SUSPENDED = 0x00000004
     CREATE_NO_WINDOW = 0x08000000
+    CREATE_UNICODE_ENVIRONMENT = 0x00000400
     STARTF_USESTDHANDLES = 0x00000100
     WAIT_OBJECT_0 = 0x00000000
     WAIT_TIMEOUT = 0x00000102
@@ -214,12 +215,32 @@ def _create_restricted_primary_token(*, low_integrity: bool = False):
         kernel32.CloseHandle(current)
 
 
+
+def _environment_block(env):
+    """Create a mutable UTF-16 Windows environment block."""
+    if env is None:
+        return None
+    if not isinstance(env, dict):
+        raise ValueError("env must be a dictionary or None")
+    entries = []
+    for key, value in env.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("Environment keys and values must be strings")
+        if not key or "\x00" in key or "\x00" in value or "=" in key:
+            raise ValueError("Invalid environment entry")
+        entries.append((key, value))
+    entries.sort(key=lambda item: item[0].casefold())
+    block = "\x00".join(f"{key}={value}" for key, value in entries) + "\x00\x00"
+    return ctypes.create_unicode_buffer(block)
+
+
 def run_contained(argv, cwd: str | Path, *, timeout: int,
                   active_process_limit: int = 64,
                   process_memory_bytes: int = 1024 * 1024 * 1024,
                   job_memory_bytes: int = 2 * 1024 * 1024 * 1024,
                   restrict_privileges: bool = True,
-                  low_integrity: bool = False):
+                  low_integrity: bool = False,
+                  env: dict[str, str] | None = None):
     """Run one command in a Windows Job Object and capture combined output."""
     if os.name != "nt":
         raise OSError("Windows Job Object containment is only available on Windows")
@@ -282,7 +303,12 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         startup.hStdError = wintypes.HANDLE(out_handle)
         info = PROCESS_INFORMATION()
         command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
+        environment = _environment_block(env)
         flags = CREATE_SUSPENDED | CREATE_NO_WINDOW
+        environment_pointer = None
+        if environment is not None:
+            flags |= CREATE_UNICODE_ENVIRONMENT
+            environment_pointer = ctypes.cast(environment, ctypes.c_void_p)
         if not isinstance(restrict_privileges, bool):
             raise ValueError("restrict_privileges must be boolean")
         if restrict_privileges:
@@ -290,12 +316,14 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
                 low_integrity=low_integrity)
             created = advapi32.CreateProcessAsUserW(
                 restricted_token, None, command_line, None, None, True,
-                flags, None, str(root), ctypes.byref(startup), ctypes.byref(info))
+                flags, environment_pointer, str(root),
+                ctypes.byref(startup), ctypes.byref(info))
             operation = "CreateProcessAsUserW"
         else:
             created = kernel32.CreateProcessW(
-                None, command_line, None, None, True, flags, None,
-                str(root), ctypes.byref(startup), ctypes.byref(info))
+                None, command_line, None, None, True, flags,
+                environment_pointer, str(root),
+                ctypes.byref(startup), ctypes.byref(info))
             operation = "CreateProcessW"
         if not created:
             raise _win_error(operation)
