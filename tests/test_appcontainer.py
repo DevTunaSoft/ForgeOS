@@ -24,6 +24,7 @@ class WindowsAppContainerProbeTests(unittest.TestCase):
         self.assertEqual(result["capability_count"], 0)
         self.assertFalse(result["network_capabilities_granted"])
         self.assertTrue(result["profile"].startswith("ForgeOS.Probe."))
+        self.assertTrue(result["profile_deleted"])
 
 
     def test_explicit_workspace_access_and_ungranted_read_isolation(self):
@@ -35,3 +36,4 @@ class WindowsAppContainerProbeTests(unittest.TestCase):
         self.assertTrue(result["token_is_appcontainer"], result)
         self.assertEqual(result["capability_count"], 0, result)
         self.assertFalse(result["network_capabilities_granted"], result)
+        self.assertTrue(result["profile_deleted"], result)
