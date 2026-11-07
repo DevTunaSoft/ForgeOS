@@ -94,6 +94,10 @@ class EngineIntegrationTests(unittest.TestCase):
                               allow_host_tests=True, generate=lambda model, prompt: next(responses))
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["iterations"], 2)
+        from forgeos.error_learning import RepairMemory
+        records = RepairMemory(self.root / "repair_memory.sqlite3").stats()
+        self.assertEqual(records["verified_repairs"], 1)
+        self.assertEqual(records["failed_repairs"], 0)
         self.assertEqual(self.store.get(self.task)["status"], "passed")
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
@@ -118,6 +122,10 @@ class EngineIntegrationTests(unittest.TestCase):
                               allow_host_tests=True, generate=lambda model, prompt: response)
         self.assertFalse(result["passed"])
         self.assertEqual(result["iterations"], 2)
+        from forgeos.error_learning import RepairMemory
+        records = RepairMemory(self.root / "repair_memory.sqlite3").stats()
+        self.assertEqual(records["failed_repairs"], 1)
+        self.assertEqual(records["verified_repairs"], 0)
         self.assertEqual(self.store.get(self.task)["status"], "failed")
 
 

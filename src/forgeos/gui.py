@@ -144,6 +144,21 @@ def launch(db_path):
         diagnostics.see("end")
         diagnostics.configure(state="disabled")
 
+    def show_efficiency():
+        try:
+            from .optimizer_metrics import OptimizationMetrics
+            from .error_learning import RepairMemory
+            metrics = OptimizationMetrics().stats()
+            learning = RepairMemory(Path(db_path).with_name("repair_memory.sqlite3")).stats()
+            log("Local AI efficiency\n" + json.dumps(metrics, indent=2)
+                + "\nVerified repair learning\n" + json.dumps(learning, indent=2))
+            tabs.select(activity)
+        except Exception as exc:
+            messagebox.showerror("Efficiency information unavailable", str(exc))
+
+    ttk.Button(activity, text="AI efficiency and repair learning",
+               command=show_efficiency).pack(anchor="w", pady=(0, 8))
+
     def refresh():
         selection = tree.selection()
         selected_id = selection[0] if selection else None

@@ -472,7 +472,7 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         return {
             "passed": code.value == 0,
             "returncode": int(code.value),
-            "output": text[-16000:],
+            "output": text,
             "ui_restrictions": ui_restrictions,
             "handle_allowlist": True,
             "containment": (

@@ -12,6 +12,11 @@ def main(argv=None):
     parser.add_argument('--db',default=str(default_db()))
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
+    evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
+    evidence.add_argument('operation',choices=['show','stats'])
+    evidence.add_argument('reference',nargs='?')
+    memory=sub.add_parser('learning',help='Show local verified repair learning statistics')
+    memory.add_argument('operation',choices=['stats'])
     recover_edits=sub.add_parser('recover-edits',help='Safely roll back a pending edit journal')
     recover_edits.add_argument('workspace')
     add=sub.add_parser('add'); add.add_argument('project'); add.add_argument('description')
@@ -35,6 +40,21 @@ def main(argv=None):
     if args.action=='gui':
         from .gui import launch
         return launch(args.db)
+    if args.action == 'diagnostics':
+        if args.operation == 'show':
+            from .diagnostics import EvidenceStore
+            if args.reference is None:
+                parser.error('diagnostics show requires a 64-character reference')
+            print(EvidenceStore().get(args.reference),end='')
+        else:
+            from .optimizer_metrics import OptimizationMetrics
+            print(json.dumps(OptimizationMetrics().stats(),indent=2))
+        return 0
+    if args.action == 'learning':
+        from .error_learning import RepairMemory
+        path=Path(args.db).expanduser().resolve().with_name('repair_memory.sqlite3')
+        print(json.dumps(RepairMemory(path).stats(),indent=2))
+        return 0
     store=Store(args.db)
     try:
         if args.action=='add':

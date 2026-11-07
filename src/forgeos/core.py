@@ -151,6 +151,9 @@ class Ollama:
 
     def generate_edits(self, prompt: str) -> str:
         """Request complete JSON edits rather than a planning essay."""
+        if self.model == "auto":
+            from .model_routing import choose_installed_model
+            self.model = choose_installed_model(prompt)
         payload = json.dumps({
             'model': self.model, 'prompt': prompt, 'stream': False, 'format': 'json',
             'options': {'num_ctx': 8192, 'num_predict': 4096},
@@ -165,6 +168,9 @@ class Ollama:
         return result
 
     def plan(self, description: str) -> str:
+        if self.model == "auto":
+            from .model_routing import choose_installed_model
+            self.model = choose_installed_model(description)
         prompt = (
             'You are a software planning assistant. Produce a concise, testable plan. '
             'Do not claim to have executed code. Include risks and acceptance tests.\n\nTask:\n'
@@ -206,7 +212,7 @@ def _execute_test_process(argv, root: Path, timeout: int, *,
     return {
         'passed': result.returncode == 0,
         'returncode': result.returncode,
-        'output': (result.stdout + '\n' + result.stderr)[-16000:],
+        'output': result.stdout + '\n' + result.stderr,
         'containment': 'none',
     }
 
@@ -235,9 +241,18 @@ def run_test(project: str, command: str, timeout: int = 180, *,
     if not root.is_dir() or not (root / '.git').exists():
         raise ValueError('Not a local Git repository')
     try:
-        return _execute_test_process(
+        from .diagnostics import optimize_test_result
+        execution = _execute_test_process(
             allowed[command], root, timeout,
             low_integrity=low_integrity, env=env)
+        outcome = optimize_test_result(execution, command)
+        try:
+            from .optimizer_metrics import OptimizationMetrics
+            OptimizationMetrics().record(outcome)
+        except Exception:
+            # Metrics must never change the outcome of a test.
+            outcome["metrics_recorded"] = False
+        return outcome
     except subprocess.TimeoutExpired:
         return {'passed': False, 'returncode': None,
                 'output': f'Test timed out after {timeout}s',

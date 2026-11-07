@@ -768,7 +768,7 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
         return {
             "passed": code.value == 0,
             "returncode": int(code.value),
-            "output": text[-16000:],
+            "output": text,
             "containment": "windows-zero-capability-appcontainer+job-object",
             "token_is_appcontainer": True,
             "capability_count": 0,
