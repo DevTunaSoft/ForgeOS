@@ -69,3 +69,17 @@ Output reductions are byte counts, not actual AI token counts or dollar savings.
 Archived test logs are local, sensitive, unencrypted data; restrict local access.
 The current 32 MiB archive limit and in-memory command capture require further
 hardening before unattended or production deployment.
+
+### Optional automatic local model selection (experimental)
+
+Use --model auto with planning or autonomous task execution to select from
+already installed Ollama models, choosing smaller coding models for simple
+tasks and larger ones for more complex tasks. The choice is pinned in the task
+checkpoint. The current default remains qwen2.5-coder:3b for compatibility.
+
+    py -m forgeos plan 1 --model auto
+    py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --allow-host-tests
+
+No models are downloaded automatically. Model size is only a rough heuristic,
+not a hardware acceptance test or guarantee of adequate RAM. Only local
+Ollama at 127.0.0.1:11434 is supported.
