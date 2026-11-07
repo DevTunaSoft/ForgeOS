@@ -34,3 +34,10 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 5. Add independent test-and-repair loop with auditable evidence.
 6. Build and verify a real Windows installer and update user-facing documentation.
 7. Keep cumulative complete-source deliveries and comprehensive handoffs.
+
+## Hardening round — 2026-11-07
+
+- Corrected Tkinter cross-thread operations: GUI state captured before worker creation; worker results sent through a Queue; main GUI thread polls and updates widgets. Root.after is no longer invoked by workers.
+- Added seeded malformed/Unicode task fuzzing, 75-task interruption/recovery stress, invalid test-preset fuzzing, and injected executable-missing/timeout tests.
+- Pending: observe Windows/Linux CI for these changes, inspect failures, and perform real Windows GUI interaction tests. No production-ready claim.
+- Known: closing during a running job remains blocked until completion; Ollama planning can take up to 180 seconds. No cancellation, sandbox or worker subprocess isolation. Test runner executes trusted repository code on the host. Full autonomous code-editing pipeline remains future work.
