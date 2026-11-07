@@ -60,6 +60,6 @@ def get_comparison(record: dict, *, evidence_store: Any | None = None,
         "raw": _preview(full, preview_limit),
         "raw_available": valid_reference,
         "reference": reference if valid_reference else "",
-        "failure_type": result.get("failure_type", {}),
+        "failure_type": result.get("failure_type") if isinstance(result.get("failure_type"), dict) else {},
         "metrics": optimized,
     }

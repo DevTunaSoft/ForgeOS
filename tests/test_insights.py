@@ -39,6 +39,11 @@ class InsightModelTests(unittest.TestCase):
         self.assertFalse(result["raw_available"])
         self.assertIn("No recoverable", result["raw"])
 
+    def test_unexpected_classification_shape_does_not_crash_gui_model(self):
+        value = {"id": 22, "result": {"output": "failed",
+                 "failure_type": "untrusted bad metadata"}}
+        self.assertEqual(get_comparison(value)["failure_type"], {})
+
     def test_too_large_result_rejected(self):
         with self.assertRaises(ValueError):
             get_comparison({"result": "x" * (2_000_001)})
