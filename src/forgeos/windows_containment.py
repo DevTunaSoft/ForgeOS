@@ -164,7 +164,7 @@ def _create_restricted_primary_token():
             kernel32.GetCurrentProcess(), desired, ctypes.byref(current)):
         raise _win_error("OpenProcessToken")
     try:
-        flags = DISABLE_MAX_PRIVILEGE | LUA_TOKEN
+        flags = DISABLE_MAX_PRIVILEGE
         if not advapi32.CreateRestrictedToken(
                 current, flags, 0, None, 0, None, 0, None,
                 ctypes.byref(restricted)):
