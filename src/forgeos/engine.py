@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 from pathlib import Path, PurePosixPath
 import re
 import uuid
@@ -101,6 +102,21 @@ def _context(root: Path) -> str:
 def _generate(model: Ollama, prompt: str) -> str:
     # The local Ollama API is already the only endpoint allowed by Ollama.
     return model.generate_edits(prompt)
+
+
+def _run_workspace_tests(workspace: Path, preset: str) -> dict:
+    """Run tests against a disposable Low-integrity snapshot on Windows."""
+    if os.name != "nt":
+        return run_test(str(workspace), preset)
+    from .test_runtime import (
+        create_windows_low_integrity_snapshot, remove_test_snapshot,
+    )
+    runtime = create_windows_low_integrity_snapshot(workspace)
+    try:
+        return run_test(
+            str(runtime.path), preset, low_integrity=True, env=runtime.env)
+    finally:
+        remove_test_snapshot(workspace)
 
 
 def _execute_task(
@@ -228,7 +244,7 @@ def _execute_task(
                            for name in paths},
             }))
             heartbeat()
-            outcome = run_test(str(ws.path), preset)
+            outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
             last_output = outcome["output"]
             if outcome["passed"]:
