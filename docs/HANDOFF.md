@@ -249,3 +249,9 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - The frozen secure acceptance smoke now runs the same isolation checks through both unittest and native pytest, including outside-snapshot write denial, parent-secret noninheritance, bootstrap-environment scrubbing, and localhost network denial.
 - Added source tests for secure pytest child-mode selection, pytest sandbox invocation, and plugin-autoload isolation.
 - Current secure production Python coverage after this PR: `python-unittest` and `python-pytest`. npm/cargo/Go/.NET still require ForgeOS-owned secure toolchains before they may use the production autonomous path.
+
+### PR #29 packaged pytest capture correction
+
+- The first frozen pytest acceptance run reached the real zero-capability AppContainer but failed because pytest's default file-descriptor capture attempted to open the Windows `NUL` device, which the AppContainer correctly denied.
+- ForgeOS does **not** grant access to `NUL` or weaken the AppContainer. The bundled pytest child now runs with `--capture=no`; ForgeOS already redirects Python stdout/stderr to its validated snapshot-owned test-output file, so failure output remains available for repair.
+- Source coverage requires the secure pytest invocation to include `--capture=no`.
