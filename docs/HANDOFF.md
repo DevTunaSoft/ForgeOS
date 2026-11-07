@@ -310,3 +310,19 @@ PR #27 merged into main. This branch preserves the frozen Windows
 zero-capability AppContainer path, new sandbox tests, and fail-closed policy.
 Compressed output is generated only after the secure process terminates.
 Use the Windows frozen smoke check to validate this joint integration.
+
+
+## Phase 2 output rules implementation (CI still required)
+
+Feature branch feat/rtk-phase2-optimization-rules, based on merged phase 1.
+Added source src/forgeos/output_rules.py and tests/test_output_rules.py.
+Combined with diagnostics.py after full raw-output archiving and before the
+bounded AI-facing summary. The original SHA-256 evidence is recoverable.
+No optimizations may alter the command, pass/fail result or exit code.
+Built-in noncritical adjacent duplicate suppression; optional JSON literal
+rules only after SHA-256 trust pinning; config tampering invalidates trust.
+CLI: forgeos filters status; forgeos filters trust. If the summary including
+recall reference costs more bytes than raw output, return raw output instead.
+Tests for modified rules, error-preserving dedup, Unicode, symlink rejection,
+invalid configurations, and small-output noninflation.
+Block merge until Ubuntu and Windows 3.10/3.12 CI + packaged secure smoke pass.
