@@ -67,6 +67,7 @@ class SandboxRunnerTests(unittest.TestCase):
                 os.chdir(previous)
             self.assertEqual(len(calls), 1)
             self.assertIn(str(root.resolve()), calls[0])
+            self.assertIn("--capture=no", calls[0])
             self.assertIn("--color=no", calls[0])
             self.assertIn("--disable-warnings", calls[0])
 
