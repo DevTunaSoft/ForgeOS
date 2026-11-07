@@ -148,16 +148,59 @@ def launch(db_path):
         try:
             from .optimizer_metrics import OptimizationMetrics
             from .error_learning import RepairMemory
+            from .output_rules import TrustedOutputRules
+            memory = RepairMemory(Path(db_path).with_name("repair_memory.sqlite3"))
             metrics = OptimizationMetrics().stats()
-            learning = RepairMemory(Path(db_path).with_name("repair_memory.sqlite3")).stats()
+            learning = memory.stats()
+            candidates = memory.recommendations(preset=preset.get(), model=model.get())[:10]
+            rules_status = TrustedOutputRules().status()
             log("Local AI efficiency\n" + json.dumps(metrics, indent=2)
-                + "\nVerified repair learning\n" + json.dumps(learning, indent=2))
+                + "\nVerified repair learning\n" + json.dumps(learning, indent=2)
+                + "\nRepair candidates (review only)\n"
+                + json.dumps(candidates, indent=2)
+                + "\nCustom output filter status: " + rules_status)
             tabs.select(activity)
         except Exception as exc:
             messagebox.showerror("Efficiency information unavailable", str(exc))
 
     ttk.Button(activity, text="AI efficiency and repair learning",
                command=show_efficiency).pack(anchor="w", pady=(0, 8))
+
+    def show_comparison():
+        try:
+            from .insights import get_comparison
+            from .diagnostics import EvidenceStore
+            item = get_comparison(store.get(selected()), evidence_store=EvidenceStore())
+            popup = tk.Toplevel(root)
+            popup.title("ForgeOS | Original vs optimized test evidence")
+            popup.geometry("1200x720")
+            ttk.Label(popup, text=(
+                f"Task #{item['task_id']} | {item['status']} | "
+                f"Local model: {item['model']} | Failure: "
+                f"{item['failure_type'].get('category', 'unknown')}"
+            ), padding=(10, 8)).pack(anchor="w")
+            ttk.Label(popup, text=(
+                "Original evidence is shown only after you request this view. "
+                "It may contain sensitive project output."
+            ), padding=(10, 0)).pack(anchor="w")
+            split = ttk.PanedWindow(popup, orient="horizontal")
+            split.pack(fill="both", expand=True, padx=10, pady=10)
+            for label, content in (("AI-optimized summary", item["compact"]),
+                                   ("Original test output", item["raw"])):
+                panel = ttk.LabelFrame(split, text=label, padding=4)
+                editor = tk.Text(panel, wrap="none", state="normal")
+                scroll = ttk.Scrollbar(panel, orient="vertical", command=editor.yview)
+                editor.configure(yscrollcommand=scroll.set)
+                editor.pack(side="left", fill="both", expand=True)
+                scroll.pack(side="right", fill="y")
+                editor.insert("1.0", content)
+                editor.configure(state="disabled")
+                split.add(panel, weight=1)
+        except Exception as exc:
+            messagebox.showerror("Cannot display diagnostic comparison", str(exc))
+
+    ttk.Button(activity, text="Compare selected task: original vs AI summary",
+               command=show_comparison).pack(anchor="w", pady=(0, 8))
 
     def refresh():
         selection = tree.selection()
