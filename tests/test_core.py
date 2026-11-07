@@ -3,6 +3,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import random
+import string
 import threading
 import unittest
 from unittest.mock import patch
@@ -56,6 +58,47 @@ class ForgeOSTests(unittest.TestCase):
         self.assertFalse(result['passed'])
     def test_local_only_ollama(self):
         with self.assertRaises(ValueError): Ollama(base='https://example.org')
+    def test_fuzz_task_descriptions_round_trip(self):
+        rng=random.Random(20261107)
+        alphabet=string.ascii_letters+string.digits+" \\n\\tΩ漢字'\\\";--"
+        for _ in range(150):
+            description=''.join(rng.choice(alphabet) for _ in range(rng.randint(1,180)))
+            if not description.strip():
+                continue
+            task=self.store.add(str(self.repo),description)
+            self.assertEqual(self.store.get(task)['description'],description.strip())
+        self.assertEqual(self.store.db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
+
+    def test_recovery_idempotent_under_repeated_interruptions(self):
+        tasks=[self.store.add(str(self.repo),f'job {i}') for i in range(75)]
+        for i,task in enumerate(tasks):
+            self.store.update(task,('planning','testing','passed','failed')[i%4],increment=True)
+        self.assertEqual(self.store.recover(),38)
+        self.assertEqual(self.store.recover(),0)
+        self.assertEqual(sum(t['status']=='queued' for t in self.store.list()),38)
+
+    def test_fuzz_invalid_test_presets(self):
+        rng=random.Random(8124)
+        alphabet=string.ascii_letters+string.digits+" ;&|\\n\\x00"
+        for _ in range(100):
+            preset=''.join(rng.choice(alphabet) for _ in range(rng.randint(1,50)))
+            if preset in {'python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'}:
+                continue
+            with self.assertRaises(ValueError):
+                run_test(str(self.repo),preset)
+
+    def test_missing_test_executable_is_reported(self):
+        with patch('forgeos.core.subprocess.run',side_effect=FileNotFoundError('missing')):
+            result=run_test(str(self.repo),'npm-test')
+        self.assertFalse(result['passed'])
+        self.assertIn('unavailable',result['output'])
+
+    def test_timeout_is_reported(self):
+        with patch('forgeos.core.subprocess.run',side_effect=subprocess.TimeoutExpired('python',1)):
+            result=run_test(str(self.repo),'python-unittest',timeout=1)
+        self.assertFalse(result['passed'])
+        self.assertIn('timed out',result['output'])
+
     def test_bad_status(self):
         a=self.store.add(str(self.repo),'one')
         with self.assertRaises(ValueError): self.store.update(a,'invented')
