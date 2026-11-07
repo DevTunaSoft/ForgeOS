@@ -28,10 +28,12 @@ def run_unittest() -> int:
     root = Path.cwd().resolve()
     if not root.is_dir():
         return 91
+    original_path = list(sys.path)
     sys.path.insert(0, str(root))
     try:
         with _output_stream(root) as stream:
-            suite = unittest.defaultTestLoader.discover(str(root))
+            loader = unittest.TestLoader()
+            suite = loader.discover(str(root))
             result = unittest.TextTestRunner(
                 stream=stream, verbosity=2).run(suite)
             stream.flush()
@@ -49,3 +51,5 @@ def run_unittest() -> int:
         except Exception:
             pass
         return 92
+    finally:
+        sys.path[:] = original_path
