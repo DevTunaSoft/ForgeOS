@@ -81,11 +81,17 @@ class OutputRuleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             trust.trust_config()
 
+    def test_unknown_repeated_lines_are_not_assumed_safe_noise(self):
+        raw = "HTTP 500 database connection dropped\n" * 15
+        result, removed = deduplicate_output(raw, "npm-test")
+        self.assertEqual(result, raw)
+        self.assertEqual(removed, 0)
+
     def test_unicode_and_nonadjacent_output(self):
-        raw = "Ω漢字\n" * 9 + "different\n" + "Ω漢字\n" * 2
+        raw = "INFO Ω漢字\n" * 9 + "different\n" + "INFO Ω漢字\n" * 2
         text, removed = deduplicate_output(raw, "python-unittest")
         self.assertEqual(removed, 8)
-        self.assertTrue(text.endswith("different\nΩ漢字\nΩ漢字\n"))
+        self.assertTrue(text.endswith("different\nINFO Ω漢字\nINFO Ω漢字\n"))
 
 if __name__ == "__main__":
     unittest.main()
