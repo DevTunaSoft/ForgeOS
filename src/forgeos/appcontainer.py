@@ -221,6 +221,20 @@ def _launch_appcontainer_process(appcontainer_sid, argv, *,
         wc.kernel32.CloseHandle(process)
 
 
+def _delete_probe_profile(profile_name: str) -> None:
+    hr = int(userenv.DeleteAppContainerProfile(profile_name)) & 0xFFFFFFFF
+    if _failed_hresult(hr):
+        raise OSError(
+            f"DeleteAppContainerProfile failed: 0x{hr:08X}")
+    probe_sid = ctypes.c_void_p()
+    derived = int(userenv.DeriveAppContainerSidFromAppContainerName(
+        profile_name, ctypes.byref(probe_sid))) & 0xFFFFFFFF
+    if probe_sid:
+        wc.advapi32.FreeSid(probe_sid)
+    if not _failed_hresult(derived):
+        raise OSError("Temporary AppContainer profile still exists after deletion")
+
+
 def _create_probe_profile():
     profile_name = "ForgeOS.Probe." + uuid.uuid4().hex
     sid = ctypes.c_void_p()
@@ -358,7 +372,10 @@ def probe_appcontainer(timeout: int = 15) -> dict:
         if sid:
             wc.advapi32.FreeSid(sid)
         if profile_created:
-            userenv.DeleteAppContainerProfile(profile_name)
+            try:
+                _delete_probe_profile(profile_name)
+            except OSError:
+                pass
 
 
 def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
@@ -422,4 +439,7 @@ def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
         if sid:
             wc.advapi32.FreeSid(sid)
         if profile_name:
-            userenv.DeleteAppContainerProfile(profile_name)
+            try:
+                _delete_probe_profile(profile_name)
+            except OSError:
+                pass
