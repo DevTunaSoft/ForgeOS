@@ -417,3 +417,26 @@ class CheckpointResumeTests(EngineIntegrationTests):
                          allow_host_tests=True, resume=True)
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
         self.assertEqual(self.store.get(self.task)["result"], before)
+
+    def test_active_execution_lease_blocks_duplicate_run(self):
+        owner = "already-running"
+        self.assertTrue(self.store.acquire_lease(self.task, owner))
+        response = json.dumps({"files": [{"path": "app.py",
+                               "content": "def value():\n return 42\n"}]})
+        with self.assertRaisesRegex(ValueError, "active execution lease"):
+            execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                         generate=lambda model, prompt: response)
+        self.assertEqual(self.store.get(self.task)["status"], "queued")
+        self.assertFalse((self.root / f"task-{self.task}").exists())
+        self.assertTrue(self.store.release_lease(self.task, owner))
+
+    def test_keyboard_interrupt_releases_execution_lease(self):
+        from unittest.mock import patch
+        response = json.dumps({"files": [{"path": "app.py",
+                               "content": "def value():\n return 42\n"}]})
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=lambda model, prompt: response)
+        self.assertTrue(self.store.acquire_lease(self.task, "probe"))
+        self.assertTrue(self.store.release_lease(self.task, "probe"))
