@@ -40,6 +40,22 @@ class OutputRuleTests(unittest.TestCase):
         self.write([{"preset": "*", "contains": "progress", "min_repeats": 4}])
         self.assertEqual(self.rules.enabled_rules(), ([], "untrusted-or-modified"))
 
+    def test_trusted_rule_uses_same_bytes_for_hash_and_parse(self):
+        from unittest.mock import patch
+        from forgeos import output_rules
+        self.write([{"preset":"npm-test","contains":"progress","min_repeats":3}])
+        self.rules.trust_config()
+        real_read = output_rules._read_safe
+        reads = []
+        def audited_read(path):
+            reads.append(Path(path))
+            return real_read(path)
+        with patch("forgeos.output_rules._read_safe", side_effect=audited_read):
+            enabled, status = self.rules.enabled_rules()
+        self.assertEqual(status, "trusted")
+        self.assertEqual(len(enabled), 1)
+        self.assertEqual(sum(p == self.config for p in reads), 1)
+
     def test_unexpected_schema_and_execution_fields_rejected(self):
         for item in (
             {"preset": "npm-test", "contains": "x", "min_repeats": 3},
