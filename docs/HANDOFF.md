@@ -184,3 +184,25 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Extended process startup resources are cleaned on every path, including token-creation or process-creation failure. Option/environment validation occurs before the Job Object and attribute list are allocated.
 - These protections complement the existing Job Object resource limits, privilege-reduced token, Low-integrity execution snapshot, and write-back protection. They still do not block file reads or outbound networking.
 - Next major isolation candidate: AppContainer/LPAC via `STARTUPINFOEX` security capabilities, because Windows can create an AppContainer token/namespace at process creation. Compatibility with host-installed Python/npm/Cargo/Go/.NET binaries and explicit snapshot ACL grants must be proven before it can replace the current boundary.
+
+## PR #26 candidate — classic Windows AppContainer capability and isolation probe (2026-11-07)
+
+- Added `src/forgeos/appcontainer.py` as a capability-first experiment using the stable classic AppContainer APIs from `userenv.dll`. This does **not** replace the production autonomous runner yet.
+- The probe creates a unique temporary AppContainer profile, supplies `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` with the profile SID and **zero capability SIDs**, creates the child suspended, opens the child's token from the parent, and requires `TokenIsAppContainer == 1` and a zero `TokenCapabilities` group count before resuming it.
+- There is no fallback to the existing restricted-token/Low-integrity path inside the AppContainer probe. If AppContainer creation or launch fails, the probe reports unavailable rather than claiming stronger isolation.
+- Windows 3.10 and 3.12 hosted-runner tests have verified basic zero-capability AppContainer process launch using the built-in `cmd.exe`.
+- Added explicit filesystem-boundary probing:
+  - a temporary root gets a non-inheriting AppContainer SID read/traverse ACE;
+  - one child directory gets an inheritable modify ACE and Low mandatory-integrity label;
+  - the AppContainer must create a file using a relative path inside that explicitly granted directory;
+  - it must fail to read an ungranted sibling file one level outside the granted directory.
+- Added independent network probing:
+  - the zero-capability AppContainer first runs built-in `curl.exe --version` successfully, proving the client executable itself works inside the container;
+  - the parent listens on a real localhost TCP port;
+  - AppContainer curl then attempts the loopback URL;
+  - curl must fail and the parent listener must receive no connection.
+  This prevents a missing/broken curl executable from being mistaken for successful network isolation.
+- Temporary profile cleanup requires `DeleteAppContainerProfile` to return a successful HRESULT. Microsoft documents that API as the profile deletion operation and notes deletion of a nonexistent profile also succeeds. `DeriveAppContainerSidFromAppContainerName` is deterministic SID derivation and is **not** a supported profile-existence check; an earlier attempt to use it as post-delete verification was removed after Windows CI exposed the semantic error.
+- The probe frees every returned SID and closes process/thread/token handles before profile deletion. Cleanup failure turns the probe result into unavailable.
+- Current production boundary remains PR #24/#25: disposable Low-integrity snapshots + privilege reduction + Job Object limits/UI restrictions + explicit inherited-handle allowlist. AppContainer will only become a production backend after supported test runtimes can execute inside it without granting broad host filesystem access.
+- Next compatibility work: probe the actual Python test runtime under AppContainer, determine the narrow executable/library ACL grants or bundled-runtime strategy required, then repeat for npm/Cargo/Go/.NET. Do not globally ACL host toolchain installations merely to make the sandbox pass.
