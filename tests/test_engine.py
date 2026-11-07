@@ -121,6 +121,29 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.task)["status"], "failed")
 
 
+class FrozenSecureRoutingTests(unittest.TestCase):
+    def test_frozen_windows_workspace_tests_never_fall_back(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from forgeos.engine import _run_workspace_tests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = SimpleNamespace(path=root, env={"FORGEOS_EXECUTION_SNAPSHOT": "1"})
+            with patch("forgeos.engine.os.name", "nt"), \
+                 patch("forgeos.engine.sys.frozen", True, create=True), \
+                 patch("forgeos.test_runtime.create_windows_low_integrity_snapshot",
+                       return_value=runtime), \
+                 patch("forgeos.test_runtime.remove_test_snapshot") as cleanup, \
+                 patch("forgeos.secure_runner.run_secure_windows_test",
+                       return_value={"passed": True}) as secure, \
+                 patch("forgeos.engine.run_test",
+                       side_effect=AssertionError("weaker runner fallback")):
+                result = _run_workspace_tests(root, "python-unittest")
+            self.assertTrue(result["passed"])
+            secure.assert_called_once_with(runtime, "python-unittest")
+            cleanup.assert_called_once_with(root)
+
+
 class AuditRegressionTests(unittest.TestCase):
     def test_generator_uses_edit_api_not_plan(self):
         from forgeos.engine import _generate

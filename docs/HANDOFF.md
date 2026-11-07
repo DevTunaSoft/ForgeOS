@@ -215,3 +215,27 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Every temporary runtime ACE is removed in a `finally` path. After revocation, the probe reruns Python and requires runtime visibility to return exactly to its pre-grant state. Cleanup failure makes the probe unavailable rather than silently continuing.
 - This experiment intentionally modifies the ephemeral CI Python ACL only during the probe. Production ForgeOS should not ACL arbitrary user/global toolchains. The intended production architecture is a ForgeOS-owned/bundled runtime whose ACL can be permanently and narrowly designed for AppContainer execution.
 - This establishes technical feasibility for a future Python AppContainer backend: zero network capabilities, explicit snapshot ACL only, narrow runtime RX, no broad user-file grants.
+
+## PR #27 — production AppContainer integration for frozen Windows execution (2026-11-07)
+
+- The frozen Windows product now routes supported autonomous tests through a zero-capability AppContainer runner instead of the prior Low-integrity-only path.
+- Production Python `unittest` execution uses the frozen `ForgeOS.exe` itself as the ForgeOS-owned Python runtime. The sandbox therefore does not need RX grants to an arbitrary separately installed Python toolchain.
+- The AppContainer launch combines: zero capability SIDs, disposable Low-integrity execution snapshot, Job Object process/memory limits, kill-on-close tree cleanup, Job UI restrictions, and an explicit inherited-handle allowlist.
+- No network capability is granted. The temporary AppContainer profile is deleted after each execution, and explicit ACL grants to the snapshot/executable are revoked before profile teardown.
+- The frozen execution path is fail-closed: if AppContainer launch fails or the preset is not yet supported by the secure runner, ForgeOS does not silently fall back to the older host runner.
+- Current secure production preset scope is deliberately limited to `python-unittest`. `python-pytest`, npm, cargo, Go, and .NET remain unsupported by this new secure path until ForgeOS-owned runtime/toolchain provisioning is implemented for them.
+- Source/development mode keeps the older restricted-token + Job Object + Low-integrity runner so the unfrozen source test suite can validate code before packaging. This is explicitly a development path, not a production fallback.
+- The execution snapshot environment no longer copies arbitrary parent environment variables. It now uses a narrow host-variable allowlist plus ForgeOS-owned temp/cache/home paths, preventing parent API keys/tokens from being inherited by generated tests.
+- Hidden frozen child mode writes unittest results to a validated file inside the disposable snapshot, avoiding reliance on console streams in the windowed PyInstaller executable while preserving failure output for AI repair.
+- Windows EXE CI now runs a frozen secure-boundary smoke test before artifact upload. The smoke attempts: write outside the snapshot, inherit a parent secret, and connect to a parent localhost listener. All must be blocked.
+- Added source regression coverage proving the frozen engine route cannot call the weaker runner, unsupported secure presets fail closed, sandbox output cannot escape the snapshot, and parent-secret environment inheritance is blocked.
+- Remaining work after this PR: validate the frozen smoke on Windows CI, repair any PyInstaller/AppContainer-specific defects, then expand ForgeOS-owned secure runtimes to pytest/npm/cargo/Go/.NET and add deeper registry/process/IPC/reparse-point escape testing.
+
+### PR #27 frozen AppContainer bootstrap defect and correction
+
+- First packaged secure smoke reached the real AppContainer process-creation path and failed closed with Windows error 203 (`ERROR_ENVVAR_NOT_FOUND`) before any generated test code executed.
+- Root cause was the deliberately minimal child environment omitting `LOCALAPPDATA`. On Windows AppContainer startup, `CreateProcessW` needs the caller's real LocalAppData location to resolve the temporary AppContainer package profile.
+- Correction: the production secure runner injects the validated host `LOCALAPPDATA` plus a one-use `FORGEOS_BOOTSTRAP_LOCALAPPDATA=1` marker only into the AppContainer creation environment.
+- The hidden frozen sandbox child requires that marker, removes it before unittest discovery, and replaces `LOCALAPPDATA` and `APPDATA` with directories owned by the disposable execution snapshot. Generated project code therefore never sees the host LocalAppData path.
+- Source tests verify the bootstrap contract and scrub. The frozen secure smoke now additionally asserts the marker is absent and both AppData variables resolve inside the disposable snapshot before project tests execute.
+- No fallback was enabled as part of this correction; launch failure continues to block the secure production path.

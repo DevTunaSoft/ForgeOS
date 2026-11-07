@@ -1,12 +1,13 @@
 """Bounded local-model code-edit/test/repair orchestration.
 
-WARNING: tests execute project code on the host. This is not a sandbox.
+WARNING: source/development mode can execute project code on the host. The frozen\nWindows application uses the fail-closed AppContainer path for supported presets.
 """
 from __future__ import annotations
 
 import json
 import hashlib
 import os
+import sys
 from pathlib import Path, PurePosixPath
 import re
 import uuid
@@ -105,7 +106,12 @@ def _generate(model: Ollama, prompt: str) -> str:
 
 
 def _run_workspace_tests(workspace: Path, preset: str) -> dict:
-    """Run tests against a disposable Low-integrity snapshot on Windows."""
+    """Run tests against a disposable execution snapshot.
+
+    The frozen Windows product never falls back from its AppContainer runner.
+    Source-mode Windows development retains the older Low-integrity runner so
+    the Python source test suite can execute before packaging.
+    """
     if os.name != "nt":
         return run_test(str(workspace), preset)
     from .test_runtime import (
@@ -113,6 +119,9 @@ def _run_workspace_tests(workspace: Path, preset: str) -> dict:
     )
     runtime = create_windows_low_integrity_snapshot(workspace)
     try:
+        if getattr(sys, "frozen", False):
+            from .secure_runner import run_secure_windows_test
+            return run_secure_windows_test(runtime, preset)
         return run_test(
             str(runtime.path), preset, low_integrity=True, env=runtime.env)
     finally:
