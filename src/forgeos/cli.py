@@ -29,8 +29,8 @@ def main(argv=None):
     resume_all=sub.add_parser('resume-safe',help='Recover and resume eligible interrupted tasks (host execution opt-in required)')
     resume_all.add_argument('--workspace-parent',required=True)
     resume_all.add_argument('--allow-host-tests',action='store_true')
-    resume_all.add_argument('--preset',default='python-unittest',choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'])
-    resume_all.add_argument('--max-repairs',type=int,default=2)
+    resume_all.add_argument('--preset',choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'],help='Optional safety override; must match each saved checkpoint')
+    resume_all.add_argument('--max-repairs',type=int,help='Optional safety override; must match each saved checkpoint')
     args=parser.parse_args(argv)
     if args.action=='gui':
         from .gui import launch
