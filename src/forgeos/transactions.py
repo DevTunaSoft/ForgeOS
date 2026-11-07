@@ -108,7 +108,9 @@ def recover_edits(root: Path) -> bool:
 
 def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
     """Stage all files, journal backups, then replace; roll back on failure."""
-    root = Path(root).resolve(strict=True)
+    # Keep the caller's path spelling: Windows may resolve 8.3 temp paths
+    # to a different alias, breaking Path.relative_to on valid targets.
+    root = Path(root).absolute()
     txn = _journal(root)
     if txn.exists():
         raise TransactionError(f"Pending transaction requires recovery: {txn}")
