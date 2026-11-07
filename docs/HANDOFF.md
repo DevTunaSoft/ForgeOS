@@ -239,3 +239,74 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - The hidden frozen sandbox child requires that marker, removes it before unittest discovery, and replaces `LOCALAPPDATA` and `APPDATA` with directories owned by the disposable execution snapshot. Generated project code therefore never sees the host LocalAppData path.
 - Source tests verify the bootstrap contract and scrub. The frozen secure smoke now additionally asserts the marker is absent and both AppData variables resolve inside the disposable snapshot before project tests execute.
 - No fallback was enabled as part of this correction; launch failure continues to block the secure production path.
+
+
+## RTK-inspired integration PR #28 (in progress, 2026-11-07)
+
+Branch: feat/rtk-inspired-diagnostics. Base: main.
+Scope tracker: docs/RTK_ENHANCEMENTS.md (52-feature program).
+
+Code:
+- diagnostics.py: atomic gzip evidence archive, SHA-256 validation,
+  on-demand recall, bounded error-centric output summary, JSON/text/raw parsers.
+- error_learning.py: private aggregate repair memory storing signature hashes
+  and verified outcomes only. Review eligibility requires repeated success.
+- optimizer_metrics.py: aggregate context byte reduction, estimated token savings,
+  and fallback health counts, without storing raw output or project paths.
+- core.py and windows_containment.py: full test output reaches optimizer instead of
+  silent 16K-character tail truncation, preserve authoritative test outcomes.
+- engine.py: record verified repair outcomes after successful retest only.
+- gui.py and cli.py: one GUI efficiency display and recovery/stats commands.
+- tests/test_diagnostics.py, test_error_learning.py, test_optimizer_metrics.py:
+  roundtrip/fidelity/corruption/symlink/Unicode/concurrency/regression coverage.
+
+Evidence:
+- Earlier diagnostic-only commits passed Ubuntu/Windows 3.10/3.12 CI and
+  Windows packaging.
+- Additional learning integration revealed Windows SQLite connection leaks in
+  GitHub Actions. Both learning and metrics stores now close connections with
+  a contextmanager/finally. The final-head CI must be inspected before merging.
+- No interactive user Windows installation has been exercised; no claim of
+  production-ready autonomy. Separate AppContainer security PR #27 is still
+  subject to its own acceptance gates.
+
+Immediate next steps: verify all four CI matrix jobs and Windows packaging on
+the latest head; fix root causes, run regression, audit logging privacy and
+repository merge interactions with PR #27, then proceed to bounded streaming
+capture, retention policies, secure model routing, and GUI diagnostics.
+
+
+## RTK integration continuation: AST context / local model routing
+
+Cumulative source branch: feat/rtk-inspired-diagnostics, draft PR #28.
+Additional source modules:
+- src/forgeos/context_index.py — privacy-preserving, bounded deterministic
+  file inventory and Python class/function AST signatures; engine calls
+  relevance selection on initial generation and all repair/resume prompts.
+- src/forgeos/model_routing.py — local-only opt-in selection of installed
+  Ollama models, size/complexity heuristic, no paid provider, pin before
+  checkpoint. Core Ollama plan/generate and engine support model=auto.
+- tests/test_context_index.py and tests/test_model_routing.py — relevance,
+  output bounds, symlink avoidance, model constraints and no remote endpoint.
+
+Root cause / resolved defects:
+- Initial UI query relevance used a three-letter minimum and missed "ui".
+  Corrected to two-letter tokens; later source-context CI and Windows EXE
+  packaging passed on commit 48f3a348.
+- SQLite connection leaks blocked Windows 3.12 test directory cleanup.
+  Close connections explicitly through contextmanager/finally, checked by
+  passing Linux/Windows CI and executable packaging on commit 55ec5eae.
+- Repair memory originally recorded only successful repairs; a follow-up
+  changed the engine to record failures of attempted repairs, with explicit
+  regression assertions (latest verification may still be running).
+
+Next action: check all tests and packaging for the current PR head, identify
+any failures, fix and rerun. PR #27 (AppContainer) is independently pending.
+Neither branch should be merged solely because a Windows build artifact exists.
+
+
+### PR #27 AppContainer security merge reconciliation
+PR #27 merged into main. This branch preserves the frozen Windows
+zero-capability AppContainer path, new sandbox tests, and fail-closed policy.
+Compressed output is generated only after the secure process terminates.
+Use the Windows frozen smoke check to validate this joint integration.

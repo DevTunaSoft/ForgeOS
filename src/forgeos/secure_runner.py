@@ -62,7 +62,7 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
     try:
         if output_file.is_file() and not output_file.is_symlink():
             result["output"] = output_file.read_text(
-                encoding="utf-8", errors="replace")[-16000:]
+                encoding="utf-8", errors="replace")
     except OSError as exc:
         result["output"] = (
             result.get("output", "")[-12000:]
