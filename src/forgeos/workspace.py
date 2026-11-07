@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import re
+import os
 import subprocess
 import tempfile
 
@@ -89,7 +89,13 @@ def release_workspace(workspace: Workspace) -> None:
     source = _repository_root(workspace.source)
     target = workspace.path.resolve(strict=True)
     listed = _git(source, "worktree", "list", "--porcelain")
-    if f"worktree {target}" not in listed.splitlines():
+    registered = []
+    for line in listed.splitlines():
+        if line.startswith("worktree "):
+            # Git emits POSIX separators even on Windows. Normalize both paths
+            # using the host OS before comparing; never use substring matching.
+            registered.append(os.path.normcase(os.path.normpath(line[9:])))
+    if os.path.normcase(os.path.normpath(str(target))) not in registered:
         raise WorkspaceError("Destination is not a registered worktree")
     if _git(target, "status", "--porcelain", "--untracked-files=all"):
         raise WorkspaceError("Workspace has changes; refusing to delete user work")
