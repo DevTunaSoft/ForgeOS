@@ -240,7 +240,7 @@ On Windows: install Python 3.10+ and Git; from repository root run 'py -m pip in
 - Source tests verify the bootstrap contract and scrub. The frozen secure smoke now additionally asserts the marker is absent and both AppData variables resolve inside the disposable snapshot before project tests execute.
 - No fallback was enabled as part of this correction; launch failure continues to block the secure production path.
 
-## PR #28 — bundled secure pytest runtime (2026-11-07)
+## PR #29 — bundled secure pytest runtime (2026-11-07)
 
 - Added pytest as a packaged ForgeOS dependency (`pytest>=9.2,<10`); runtime execution does not require a separately installed host pytest command.
 - Added hidden frozen child mode `--sandbox-pytest`. The child runs `pytest.main(...)` inside the disposable execution snapshot and writes bounded test output to the existing validated snapshot-owned result file.
