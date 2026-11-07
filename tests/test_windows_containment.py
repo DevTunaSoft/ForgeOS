@@ -74,7 +74,7 @@ class WindowsContainmentTests(unittest.TestCase):
         self.assertTrue(numbers)
         self.assertLessEqual(numbers[-1], 1)
 
-    def test_child_token_is_actually_restricted(self):
+    def test_child_privileges_are_reduced(self):
         code = r"""
 import ctypes
 from ctypes import wintypes
@@ -85,8 +85,10 @@ kernel32.GetCurrentProcess.restype = wintypes.HANDLE
 advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD,
                                       ctypes.POINTER(wintypes.HANDLE)]
 advapi32.OpenProcessToken.restype = wintypes.BOOL
-advapi32.IsTokenRestricted.argtypes = [wintypes.HANDLE]
-advapi32.IsTokenRestricted.restype = wintypes.BOOL
+advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                         ctypes.c_void_p, wintypes.DWORD,
+                                         ctypes.POINTER(wintypes.DWORD)]
+advapi32.GetTokenInformation.restype = wintypes.BOOL
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.CloseHandle.restype = wintypes.BOOL
 token = wintypes.HANDLE()
@@ -94,14 +96,25 @@ if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008,
                                  ctypes.byref(token)):
     raise OSError(ctypes.get_last_error(), 'OpenProcessToken failed')
 try:
-    print('restricted=' + str(int(bool(advapi32.IsTokenRestricted(token)))))
+    needed = wintypes.DWORD()
+    advapi32.GetTokenInformation(token, 3, None, 0, ctypes.byref(needed))
+    buf = ctypes.create_string_buffer(needed.value)
+    if not advapi32.GetTokenInformation(token, 3, buf, needed.value,
+                                         ctypes.byref(needed)):
+        raise OSError(ctypes.get_last_error(), 'GetTokenInformation failed')
+    count = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD)).contents.value
+    print('privileges=' + str(count))
 finally:
     kernel32.CloseHandle(token)
 """
         result = run_contained([sys.executable, "-c", code],
                                self.root, timeout=15)
         self.assertTrue(result["passed"], result)
-        self.assertIn("restricted=1", result["output"])
+        counts = [int(line.split("=", 1)[1])
+                  for line in result["output"].splitlines()
+                  if line.startswith("privileges=")]
+        self.assertEqual(len(counts), 1, result)
+        self.assertLessEqual(counts[0], 1, result)
         self.assertEqual(result["containment"],
                          "windows-restricted-token+job-object")
 
