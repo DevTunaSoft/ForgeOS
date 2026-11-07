@@ -83,3 +83,17 @@ checkpoint. The current default remains qwen2.5-coder:3b for compatibility.
 No models are downloaded automatically. Model size is only a rough heuristic,
 not a hardware acceptance test or guarantee of adequate RAM. Only local
 Ollama at 127.0.0.1:11434 is supported.
+
+
+### Optional, trusted output filters (experimental)
+
+ForgeOS compacts repeated noncritical test lines only after archiving full
+original output. Custom filters are a locally pinned JSON configuration:
+~/.forgeos/output_filters.json. See docs/RTK_ENHANCEMENTS.md for schema.
+
+    py -m forgeos filters status
+    py -m forgeos filters trust
+
+Changes to the filter file invalidate its trust hash and disable the rules.
+No filter code or shell commands may run. This is consent and tamper evidence,
+not a same-user attacker security boundary.

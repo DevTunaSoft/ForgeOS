@@ -208,14 +208,24 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
             "archived": False, "optimized": False, "source_bytes": raw_bytes,
             "reason": f"Archiving failed: {type(exc).__name__}"}
         return outcome
-    concise = _focus(output, result.get("passed") is False, budget)
+    try:
+        from .output_rules import TrustedOutputRules, deduplicate_output
+        rules, filter_status = TrustedOutputRules().enabled_rules()
+        prepared, removed = deduplicate_output(output, preset, rules)
+    except Exception:
+        prepared, removed, filter_status = output, 0, "unavailable"
+    concise = _focus(prepared, result.get("passed") is False, budget)
     if concise != output:
         concise += f"\n[Full original diagnostic: forgeos diagnostics show {reference}]"
+    # Do not inflate tiny results just to include a recall hint.
+    if len(concise.encode("utf-8")) >= raw_bytes:
+        concise, removed = output, 0
     context_bytes = len(concise.encode("utf-8"))
     outcome["output"] = concise
     outcome["optimization"] = {
         "archived": True, "reference": reference, "source_bytes": raw_bytes,
         "context_bytes": context_bytes, "saved_bytes": max(0, raw_bytes - context_bytes),
         "optimized": concise != output, "preset": preset,
+        "deduplicated_lines": removed, "filter_status": filter_status,
     }
     return outcome

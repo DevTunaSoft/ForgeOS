@@ -103,6 +103,25 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(result["returncode"], 99)
         self.assertFalse(result["passed"])
 
+    def test_noncritical_dedup_keeps_error_and_evidence(self):
+        raw = "Downloading dependencies\n" * 40 + "ERROR: fails\n" * 6
+        result = optimize_test_result(
+            {"passed": False, "returncode": 17, "output": raw},
+            "npm-test", store=self.store, budget=1600)
+        self.assertEqual(result["optimization"]["deduplicated_lines"], 39)
+        self.assertIn("39 repeated noncritical", result["output"])
+        self.assertEqual(result["output"].count("ERROR: fails"), 6)
+        self.assertEqual(result["returncode"], 17)
+        self.assertEqual(self.store.get(result["optimization"]["reference"]), raw)
+
+    def test_small_outputs_do_not_expand_context(self):
+        raw = "\x1b[31mERROR\x1b[0m"
+        result = optimize_test_result(
+            {"passed": False, "returncode": 1, "output": raw},
+            "npm-test", store=self.store)
+        self.assertLessEqual(len(result["output"].encode()), len(raw.encode()))
+        self.assertEqual(self.store.get(result["optimization"]["reference"]), raw)
+
     def test_bad_budget(self):
         with self.assertRaises(ValueError):
             optimize_test_result({"output": "x"}, "test", store=self.store, budget=0)

@@ -17,6 +17,9 @@ def main(argv=None):
     evidence.add_argument('reference',nargs='?')
     memory=sub.add_parser('learning',help='Show local verified repair learning statistics')
     memory.add_argument('operation',choices=['stats'])
+    filter_parser=sub.add_parser('filters',help='Inspect or trust user output filters')
+    filter_parser.add_argument('operation',choices=['status','trust'])
+    filter_parser.add_argument('config',nargs='?')
     recover_edits=sub.add_parser('recover-edits',help='Safely roll back a pending edit journal')
     recover_edits.add_argument('workspace')
     add=sub.add_parser('add'); add.add_argument('project'); add.add_argument('description')
@@ -54,6 +57,12 @@ def main(argv=None):
         from .error_learning import RepairMemory
         path=Path(args.db).expanduser().resolve().with_name('repair_memory.sqlite3')
         print(json.dumps(RepairMemory(path).stats(),indent=2))
+        return 0
+    if args.action == 'filters':
+        from .output_rules import TrustedOutputRules
+        profile = TrustedOutputRules(config=args.config)
+        print(profile.status() if args.operation == 'status' else
+              'Trusted filter SHA-256: ' + profile.trust_config())
         return 0
     store=Store(args.db)
     try:

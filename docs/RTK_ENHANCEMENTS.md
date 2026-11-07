@@ -12,8 +12,8 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Optimized project search
 - [ ] Adaptive context budgets
 - [ ] Context-aware compression
-- [ ] Repeated log deduplication
-- [ ] Configurable rules
+- [x] Repeated log deduplication (noncritical run collapse)
+- [x] Configurable rules (optional pinned JSON literal rules)
 - [x] Token and savings analytics (local aggregate prototype)
 
 ## Learning & autonomous improvement (8)
@@ -48,7 +48,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Transactional configuration updates
 - [x] Fail-open-to-raw on archive errors (prototype integrated)
 - [ ] Checkpoint-linked evidence
-- [ ] Trusted optimization rule verification
+- [x] Trusted optimization rule verification (content hash pinning)
 
 ## ForgeOS GUI & visibility (7)
 
@@ -120,3 +120,24 @@ Remaining work includes actual project-source context with explicit privacy
 controls; CI proof for the latest commit; trusted filter rules; robust model
 availability/performance probes; dynamic escalation; bounded output streaming;
 Windows ACL/encryption; and full real-user Windows acceptance.
+
+
+## Phase 2: trusted output rule integration
+
+Diagnostic output is archived before adjacent noncritical duplicates are
+collapsed. Lines containing errors, failures, assertions, warnings or test
+summaries remain untouched. Custom JSON rules are opt-in, use literal matching,
+and require the user to pin their SHA-256 hash. Modified and untrusted files
+are skipped. No regex or executable commands are accepted.
+
+Example local config ~/.forgeos/output_filters.json:
+
+    {"version":1,"rules":[{"preset":"npm-test","contains":"Progress","min_repeats":3}]}
+
+Use: python -m forgeos filters status
+Use: python -m forgeos filters trust
+
+The trust record is under ~/.forgeos/trusted_output_filters.json. This
+provides user consent and tamper evidence, not a same-user security boundary.
+No optimization is allowed to overwrite the original diagnostic archive or
+the test exit status.
