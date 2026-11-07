@@ -5,6 +5,7 @@ execute remembered commands or inject previous output into a model's prompt.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import os
 from pathlib import Path
@@ -60,10 +61,15 @@ class RepairMemory:
         with self._connect() as db:
             db.execute(DDL)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         db = sqlite3.connect(str(self.path), timeout=10)
-        db.execute("PRAGMA busy_timeout=10000")
-        return db
+        try:
+            db.execute("PRAGMA busy_timeout=10000")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def record(self, failure_output: str, *, preset: str, model: str,
                verified_success: bool) -> dict:

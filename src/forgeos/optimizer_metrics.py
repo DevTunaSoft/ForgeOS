@@ -1,5 +1,6 @@
 """Local-only aggregate optimization metrics; no raw output or project paths."""
 from __future__ import annotations
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import sqlite3
@@ -24,10 +25,15 @@ class OptimizationMetrics:
         with self._connect() as db:
             db.execute(SCHEMA)
 
+    @contextmanager
     def _connect(self):
         connection = sqlite3.connect(self.path, timeout=10)
-        connection.execute("PRAGMA busy_timeout=10000")
-        return connection
+        try:
+            connection.execute("PRAGMA busy_timeout=10000")
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def record(self, outcome: dict) -> None:
         optimization = outcome.get("optimization")
