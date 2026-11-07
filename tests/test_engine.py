@@ -158,3 +158,138 @@ class AuditRegressionTests(unittest.TestCase):
                 self.assertEqual(store.get(task)["status"], "queued")
             finally:
                 store.close()
+
+
+class TransactionRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.manifest = lambda files: json.dumps({"files": files})
+
+    def test_multi_file_replace_failure_rolls_back(self):
+        from unittest.mock import patch
+        import os
+        (self.root / "first.py").write_text("original")
+        real_replace = os.replace
+        calls = {"n": 0}
+        def fail_second(source, target):
+            if str(source).endswith(".new"):
+                calls["n"] += 1
+                if calls["n"] == 2:
+                    raise OSError("simulated disk failure")
+            return real_replace(source, target)
+        with patch("forgeos.transactions.os.replace", side_effect=fail_second):
+            with self.assertRaises(OSError):
+                apply_edits(self.root, self.manifest([
+                    {"path": "first.py", "content": "changed"},
+                    {"path": "second.py", "content": "new"}]))
+        self.assertEqual((self.root / "first.py").read_text(), "original")
+        self.assertFalse((self.root / "second.py").exists())
+        self.assertFalse((self.root / ".forgeos" / "pending-edit").exists())
+
+    def test_manual_recovery_of_interrupted_journal(self):
+        from forgeos.transactions import recover_edits, _digest
+        (self.root / "first.py").write_text("original")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "0.bak").write_bytes(b"original")
+        (self.root / "first.py").write_text("changed")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"changed") }]}))
+        self.assertTrue(recover_edits(self.root))
+        self.assertEqual((self.root / "first.py").read_text(), "original")
+        self.assertFalse(txn.exists())
+        self.assertFalse(recover_edits(self.root))
+
+    def test_conflicting_external_change_preserved(self):
+        from forgeos.transactions import recover_edits, _digest, TransactionError
+        (self.root / "first.py").write_text("external change")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "0.bak").write_bytes(b"original")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"changed") }]}))
+        with self.assertRaises(TransactionError):
+            recover_edits(self.root)
+        self.assertEqual((self.root / "first.py").read_text(), "external change")
+        self.assertTrue(txn.exists())
+
+
+    def test_corrupted_backup_blocks_recovery_without_mutation(self):
+        from forgeos.transactions import recover_edits, _digest, TransactionError
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (self.root / "first.py").write_text("new")
+        (txn / "0.bak").write_bytes(b"corrupt")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"old"),
+                "after": _digest(b"new") }]}))
+        with self.assertRaises(TransactionError):
+            recover_edits(self.root)
+        self.assertEqual((self.root / "first.py").read_text(), "new")
+        self.assertTrue(txn.exists())
+
+    def test_missing_manifest_preserves_journal(self):
+        from forgeos.transactions import recover_edits, TransactionError
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "0.bak").write_bytes(b"original")
+        with self.assertRaises(TransactionError):
+            recover_edits(self.root)
+        self.assertTrue((txn / "0.bak").exists())
+
+    def test_rollback_failure_preserves_journal_for_retry(self):
+        from unittest.mock import patch
+        from forgeos.transactions import recover_edits, _digest
+        import os
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (self.root / "first.py").write_text("new")
+        (txn / "0.bak").write_bytes(b"old")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"old"),
+                "after": _digest(b"new") }]}))
+        with patch("forgeos.transactions.os.replace", side_effect=OSError("disk locked")):
+            with self.assertRaises(OSError):
+                recover_edits(self.root)
+        self.assertTrue(txn.exists())
+        self.assertEqual((self.root / "first.py").read_text(), "new")
+        self.assertTrue(recover_edits(self.root))
+        self.assertEqual((self.root / "first.py").read_text(), "old")
+
+    def test_new_file_crash_rollback_removes_only_transaction_file(self):
+        from forgeos.transactions import recover_edits, _digest
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (self.root / "created.py").write_text("new")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "created.py", "before": None,
+                "after": _digest(b"new") }]}))
+        self.assertTrue(recover_edits(self.root))
+        self.assertFalse((self.root / "created.py").exists())
+
+
+    def test_tampered_journal_path_cannot_escape_workspace(self):
+        from forgeos.transactions import recover_edits, _digest
+        outside = self.root.parent / ("forgeos-outside-" + self.root.name + ".py")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        outside.write_text("untouched")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "../" + outside.name, "before": None,
+                "after": _digest(b"untouched") }]}))
+        with self.assertRaises(ValueError):
+            recover_edits(self.root)
+        self.assertEqual(outside.read_text(), "untouched")
+        self.assertTrue(txn.exists())

@@ -54,9 +54,18 @@ class Store:
                             (status,time.time(),error,result,int(increment),task_id))
 
     def recover(self) -> int:
+        """Requeue interrupted planning; quarantine interrupted edit/test runs."""
         with self.db:
-            cur = self.db.execute("UPDATE tasks SET status='queued',updated=? WHERE status IN ('planning','editing','testing')", (time.time(),))
-        return cur.rowcount
+            cur = self.db.execute(
+                "UPDATE tasks SET status='blocked',updated=?,last_error=? "
+                "WHERE status IN ('editing','testing')",
+                (time.time(), 'Interrupted execution: inspect workspace and recover edit journal before retrying'))
+            changed = cur.rowcount
+            cur = self.db.execute(
+                "UPDATE tasks SET status='queued',updated=? WHERE status='planning'",
+                (time.time(),))
+            changed += cur.rowcount
+        return changed
 
     def close(self):
         self.db.close()

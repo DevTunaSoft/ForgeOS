@@ -266,6 +266,6 @@ def launch(db_path):
     root.protocol("WM_DELETE_WINDOW", close)
     refresh()
     if recovered:
-        log(f"Requeued {recovered} interrupted tasks. Existing worktrees were not deleted.")
+        log(f"Recovered {recovered} interrupted task statuses. Edit/test tasks are blocked for workspace inspection; worktrees were not deleted.")
     poll()
     root.mainloop()

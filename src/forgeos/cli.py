@@ -12,6 +12,8 @@ def main(argv=None):
     parser.add_argument('--db',default=str(default_db()))
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
+    recover_edits=sub.add_parser('recover-edits',help='Safely roll back a pending edit journal')
+    recover_edits.add_argument('workspace')
     add=sub.add_parser('add'); add.add_argument('project'); add.add_argument('description')
     plan=sub.add_parser('plan'); plan.add_argument('id',type=int); plan.add_argument('--model',default='qwen2.5-coder:3b')
     test=sub.add_parser('test'); test.add_argument('id',type=int); test.add_argument('--preset',required=True,
@@ -34,7 +36,11 @@ def main(argv=None):
         elif args.action=='list':
             print(json.dumps(store.list(),indent=2))
         elif args.action=='recover':
-            print(f'Requeued {store.recover()} interrupted tasks')
+            print(f'Inspected {store.recover()} interrupted tasks; editing/testing tasks blocked for inspection')
+        elif args.action=='recover-edits':
+            from .transactions import recover_edits
+            changed = recover_edits(Path(args.workspace))
+            print('Recovered edit journal' if changed else 'No pending edit journal')
         elif args.action=='plan':
             task=store.get(args.id)
             store.update(args.id,'planning',increment=True)

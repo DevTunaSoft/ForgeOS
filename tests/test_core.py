@@ -75,7 +75,8 @@ class ForgeOSTests(unittest.TestCase):
             self.store.update(task,('planning','testing','passed','failed')[i%4],increment=True)
         self.assertEqual(self.store.recover(),38)
         self.assertEqual(self.store.recover(),0)
-        self.assertEqual(sum(t['status']=='queued' for t in self.store.list()),38)
+        self.assertEqual(sum(t['status']=='queued' for t in self.store.list()),19)
+        self.assertEqual(sum(t['status']=='blocked' for t in self.store.list()),19)
 
     def test_fuzz_invalid_test_presets(self):
         rng=random.Random(8124)
