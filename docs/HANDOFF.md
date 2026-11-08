@@ -1104,3 +1104,16 @@ tested SHA and requires a documentation integrity check on its own head.
 **Roadmap gap resolved in source:** Created `docs/MULTI_LLM_ROADMAP.md` with complete A–J requirements-to-implementation matrix, canonical owners, actual experimental status, measurable per-phase acceptance tests, P0–P3 dependency order, Windows i7-1370P 32-GiB/16-GiB/8-GiB memory constraints, external model RAM limitations, Hugging Face safe revisions and provenance, supply-chain/privacy threats, actual-model benchmark methodology, role-aware model choices, session recovery, unit/integration/fuzz/fault/soak checks and beginner-friendly single-GUI goals. Linked this file from `README.md`, `docs/REQUIREMENTS.md`, `docs/ROADMAP.md` and `docs/MODEL_COMPATIBILITY.md`.
 
 **Continuity / next coding checkpoint:** Once CI on the newly committed docs head is green, implement a **managed CPU-first llama.cpp process lifecycle** behind the existing `local_models.create_model` abstraction. Required: trusted release/signature/hash validation, safe binaries and DLLs, single local process, port ownership proof, effective health checks, strict CLI argv, resource and exit cleanup, cold start/stop and crash recovery, measured Windows 11 hardware acceptance. Then connect the verified `.gguf` downloads, persist pinned model/runtime identities in task checkpoints, complete the unified model inventory and unload/low-memory safeguards. Do not silently merge PR #51 or claim production-ready without real end-to-end testing. Continue updating the user manual, roadmap, benchmark evidence, README and this handoff with each code commit.
+
+### Roadmap traceability regression contract
+
+Added `tests/test_multillm_roadmap.py` to prevent the ten A–J work
+packages, implementation/acceptance statuses, P0–P3 priorities, source
+ownership, GitHub documentation links and main-versus-PR distinction from
+silently disappearing from the roadmap. This **tests documentation
+completeness only**, not actual model performance or runtime compatibility.
+The last roadmap source update before this entry was commit
+`a2f170edb5e8091ffc923257bb2001bb774d58f3`, followed by a five-file
+cross-link/handoff commit `b352a68f978118120e71715a43a25265625a5c59`.
+Review latest GitHub Actions for this newest source/doc revision; do not
+attribute older green runs to the new test automatically.
