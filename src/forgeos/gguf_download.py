@@ -113,8 +113,9 @@ def _allowed_download_url(url: str) -> bool:
             or parsed.password is not None or parsed.port not in (None, 443)
             or not host):
         return False
-    return (host in ALLOWED_CDN or host.endswith(".xethub.hf.co")
-            or host.endswith(".hf.co"))
+    # Only Hugging Face's documented weight-delivery hosts are trusted.
+    # A blanket *.hf.co wildcard would also permit unrelated domains.
+    return host in ALLOWED_CDN or host.endswith(".xethub.hf.co")
 
 
 class _SafeModelRedirects(HTTPRedirectHandler):

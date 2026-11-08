@@ -204,10 +204,21 @@ class GGUFDownloadTests(unittest.TestCase):
                     "https://evil.example/model",
                     "http://127.0.0.1:8080",
                     "file:///etc/passwd",
-                    "https://attacker@huggingface.co/model"):
+                    "https://attacker@huggingface.co/model",
+                    "https://unrelated.hf.co/weights",
+                    "https://hf.co/weights",
+                    "https://xethub.hf.co.evil.example/model",
+                    "https://fake-xethub.hf.co/weights",
+                    "https://huggingface.co:444/model",
+                    "https://huggingface.co.evil.example/weights"):
             self.assertFalse(_allowed_download_url(url))
-        self.assertTrue(_allowed_download_url(
-            "https://cas-bridge.xethub.hf.co/x"))
+        for url in ("https://cas-bridge.xethub.hf.co/x",
+                    "https://cas-server.xethub.hf.co/x",
+                    "https://cdn-lfs.huggingface.co/model",
+                    "https://huggingface.co/owner/repo",
+                    "https://transfer.xethub.hf.co/x"):
+            with self.subTest(url=url):
+                self.assertTrue(_allowed_download_url(url))
 
     def test_missing_hash_and_oversize_rejected_before_disk_or_fetch(self):
         with patch("forgeos.gguf_download.list_gguf_files",
