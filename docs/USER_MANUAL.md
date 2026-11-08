@@ -367,9 +367,10 @@ is still under development.
 - Source/development-mode host execution is opt-in for autonomous builds;
   a test-only operation still executes code. A selectable test preset is
   not a security certification.
-- The packaged Windows executable uses security controls for supported
-  test workloads. It has been exercised in hosted CI, **not** guaranteed
-  on every Windows installation or every workload.
+- The packaged Windows executable uses the restricted **AppContainer**
+  security boundary for supported test workloads. It has been exercised in
+  hosted CI, **not** guaranteed on every Windows installation or every
+  workload. Unsupported frozen test environments must fail closed.
 - 4 GB/8 GB system-memory claims are **targets**, not release minimums.
   Even if ForgeOS itself uses little memory, local AI and compilers may not.
 - ForgeOS does not automatically publish GitHub changes, deliver

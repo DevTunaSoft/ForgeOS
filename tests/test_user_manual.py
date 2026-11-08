@@ -81,7 +81,8 @@ class LivingManualContractTests(unittest.TestCase):
             "not yet a completed turnkey product", "not encrypted at",
             "not yet", "host", "Ollama", "4 GB", "8 GB", "AppContainer",
         ]:
-            self.assertIn(caution.lower(), self.manual.lower())
+            self.assertTrue(caution.lower() in self.manual.lower(),
+                            "Missing user safety warning: " + caution)
 
     def test_download_artifact_and_memory_guidance_match_build(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
