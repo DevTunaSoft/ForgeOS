@@ -132,7 +132,7 @@ class EngineIntegrationTests(unittest.TestCase):
             managed_runtime_sha256 = "b" * 64
             api_key = "SECRET-MUST-NEVER-BE-IN-CHECKPOINT"
         manifest = json.dumps({"files": [{
-            "path": "app.py", "content": "def value():\\n return 42\\n"}]})
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
         with patch("forgeos.engine._run_workspace_tests",
                    side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
@@ -164,7 +164,7 @@ class EngineIntegrationTests(unittest.TestCase):
                          generate=lambda *_: (_ for _ in ()).throw(
                              AssertionError("Unpinned model prompt sent")))
         self.assertEqual((self.repo / "app.py").read_text(),
-                         "def value():\\n return 42\\n")
+                         "def value():\n return 42\n")
 
     def test_host_tests_require_opt_in(self):
         with self.assertRaises(ValueError):
