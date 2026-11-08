@@ -96,7 +96,8 @@ def main(argv=None):
             print('Recovered edit journal' if changed else 'No pending edit journal')
         elif args.action=='plan':
             from .task_actions import plan_task
-            output = plan_task(store, args.id, model=Ollama(model=args.model))
+            output = plan_task(store, args.id,
+                               model_factory=lambda: Ollama(model=args.model))
             print(output)
         elif args.action=='resume-safe':
             from .recovery import resume_safe

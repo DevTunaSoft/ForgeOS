@@ -39,6 +39,28 @@ class TaskActionsTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute(
             "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
 
+    def test_completed_task_skips_model_factory_before_lease(self):
+        self.store.update(self.task, "passed", result="previous success")
+        factory = Mock()
+        with self.assertRaisesRegex(ValueError, "eligible"):
+            plan_task(self.store, self.task, model_factory=factory)
+        factory.assert_not_called()
+        self.assertEqual(self.store.get(self.task)["result"], "previous success")
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+
+    def test_factory_is_invoked_once_after_exclusive_planning_lease(self):
+        other = Store(self.db)
+        self.addCleanup(other.close)
+        def create():
+            self.assertEqual(other.get(self.task)["status"], "planning")
+            self.assertFalse(other.acquire_lease(self.task, "intruder"))
+            return Mock(plan=Mock(return_value="Deferred model response"))
+        factory = Mock(side_effect=create)
+        self.assertEqual(plan_task(self.store, self.task, model_factory=factory),
+                         "Deferred model response")
+        factory.assert_called_once()
+
     def test_test_permission_refused_before_mutation(self):
         with patch("forgeos.task_actions._run_workspace_tests") as tests:
             with self.assertRaisesRegex(ValueError, "permission"):

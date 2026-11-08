@@ -378,7 +378,8 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 if operation == "plan":
                     value = plan_task(
-                        worker_store, task_id, model=Ollama(model=chosen_model))
+                        worker_store, task_id,
+                        model_factory=lambda: Ollama(model=chosen_model))
                 elif operation == "run":
                     result = execute_task(
                         worker_store, task_id, chosen_workspace,

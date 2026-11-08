@@ -40,16 +40,23 @@ def _heartbeat(store: Store, task_id: int, owner: str):
         raise LeaseLostError("Task execution lease was lost or expired")
 
 
-def plan_task(store: Store, task_id: int, *, model: Ollama | None = None) -> str:
-    """Plan only queued/planned tasks, without overwriting another worker."""
+def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
+              model_factory=None) -> str:
+    """Plan only eligible tasks; construct an AI model after lease acquisition."""
+    if model is not None and model_factory is not None:
+        raise ValueError("Specify a model or model factory, not both")
+    if model_factory is not None and not callable(model_factory):
+        raise ValueError("Model factory must be callable" )
     task = store.get(task_id)
     if task["status"] not in PLAN_STATUSES:
         raise ValueError("Task is not eligible for planning")
     with _owned_task(store, task_id) as owner:
         _publish(store, task_id, owner, PLAN_STATUSES, "planning", increment=True)
         try:
-            output = (model if model is not None else Ollama()).plan(
-                task["description"])
+            chosen_model = (model if model is not None else
+                            model_factory() if model_factory is not None else
+                            Ollama())
+            output = chosen_model.plan(task["description"])
             _heartbeat(store, task_id, owner)
             _publish(store, task_id, owner, {"planning"}, "planned",
                      result=output)

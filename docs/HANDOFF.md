@@ -793,3 +793,16 @@ pass before merge; no real Windows/Ollama hardware acceptance was performed.
 - CI acceptance, Windows real-machine behavior and local Ollama testing
   were **not verified** at authoring; require Linux+Windows 3.10/3.12,
   docs integrity and frozen Windows GUI/AppContainer smoke before merge.
+
+### PR #50 CI correction (in review)
+
+The first Linux Python 3.10/3.12 CI run exposed one regression in
+`tests/test_cli_plan_lease.py`: the CLI eagerly constructed an Ollama
+object for a completed/ineligible task before `plan_task()` refused it.
+The intended behavior is to avoid unnecessary model construction, reduce
+resource overhead and leave completed work untouched. The shared helper
+now accepts a lazy model factory; CLI and GUI instantiate only *after*
+eligibility checks and successful exclusive lease acquisition. Additional
+tests confirm no invocation for completed tasks and exactly one model
+construction under a live planning lease. The initial failure is recorded
+here; full rerun/Windows packaged acceptance still required.
