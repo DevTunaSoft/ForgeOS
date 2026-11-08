@@ -307,3 +307,8 @@ currently implemented. Free consumer chat plans are not free API entitlements.
 - [x] Re-sample available physical RAM after the model/runtime SHA-256 passes and before native process startup. Block on budget failure without leaving a model process or secrets.
 - [x] Add deterministic mocked regression tests for excessive manual context and a RAM drop during verification.
 - [ ] Reproduce with real inference and measured peak process-tree RSS on Windows, low-RAM targets, and concurrent background memory pressure. Preflight alone is **not** a hard memory governor or finished issue #55.
+
+
+### Hosted CI gate for pause/resume and managed model RAM preflight (2026-11-08)
+
+On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks after the `b40536b` test-fixture correction: Python 3.10/3.12 on Ubuntu and Windows, documentation, and packaged Windows EXE. Packaging ran **365 tests**, verified frozen GUI and AppContainer smoke, and produced an 18,531,029-byte executable. The release gate for physical Windows 11 with real model inference, large network downloads, native Job process isolation and measured RAM remains **open**; keep #53–#56 in progress.

@@ -252,3 +252,6 @@ In the existing Hugging Face browser, the **Pause download** button cooperativel
 
 
 The experimental managed GGUF server additionally caps manually requested context to the current system RAM profile and performs a second memory-budget check immediately before native inference startup, after hashing the GGUF and runtime. These safeguards reject some memory pressure but do not replace native process RAM monitoring or proven low-memory Windows benchmarks.
+
+
+**Latest experimental branch CI checkpoint (Nov 8, 2026):** `37af510c` passed six hosted checks, including 365 regression tests inside Windows packaging and frozen GUI/AppContainer smoke. A real Windows 11 session with a verified GGUF and llama.cpp must still be tested before this PR can be called release-ready.
