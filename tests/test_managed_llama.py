@@ -44,6 +44,10 @@ class ManagedLlamaTests(unittest.TestCase):
         self.exe = self.root / ("llama-server.exe" if __import__("os").name == "nt"
                                 else "llama-server")
         self.exe.write_bytes(b"trusted fixture only; not executable")
+        if __import__("os").name != "nt":
+            # An actual POSIX llama-server would have its executable bit set.
+            # The fixture must too, before testing SHA mismatch behavior.
+            self.exe.chmod(0o700)
         self.exe_sha = hashlib.sha256(self.exe.read_bytes()).hexdigest()
 
     def test_verified_gguf_requires_actual_bytes_and_manifest(self):
