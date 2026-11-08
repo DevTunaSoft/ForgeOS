@@ -399,6 +399,8 @@ def launch(db_path, *, acceptance: bool = False):
                     raise RuntimeError("Task queue was not constructed")
                 from .model_routing import process_memory
                 memory = process_memory()
+                if memory is None or memory.rss_bytes <= 0:
+                    raise RuntimeError("GUI process working-set measurement unavailable")
                 report.update({
                     "gui_started": True,
                     "tabs": names,

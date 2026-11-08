@@ -37,7 +37,10 @@ def main(argv=None):
         Path(args.gui_acceptance_report).write_text(
             json.dumps(result, indent=2), encoding="utf-8")
         return 0 if (result.get("gui_started")
-                     and result.get("closed_cleanly")) else 12
+                     and result.get("queue_initialized")
+                     and result.get("closed_cleanly")
+                     and isinstance(result.get("ram_after_gui_startup_bytes"), int)
+                     and result["ram_after_gui_startup_bytes"] > 0) else 12
     if args.smoke:
         from forgeos.core import Store, Ollama
         from forgeos.engine import execute_task
