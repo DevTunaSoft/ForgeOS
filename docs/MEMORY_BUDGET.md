@@ -126,3 +126,21 @@ systems that don't use the frozen pytest runtime. The logging plugin and
 This guard is per-file, **not** a complete filesystem quota. Hosted Windows
 CI passed the packaged pytest+unittest smoke, but physical 4/8 GiB Ollama,
 long-run process-tree memory and real Windows user acceptance remain open.
+
+## Bounded interrupted-task recovery scan (review branch)
+
+The `resume-safe` task scan now reads only blocked-task checkpoint fields,
+not every historical task and its large error/test results. SQLite queries
+use descending-ID keyset pages of **16** rows; each checkpoint body is limited
+to **64 KiB UTF-8 bytes** before materialization in Python. An oversized
+checkpoint is skipped with an explicit reason and is **not** truncated,
+deleted or executed. This bounds checkpoint text in a page to at most
+approximately **1 MiB**, excluding SQLite/native memory, the task report,
+and any subsequent Ollama/test process. There is no new runtime dependency
+or background service. The combined `resume-safe` result still accumulates
+its per-task outcome list; very large result sets will need a future
+streamed-report mode.
+
+Regression tests cover multi-page scans, large historical diagnostics and
+oversized multibyte checkpoint bodies. Windows 4/8 GiB physical hardware,
+real crash/restart and process-tree measurements remain unverified.

@@ -22,6 +22,8 @@ LEASE_SCHEMA = """CREATE TABLE IF NOT EXISTS task_leases (
 
 STATUSES = {'queued','planning','planned','editing','testing','passed','failed','blocked'}
 DEFAULT_LEASE_SECONDS = 600
+MAX_CHECKPOINT_BYTES = 64 * 1024
+CHECKPOINT_PAGE_SIZE = 16
 
 
 class Store:
@@ -84,6 +86,32 @@ class Store:
                 yield dict(row)
         finally:
             cursor.close()
+
+    def iter_blocked_checkpoints(self):
+        """Yield only blocked checkpoints with bounded SQLite page allocations.
+
+        SQL omits oversized result text before it reaches Python. Sixteen
+        rows are fetched per keyset page (at most 1 MiB of checkpoint text);
+        completed-task diagnostics are never read by the recovery scan.
+        Pages are fully fetched before yielding, so the caller can update
+        task states without keeping an open SQLite read cursor.
+        """
+        before_id = (1 << 63) - 1
+        while True:
+            rows = self.db.execute(
+                "SELECT id,status, "
+                "CASE WHEN length(CAST(result AS BLOB)) <= ? "
+                "THEN result ELSE NULL END AS result, "
+                "length(CAST(result AS BLOB)) AS checkpoint_bytes "
+                "FROM tasks WHERE status='blocked' AND id<=? "
+                "ORDER BY id DESC LIMIT ?",
+                (MAX_CHECKPOINT_BYTES, before_id, CHECKPOINT_PAGE_SIZE),
+            ).fetchall()
+            if not rows:
+                return
+            for row in rows:
+                yield dict(row)
+            before_id = int(rows[-1]["id"]) - 1
 
     def counts(self) -> dict[str, int]:
         """SQL aggregate, not a full scan into Python task objects."""

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
+from forgeos.core import MAX_CHECKPOINT_BYTES, Store
 from forgeos.recovery import resume_safe
 
 
@@ -17,8 +18,14 @@ class FakeStore:
         self.recovery_calls += 1
         return 1
 
-    def list(self):
-        return self.tasks
+    def iter_blocked_checkpoints(self):
+        for task in self.tasks:
+            if task["status"] != "blocked":
+                continue
+            payload = task["result"]
+            size = len(payload.encode("utf-8"))
+            yield {**task, "result": payload if size <= MAX_CHECKPOINT_BYTES else None,
+                   "checkpoint_bytes": size}
 
 
 class RecoveryTests(unittest.TestCase):
@@ -127,6 +134,44 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(report["resumed"], [])
         self.assertIn("mismatch", report["skipped"][0]["reason"].lower())
         runner.assert_not_called()
+
+    def test_oversized_checkpoint_skipped_before_model_or_runner(self):
+        oversized = self.task(9, {"phase": "test_pending",
+                                  "workspace": str(self.parent / "task-9"),
+                                  "contract": self.contract()})
+        oversized["result"] += "Z" * (MAX_CHECKPOINT_BYTES + 1)
+        runner = Mock()
+        factory = Mock()
+        report = resume_safe(FakeStore([oversized]), self.parent,
+                             allow_host_tests=True, execute=runner,
+                             model_factory=factory)
+        self.assertEqual(report["resumed"], [])
+        self.assertIn("safety limit", report["skipped"][0]["reason"])
+        runner.assert_not_called()
+        factory.assert_not_called()
+
+    def test_real_store_paginates_many_blocked_tasks_and_ignores_large_history(self):
+        repo = self.parent / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        store = Store(self.parent / "tasks.sqlite3")
+        self.addCleanup(store.close)
+        eligible = []
+        for index in range(41):
+            task_id = store.add(str(repo), f"resume task {index}")
+            store.update(task_id, "blocked", result=json.dumps({
+                "phase": "test_pending",
+                "workspace": str(self.parent / f"task-{task_id}"),
+                "contract": self.contract()}))
+            eligible.append(task_id)
+            history_id = store.add(str(repo), f"completed task {index}")
+            store.update(history_id, "passed", result="P" * (80 * 1024))
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(store, self.parent, allow_host_tests=True,
+                             execute=runner)
+        self.assertEqual(report["resumed"], list(reversed(eligible)))
+        self.assertEqual(report["skipped"], [])
+        self.assertEqual(runner.call_count, 41)
 
     def test_missing_contract_is_skipped(self):
         checkpoint = {"phase": "test_pending",

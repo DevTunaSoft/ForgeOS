@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .core import Ollama
+from .core import MAX_CHECKPOINT_BYTES, Ollama
 from .engine import execute_task
 
 PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
@@ -48,8 +48,14 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         raise ValueError("Workspace parent must be a directory")
     interrupted = store.recover()
     report = {"interrupted": interrupted, "resumed": [], "skipped": [], "failed": []}
-    for task in store.list():
+    for task in store.iter_blocked_checkpoints():
         if task["status"] != "blocked":
+            continue
+        if task["checkpoint_bytes"] > MAX_CHECKPOINT_BYTES:
+            report["skipped"].append({
+                "id": task["id"],
+                "reason": f"Checkpoint exceeds {MAX_CHECKPOINT_BYTES}-byte safety limit",
+            })
             continue
         try:
             checkpoint = json.loads(task["result"])
