@@ -136,6 +136,69 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
 
+    def test_stale_test_runner_cannot_overwrite_reclaimed_task(self):
+        from unittest.mock import patch
+        import time
+        from forgeos.core import DEFAULT_LEASE_SECONDS, LeaseLostError
+
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        replacement = Store(self.store.path)
+        self.addCleanup(replacement.close)
+
+        def reclaim_during_tests(_workspace, _preset):
+            # Simulate a suspended old process whose lease expires while its
+            # subprocess is running. Recovery + a new worker claim the task.
+            with replacement.db:
+                replacement.db.execute(
+                    "UPDATE task_leases SET heartbeat=? WHERE task_id=?",
+                    (time.time() - DEFAULT_LEASE_SECONDS - 5, self.task))
+            self.assertEqual(replacement.recover(), 1)
+            self.assertTrue(replacement.acquire_lease(self.task, "new-runner"))
+            self.assertTrue(replacement.transition(
+                self.task, {"blocked"}, "editing",
+                result="new runner owns checkpoint", lease_owner="new-runner"))
+            return {"passed": True, "output": "old worker's obsolete pass",
+                    "returncode": 0}
+
+        with patch("forgeos.engine._run_workspace_tests",
+                   side_effect=reclaim_during_tests) as mocked:
+            with self.assertRaisesRegex(LeaseLostError, "lease"):
+                execute_task(self.store, self.task, self.root,
+                             allow_host_tests=True,
+                             generate=lambda model, prompt: manifest)
+        mocked.assert_called_once()
+        current = self.store.get(self.task)
+        self.assertEqual(current["status"], "editing")
+        self.assertEqual(current["result"], "new runner owns checkpoint")
+        self.assertEqual(replacement.db.execute(
+            "SELECT owner FROM task_leases WHERE task_id=?",
+            (self.task,)).fetchone()["owner"], "new-runner")
+        self.assertTrue(replacement.release_lease(self.task, "new-runner"))
+
+    def test_state_change_during_generation_is_not_overwritten(self):
+        from unittest.mock import patch
+        from forgeos.core import LeaseLostError
+
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        replacement = Store(self.store.path)
+        self.addCleanup(replacement.close)
+
+        def contested_generation(model, prompt):
+            self.assertTrue(replacement.transition(
+                self.task, {"editing"}, "blocked",
+                result="manual intervention"))
+            return manifest
+
+        with self.assertRaisesRegex(LeaseLostError, "status changed"):
+            execute_task(self.store, self.task, self.root,
+                         allow_host_tests=True, generate=contested_generation)
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+        self.assertEqual(self.store.get(self.task)["result"], "manual intervention")
+        self.assertEqual((self.repo / "app.py").read_text(),
+                         "def value():\n return 42\n")
+
     def test_exhausted_repairs(self):
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\n return -1\n"}]})
         result = execute_task(self.store, self.task, self.root, max_repairs=1,

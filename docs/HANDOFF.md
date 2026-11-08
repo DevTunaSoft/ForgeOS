@@ -742,3 +742,27 @@ pass before merge; no real Windows/Ollama hardware acceptance was performed.
   creation. Next: verify full Linux/Windows matrix, documentation and frozen
   executable, remediate any failures; physical concurrent planning and
   crash/restart acceptance remain outstanding.
+
+## Lease-fenced autonomous task publication — 2026-11-07 (review branch)
+
+- Starting main: `5607d869e889f0c63168dd412debde61c6212214`.
+- Branch: `hardening/lease-fenced-task-publication`.
+- Defect identified: `engine._execute_task()` acquired a lease but used
+  unconditional `Store.update()` to publish test checkpoints, repairs, pass,
+  failure and blocked state. A process waking after its lease was reclaimed
+  could overwrite a new worker's data.
+- Correction: reuse the existing `Store.transition()` for atomic
+  status/result/error + owner-fenced publication; ensure lease identity **and
+  freshness**. `Store.heartbeat_lease()` now refuses to revive a lease
+  older than the default expiration or more than 60 seconds ahead.
+- Engine error handling preserves the original exception but skips publication
+  if the lease was lost. Added heartbeat immediately after file edits.
+- New tests cover stale lease before reclaim, stale lease after replacement,
+  recovery/replacement during tests, and status change during generation.
+- Security limitation: no OS-level lock prevents old in-flight file writes
+  during the instant a lease expires; database state fencing does not prove
+  safe concurrent worktree ownership. Real Windows kill/restart and
+  long-running Ollama tests remain necessary.
+- At authoring: CI/Windows packaging are not yet verified. Run Linux and
+  Windows 3.10/3.12 tests, documentation integrity and frozen EXE/GUI/
+  AppContainer smoke before merging; inspect failures and re-run.

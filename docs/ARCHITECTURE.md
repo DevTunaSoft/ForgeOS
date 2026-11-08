@@ -49,13 +49,15 @@ flowchart TB
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository.
-2. ForgeOS persists it in SQLite; leases protect concurrent task ownership, including CLI planning. Lease-owned compare-and-set updates prevent stale planners from overwriting the result of another worker.
+2. ForgeOS persists it in SQLite; leases protect concurrent task ownership, including CLI planning and the autonomous edit/test/repair cycle. The engine now uses lease-fenced, compare-and-set updates for each checkpoint, completion, failure and blocked state; stale workers cannot publish after their lease expires or is reclaimed.
 3. A local installed Ollama model provides a plan or a bounded, JSON-defined file-edit manifest.
 4. ForgeOS validates file paths, extensions and total edit budget before writing; a transaction journal supports recovery.
 5. Changes are written to a **separate Git worktree**, not automatically merged into the user's original branch.
 6. A selected test preset executes through an environment-dependent runtime.
 7. Bounded output capture feeds original evidence and a smaller AI-facing summary into a limited repair loop.
 8. A result or blocked checkpoint preserves the workspace so a person can inspect it. Automatic commit/push/merge/deploy is **not** enabled.
+
+The task engine does not hold an operating-system filesystem lock while generating/editing: a lease may expire during a long-running external call. Lease fencing prevents stale *database publications*, but a worktree touched before detecting the expired lease still requires careful inspection; recovery must not silently overwrite it.
 
 Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, branch and saved execution parameters must match. Not all interrupted phases can resume. `resume-safe` reads only blocked checkpoint fields through SQLite keyset pages of 16 records; any checkpoint over 64 KiB is reported as skipped without loading its payload into Python. It does not scan completed-task test output or bypass execution leases.
 

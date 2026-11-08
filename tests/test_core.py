@@ -288,6 +288,29 @@ class ForgeOSTests(unittest.TestCase):
             self.store.transition(task, {"planned"}, "blocked", lease_owner="")
         self.assertTrue(self.store.release_lease(task, "worker"))
 
+    def test_expired_lease_cannot_heartbeat_or_publish_before_reclaim(self):
+        from forgeos.core import DEFAULT_LEASE_SECONDS
+        task = self.store.add(str(self.repo), "expiry fence")
+        self.assertTrue(self.store.acquire_lease(task, "old"))
+        self.assertTrue(self.store.transition(task, {"queued"}, "editing",
+                                              lease_owner="old"))
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE task_leases SET heartbeat=? WHERE task_id=?",
+                (time.time() - DEFAULT_LEASE_SECONDS - 5, task))
+        self.assertFalse(self.store.heartbeat_lease(task, "old"))
+        self.assertFalse(self.store.transition(
+            task, {"editing"}, "passed", result="stale", lease_owner="old"))
+        self.assertEqual(self.store.get(task)["result"], "")
+        self.assertTrue(self.store.acquire_lease(task, "new"))
+        self.assertTrue(self.store.transition(
+            task, {"editing"}, "testing", result="replacement",
+            lease_owner="new"))
+        self.assertFalse(self.store.transition(
+            task, {"testing"}, "passed", result="stale", lease_owner="old"))
+        self.assertEqual(self.store.get(task)["result"], "replacement")
+        self.assertTrue(self.store.release_lease(task, "new"))
+
     def test_unknown_task_cannot_receive_lease(self):
         with self.assertRaisesRegex(ValueError,'No task'):
             self.store.acquire_lease(999,'ghost')
