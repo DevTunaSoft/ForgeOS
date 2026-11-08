@@ -7,6 +7,6 @@
 5. Autonomous QA: build/test gates, targeted diagnosis, bounded repair loops, regression and fuzz evidence.
 6. GitHub workflows: checkout, branches, pull requests, reviews, status and optional releases.
 7. Reliability: watchdog, backup/restore, crash recovery, event replay and detailed handoff.
-8. Release: Windows smoke verification, accessibility, installer, security audit and user guide.
+8. Release: Windows smoke verification, accessibility, installer and security audit; maintain the [living user manual](USER_MANUAL.md) throughout all phases, not only at release.
 
 Never label a phase complete without objective acceptance evidence.

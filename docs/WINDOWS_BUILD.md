@@ -20,11 +20,19 @@ EXE packages the Python application, **not** Git, Ollama, or model weights.
 
 ## Verification scope
 
-CI runs the Python regression suite on Windows, builds the frozen EXE,
-verifies the artifact exists, and launches it with --smoke to validate
-packaged imports. This **does not** verify actual window rendering, buttons,
-local model responses, security isolation, or a real application build.
-Those require interactive Windows acceptance testing.
+CI runs the Python regression suite, builds the frozen EXE and checks packaged
+imports. It also launches the **real frozen Tkinter GUI** in a hosted Windows
+runner with a hidden window and temporary synthetic task database: it checks
+both tabs, queue pagination through 520 test tasks, startup/cleanup and a
+one-shot memory-growth bound. A separate hosted frozen AppContainer smoke
+checks security boundaries for supported test workloads.
+
+These are stronger than import-only smoke, but **not** proof of a real
+end-user Windows installation, interactive Ollama use, complete autonomous
+application delivery, or validated 4 GB/8 GB hardware operation.
+
+See the [ForgeOS User Manual](USER_MANUAL.md) for exact user-facing steps,
+execution permissions and troubleshooting.
 
 ## Local build
 
@@ -33,6 +41,10 @@ From the repository root on Windows:
     py -3.12 -m pip install "pyinstaller>=6.0,<7" .
     py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src forgeos_build/launcher.py
 
-The output is dist/ForgeOS.exe. Do not distribute the build as production
-ready until the desktop acceptance tests pass. Generated code and test
-processes are **not sandboxed**; only run trusted projects.
+The output is dist/ForgeOS.exe. Do not distribute it as production-ready
+until real-device installation, AI workflow and security acceptance are
+completed. **Source/development-mode test execution can run code on the host**
+and should be used only on trusted projects. The packaged Windows version
+uses a restricted AppContainer for supported test workloads; not every test
+preset has a secure frozen execution path. Never bypass a refused sandbox
+by running untrusted tests directly on the host.

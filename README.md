@@ -1,5 +1,7 @@
 # ForgeOS — Autonomous Software Engineering Platform
 
+**New here?** Start with the [step-by-step ForgeOS User Manual](docs/USER_MANUAL.md). It explains setup, the real GUI controls, your first task, diagnostic reports, memory information, recovery, safety, and what ForgeOS cannot yet do. We maintain it as features change.
+
 **Status: evolving local-first prototype. Git worktree edits, bounded test/repair loops, diagnostics, and Windows frozen AppContainer unittest isolation exist; full autonomous application delivery and interactive Windows acceptance are not yet complete.**
 
 ForgeOS is a local-first Windows-oriented desktop application being developed to transform natural-language requirements into tested software. The long-term goal includes AI planning, safe code changes, GitHub workflows, Windows EXE / Android APK / web builds, automated tests and self-repair, recovery, and complete source and handoff exports through one beginner-friendly interface.
@@ -49,7 +51,7 @@ A Windows PyInstaller build workflow is available under GitHub Actions. See [Win
 
 ## RTK-inspired diagnostics and repair efficiency (merged phases 1 and 2)
 
-PRs #28 and #30 merged the first diagnostic, learning, routing and trusted-filter prototypes into main. See docs/RTK_ENHANCEMENTS.md for the 52-outcome tracker and docs/ENHANCEMENT_DEDUP_AUDIT.md for the source-backed review of duplicated/overlapping capabilities. PR #31 extends the existing learning backend and GUI; changes under review are not yet part of main.
+PRs #28, #30 and #31 merged the diagnostic, learning, routing, trusted-filter and comparison-view prototypes. See docs/RTK_ENHANCEMENTS.md for the 52-outcome tracker and docs/ENHANCEMENT_DEDUP_AUDIT.md for the source-backed duplication audit. The [User Manual](docs/USER_MANUAL.md) is the canonical description of what users can do today.
 
 The new test runner archives original output locally before selecting important
 diagnostic lines for local AI. It includes structured/text/raw parsing fallback
@@ -65,8 +67,9 @@ After installing this branch, commands are:
 The Activity & diagnostics tab includes an efficiency/repair-learning view.
 Output reductions are byte counts, not actual AI token counts or dollar savings.
 Archived test logs are local, sensitive, unencrypted data; restrict local access.
-The current 32 MiB archive limit and in-memory command capture require further
-hardening before unattended or production deployment.
+The 32 MiB complete-evidence limit remains a safety boundary; process output
+is now streamed and archive/GUI previews are bounded. Real-world security,
+retention and unattended-delivery acceptance are still outstanding.
 
 ### Optional automatic local model selection (experimental)
 
@@ -114,7 +117,7 @@ learned repair candidates. Large original logs have a bounded GUI preview;
 use the diagnostics CLI to retrieve the complete retained evidence.
 
 
-## Low-memory execution (PR #32, in development)
+## Low-memory execution (prototype merged in PR #32)
 
 ForgeOS is being engineered for a lean single desktop GUI, with basic
 project/diagnostic workflows targeted for 4 GiB machines and conservatively

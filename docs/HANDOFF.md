@@ -528,3 +528,23 @@ verify the fixture is complete, bogus GUI pagination is rejected, and a
 runaway working-set result cannot be accepted. Next: verify all 4 OS/Python
 jobs and frozen Windows real Tk EXE test, repair any failures, and merge.
 Hardware acceptance and Ollama end-to-end validation remain unverified.
+
+
+## Living user manual instituted (PR #39; documentation-only cycle)
+
+Branch `docs/living-forgeos-user-manual` was created from verified main
+commit `6737dbec0d5bc7622c1f93a69405b44a32486878` after PR #38.
+The new `docs/USER_MANUAL.md` is the canonical nontechnical guide for the
+current single GUI and optional source CLI. It documents getting started,
+existing Git repositories, local Ollama, GUI actions, test execution consent,
+worktree review, 150-task paging, evidence and RAM views, recovery, privacy,
+troubleshooting, and honest unimplemented capabilities. All steps are linked
+from README and Windows build documentation. The PR template now requires a
+manual update or explicit no-user-facing-change rationale on each PR.
+`tests/test_user_manual.py` verifies GUI labels, existing CLI verbs,
+selectable test presets, the Windows artifact name/retention, warnings,
+manual chapter coverage and entrypoint links. No new GUI, daemon or resource
+consumer; this is source/documentation only. Once merged, treat the manual
+as an acceptance requirement on each feature cycle: change instructions in
+the same PR as code, run docs contract tests and full CI, and retain feature
+limitations until verified on target Windows machines.
