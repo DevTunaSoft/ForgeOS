@@ -28,6 +28,13 @@ def main(argv=None):
     catalog=sub.add_parser('model-catalog',help='Opt-in Hugging Face public GGUF discovery')
     catalog.add_argument('operation',choices=('search','files'))
     catalog.add_argument('query',help='Search phrase or repository ID')
+    local_list=sub.add_parser(
+        'models-local', help='List bounded local GGUF downloads (metadata only)')
+    local_list.add_argument('--directory',default='')
+    local_verify=sub.add_parser(
+        'model-verify-local',help='Explicit SHA-256 recheck of one downloaded GGUF')
+    local_verify.add_argument('filename')
+    local_verify.add_argument('--directory',default='')
     download=sub.add_parser('model-download',
                             help='Explicitly download one GGUF with pinned SHA-256')
     download.add_argument('repository',help='Public Hugging Face owner/model')
@@ -83,6 +90,15 @@ def main(argv=None):
             values = _cli_model(backend=args.backend, model='auto',
                                   endpoint=args.endpoint).installed()
         print(json.dumps(values, indent=2))
+        return 0
+    if args.action == 'models-local':
+        from .model_inventory import list_downloads
+        print(json.dumps(list_downloads(directory=args.directory or None), indent=2))
+        return 0
+    if args.action == 'model-verify-local':
+        from .model_inventory import verify_download
+        result = verify_download(args.filename, directory=args.directory or None)
+        print(json.dumps(result, indent=2))
         return 0
     if args.action == 'model-download':
         from .gguf_download import download_gguf
