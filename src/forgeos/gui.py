@@ -405,18 +405,17 @@ def launch(db_path, *, acceptance: bool = False):
             return
         popup = tk.Toplevel(root)
         popup.title("ForgeOS | Managed local GGUF (experimental)")
-        popup.geometry("875x375")
-        popup.minsize(750, 330)
+        popup.geometry("875x475")
+        popup.minsize(750, 410)
         panel = ttk.Frame(popup, padding=15)
         panel.pack(fill="both", expand=True)
         ttk.Label(
             panel, wraplength=820,
-            text="Select an official CPU llama-server binary you obtained and "
-                 "verified independently. Enter its trusted SHA-256 exactly. "
-                 "Select a GGUF previously downloaded and verified by ForgeOS. "
-                 "ForgeOS checks both hashes before launching a local-only "
-                 "CPU inference process. No online download or installation "
-                 "happens on Start.").pack(anchor="w", pady=(0, 12))
+            text="On Windows x64, optionally install the pinned official CPU "
+                 "llama.cpp release below, or use a separately verified "
+                 "llama-server with its trusted SHA-256. Select a GGUF that "
+                 "ForgeOS has already downloaded and verified. Starting "
+                 "a model does not download or execute installer scripts.").pack(anchor="w", pady=(0, 12))
         exe_path = tk.StringVar()
         expected_hash = tk.StringVar()
         gguf_path = tk.StringVar()
@@ -440,6 +439,38 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Label(hash_line, text="Trusted binary SHA-256", width=23).pack(side="left")
         ttk.Entry(hash_line, textvariable=expected_hash).pack(
             side="left", fill="x", expand=True)
+        def install_official_runtime():
+            """User-initiated network fetch; no installation at GUI startup."""
+            if busy["value"] or managed["busy"] or managed["controller"] is not None:
+                messagebox.showerror(
+                    "Cannot install runtime",
+                    "Finish the active task or managed model operation first.",
+                    parent=popup)
+                return
+            if not messagebox.askyesno(
+                    "Install official Windows x64 CPU runtime",
+                    "Download the pinned official Windows x64 CPU llama.cpp "
+                    "release from GitHub and verify the ZIP, executable and "
+                    "every bundled DLL? Requires internet; installs no "
+                    "system service, runs no script, uses no Docker, and "
+                    "does not download model weights.", parent=popup):
+                return
+            managed["busy"] = True
+            status.set("Downloading and verifying official CPU runtime...")
+            def worker():
+                try:
+                    from .runtime_installer import install_pinned_cpu_runtime
+                    details = install_pinned_cpu_runtime()
+                    managed_events.put(("install", None, details, None))
+                except Exception as exc:
+                    managed_events.put(
+                        ("install", None, None, f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+
+        ttk.Button(
+            panel, text="Install verified official Windows CPU runtime (opt-in)",
+            command=install_official_runtime).pack(anchor="w", pady=(0, 9))
+
         def choose_downloaded():
             """Browse already-downloaded GGUF metadata without rehashing GBs."""
             from .model_inventory import list_downloads
@@ -503,7 +534,7 @@ def launch(db_path, *, acceptance: bool = False):
         buttons_row = ttk.Frame(panel)
         buttons_row.pack(fill="x")
 
-        def do_start():
+        def do_start(*, installed=False):
             if busy["value"] or managed["busy"] or managed["controller"] is not None:
                 messagebox.showerror(
                     "Cannot start model", "Complete or stop the previous task/model.",
@@ -511,26 +542,35 @@ def launch(db_path, *, acceptance: bool = False):
                 return
             values = (exe_path.get().strip(), expected_hash.get().strip(),
                       gguf_path.get().strip())
-            if not all(values):
+            if not values[2] or (not installed and not all(values)):
                 messagebox.showerror(
                     "Missing model information",
-                    "Choose the executable, enter its trusted SHA-256, and "
-                    "choose a verified GGUF file.", parent=popup)
+                    ("Choose a verified GGUF file." if installed else
+                     "Choose the executable, trusted SHA-256 and verified GGUF."),
+                    parent=popup)
                 return
             managed["busy"] = True
             status.set("Verifying and starting local llama.cpp...")
-            # This could hash several GB and wait for CPU model startup;
-            # both run strictly off Tk's GUI event thread.
+            # Rehashing a large model or full binary bundle and starting the
+            # server always run outside the Tk event thread.
             def worker():
                 from .managed_llama import ManagedLlamaServer
                 controller = ManagedLlamaServer()
                 try:
-                    outcome = controller.start(
-                        executable=values[0],
-                        executable_sha256=values[1], model_path=values[2])
+                    if installed:
+                        outcome = controller.start_installed_cpu(
+                            model_path=values[2])
+                    else:
+                        outcome = controller.start(
+                            executable=values[0],
+                            executable_sha256=values[1], model_path=values[2])
                     managed_events.put(("start", controller, outcome, None))
                 except Exception as exc:
-                    controller.stop()
+                    try:
+                        controller.stop()
+                    except Exception as cleanup_error:
+                        exc = RuntimeError(
+                            f"{exc}; cleanup failed: {cleanup_error}")
                     managed_events.put(
                         ("start", None, None, f"{type(exc).__name__}: {exc}"))
             threading.Thread(target=worker, daemon=True).start()
@@ -550,10 +590,14 @@ def launch(db_path, *, acceptance: bool = False):
             request_managed_stop(controller)
             popup.destroy()
 
-        ttk.Button(buttons_row, text="Start local model", command=do_start).pack(
-            side="left")
+        ttk.Button(
+            buttons_row, text="Start installed CPU runtime",
+            command=lambda: do_start(installed=True)).pack(side="left")
+        ttk.Button(
+            buttons_row, text="Start manual runtime",
+            command=lambda: do_start(installed=False)).pack(side="left", padx=8)
         ttk.Button(buttons_row, text="Stop local model", command=do_stop).pack(
-            side="left", padx=10)
+            side="left", padx=8)
         ttk.Label(
             buttons_row,
             text=("A model is running" if managed["controller"] is not None
@@ -825,6 +869,11 @@ def launch(db_path, *, acceptance: bool = False):
                     status.set("Managed llama.cpp operation failed")
                     log("Managed local model: " + error)
                     tabs.select(activity)
+                elif action == "install":
+                    status.set("Verified official CPU llama.cpp runtime installed")
+                    log("Pinned CPU runtime installed: release " + outcome["tag"]
+                        + ", ZIP SHA-256 " + outcome["asset_sha256"]
+                        + ". Select a GGUF and Start installed CPU runtime.")
                 elif action == "start":
                     managed["controller"] = controller
                     managed["last_used"] = time.monotonic()
