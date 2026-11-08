@@ -15,6 +15,9 @@ REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]
 SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
 
 
+COMMIT_SHA = re.compile(r"[a-fA-F0-9]{40}\\Z")
+
+
 def _hub_json(url: str) -> object:
     # All URLs are constructed from a fixed HTTPS origin; no user URLs accepted.
     # Catalog requests are metadata-only. Never send authentication headers.
@@ -65,13 +68,30 @@ def search_gguf(query: str, *, limit: int = 15) -> list[dict]:
     return result
 
 
-def list_gguf_files(repo: str) -> list[dict]:
-    """Inspect one repository's GGUF weights and trusted LFS hashes if exposed."""
+def model_revision(repo: str) -> str:
+    """Resolve a public repository to one immutable Git commit revision."""
     if not isinstance(repo, str) or not REPO_ID.fullmatch(repo):
         raise ValueError("Invalid Hugging Face repository identifier")
     url = ("https://huggingface.co/api/models/" +
+           "/".join(quote(part, safe="") for part in repo.split("/")))
+    item = _hub_json(url)
+    if (not isinstance(item, dict) or item.get("gated") or item.get("private")
+            or not isinstance(item.get("sha"), str)
+            or not COMMIT_SHA.fullmatch(item["sha"])):
+        raise RuntimeError("Public Hugging Face revision unavailable or gated")
+    return item["sha"].lower()
+
+
+def list_gguf_files(repo: str, *, revision: str = "main") -> list[dict]:
+    """Inspect one repository's GGUF weights and trusted LFS hashes if exposed."""
+    if not isinstance(repo, str) or not REPO_ID.fullmatch(repo):
+        raise ValueError("Invalid Hugging Face repository identifier")
+    if not isinstance(revision, str) or (
+            revision != "main" and not COMMIT_SHA.fullmatch(revision)):
+        raise ValueError("File listing requires a full pinned revision")
+    url = ("https://huggingface.co/api/models/" +
            "/".join(quote(part, safe="") for part in repo.split("/")) +
-           "/tree/main?recursive=true")
+           "/tree/" + revision + "?recursive=true")
     payload = _hub_json(url)
     if not isinstance(payload, list) or len(payload) > 2000:
         raise RuntimeError("Unexpected or oversized Hugging Face file listing")
