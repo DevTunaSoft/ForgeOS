@@ -50,6 +50,15 @@ class GGUFInventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
             verify_download(self.path, directory=self.root)
 
+    def test_explicit_verify_accepts_noncanonical_but_contained_path(self):
+        # Equivalent paths must compare to the canonical inventory root,
+        # not reject legitimate GGUF weights on Windows alias spellings.
+        alias = self.parent / "unused" / ".." / self.path.name
+        self.assertEqual(
+            verify_download(alias, directory=self.root)["status"], "verified")
+        self.assertEqual(
+            verify_download(self.path, directory=self.root)["sha256"], self.sha)
+
     def test_missing_or_different_size_does_not_appear_verified(self):
         self.path.write_bytes(b"GGUF")
         self.assertEqual(list_downloads(self.root)[0]["status"], "size_mismatch")

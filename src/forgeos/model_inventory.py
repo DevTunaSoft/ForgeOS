@@ -111,6 +111,10 @@ def verify_download(path: str | Path, *,
     root = _safe_storage_root(directory)
     selected = Path(path).expanduser().absolute()
     _reject_existing_link(selected, root)
+    # Windows can report a TemporaryDirectory path with an alias or
+    # different canonical spelling than the already-resolved storage root.
+    # Normalize only AFTER the no-link/outside-root validation.
+    selected = selected.resolve(strict=False)
     manifest = selected.with_name(selected.name + ".forgeos.json")
     _reject_existing_link(manifest, root)
     expected, info = _manifest_model_file(manifest, root)
