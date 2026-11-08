@@ -354,6 +354,41 @@ class ManagedLlamaServer:
         return {"pid": self.process.pid,
                 **_windows_job_memory_report(self._windows_job)}
 
+    def inference_self_test(self) -> dict:
+        """Exercise the active local model without sending project content."""
+        if (not self.running() or not self.endpoint or not self.api_key
+                or self.model_name != ALIAS):
+            raise RuntimeError("A verified managed llama-server must be running")
+        prompt = (
+            'Return only valid JSON with no markdown or explanation. '
+            'The exact object must be {"files":[]}. Do not create or modify files.')
+        started = time.perf_counter()
+        response = LocalChatModel(
+            backend="llama.cpp", model=ALIAS, endpoint=self.endpoint,
+            api_key=self.api_key).generate_edits(prompt)
+        elapsed = time.perf_counter() - started
+        encoded = response.encode("utf-8")
+        if len(encoded) > 4096:
+            raise RuntimeError("Managed model self-test response was unexpectedly large")
+        try:
+            payload = json.loads(response)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "Managed model self-test did not return valid JSON") from exc
+        if payload != {"files": []}:
+            raise RuntimeError(
+                "Managed model self-test did not follow the empty edit contract")
+        try:
+            memory = self.memory_report()
+        except (OSError, RuntimeError, ValueError):
+            memory = None
+        return {
+            "status": "passed",
+            "elapsed_seconds": round(elapsed, 3),
+            "response_bytes": len(encoded),
+            "memory": memory,
+        }
+
     def start_installed_cpu(self, *, model_path: str | Path,
                             directory: str | Path | None = None,
                             timeout: int = DEFAULT_TIMEOUT,

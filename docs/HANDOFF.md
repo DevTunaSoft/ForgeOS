@@ -1436,3 +1436,15 @@ workflow now owns only source compilation, PyInstaller packaging, frozen import
 smoke, real Tk lifecycle/paging acceptance and secure AppContainer smoke.
 Regression coverage remains mandatory in the separate Foundation workflow.
 This reduces repeated CI work without removing a validation category.
+
+
+## 2026-11-08 explicit managed-model inference self-test
+
+After the CI de-duplication checkpoint passed all required jobs, the existing
+managed llama controller gained an explicit `inference_self_test()` path and
+the existing GUI gained **Test local model**. The test sends no project
+content; it requires the active model to return the exact empty JSON edit
+contract and records elapsed time plus available one-shot memory accounting.
+The existing live POSIX localhost-process integration test now exercises this
+same self-test, so no duplicate server harness was added. Real native Windows
+llama.cpp/GGUF execution remains the decisive physical acceptance gate.

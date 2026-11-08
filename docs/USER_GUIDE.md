@@ -445,3 +445,14 @@ ceiling plus peak committed memory for the managed process tree and the peak
 for a single process. This is a one-shot reading; ForgeOS does not continuously
 poll the model in the background. It does not include GPU/shared graphics
 memory and should not be interpreted as a complete performance benchmark.
+
+
+### Test a managed local model before using it on a project
+
+After starting a verified managed GGUF, select **Test local model** in the
+Managed local GGUF window. ForgeOS sends a fixed harmless prompt containing
+no project files or task text. The model must return the exact empty edit
+contract `{"files":[]}` as valid JSON. ForgeOS reports pass/fail and elapsed
+time in Activity & diagnostics; on Windows it also includes the available
+one-shot Job Object peak-memory reading. A failed self-test does not edit a
+workspace, run project tests, or silently switch to a cloud model.

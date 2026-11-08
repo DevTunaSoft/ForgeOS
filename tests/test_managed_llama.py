@@ -271,6 +271,10 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(client.installed()[0]["name"], ALIAS)
             self.assertEqual(client.generate_edits("Create no files"),
                              '{"files":[]}')
+            self_test = controller.inference_self_test()
+            self.assertEqual(self_test["status"], "passed")
+            self.assertGreater(self_test["response_bytes"], 0)
+            self.assertGreaterEqual(self_test["elapsed_seconds"], 0)
             from forgeos.local_models import _open
             with self.assertRaises(HTTPError) as unauthenticated:
                 with _open(Request(details["endpoint"] + "/models"), timeout=3):
@@ -411,6 +415,22 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         controller = ManagedLlamaServer()
         with self.assertRaisesRegex(RuntimeError, "No managed llama-server"):
             controller.memory_report()
+
+    def test_inference_self_test_rejects_noncontract_output(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.poll.return_value = None
+        process.pid = 44
+        controller.process = process
+        controller.endpoint = "http://127.0.0.1:17089/v1"
+        controller.api_key = "a" * 32
+        controller.model_name = ALIAS
+        with patch(
+                "forgeos.managed_llama.LocalChatModel.generate_edits",
+                return_value='{"files":[{"path":"x.py","content":"x"}]}'):
+            with self.assertRaisesRegex(
+                    RuntimeError, "empty edit contract"):
+                controller.inference_self_test()
 
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):
         from forgeos.managed_llama import _verified_model, _verified_runtime

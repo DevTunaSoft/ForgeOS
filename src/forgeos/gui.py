@@ -895,6 +895,32 @@ def launch(db_path, *, acceptance: bool = False):
                 if limit is not None else "Job memory ceiling: unavailable",
                 parent=popup)
 
+        def test_local_model():
+            if busy["value"] or managed["busy"]:
+                messagebox.showerror(
+                    "Model in use",
+                    "Complete the current task/model operation before testing.",
+                    parent=popup)
+                return
+            controller = managed["controller"]
+            if controller is None or not controller.running():
+                messagebox.showinfo(
+                    "Test local model",
+                    "Start a verified managed local model first.", parent=popup)
+                return
+            managed["busy"] = True
+            managed["last_used"] = time.monotonic()
+            status.set("Testing managed local model structured output...")
+            def worker():
+                try:
+                    outcome = controller.inference_self_test()
+                    managed_events.put(("smoke", controller, outcome, None))
+                except Exception as exc:
+                    managed_events.put((
+                        "smoke", controller, None,
+                        f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+
         def do_stop():
             if busy["value"] or managed["busy"]:
                 messagebox.showerror(
@@ -915,6 +941,9 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Button(
             buttons_row, text="Start manual runtime",
             command=lambda: do_start(installed=False)).pack(side="left", padx=8)
+        ttk.Button(
+            buttons_row, text="Test local model",
+            command=test_local_model).pack(side="left", padx=8)
         ttk.Button(
             buttons_row, text="Show model memory",
             command=show_model_memory).pack(side="left", padx=8)
@@ -1273,6 +1302,23 @@ def launch(db_path, *, acceptance: bool = False):
                     log("Pinned CPU runtime installed: release " + outcome["tag"]
                         + ", ZIP SHA-256 " + outcome["asset_sha256"]
                         + ". Select a GGUF and Start installed CPU runtime.")
+                elif action == "smoke":
+                    managed["last_used"] = time.monotonic()
+                    status.set("Managed local model self-test passed")
+                    memory = outcome.get("memory")
+                    detail = (
+                        "Managed local model self-test passed in "
+                        + str(outcome["elapsed_seconds"]) + " seconds; "
+                        + str(outcome["response_bytes"]) + " response bytes.")
+                    if (isinstance(memory, dict)
+                            and memory.get("peak_job_memory_used_bytes")
+                            is not None):
+                        detail += (
+                            " Peak Windows job committed memory: "
+                            + f'{memory["peak_job_memory_used_bytes"]/(1024**2):.1f}'
+                            + " MiB.")
+                    log(detail)
+                    tabs.select(activity)
                 elif action == "start":
                     managed["controller"] = controller
                     managed["last_used"] = time.monotonic()

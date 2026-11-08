@@ -40,6 +40,15 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('from .model_routing import memory_report', text)
         self.assertNotIn("root.after(1000, show_memory)", text)
 
+    def test_managed_model_self_test_is_explicit_and_uses_existing_controller(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[1] /
+                "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Test local model"', text)
+        self.assertIn("controller.inference_self_test()", text)
+        self.assertIn('("smoke", controller, outcome, None)', text)
+        self.assertIn('elif action == "smoke":', text)
+
     def test_managed_model_memory_is_explicit_one_shot_gui_action(self):
         from pathlib import Path
         text = (Path(__file__).resolve().parents[1] /

@@ -160,7 +160,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [x] PR #51 adds backend selection, endpoint input, HF discovery/file inspection and explicit download controls to existing GUI.
 - [ ] Add `Models` section/tab with installed/imported/available/corrupt, quantization, license, hashes, disk use, RAM estimate, suitability and runtime readiness.
 - [ ] Install/start/stop/reverify/update/remove controls; protect an active model or a checkpoint reference from unsafe deletion.
-- [ ] Per-role model preference, manual routing override, one-click local test prompt and benchmark result/history.
+- [ ] Per-role model preference, manual routing override and benchmark history remain open. **Implemented experimental baseline:** the existing managed-model GUI now provides a one-click local inference self-test that requires valid empty-edit JSON, measures elapsed time and records available one-shot memory accounting without sending project content.
 - [ ] Plain-language explanations: model too large, unavailable backend, unsupported template, missing hash, out of disk/RAM, blocked network, insufficient Windows permissions.
 - [ ] Accessible keyboard navigation, screen reader labels, progress/cancel/finish affordances; all slow downloads/benchmarks off the Tk main thread.
 - [ ] Minimal idle memory, no unbounded logs, no hidden background network operations; clearly state that bundled EXE **does not bundle model weights**.
