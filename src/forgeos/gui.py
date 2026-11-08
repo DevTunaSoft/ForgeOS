@@ -405,8 +405,8 @@ def launch(db_path, *, acceptance: bool = False):
             return
         popup = tk.Toplevel(root)
         popup.title("ForgeOS | Managed local GGUF (experimental)")
-        popup.geometry("875x475")
-        popup.minsize(750, 410)
+        popup.geometry("875x520")
+        popup.minsize(750, 465)
         panel = ttk.Frame(popup, padding=15)
         panel.pack(fill="both", expand=True)
         ttk.Label(
@@ -439,6 +439,8 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Label(hash_line, text="Trusted binary SHA-256", width=23).pack(side="left")
         ttk.Entry(hash_line, textvariable=expected_hash).pack(
             side="left", fill="x", expand=True)
+        install_state = tk.StringVar(
+            value="Official CPU runtime installation is optional.")
         def install_official_runtime():
             """User-initiated network fetch; no installation at GUI startup."""
             if busy["value"] or managed["busy"] or managed["controller"] is not None:
@@ -457,19 +459,25 @@ def launch(db_path, *, acceptance: bool = False):
                 return
             managed["busy"] = True
             status.set("Downloading and verifying official CPU runtime...")
+            install_state.set("Downloading and checking the official pinned CPU runtime...")
             def worker():
                 try:
                     from .runtime_installer import install_pinned_cpu_runtime
                     details = install_pinned_cpu_runtime()
-                    managed_events.put(("install", None, details, None))
+                    managed_events.put(
+                        ("install", (popup, install_state), details, None))
                 except Exception as exc:
                     managed_events.put(
-                        ("install", None, None, f"{type(exc).__name__}: {exc}"))
+                        ("install", (popup, install_state), None,
+                         f"{type(exc).__name__}: {exc}"))
             threading.Thread(target=worker, daemon=True).start()
 
         ttk.Button(
             panel, text="Install verified official Windows CPU runtime (opt-in)",
-            command=install_official_runtime).pack(anchor="w", pady=(0, 9))
+            command=install_official_runtime).pack(anchor="w", pady=(0, 4))
+        ttk.Label(
+            panel, textvariable=install_state, wraplength=820,
+            foreground="#52647b").pack(anchor="w", pady=(0, 9))
 
         def choose_downloaded():
             """Browse already-downloaded GGUF metadata without rehashing GBs."""
@@ -866,10 +874,16 @@ def launch(db_path, *, acceptance: bool = False):
                 action, controller, outcome, error = managed_events.get_nowait()
                 managed["busy"] = False
                 if error:
+                    if action == "install" and controller[0].winfo_exists():
+                        controller[1].set("CPU runtime installation failed: " + error)
                     status.set("Managed llama.cpp operation failed")
                     log("Managed local model: " + error)
                     tabs.select(activity)
                 elif action == "install":
+                    if controller[0].winfo_exists():
+                        controller[1].set(
+                            "Verified official CPU runtime installed. "
+                            "Choose a GGUF and click Start installed CPU runtime.")
                     status.set("Verified official CPU llama.cpp runtime installed")
                     log("Pinned CPU runtime installed: release " + outcome["tag"]
                         + ", ZIP SHA-256 " + outcome["asset_sha256"]
