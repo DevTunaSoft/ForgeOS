@@ -21,8 +21,26 @@ SHA = re.compile(r"[a-f0-9]{64}\Z")
 FIELDS = frozenset({"repo", "revision", "file", "bytes", "sha256"})
 
 
+def _sync_directory(directory: Path) -> None:
+    """Persist directory-entry mutations when POSIX directory fsync exists.
+
+    Windows does not offer portable directory fsync through stdlib; actual
+    power-loss recovery there remains a physical-machine acceptance gap.
+    """
+    if os.name == "nt":
+        return
+    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _move(source: Path, target: Path) -> None:
     os.replace(source, target)
+    _sync_directory(source.parent)
+    if target.parent != source.parent:
+        _sync_directory(target.parent)
 
 
 def _store(root: Path, create: bool = False) -> Path:
@@ -120,12 +138,15 @@ def retire_download(path: str | Path, *,
             raise RuntimeError("Unresolved GGUF download journal")
         verify_download(model, directory=root)
         token = uuid.uuid4().hex
-        entry = _store(root, create=True) / token
+        store = _store(root, create=True)
+        entry = store / token
         entry.mkdir(mode=0o700, exist_ok=False)
+        _sync_directory(store)
         record = {"version": 1, "path": model.relative_to(root).as_posix(),
                   "identity": identity}
         try:
             _write_json_atomic(entry / "journal.json", record)
+            _sync_directory(entry)
             _move(model, entry / "weights.gguf")
             _move(manifest, entry / "manifest.json")
         except BaseException as exc:
@@ -200,6 +221,8 @@ def restore_download(identifier: str, *,
             _move(saved_manifest, manifest)
         verify_download(model, directory=root)
         (entry / "journal.json").unlink()
+        _sync_directory(entry)
         entry.rmdir()
+        _sync_directory(_store(root))
     return {"status": "restored", "id": identifier, "path": str(model),
             "bytes": info["bytes"], "sha256": info["sha256"]}

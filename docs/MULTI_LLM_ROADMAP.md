@@ -333,3 +333,6 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 - [x] Hash and retire only on a worker thread, keep event queue bounded to one result and poll via existing Tk event loop, and retain the chooser while model retirement is in progress.
 - [x] Return a model recovery ID, clear any selected retired model, and add GUI contract regression tests.
 - [ ] Physically test model retirement and restore with real weights and native Windows file locks. Externally launched inference processes are not yet automatically detectable.
+
+
+- [x] Harden journal and rename durability with POSIX directory fsync, plus fault injection for synchronization interruption. Windows directory durability requires physical NTFS acceptance before any power-loss guarantee.

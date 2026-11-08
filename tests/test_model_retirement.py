@@ -126,6 +126,40 @@ class ModelRetirementTests(unittest.TestCase):
             self.restore(ticket["id"])
         self.assertEqual(list_retired(self.root)[0]["status"], "needs_manual_inspection")
 
+    def test_directory_sync_covers_journal_and_both_atomic_renames(self):
+        from forgeos import model_retirement as retirement
+        observed = []
+        with patch("forgeos.model_retirement._sync_directory",
+                   side_effect=lambda path: observed.append(path)):
+            ticket = self.retire()
+            saved = self.root / ".forgeos-retired" / ticket["id"]
+            self.assertIn(saved, observed)
+            self.assertIn(self.model.parent, observed)
+            observed.clear()
+            self.restore(ticket["id"])
+        self.assertIn(self.model.parent, observed)
+        self.assertIn(self.root / ".forgeos-retired", observed)
+
+    def test_directory_sync_fault_after_weight_move_retains_recovery_id(self):
+        from forgeos import model_retirement as retirement
+        real_move = retirement._move
+        count = 0
+        def fail_after_first_model_move(source, destination):
+            nonlocal count
+            count += 1
+            real_move(source, destination)
+            if count == 1:
+                raise OSError("directory durability fault")
+        with patch("forgeos.model_retirement._move",
+                   side_effect=fail_after_first_model_move):
+            with self.assertRaisesRegex(RuntimeError, "restore using identifier"):
+                self.retire()
+        entries = list_retired(self.root)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["status"], "interrupted_retirement_or_restore")
+        self.restore(entries[0]["id"])
+        self.assertEqual(self.model.read_bytes(), self.data)
+
     def test_cli_requires_confirm_then_restores_by_token(self):
         from forgeos.cli import main
         from contextlib import redirect_stdout

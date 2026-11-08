@@ -621,9 +621,6 @@ def launch(db_path, *, acceptance: bool = False):
                     if chooser.winfo_exists():
                         chooser.after(200, poll_retirement)
                     return
-                finally:
-                    # This callback alone owns Tk state updates.
-                    pass
                 retirement["busy"] = False
                 managed["busy"] = False
                 use_btn.configure(state="normal")
