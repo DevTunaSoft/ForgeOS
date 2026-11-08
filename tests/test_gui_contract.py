@@ -28,6 +28,14 @@ class DashboardContractTests(unittest.TestCase):
         self.assertNotIn("store.list(brief=True)\n", content)
         self.assertIn('totals = store.counts()', content)
 
+    def test_memory_snapshot_is_on_demand_in_existing_activity_tab(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[1] /
+                "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Show local memory snapshot"', text)
+        self.assertIn('from .model_routing import memory_report', text)
+        self.assertNotIn("root.after(1000, show_memory)", text)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

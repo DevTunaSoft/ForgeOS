@@ -174,6 +174,22 @@ def local_memory_settings() -> dict:
 
 
 
+def memory_report() -> dict:
+    """One canonical local RAM report for CLI and GUI, on demand only."""
+    system = system_memory()
+    process = process_memory()
+    return {
+        "total_system_ram_bytes": system.total_bytes if system else None,
+        "available_system_ram_bytes": system.available_bytes if system else None,
+        "forgeos_process_rss_bytes": process.rss_bytes if process else None,
+        "forgeos_process_peak_rss_bytes": process.peak_rss_bytes if process else None,
+        "forgeos_process_private_bytes": process.private_bytes if process else None,
+        "safe_local_model_file_budget_bytes": safe_model_file_budget(system),
+        "local_model_settings": local_memory_settings(),
+        "warning": "One-shot own-process reading; excludes Ollama/child process/GPU RAM",
+    }
+
+
 def installed_models(*, endpoint: str = LOCAL_OLLAMA) -> list[dict]:
     if endpoint != LOCAL_OLLAMA:
         raise ValueError("Only local Ollama model discovery is allowed")

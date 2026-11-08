@@ -477,3 +477,19 @@ peak traced Python allocations and total time. Tests verify native readings,
 repeated benchmarks, bounds and invalid arguments. Unverified until complete
 Linux/Windows CI, frozen executable packaging and independent Windows 4/8 GiB
 hardware acceptance. This probe does not measure Ollama/model/GPU/child RAM.
+
+
+## PR #36 — streamed CLI history and one shared RAM report (pending CI)
+
+Branch feat/streamed-history-and-memory-ui from merged PR #35
+(1904ebbca87d71a9337463ad3f1c8e267bd10001).
+Existing Store adds iter_tasks() to yield original full JSON task rows without
+materializing the entire task table; existing CLI list uses JSON streaming and
+preserves historical order/content. It is not a new queue or storage backend.
+The existing canonical model_routing.py owns memory_report(), reused by
+CLI 'memory' and the single Tkinter GUI's on-demand Activity snapshot button.
+No background agent, polling, cloud request or extra application. Tests cover
+nonmaterialized CLI exports, full Unicode/output preservation, streaming
+cursor early close, and one shared offline memory-report source. Full CI and
+frozen AppContainer packaging/smoke must pass; 4/8 GiB physical acceptance
+remains unverified.

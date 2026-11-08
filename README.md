@@ -145,3 +145,14 @@ The desktop queue is now paged in blocks of 150 tasks with **Older tasks** and
 SQL-level aggregate counts instead of loading and rendering every old result
 or full description. This is a memory optimization, not a deletion or
 retention limit: the CLI and SQLite archive still preserve prior tasks.
+
+
+## Scalable task exports and memory status
+
+The CLI `python -m forgeos list` now emits JSON one SQLite row at a time,
+instead of constructing one giant Python list of every historical diagnostic
+and result. The JSON format and task order remain unchanged. The desktop
+Activity tab also includes an on-demand **Show local memory snapshot** button,
+sharing the same process-RAM reporting code used by `python -m forgeos memory`.
+It does not run a monitor in the background, and it cannot measure Ollama or
+other build subprocesses; physical Windows 4/8 GiB acceptance remains required.

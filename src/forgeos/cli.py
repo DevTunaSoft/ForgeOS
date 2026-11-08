@@ -1,6 +1,7 @@
 """ForgeOS command-line entry point; GUI is optional."""
 import argparse
 import json
+import sys
 from pathlib import Path
 from .core import Store, Ollama, run_test
 
@@ -45,20 +46,8 @@ def main(argv=None):
         from .gui import launch
         return launch(args.db)
     if args.action == 'memory':
-        from .model_routing import (system_memory, process_memory,
-                                    safe_model_file_budget, local_memory_settings)
-        system = system_memory()
-        process = process_memory()
-        print(json.dumps({
-            "total_system_ram_bytes": system.total_bytes if system else None,
-            "available_system_ram_bytes": system.available_bytes if system else None,
-            "forgeos_process_rss_bytes": process.rss_bytes if process else None,
-            "forgeos_process_peak_rss_bytes": process.peak_rss_bytes if process else None,
-            "forgeos_process_private_bytes": process.private_bytes if process else None,
-            "safe_local_model_file_budget_bytes": safe_model_file_budget(system),
-            "local_model_settings": local_memory_settings(),
-            "warning": "One-shot own-process reading; excludes Ollama/child process/GPU RAM"
-        }, indent=2))
+        from .model_routing import memory_report
+        print(json.dumps(memory_report(), indent=2))
         return 0
     if args.action == 'diagnostics':
         if args.operation == 'show':
@@ -86,7 +75,15 @@ def main(argv=None):
         if args.action=='add':
             print(f'Created task #{store.add(args.project,args.description)}')
         elif args.action=='list':
-            print(json.dumps(store.list(),indent=2))
+            # Stream one SQLite row at a time. Do not construct a giant
+            # list of result/error payloads just to emit a JSON array.
+            sys.stdout.write("[")
+            first = True
+            for task in store.iter_tasks():
+                sys.stdout.write("\n" if first else ",\n")
+                json.dump(task, sys.stdout)
+                first = False
+            sys.stdout.write("\n]\n" if not first else "]\n")
         elif args.action=='recover':
             print(f'Inspected {store.recover()} interrupted tasks; editing/testing tasks blocked for inspection')
         elif args.action=='recover-edits':

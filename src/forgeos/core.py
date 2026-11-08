@@ -71,6 +71,20 @@ class Store:
             args = (limit, offset)
         return [dict(row) for row in self.db.execute(sql, args)]
 
+    def iter_tasks(self):
+        """Yield original full task rows one at a time for CLI export.
+
+        Preserve the legacy full JSON representation without accumulating
+        all historical result/diagnostic blobs in Python memory. Consumers
+        must exhaust or close the generator before closing the task store.
+        """
+        cursor = self.db.execute("SELECT * FROM tasks ORDER BY id DESC")
+        try:
+            for row in cursor:
+                yield dict(row)
+        finally:
+            cursor.close()
+
     def counts(self) -> dict[str, int]:
         """SQL aggregate, not a full scan into Python task objects."""
         result = {"total": 0, "passed": 0, "failed": 0, "blocked": 0}

@@ -33,6 +33,18 @@ class NativeMemoryCliTests(unittest.TestCase):
                          process.private_bytes)
         self.assertIn("Ollama", values["warning"])
 
+    def test_memory_report_can_be_reused_by_gui_without_network(self):
+        from forgeos.model_routing import memory_report
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(8*1024**3, 5*1024**3)), \
+             patch("forgeos.model_routing.process_memory",
+                   return_value=ProcessMemorySnapshot(10_000_000, 15_000_000, 11_000_000)), \
+             patch("forgeos.model_routing.urlopen",
+                   side_effect=AssertionError("RAM view must not call Ollama")):
+            details = memory_report()
+        self.assertEqual(details["forgeos_process_rss_bytes"], 10_000_000)
+        self.assertGreater(details["safe_local_model_file_budget_bytes"], 0)
+
     def test_unsupported_memory_probe_is_explicitly_unknown(self):
         output = io.StringIO()
         with patch("forgeos.model_routing.system_memory", return_value=None), \

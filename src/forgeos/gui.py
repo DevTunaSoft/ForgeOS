@@ -191,6 +191,19 @@ def launch(db_path):
     ttk.Button(activity, text="AI efficiency and repair learning",
                command=show_efficiency).pack(anchor="w", pady=(0, 8))
 
+    def show_memory():
+        # No background sampling loop, subprocess or second resource service.
+        try:
+            from .model_routing import memory_report
+            log("ForgeOS memory snapshot (own process; excludes local AI)\n"
+                + json.dumps(memory_report(), indent=2))
+            tabs.select(activity)
+        except Exception as exc:
+            messagebox.showerror("Memory snapshot unavailable", str(exc))
+
+    ttk.Button(activity, text="Show local memory snapshot",
+               command=show_memory).pack(anchor="w", pady=(0, 8))
+
     def show_comparison():
         try:
             from .insights import get_comparison
