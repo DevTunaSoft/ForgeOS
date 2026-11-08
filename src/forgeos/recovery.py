@@ -162,8 +162,7 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 if actual != expected:
                     raise ValueError(
                         "Authenticated managed runtime does not match checkpoint identity")
-                api_key = getattr(model, "api_key", None)
-                if not isinstance(api_key, str) or not api_key:
+                if getattr(model, "authenticated", False) is not True:
                     raise ValueError(
                         "Managed checkpoint recovery requires authenticated runtime")
             elif "backend" in contract:

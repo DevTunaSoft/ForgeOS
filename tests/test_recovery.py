@@ -79,7 +79,7 @@ class RecoveryTests(unittest.TestCase):
             "base": contract["endpoint"],
             "managed_model_sha256": contract["managed_model_sha256"],
             "managed_runtime_sha256": contract["managed_runtime_sha256"],
-            "api_key": "ephemeral-secret",
+            "authenticated": True,
         })()
         factory = Mock(return_value=model)
         report = resume_safe(
@@ -97,7 +97,7 @@ class RecoveryTests(unittest.TestCase):
                 ("managed_model_sha256", "c" * 64),
                 ("managed_runtime_sha256", "d" * 64),
                 ("base", "http://127.0.0.1:40124"),
-                ("api_key", "")):
+                ("authenticated", False)):
             with self.subTest(field=field):
                 contract = self.managed_contract()
                 checkpoint = {
@@ -111,7 +111,7 @@ class RecoveryTests(unittest.TestCase):
                     "base": contract["endpoint"],
                     "managed_model_sha256": contract["managed_model_sha256"],
                     "managed_runtime_sha256": contract["managed_runtime_sha256"],
-                    "api_key": "secret",
+                    "authenticated": True,
                 }
                 values[field] = bad_value
                 model = type("ManagedModel", (), values)()

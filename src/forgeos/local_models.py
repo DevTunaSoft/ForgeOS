@@ -90,6 +90,11 @@ class LocalChatModel:
         self.base = validate_endpoint(endpoint or DEFAULT_ENDPOINTS[backend])
         self._api_key = api_key
 
+    @property
+    def authenticated(self) -> bool:
+        """Reveal only whether local authentication exists, never the secret."""
+        return bool(self._api_key)
+
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         if self._api_key:

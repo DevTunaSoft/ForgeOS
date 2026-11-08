@@ -167,5 +167,22 @@ class LocalModelsTests(unittest.TestCase):
                 None, None, 302, "redirect", None, "https://example.com"))
 
 
+
+class LocalAuthenticationStateTests(unittest.TestCase):
+    def test_authentication_state_never_exposes_secret(self):
+        from forgeos.local_models import LocalChatModel
+        plain = LocalChatModel(
+            backend="llama.cpp", model="test-model",
+            endpoint="http://127.0.0.1:8080/v1")
+        secured = LocalChatModel(
+            backend="llama.cpp", model="test-model",
+            endpoint="http://127.0.0.1:8080/v1",
+            api_key="A" * 24)
+        self.assertFalse(plain.authenticated)
+        self.assertTrue(secured.authenticated)
+        self.assertFalse(hasattr(secured, "api_key"))
+        self.assertNotIn("A" * 24, repr(secured.__dict__))
+
+
 if __name__ == "__main__":
     unittest.main()

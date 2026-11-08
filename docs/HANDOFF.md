@@ -1547,3 +1547,8 @@ Removed the blanket rejection of every SHA-bound managed GGUF checkpoint without
 ## GUI safe recovery integration
 
 The single ForgeOS dashboard now exposes **Resume safe blocked tasks** in Activity & diagnostics. It reuses the existing background-worker/event-loop design and existing host-test permission. If the current managed GGUF is authenticated and running, recovery receives a fresh local client carrying the ephemeral API credential and the controller's exact model/runtime hashes; `resume_safe` independently re-attests those values against each checkpoint before execution. The managed controller is marked busy during the operation to prevent idle unload. Recovery reports resumed/skipped/failed work in the existing diagnostics log; no credential is written into task state.
+
+
+### Managed recovery authentication compatibility repair
+
+A focused compatibility audit found that `LocalChatModel` intentionally keeps the ephemeral server credential in private state (`_api_key`), while the first recovery re-attestation implementation checked a nonexistent public `api_key` attribute. That would have rejected every real managed recovery despite correct hashes. The client now exposes only a read-only boolean `authenticated` property; the secret remains private and is never serialized or returned. Recovery checks that boolean. Regression coverage verifies authenticated/unauthenticated behavior and that no public secret attribute is introduced.
