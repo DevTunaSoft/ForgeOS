@@ -46,7 +46,7 @@ def launch(db_path):
     style.configure("TButton", padding=(9, 6))
 
     project = tk.StringVar()
-    model = tk.StringVar(value="qwen2.5-coder:3b")
+    model = tk.StringVar(value="auto")
     preset = tk.StringVar(value="python-unittest")
     workspaces = tk.StringVar(value=str(Path.home() / ".forgeos" / "workspaces"))
     allow_host_tests = tk.BooleanVar(value=False)
@@ -89,7 +89,7 @@ def launch(db_path):
     options.pack(fill="x", pady=(0, 10))
     first = ttk.Frame(options)
     first.pack(fill="x")
-    ttk.Label(first, text="Local model").pack(side="left")
+    ttk.Label(first, text="Local model (auto = RAM-aware)").pack(side="left")
     ttk.Entry(first, textvariable=model, width=23).pack(side="left", padx=(6, 18))
     ttk.Label(first, text="Test suite").pack(side="left")
     ttk.Combobox(first, textvariable=preset, values=PRESETS,

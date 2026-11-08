@@ -164,11 +164,13 @@ class Ollama:
             'num_predict': settings['num_predict'] if edits else
             min(900, settings['num_predict']),
         }
-        payload = json.dumps({
+        arguments = {
             'model': self.model, 'prompt': prompt, 'stream': False,
-            'format': 'json' if edits else '',
             'options': options, 'keep_alive': settings['keep_alive'],
-        }).encode()
+        }
+        if edits:
+            arguments['format'] = 'json'
+        payload = json.dumps(arguments).encode()
         req = Request(self.base + '/api/generate', data=payload,
                       headers={'Content-Type': 'application/json'})
         with urlopen(req, timeout=180) as response:

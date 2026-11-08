@@ -79,6 +79,23 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         self.assertTrue(result["output_preview_only"])
         self.assertIsNotNone(result["evidence_reference"])
 
+    def test_streaming_large_output_has_bounded_python_allocations(self):
+        import gc
+        import tracemalloc
+        gc.collect()
+        tracemalloc.start()
+        try:
+            script = ("import sys; buf = b'INFO memory test\\n' * 4000; "
+                      "[(sys.stdout.buffer.write(buf)) for _ in range(200)]")
+            result = run_streamed_process(
+                [sys.executable, "-c", script], self.root, timeout=30)
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertTrue(result["capture_complete"])
+        self.assertTrue(result["output_preview_only"])
+        self.assertLess(peak, 32 * 1024 * 1024)
+
     def test_timeout_terminates_process(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             run_streamed_process(

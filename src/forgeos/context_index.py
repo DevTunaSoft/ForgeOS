@@ -38,8 +38,10 @@ def _signatures(path: Path) -> list[str]:
             break
     return result[:40]
 
-def render_context(root: str | Path, question: str = "") -> str:
+def render_context(root: str | Path, question: str = "", *, max_chars: int = MAX_CONTEXT) -> str:
     """Sort safe file paths by request relevance and extract Python AST names only."""
+    if type(max_chars) is not int or not 512 <= max_chars <= MAX_CONTEXT:
+        raise ValueError("Context budget must be 512..8000 characters")
     origin = Path(root).resolve(strict=True)
     if not origin.is_dir():
         raise ValueError("Context root is not a directory")
@@ -80,6 +82,6 @@ def render_context(root: str | Path, question: str = "") -> str:
             lines.extend("  " + symbol for symbol in symbols)
             signatures += 1
     output = "\n".join(lines)
-    if len(output) > MAX_CONTEXT:
-        return output[:MAX_CONTEXT - 47] + "\n[Context safely clipped at 8000 chars]"
+    if len(output) > max_chars:
+        return output[:max_chars - 53] + "\n[Context clipped to fit local AI memory budget]"
     return output
