@@ -207,6 +207,7 @@ class EngineIntegrationTests(unittest.TestCase):
             "role": "implementation", "backend": "llama.cpp",
             "model_name": "forgeos-managed", "tasks": 20,
             "json_successes": 20, "objective_successes": 18,
+            "runtime_failures": 0, "safety_violations": 0,
             "model_bytes": 1_000_000_000,
             "peak_memory_bytes": 2_000_000_000,
             "median_latency_seconds": 1.2,

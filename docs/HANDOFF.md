@@ -1582,3 +1582,8 @@ The router can now be supplied by a real local evidence producer rather than han
 ## GUI final qualification workflow
 
 The existing Managed local GGUF window now runs the new 20-task final qualification corpus for the selected role. It reuses the same verified managed controller, background-thread/event-queue pattern and cooperative cancellation mechanism as screening. Progress is visible as 0/20 through 20/20. Results report structured and objective successes, runtime failures, detected safety violations and whether the evidence is routeable. Cancellation retains partial evidence but never enables qualified-auto. No second GUI, model process, database or raw model-response archive was introduced.
+
+
+### Qualification schema regression repair
+
+The first combined qualification checkpoint correctly rejected an older engine test fixture that omitted the newly mandatory runtime-failure and safety-violation counters. Production evidence intentionally remains fail-closed when those fields are absent; the synthetic engine fixture now uses the complete current schema instead of weakening the validator for legacy test data.
