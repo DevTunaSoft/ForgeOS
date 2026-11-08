@@ -136,8 +136,12 @@ class ManagedLlamaTests(unittest.TestCase):
                 "HUGGINGFACE_HUB_TOKEN": "secret",
                 "HTTP_PROXY": "https://proxy.example",
                 "GGML_LOG_LEVEL": "5"}, clear=True):
-            self.assertEqual(_child_environment(), {
-                "Path": "C:/bin", "SystemRoot": "C:/Windows",
+            # Windows' os.environ canonicalizes names to uppercase.
+            # Compare intended keys/values on both Windows and POSIX.
+            observed = {key.upper(): value
+                        for key, value in _child_environment().items()}
+            self.assertEqual(observed, {
+                "PATH": "C:/bin", "SYSTEMROOT": "C:/Windows",
                 "LOCALAPPDATA": "C:/Users/u/AppData/Local"})
 
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):

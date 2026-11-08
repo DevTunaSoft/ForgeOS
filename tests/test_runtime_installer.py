@@ -96,7 +96,10 @@ class CPUInstallerTests(unittest.TestCase):
         result = ri.install_pinned_cpu_runtime(self.directory)
         root = Path(result["path"]).parents[1]
         dll = root / "bin" / "ggml-base.dll"
-        dll.write_bytes(b"NOT THE SAME DLL")
+        # Equal-length tampering bypasses size preflight and must be
+        # caught by original pinned archive verification despite a
+        # locally forged inventory manifest.
+        dll.write_bytes(b"X" * len(self.files["bin/ggml-base.dll"]))
         manifest = root / ri.MANIFEST_FILE
         record = json.loads(manifest.read_text())
         record["files"]["bin/ggml-base.dll"] = hashlib.sha256(
@@ -116,8 +119,13 @@ class CPUInstallerTests(unittest.TestCase):
             ri.verify_installed_cpu_runtime(self.directory)
 
     def test_reject_path_traversal_duplicate_and_symlink_zip(self):
+        # zipfile normalizes backslashes when *creating* ZIPs on Windows.
+        # Test untrusted member path validation directly, so the fixture
+        # cannot turn this adversarial input into a legitimate path.
+        with self.assertRaisesRegex(RuntimeError, "Unsafe"):
+            ri._safe_entry("x\\evil.dll")
         for name in ("../escape.dll", "/tmp/escape.dll", "C:/bad.dll",
-                     "x\\evil.dll", "CON.dll", "a/./bad.dll"):
+                     "CON.dll", "a/./bad.dll"):
             with self.subTest(name=name):
                 self.build_zip({name: b"bad",
                                 "bin/llama-server.exe": b"EXE"})
