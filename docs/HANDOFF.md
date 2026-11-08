@@ -1659,3 +1659,8 @@ The packaged-executable gate now exercises the acceptance recorder inside the re
 ### Physical-target assertion is explicit, never inferred from Windows
 
 A hosted Windows CI runner is not physical target acceptance. The recorder now separates `windows_host_evidence` from `physical_windows_target_asserted`. GUI collection asks the operator whether this is the actual physical release-acceptance machine; CLI/default and hidden frozen CI checks leave that assertion false. A physical-target assertion is rejected entirely on non-Windows platforms. The Activity log also shows the embedded build source commit alongside the EXE SHA-256.
+
+
+### Hosted frozen acceptance contract follows explicit-target semantics
+
+The frozen launcher and PowerShell packaging gate were updated with the new acceptance semantics before the next validation run: CI requires Windows host evidence but explicitly requires `physical_windows_target_asserted == false`. This prevents a hosted runner from ever satisfying the physical-machine gate by accident.

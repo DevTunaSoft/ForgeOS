@@ -65,8 +65,11 @@ jobs:
           if ($json.artifact.executable_sha256 -ne $actualHash) {
             throw "Executable SHA-256 mismatch"
           }
-          if (-not $json.physical_windows_evidence) {
-            throw "Frozen report did not identify Windows evidence"
+          if (-not $json.windows_host_evidence) {
+            throw "Frozen report did not identify Windows host evidence"
+          }
+          if ($json.physical_windows_target_asserted) {
+            throw "Hosted CI must never assert physical-target acceptance"
           }
           Write-Host "Verified source commit: $expectedCommit"
           Write-Host "Verified executable SHA-256: $actualHash"

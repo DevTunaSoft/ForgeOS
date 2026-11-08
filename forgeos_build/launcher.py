@@ -75,7 +75,8 @@ def main(argv=None):
             return 13
         artifact = result.get("artifact", {})
         return 0 if (
-            result.get("physical_windows_evidence") is True
+            result.get("windows_host_evidence") is True
+            and result.get("physical_windows_target_asserted") is False
             and artifact.get("frozen_executable") is True
             and isinstance(artifact.get("build_source_commit"), str)
             and len(artifact["build_source_commit"]) == 40
