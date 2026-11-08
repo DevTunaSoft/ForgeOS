@@ -48,8 +48,13 @@ class Store:
                 (str(project_path), description.strip(), now, now))
         return int(cur.lastrowid)
 
-    def list(self):
-        return [dict(row) for row in self.db.execute('SELECT * FROM tasks ORDER BY id DESC')]
+    def list(self, *, brief: bool = False):
+        """Brief rows avoid materializing large result/diagnostic blobs for GUI."""
+        if type(brief) is not bool:
+            raise ValueError("brief must be boolean")
+        fields = "id,status,description" if brief else "*"
+        return [dict(row) for row in self.db.execute(
+            f"SELECT {fields} FROM tasks ORDER BY id DESC")]
 
     def get(self, task_id: int):
         row = self.db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()

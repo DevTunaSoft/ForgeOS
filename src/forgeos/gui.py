@@ -135,12 +135,27 @@ def launch(db_path):
 
     diagnostics = tk.Text(activity, wrap="word", state="disabled")
     diagnostics.pack(fill="both", expand=True)
+    # A long autonomous session must not accumulate unlimited Tk text buffers.
+    logged_chars = {"count": 0}
+    max_event_chars = 12000
+    max_log_chars = 64000
     ttk.Label(activity, text="Task history and test output. No background execution occurs when this window closes.",
               foreground="#52647b").pack(anchor="w", pady=6)
 
     def log(text):
+        value = str(text)
+        if len(value) > max_event_chars:
+            omitted = len(value) - 10000
+            value = (value[:5000] + f"\n[ForgeOS UI: {omitted} characters omitted;"
+                     " use saved diagnostics or CLI for full evidence]\n" + value[-5000:])
+        value += "\n\n"
         diagnostics.configure(state="normal")
-        diagnostics.insert("end", str(text) + "\n\n")
+        diagnostics.insert("end", value)
+        logged_chars["count"] += len(value)
+        if logged_chars["count"] > max_log_chars:
+            excess = logged_chars["count"] - max_log_chars
+            diagnostics.delete("1.0", f"1.0+{excess}c")
+            logged_chars["count"] = max_log_chars
         diagnostics.see("end")
         diagnostics.configure(state="disabled")
 
@@ -205,7 +220,7 @@ def launch(db_path):
     def refresh():
         selection = tree.selection()
         selected_id = selection[0] if selection else None
-        rows = store.list()
+        rows = store.list(brief=True)
         tree.delete(*tree.get_children())
         for task in rows:
             tree.insert("", "end", iid=str(task["id"]), values=_format_task(task))

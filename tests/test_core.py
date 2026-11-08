@@ -23,6 +23,18 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(self.store.get(task)['status'],'queued')
         self.store.close(); self.store=Store(self.root/'state'/'tasks.sqlite3')
         self.assertEqual(self.store.get(task)['description'],'Improve startup')
+    def test_brief_rows_omit_large_diagnostic_blobs(self):
+        task=self.store.add(str(self.repo),'Memory lightweight activity view')
+        large='z'*(2*1024*1024)
+        self.store.update(task,'passed',result=large,error=large)
+        brief=self.store.list(brief=True)
+        self.assertEqual(len(brief),1)
+        self.assertEqual(set(brief[0]),{'id','status','description'})
+        self.assertEqual(brief[0]['id'],task)
+        self.assertEqual(self.store.get(task)['result'],large)
+        with self.assertRaises(ValueError):
+            self.store.list(brief=1)
+
     def test_empty_and_non_repo_rejected(self):
         with self.assertRaises(ValueError): self.store.add(str(self.repo),'  ')
         with self.assertRaises(ValueError): self.store.add(str(self.root),'something')
