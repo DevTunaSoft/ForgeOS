@@ -61,6 +61,10 @@ def _verified_model(path: str | Path) -> tuple[Path, dict]:
     manifest = target.with_name(target.name + ".forgeos.json")
     if manifest.is_symlink() or not manifest.is_file():
         raise ValueError("Only SHA-verified ForgeOS GGUF downloads can be loaded")
+    if manifest.stat().st_nlink != 1:
+        raise ValueError("Hard-linked GGUF verification manifests are not trusted")
+    if target.stat().st_nlink != 1:
+        raise ValueError("Hard-linked GGUF model files are not trusted")
     if manifest.stat().st_size > MAX_MANIFEST_BYTES:
         raise ValueError("GGUF verification manifest is too large")
     try:
@@ -76,8 +80,15 @@ def _verified_model(path: str | Path) -> tuple[Path, dict]:
             or size > 16 * 1024**3 or target.stat().st_size != size):
         raise ValueError("GGUF identity or file size disagrees with its manifest")
     # The metadata alone is not trusted. Rehash immediately before inference.
+    before = target.stat()
     if _hex_digest(target) != expected:
         raise ValueError("GGUF SHA-256 mismatch; refusing modified model")
+    after = target.stat()
+    if (before.st_size, before.st_mtime_ns, before.st_ino) != (
+            after.st_size, after.st_mtime_ns, after.st_ino):
+        raise ValueError("GGUF changed during verification")
+    if after.st_nlink != 1:
+        raise ValueError("Hard-linked GGUF model files are not trusted")
     with target.open("rb") as source:
         if source.read(4) != b"GGUF":
             raise ValueError("Verified file does not have a GGUF header")
@@ -94,10 +105,19 @@ def _verified_runtime(binary: str | Path, expected_sha256: str) -> Path:
         raise ValueError("Enter the trusted, lowercase 64-character llama-server SHA-256")
     suffix = ".exe" if os.name == "nt" else ""
     path = _existing_file(binary, suffix=suffix)
-    if path.stat().st_size > 512 * 1024**2:
+    before = path.stat()
+    if before.st_nlink != 1:
+        raise ValueError("Hard-linked llama-server binaries are not trusted")
+    if before.st_size > 512 * 1024**2:
         raise ValueError("llama-server binary exceeds the expected size cap")
     if _hex_digest(path) != expected_sha256:
         raise ValueError("llama-server SHA-256 did not match the trusted checksum")
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns, before.st_ino) != (
+            after.st_size, after.st_mtime_ns, after.st_ino):
+        raise ValueError("llama-server changed during verification")
+    if after.st_nlink != 1:
+        raise ValueError("Hard-linked llama-server binaries are not trusted")
     return path
 
 

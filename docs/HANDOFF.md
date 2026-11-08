@@ -1378,3 +1378,8 @@ After the Windows 8.3-path test fix, **commit 2c92d159 passed all six hosted che
 ## 2026-11-08 retirement journal malformed-input audit
 
 The prior recovery-race commit `d4daaef` passed six of six hosted CI checks. A further malformed-input review found that `_record()` validated the repository, revision, SHA and byte count but did not type-check the `file` field before calling `_safe_name`. A forged journal could therefore leak an unexpected type exception instead of the expected fail-closed journal-validation error. The model retirement reader now validates `file` as a string and converts unsafe filename parsing failures into `ValueError`. Added table-driven regression cases for null, number, dictionary, array, traversal and empty filename; archived bytes must remain untouched and restoring the original journal must succeed. Latest CI must pass before acceptance. **Unresolved:** atomic no-clobber restore against non-cooperating external writers; real Windows NTFS handle and power-loss testing.
+
+
+## 2026-11-08 managed inference file-identity hardening
+
+Commit `67c2e749` passed all six hosted gates, including both Windows test jobs and frozen Windows packaging. The next hardening pass rejects hard-linked GGUF weights, GGUF manifests, and llama-server binaries before managed inference; it also snapshots size/mtime/inode around SHA-256 reads and rejects files that change during verification. Regression coverage exercises all three hard-link cases plus deterministic mutation during a model hash. This narrows file-substitution risk without adding a second model subsystem. The remaining Windows-specific gap is reparse/junction identity and the Popen-to-Job attachment race; real llama.cpp/GGUF execution on target hardware is still required.

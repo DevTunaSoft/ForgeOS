@@ -102,6 +102,47 @@ class ManagedLlamaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symbolic links"):
             _verified_model(link)
 
+    def test_hardlinked_model_manifest_and_runtime_are_rejected(self):
+        try:
+            model_link = self.root / "shared-model.gguf"
+            os.link(self.model, model_link)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unsupported on this filesystem")
+        self.addCleanup(lambda: model_link.unlink(missing_ok=True))
+        with self.assertRaisesRegex(ValueError, "Hard-linked GGUF model"):
+            _verified_model(self.model)
+        model_link.unlink()
+
+        manifest = self.model.with_name(self.model.name + ".forgeos.json")
+        manifest_link = self.root / "shared-manifest.json"
+        os.link(manifest, manifest_link)
+        self.addCleanup(lambda: manifest_link.unlink(missing_ok=True))
+        with self.assertRaisesRegex(ValueError, "verification manifests"):
+            _verified_model(self.model)
+        manifest_link.unlink()
+
+        runtime_link = self.root / ("shared-runtime.exe" if os.name == "nt"
+                                    else "shared-runtime")
+        os.link(self.exe, runtime_link)
+        self.addCleanup(lambda: runtime_link.unlink(missing_ok=True))
+        with self.assertRaisesRegex(ValueError, "Hard-linked llama-server"):
+            _verified_runtime(self.exe, self.exe_sha)
+
+    def test_model_mutation_during_hash_fails_closed(self):
+        from forgeos import managed_llama as managed
+        real_digest = managed._hex_digest
+        def mutate(path):
+            digest = real_digest(path)
+            path.write_bytes(path.read_bytes())
+            os.utime(path, ns=(path.stat().st_atime_ns,
+                               path.stat().st_mtime_ns + 1_000_000))
+            return digest
+        with patch("forgeos.managed_llama._hex_digest", side_effect=mutate):
+            with patch("forgeos.managed_llama.safe_model_file_budget",
+                       return_value=1024):
+                with self.assertRaisesRegex(ValueError, "changed during verification"):
+                    _verified_model(self.model)
+
     def test_binary_requires_trusted_hash_and_exact_bytes(self):
         with self.assertRaisesRegex(ValueError, "64-character"):
             _verified_runtime(self.exe, "unsafe")
