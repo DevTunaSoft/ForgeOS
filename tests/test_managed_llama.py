@@ -208,7 +208,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.reply(200, {"choices": [{
             "finish_reason": "stop",
-            "message": {"content": "{\\\"files\\\":[]}"}
+            "message": {"content": '{"files":[]}'}
         }]})
 
 ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
