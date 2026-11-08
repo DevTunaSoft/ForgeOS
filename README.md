@@ -1,185 +1,154 @@
-# ForgeOS — Autonomous Software Engineering Platform
+# ForgeOS
 
-**Status: evolving local-first prototype. Git worktree edits, bounded test/repair loops, diagnostics, and Windows frozen AppContainer unittest isolation exist; full autonomous application delivery and interactive Windows acceptance are not yet complete.**
+**A local-first AI software engineering workspace for turning plain-language development requests into traceable code changes, test results, and recovery checkpoints.**
 
-ForgeOS is a local-first Windows-oriented desktop application being developed to transform natural-language requirements into tested software. The long-term goal includes AI planning, safe code changes, GitHub workflows, Windows EXE / Android APK / web builds, automated tests and self-repair, recovery, and complete source and handoff exports through one beginner-friendly interface.
+[![Python CI](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/ci.yml/badge.svg)](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/ci.yml)
+[![Windows executable](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/windows-exe.yml/badge.svg)](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/windows-exe.yml)
+![Stage](https://img.shields.io/badge/status-active%20prototype-orange)
+![Models](https://img.shields.io/badge/AI-local%20Ollama-blue)
+![Docker](https://img.shields.io/badge/Docker-not%20required-informational)
 
-**Implemented prototypes:** SQLite task queue and checkpoints, one Tkinter GUI, local Ollama planning and JSON code edits, isolated Git workspaces, journaled edits, bounded test/repair loops and resume checks, SHA-256 diagnostic evidence, repair-learning statistics, local model selection, Windows EXE CI packaging, and fail-closed frozen AppContainer execution for Python unittest. GitHub management *inside ForgeOS*, Android APK/web builders, broad production preset isolation, reliable backup/restore and interactive acceptance remain unfinished.
+> [!IMPORTANT]
+> **ForgeOS is under active development, not a production-ready autonomous application builder.** Its desktop application, local AI integration, Git workspaces, guarded code editing, diagnostics, and selected testing/recovery paths are real prototypes. Full hands-off delivery of arbitrary Windows EXEs, Android APKs and websites is a goal—not a current guarantee. Read the [feature status](#current-capabilities-and-limitations) and [security notes](#security-and-responsible-use) before using it on important projects.
 
-## Start on Windows (PowerShell)
+**[Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
 
-Requirements: Python 3.10+ and Git; optional Ollama for planning.
+## The vision
 
-    cd ForgeOS
-    py -m pip install -e .
-    py -m forgeos gui
+Most AI coding tools still expect users to manage repositories, choose models, run commands, interpret failing tests, and manually resume interrupted work. ForgeOS aims to combine those steps in **one beginner-friendly desktop application**, prioritizing free local AI, explainable progress, recoverable edits, security controls, and efficient RAM usage.
 
-1. Select an existing local Git repository folder.
-2. Enter a task description and select Add task.
-3. Optionally install Ollama and pull an available local coding model. Select it under Local model or use auto routing.
-4. Select a task and its test preset, then use Build / test / repair. In source development mode, host test execution requires an explicit opt-in. Frozen Windows builds require supported AppContainer isolation.
-5. Tasks persist at ~/.forgeos/tasks.sqlite3 across restarts.
+**Today**, ForgeOS primarily works with an **existing local Git repository**, accepts a task in ordinary language, uses an installed Ollama model to plan or suggest edits, and provides a bounded edit/test/repair workflow. The application does **not** automatically merge, commit, push, deploy, or publish its generated work.
 
-## Command line
+## How the current workflow fits together
 
-    py -m forgeos add C:\path\to\git-repo "Fix startup error"
-    py -m forgeos list
-    py -m forgeos plan 1 --model qwen2.5-coder:3b
-    py -m forgeos test 1 --preset python-unittest
-    py -m forgeos recover
+```mermaid
+flowchart LR
+    A["Existing Git repository"] --> B["Describe task in ForgeOS"]
+    B --> C["Local Ollama model"]
+    C --> D["Restricted edit manifest"]
+    D --> E["Separate Git worktree"]
+    E --> F["Test and collect evidence"]
+    F --> G{"Passed?"}
+    G -->|Yes| H["Review workspace and evidence"]
+    G -->|No, retry budget remains| I["Bounded local repair"]
+    I --> F
+    G -->|Cannot proceed| J["Blocked checkpoint / diagnostics"]
+    J --> K["Inspect and safely resume"]
+```
 
-## Test ForgeOS
+The diagram describes the **implemented prototype path**, not an unattended production deployment. Test containment depends on platform, packaging, and preset; see below.
 
-PowerShell:
+## Current capabilities and limitations
 
-    $env:PYTHONPATH = 'src'
-    py -m unittest discover -s tests -v
+| Area | Available on `main` | Status / important limit |
+| --- | --- | --- |
+| Unified desktop interface | Tkinter Development and Activity & diagnostics tabs, task queue, test settings | Implemented prototype; not yet final design |
+| Plain-language development | Task creation, Ollama planning, structured multi-file edit requests | Local Ollama must be separately installed and running |
+| Git workspace safety | Per-task worktrees, edit validation, transactional edit journals | Generated edits stay available for manual inspection; no automatic publication |
+| Test/repair cycle | Bounded retries, selected test presets, failure feedback | Not a universal build/test tool; security varies by runtime |
+| Persistence and recovery | SQLite tasks, execution leases, edit recovery, checkpoint-aware resumption | Only eligible checkpoint phases can be resumed; never assume arbitrary crash recovery |
+| Windows test isolation | Packaged EXE uses a fail-closed AppContainer runner for Python `unittest` | Other presets may be unavailable in the packaged secure runtime; see [Windows guide](docs/WINDOWS_BUILD.md) |
+| Diagnostics | Raw evidence archives, SHA-256 checks, compact AI summaries, failure categories | Raw logs can include secrets; archive capacity and retention are bounded |
+| Repair learning | Test-verified failure signatures, aggregated outcome statistics | Does **not** silently replay previous fixes |
+| Model selection | Manual model choice and optional RAM-aware selection from installed Ollama models | No auto-download, paid API routing, or guaranteed minimum RAM |
+| Memory management | Capped diagnostics, paged GUI history, streamed CLI history, on-demand process RAM report | Full process-tree/Ollama RAM and 4/8 GiB hardware acceptance not yet verified |
+| Windows EXE packaging | GitHub Actions generates a PyInstaller `ForgeOS.exe`; hosted GUI and security smoke checks exist | Packaged CI checks are **not** real-user end-to-end desktop acceptance |
+| GitHub operations inside ForgeOS | — | Planned, not implemented |
+| Android APK / general web app builders | — | Planned, not implemented |
+| Complete app export, encrypted backups, signed installer | — | Planned, not production-tested |
 
-## Security and limitations
+**Pull requests are not features on `main`.** For example, the secure packaged `pytest` extension is [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29) and should be considered unmerged until GitHub shows otherwise. Track the 52 proposed RTK-inspired outcomes in [RTK_ENHANCEMENTS.md](docs/RTK_ENHANCEMENTS.md) and the overlap audit in [ENHANCEMENT_DEDUP_AUDIT.md](docs/ENHANCEMENT_DEDUP_AUDIT.md).
 
-Source/development-mode tests may run repository code on the host only after explicit permission; do not run untrusted repositories that way. The packaged Windows executable uses a fail-closed AppContainer runner for the supported Python-unittest preset; other frozen presets need their own secure runtime implementations. This boundary has passed the hosted Windows security smoke, not every real-world Windows configuration. Evidence files may contain unencrypted secrets; do not upload them, or place passwords/tokens in task descriptions. Ollama requests remain local. Real Windows GUI/Ollama end-to-end acceptance remains outstanding.
+## Quick start
 
-See docs/REQUIREMENTS.md, docs/ROADMAP.md and docs/HANDOFF.md.
+### Option A — use the packaged Windows prototype
 
+1. Open [Actions → Windows executable](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/windows-exe.yml).
+2. Open a **successful workflow run on the branch you intend to use**.
+3. Download the `ForgeOS-Windows-EXE` artifact; extract the ZIP and run `ForgeOS.exe`.
+4. Have **Git** installed for workspace operations and **Ollama + an installed local model** if you want AI planning/editing. These tools and model weights are **not** bundled.
+5. Start with a **disposable Git repository** that you can safely test.
 
-### Windows EXE (prototype)
+An Actions artifact is a development build, **not a signed production installer or official release**. Artifacts are retained for 14 days. See [Windows EXE guide](docs/WINDOWS_BUILD.md) for precise build and acceptance limitations.
 
-A Windows PyInstaller build workflow is available under GitHub Actions. See [Windows build instructions](docs/WINDOWS_BUILD.md). A successful build is not proof of full desktop functionality or safe unattended execution.
+### Option B — run from source (Windows PowerShell)
 
+Requires **Python 3.10+** and **Git**. Ollama is optional for opening the UI and mandatory for AI features.
 
-## RTK-inspired diagnostics and repair efficiency (merged phases 1 and 2)
+```powershell
+git clone https://github.com/DevTunaSoft/ForgeOS.git
+cd ForgeOS
+py -m pip install -e .
+py -m forgeos gui
+```
 
-PRs #28 and #30 merged the first diagnostic, learning, routing and trusted-filter prototypes into main. See docs/RTK_ENHANCEMENTS.md for the 52-outcome tracker and docs/ENHANCEMENT_DEDUP_AUDIT.md for the source-backed review of duplicated/overlapping capabilities. PR #31 extends the existing learning backend and GUI; changes under review are not yet part of main.
+Using the GUI:
 
-The new test runner archives original output locally before selecting important
-diagnostic lines for local AI. It includes structured/text/raw parsing fallback
-and SHA-256 evidence retrieval. Learning records test-verified repair signatures
-and counters only; no untrusted previous repair is automatically executed.
+1. Under **Project repository**, browse to an **existing local Git repository**.
+2. Type a specific development task under **Tell ForgeOS what to build**.
+3. Select **Add task**, then select the task in the queue.
+4. Choose a local model (or `auto`), a test preset, and a workspace folder.
+5. Use **Generate plan** for planning; use **Build / test / repair** only after understanding the code-execution warning.
+6. Review results in **Activity & diagnostics**, then inspect the generated Git worktree before accepting changes.
 
-After installing this branch, commands are:
+**Source/development mode:** generated project tests may run on your computer after explicit host-execution permission. **Do not opt in for untrusted code.** Packaged Windows runtime restrictions are described in [Security and responsible use](#security-and-responsible-use).
 
-    py -m forgeos diagnostics stats
-    py -m forgeos diagnostics show <64-char-evidence-ref>
-    py -m forgeos learning stats
+Full screenshot-free, click-by-click instructions: [User manual](docs/USER_GUIDE.md).
 
-The Activity & diagnostics tab includes an efficiency/repair-learning view.
-Output reductions are byte counts, not actual AI token counts or dollar savings.
-Archived test logs are local, sensitive, unencrypted data; restrict local access.
-The current 32 MiB archive limit and in-memory command capture require further
-hardening before unattended or production deployment.
+## Command-line workflows
 
-### Optional automatic local model selection (experimental)
+```powershell
+py -m forgeos add C:\path\to\existing-repo "Fix startup error"
+py -m forgeos list
+py -m forgeos plan 1 --model auto
+py -m forgeos test 1 --preset python-unittest
+py -m forgeos recover
+py -m forgeos memory
+py -m forgeos diagnostics stats
+py -m forgeos learning stats
+py -m forgeos filters status
+```
 
-Use --model auto with planning or autonomous task execution to select from
-already installed Ollama models, choosing smaller coding models for simple
-tasks and larger ones for more complex tasks. The choice is pinned in the task
-checkpoint. The current default remains qwen2.5-coder:3b for compatibility.
+To run the autonomous edit/test/repair **source-mode** prototype against a trusted repository:
 
-    py -m forgeos plan 1 --model auto
-    py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --allow-host-tests
+```powershell
+py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --preset python-unittest --allow-host-tests
+```
 
-No models are downloaded automatically. Model size is only a rough heuristic,
-not a hardware acceptance test or guarantee of adequate RAM. Only local
-Ollama at 127.0.0.1:11434 is supported.
+Create the workspace parent folder before running this CLI command. The `--allow-host-tests` flag permits source-mode execution of project code on the host. It is **not** a declaration that the host is sandboxed.
 
+Supported CLI recovery commands also include `resume-safe`, `run --resume` and `recover-edits`, with strict workspace/checkpoint validation. Read the [manual](docs/USER_GUIDE.md#recovery-after-an-interruption) before using them.
 
-### Optional, trusted output filters (experimental)
+## Local AI and memory efficiency
 
-ForgeOS compacts repeated noncritical test lines only after archiving full
-original output. Custom filters are a locally pinned JSON configuration:
-~/.forgeos/output_filters.json. See docs/RTK_ENHANCEMENTS.md for schema.
+ForgeOS currently targets **Ollama at 127.0.0.1:11434**; it does not require a paid AI subscription or send code to a cloud model as part of this route. The selected Ollama model must already be installed. Automatic selection considers installed model names, approximate file sizes and available RAM, but **file size is not a runtime memory guarantee**.
 
-    py -m forgeos filters status
-    py -m forgeos filters trust
+The project includes disk-backed output capture, bounded UI previews, SHA-256 evidence references, a 150-task GUI page size and an on-demand working-set report. Process RAM telemetry does **not** include external Ollama, compilers or GPU allocations. The 4 GiB lightweight-interface and 8 GiB small-model scenarios are **engineering targets, not verified minimum system requirements**. See [Memory budget](docs/MEMORY_BUDGET.md).
 
-Changes to the filter file invalidate its trust hash and disable the rules.
-No filter code or shell commands may run. This is consent and tamper evidence,
-not a same-user attacker security boundary.
+## Security and responsible use
 
+- Generated code is **untrusted**. In source mode, enable host tests only for trusted repositories you are willing to execute locally.
+- The frozen Windows executable has a **fail-closed AppContainer** path for its supported `python-unittest` preset; it does not automatically extend to arbitrary test frameworks. **No Docker required.**
+- ForgeOS validates edit paths and limits the size and count of generated file replacements. Isolated Git worktrees and transaction journals help keep changes reviewable and recoverable, but they are not an all-purpose security sandbox.
+- **Raw diagnostic logs are sensitive and stored locally without at-rest encryption**. Do not include credentials in tasks, upload the evidence store or publish it in a handoff.
+- Do not treat a green build badge, synthetic GUI test or hosted Windows smoke test as proof of safe unattended app building on a real user PC.
 
-### Diagnose and compare task results (experimental)
+For additional detail, see [Architecture & trust boundaries](docs/ARCHITECTURE.md).
 
-1. In the Development tab, select a task that has run tests.
-2. Open Activity & diagnostics.
-3. Choose "Compare selected task: original vs AI summary".
-4. The left pane shows what the AI received; the right shows the original
-   SHA-256 verified raw evidence, if successfully archived. Original output can
-   contain sensitive data, so opening it is always an explicit user action.
-5. Choose "AI efficiency and repair learning" for measured output reductions,
-   candidate repair success statistics, and custom filter trust health.
+## Release readiness
 
-The GUI records which installed local model handled a task and labels
-failure categories as advisory heuristics. It does not automatically apply
-learned repair candidates. Large original logs have a bounded GUI preview;
-use the diagnostics CLI to retrieve the complete retained evidence.
+ForgeOS remains **experimental** until it passes interactive Windows validation for GUI startup, real local Ollama calls, actual generated edit/test/repair cycles, crash recovery, isolation, and full process-tree memory behavior on representative machines. [GitHub Actions](https://github.com/DevTunaSoft/ForgeOS/actions) provides essential CI and packaged checks, but does not replace those real-user acceptance tests.
 
+The [roadmap](docs/ROADMAP.md) distinguishes completed prototypes from work still needed. PRs and CI should provide evidence before changing a feature's status to verified.
 
-## Low-memory execution (PR #32, in development)
+## Documentation and project continuity
 
-ForgeOS is being engineered for a lean single desktop GUI, with basic
-project/diagnostic workflows targeted for 4 GiB machines and conservatively
-sized local AI targeted for 8 GiB and above. These are NOT verified minimum
-hardware requirements. A small installed model may be necessary; heavyweight
-local models will not fit every machine.
+Documentation is part of the development deliverable. Each substantive change should update applicable user instructions, capability status, architecture/security notes, roadmap and [engineering handoff](docs/HANDOFF.md). The repository includes a [documentation policy](docs/DOCUMENTATION_POLICY.md), [contribution checklist](CONTRIBUTING.md) and automated documentation checks.
 
-The application now streams test output into a capped temporary spool,
-archives complete <=32 MiB originals using the existing SHA-256 evidence
-store, and shows bounded previews. Large or unarchivable outputs cannot
-automatically pass autonomous acceptance. Tk activity logs and task lists
-avoid accumulating massive result blobs. RAM-aware Ollama auto-selection
-reduces context and can unload idle models under memory pressure.
+Detailed sources: [Product requirements](docs/REQUIREMENTS.md) · [Project roadmap](docs/ROADMAP.md) · [Architecture](docs/ARCHITECTURE.md) · [User guide](docs/USER_GUIDE.md) · [Windows build](docs/WINDOWS_BUILD.md) · [Memory testing](docs/MEMORY_BUDGET.md) · [52 enhancements](docs/RTK_ENHANCEMENTS.md) · [Deduplication audit](docs/ENHANCEMENT_DEDUP_AUDIT.md) · [Engineering handoff](docs/HANDOFF.md).
 
-Run a reproducible, synthetic, local-only benchmark after installation:
+## Contributing and feedback
 
-    py tools/memory_benchmark.py --mib 12 --check
+Development happens openly at [DevTunaSoft/ForgeOS](https://github.com/DevTunaSoft/ForgeOS). Before proposing a change, read [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and reproducible test failures can be reported through [GitHub Issues](https://github.com/DevTunaSoft/ForgeOS/issues); include non-sensitive reproduction steps and your OS/runtime, **not** passwords or raw logs with private data.
 
-See docs/MEMORY_BUDGET.md for implementation limits, tests, and the real
-Windows physical/VM acceptance that still must be completed. This benchmark
-reports traced Python allocations, NOT total process-tree RAM or Ollama VRAM.
-
-
-## Memory-bounded task history
-
-The desktop queue is now paged in blocks of 150 tasks with **Older tasks** and
-**Newer tasks** controls. Refresh retrieves only a short task summary and
-SQL-level aggregate counts instead of loading and rendering every old result
-or full description. This is a memory optimization, not a deletion or
-retention limit: the CLI and SQLite archive still preserve prior tasks.
-
-
-## Scalable task exports and memory status
-
-The CLI `python -m forgeos list` now emits JSON one SQLite row at a time,
-instead of constructing one giant Python list of every historical diagnostic
-and result. The JSON format and task order remain unchanged. The desktop
-Activity tab also includes an on-demand **Show local memory snapshot** button,
-sharing the same process-RAM reporting code used by `python -m forgeos memory`.
-It does not run a monitor in the background, and it cannot measure Ollama or
-other build subprocesses; physical Windows 4/8 GiB acceptance remains required.
-
-## Frozen Windows GUI lifecycle acceptance
-
-The packaged EXE is now tested beyond import-only startup: hosted Windows CI
-creates the actual Tkinter dashboard widgets, verifies the Development
-and Activity tabs and task queue, processes the Tk event loop, measures
-the current ForgeOS process working set, then closes its SQLite database
-and Tk root. Run locally from PowerShell:
-
-    .\ForgeOS.exe --gui-acceptance-report C:\Temp\forgeos-gui-report.json
-
-The report stays local. The acceptance mode uses an empty temporary database
-and does not start a model or run generated code. It is not yet proof of
-actual end-user Windows installation behavior, 4/8GiB hardware acceptance,
-or complete autonomous coding workflows.
-
-## Packaged GUI pagination and memory acceptance
-
-The hosted Windows executable smoke now seeds a disposable SQLite database
-with **520 synthetic tasks**, each containing a sizable fake diagnostic
-result. It opens the actual Tkinter GUI, verifies the initial 150 tasks,
-navigates all four expected pages (150/150/150/70), navigates back,
-measures working-set RAM before and after paging, and closes the application.
-Paging RSS growth over 64 MiB is a failing acceptance condition.
-The test never reads or changes real user projects and never invokes Ollama.
-The measured process is the frozen desktop executable, not external AI.
-Physical Windows 4/8 GiB acceptance remains outstanding.
+*License: no repository license is currently published. Do not assume the code is open-source-licensed merely because it is publicly readable.*
