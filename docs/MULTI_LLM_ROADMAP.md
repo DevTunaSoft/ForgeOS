@@ -439,3 +439,13 @@ ForgeOS can cryptographically attest their runtime identity; no weak fallback is
 - [x] Preserve partial cancelled evidence as explicitly non-routeable; only complete evidence satisfying every final gate can feed qualified-auto.
 - [x] Show structured/objective counts, runtime failures, safety violations and routing qualification in the existing Activity diagnostics.
 - [ ] Run final qualification against real candidate GGUFs on target Windows hardware and record the first genuine routeable model/role evidence.
+
+
+### #55 qualified checkpoint recovery hardening
+
+Qualified managed-model checkpoints now preserve the exact final-evidence SHA-256,
+task role and canonical evidence directory. Safe recovery first re-attests the
+authenticated running GGUF/runtime identity, switches the recovered request back
+through the qualified-auto gate, and requires the exact same evidence digest before
+resuming. A different newer qualification record cannot silently replace the saved
+one. Symlinked evidence roots are rejected before path resolution.

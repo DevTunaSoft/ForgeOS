@@ -138,6 +138,7 @@ def _execute_task(
     resume: bool = False, lease_owner: str = "",
     role: str = "implementation",
     qualification_directory: Path | None = None,
+    qualification_evidence_sha256: str | None = None,
 ) -> dict:
     """Run one task in a new worktree; preserve workspace for inspection.
 
@@ -222,12 +223,16 @@ def _execute_task(
             qualification = route_qualified_role(
                 role, load_qualification_records(qualification_directory),
                 memory_budget_bytes=memory_budget, backend="llama.cpp",
-                model_sha256=model_hash, runtime_sha256=runtime_hash)
+                model_sha256=model_hash, runtime_sha256=runtime_hash,
+                evidence_sha256=qualification_evidence_sha256)
             if qualification["model_name"] != "forgeos-managed":
                 raise RuntimeError(
                     "Qualified evidence does not identify the active ForgeOS-managed model")
             model_name = qualification["model_name"]
             model.model = model_name
+        elif qualification_evidence_sha256 is not None:
+            raise ValueError(
+                "Pinned qualification evidence requires qualified-auto model selection")
         elif model_name == "auto":
             if getattr(model, "backend", "ollama") == "ollama":
                 from .model_routing import choose_installed_model
@@ -239,16 +244,26 @@ def _execute_task(
             raise ValueError("Model must expose a stable model identifier")
         contract = {"preset": preset, "max_repairs": max_repairs, "model": model_name}
         if qualification is not None:
+            qualification_root = ""
+            if qualification_directory is not None:
+                requested_root = Path(qualification_directory).expanduser()
+                if requested_root.is_symlink():
+                    raise OSError("Qualification evidence directory is unsafe")
+                resolved_root = requested_root.resolve(strict=True)
+                if not resolved_root.is_dir():
+                    raise OSError("Qualification evidence directory is unsafe")
+                qualification_root = str(resolved_root)
             contract.update(
                 qualification_role=role,
                 qualification_evidence_sha256=qualification["evidence_sha256"],
+                qualification_directory=qualification_root,
             )
         if getattr(model, "backend", "ollama") != "ollama":
             contract.update(backend=model.backend, endpoint=model.base)
         if model_name == "forgeos-managed":
             # A random port and alias are NOT durable model identity. Record
-            # verified GGUF and runtime hashes for future safe resumption.
-            # Until native reattestation exists, recovery still refuses.
+            # verified GGUF and runtime hashes. Safe recovery may resume only
+            # after an authenticated managed runtime re-attests these hashes.
             model_hash = getattr(model, "managed_model_sha256", None)
             runtime_hash = getattr(model, "managed_runtime_sha256", None)
             if (getattr(model, "backend", None) != "llama.cpp"
@@ -417,6 +432,7 @@ def execute_task(
     generate: Callable[[Ollama, str], str] = _generate,
     resume: bool = False, role: str = "implementation",
     qualification_directory: Path | None = None,
+    qualification_evidence_sha256: str | None = None,
 ) -> dict:
     """Acquire an exclusive task lease, then run the guarded task engine."""
     if not allow_host_tests:
@@ -431,6 +447,7 @@ def execute_task(
             max_repairs=max_repairs, allow_host_tests=allow_host_tests,
             generate=generate, resume=resume, lease_owner=owner,
             role=role, qualification_directory=qualification_directory,
+            qualification_evidence_sha256=qualification_evidence_sha256,
         )
     finally:
         store.release_lease(task_id, owner)

@@ -118,6 +118,38 @@ class ModelQualificationTests(unittest.TestCase):
         self.assertEqual(len(values), 1)
         self.assertEqual(values[0]["model_name"], "forgeos-managed")
 
+    def test_router_can_pin_exact_evidence_digest_for_resume(self):
+        from forgeos.model_qualification import qualify_role_evidence
+        first = evidence(latency=1.0)
+        second = evidence(latency=2.0)
+        second_digest = qualify_role_evidence(second)["evidence_sha256"]
+        chosen = route_qualified_role(
+            "implementation", [first, second],
+            memory_budget_bytes=8_000_000_000,
+            evidence_sha256=second_digest)
+        self.assertEqual(chosen["evidence_sha256"], second_digest)
+        with self.assertRaises(RuntimeError):
+            route_qualified_role(
+                "implementation", [first],
+                memory_budget_bytes=8_000_000_000,
+                evidence_sha256=second_digest)
+
+    def test_symlinked_evidence_root_is_rejected(self):
+        from pathlib import Path
+        import tempfile
+        from forgeos.model_qualification import load_qualification_records
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            actual = root / "actual"
+            actual.mkdir()
+            link = root / "link"
+            try:
+                link.symlink_to(actual, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("Symlinks unavailable")
+            with self.assertRaisesRegex(OSError, "unsafe"):
+                load_qualification_records(link)
+
     def test_evidence_digest_changes_when_identity_changes(self):
         first = qualify_role_evidence(evidence("a"))
         second = qualify_role_evidence(evidence("c"))

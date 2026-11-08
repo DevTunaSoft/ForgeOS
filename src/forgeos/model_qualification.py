@@ -118,10 +118,12 @@ def load_qualification_records(directory: str | Path | None = None) -> list[dict
     """Load only bounded local final-qualification JSON evidence."""
     root = (Path(directory).expanduser() if directory is not None
             else Path.home() / ".forgeos" / "benchmarks")
+    if root.is_symlink():
+        raise OSError("Qualification evidence directory is unsafe")
     if not root.exists():
         return []
     root = root.resolve(strict=True)
-    if not root.is_dir() or root.is_symlink():
+    if not root.is_dir():
         raise OSError("Qualification evidence directory is unsafe")
     records = []
     for path in sorted(root.glob("qualification-*.json")):
@@ -148,7 +150,8 @@ def route_qualified_role(role: str, records: list[dict], *,
                          memory_budget_bytes: int,
                          backend: str | None = None,
                          model_sha256: str | None = None,
-                         runtime_sha256: str | None = None) -> dict:
+                         runtime_sha256: str | None = None,
+                         evidence_sha256: str | None = None) -> dict:
     """Choose the smallest measured-qualified model that fits memory."""
     if not isinstance(role, str) or not role:
         raise ValueError("Role required")
@@ -156,6 +159,9 @@ def route_qualified_role(role: str, records: list[dict], *,
         raise ValueError("Positive memory budget required")
     if not isinstance(records, list):
         raise TypeError("Qualification records required")
+    required_evidence = (
+        _sha(evidence_sha256, "required evidence SHA-256")
+        if evidence_sha256 is not None else None)
     candidates = []
     rejected = []
     for raw in records:
@@ -173,6 +179,8 @@ def route_qualified_role(role: str, records: list[dict], *,
             continue
         if runtime_sha256 is not None and item["runtime_sha256"] != _sha(
                 runtime_sha256, "required runtime SHA-256"):
+            continue
+        if required_evidence is not None and item["evidence_sha256"] != required_evidence:
             continue
         if item["peak_memory_bytes"] > memory_budget_bytes:
             continue

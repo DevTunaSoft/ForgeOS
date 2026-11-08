@@ -51,6 +51,60 @@ class RecoveryTests(unittest.TestCase):
             "managed_runtime_sha256": "b" * 64,
         }
 
+    def qualified_managed_contract(self):
+        value = self.managed_contract()
+        value.update(
+            qualification_role="implementation",
+            qualification_evidence_sha256="c" * 64,
+            qualification_directory="")
+        return value
+
+    def test_qualified_managed_checkpoint_replays_exact_evidence(self):
+        contract = self.qualified_managed_contract()
+        checkpoint = {
+            "phase": "test_pending",
+            "workspace": str(self.parent / "task-73"),
+            "contract": contract,
+        }
+        runner = Mock(return_value={"passed": True})
+        model = type("ManagedModel", (), {
+            "backend": "llama.cpp",
+            "model": "forgeos-managed",
+            "base": contract["endpoint"],
+            "managed_model_sha256": contract["managed_model_sha256"],
+            "managed_runtime_sha256": contract["managed_runtime_sha256"],
+            "authenticated": True,
+        })()
+        report = resume_safe(
+            FakeStore([self.task(73, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner,
+            managed_model_factory=lambda _contract: model)
+        self.assertEqual(report["resumed"], [73])
+        self.assertEqual(model.model, "qualified-auto")
+        kwargs = runner.call_args.kwargs
+        self.assertEqual(kwargs["role"], "implementation")
+        self.assertEqual(
+            kwargs["qualification_evidence_sha256"], "c" * 64)
+        self.assertIsNone(kwargs["qualification_directory"])
+        self.assertTrue(kwargs["resume"])
+
+    def test_qualified_managed_checkpoint_rejects_bad_evidence_digest(self):
+        contract = self.qualified_managed_contract()
+        contract["qualification_evidence_sha256"] = "../bad"
+        checkpoint = {
+            "phase": "test_pending",
+            "workspace": str(self.parent / "task-74"),
+            "contract": contract,
+        }
+        runner = Mock()
+        report = resume_safe(
+            FakeStore([self.task(74, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner,
+            managed_model_factory=Mock())
+        self.assertEqual(report["resumed"], [])
+        self.assertIn("qualified-model", report["skipped"][0]["reason"])
+        runner.assert_not_called()
+
     def test_managed_checkpoint_requires_authenticated_runtime_factory(self):
         checkpoint = {
             "phase": "test_pending",

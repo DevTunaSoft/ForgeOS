@@ -1592,3 +1592,19 @@ The first combined qualification checkpoint correctly rejected an older engine t
 ### Final qualification persistence/cancellation regression coverage
 
 Added end-to-end evidence tests that cancel before the first final prompt and prove the result stays explicitly partial/non-routeable, plus a complete 20-task qualification write/load/route round trip through the real bounded evidence loader. The latter also asserts the saved record remains below the 64 KiB loader ceiling and that routing uses the exact persisted evidence digest.
+
+
+## 2026-11-08 qualified recovery contract correction
+
+Post-checkpoint review found that qualified-auto evidence fields were initially
+written into task checkpoints but not replayed by the newly added authenticated
+managed recovery path. That would have caused a safe, but unnecessary contract
+mismatch after interruption. Recovery now carries the exact qualification role,
+evidence SHA-256 and canonical evidence directory into the resumed engine call,
+re-attests the managed model/runtime first, and forces the model back through
+qualified-auto with the saved evidence digest. The evidence loader also rejects a
+symlinked root before resolving it. Regression coverage verifies exact evidence
+replay, malformed evidence rejection and symlink-root rejection. This supersedes
+the earlier handoff sentence claiming managed GGUF recovery was not implemented:
+authenticated same-runtime re-attestation is now implemented, while physical
+Windows restart/relaunch acceptance remains pending.

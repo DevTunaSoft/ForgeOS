@@ -535,3 +535,12 @@ button; screening remains a preliminary filter only.
 After a managed GGUF passes the five-task role screen, the same **Managed local GGUF** window can run **Run 20-task final qualification** for the selected role. This sends only ForgeOS fixed synthetic benchmark prompts; it does not send project source. The run measures structured-output success, deterministic objective success, runtime failures, detected unsafe edit attempts, latency and managed peak memory.
 
 A model becomes routeable for that role only after the complete run meets every gate: at least 95% structured-output success, at least 80% objective success, no more than 5% runtime failures, zero detected safety violations, exact model/runtime SHA-256 identity and measured peak memory. **Cancel qualification** preserves partial evidence, but partial evidence can never enable qualified-auto.
+
+
+#### Interrupted qualified tasks
+
+A qualified task checkpoint remembers the exact qualification evidence it used.
+When Safe Resume is used with the same authenticated ForgeOS-managed runtime,
+ForgeOS rechecks the model/runtime hashes and the saved evidence digest before
+continuing. If the evidence file moved, changed, disappeared, or no longer fits the
+safe memory budget, recovery stops rather than choosing another model automatically.

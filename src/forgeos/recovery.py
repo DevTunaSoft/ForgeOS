@@ -23,7 +23,8 @@ def _checkpoint_contract(checkpoint):
     extended = legacy | {"backend", "endpoint"}
     managed_extended = extended | {"managed_model_sha256", "managed_runtime_sha256"}
     qualified_managed = managed_extended | {
-        "qualification_role", "qualification_evidence_sha256"}
+        "qualification_role", "qualification_evidence_sha256",
+        "qualification_directory"}
     if (not isinstance(contract, dict)
             or set(contract) not in (legacy, extended, managed_extended,
                                      qualified_managed)):
@@ -57,6 +58,29 @@ def _checkpoint_contract(checkpoint):
             result.update(
                 managed_model_sha256=hashes[0],
                 managed_runtime_sha256=hashes[1])
+            if set(contract) == qualified_managed:
+                role = contract["qualification_role"]
+                evidence = contract["qualification_evidence_sha256"]
+                directory = contract["qualification_directory"]
+                if (not isinstance(role, str) or not role or len(role) > 80
+                        or not isinstance(evidence, str)
+                        or not re.fullmatch(r"[a-f0-9]{64}", evidence)
+                        or not isinstance(directory, str) or len(directory) > 4096):
+                    raise ValueError("Invalid qualified-model checkpoint evidence")
+                if directory:
+                    try:
+                        root = Path(directory)
+                        resolved = root.resolve(strict=True)
+                    except OSError as exc:
+                        raise ValueError(
+                            "Qualification evidence directory is unavailable") from exc
+                    if (not root.is_absolute() or root.is_symlink()
+                            or not resolved.is_dir() or str(resolved) != directory):
+                        raise ValueError("Invalid qualification evidence directory")
+                result.update(
+                    qualification_role=role,
+                    qualification_evidence_sha256=evidence,
+                    qualification_directory=directory)
         elif backend == "llama.cpp" and model == "forgeos-managed":
             raise ValueError(
                 "Managed local GGUF checkpoint needs verified runtime and "
@@ -178,10 +202,21 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 # Existing Ollama checkpoints and injected test factories
                 # preserve the same behavior as before this extension.
                 model = model_factory(model=contract["model"])
+            qualified_resume = {}
+            if "qualification_evidence_sha256" in contract:
+                model.model = "qualified-auto"
+                qualified_resume = {
+                    "role": contract["qualification_role"],
+                    "qualification_evidence_sha256":
+                        contract["qualification_evidence_sha256"],
+                    "qualification_directory": (
+                        Path(contract["qualification_directory"])
+                        if contract["qualification_directory"] else None),
+                }
             result = execute(
                 store, task["id"], parent, preset=contract["preset"],
                 model=model, max_repairs=contract["max_repairs"],
-                allow_host_tests=True, resume=True,
+                allow_host_tests=True, resume=True, **qualified_resume,
             )
             if result["passed"]:
                 kind, value = "resumed", task["id"]
