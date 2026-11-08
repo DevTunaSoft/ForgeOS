@@ -110,3 +110,18 @@ before/after paged history access. Added memory is capped at 64 MiB for this
 one acceptance scenario. This is a broad defensive ceiling, **not** a claim
 that ordinary paging requires 64 MiB, and is not a 4/8 GiB hardware test.
 No user repositories, Ollama weights, or private files are used.
+
+
+## Experimental secure pytest runtime (successor to PR #29; pending CI)
+
+The frozen Windows bundled pytest runner uses a fixed, snapshot-owned
+`.forgeos-runtime/pytest-log.txt` instead of the Windows NUL device,
+which the zero-capability AppContainer denied in the original PR #29 smoke.
+The parent validates both the original test-output file and pytest logging
+file before launching and watches **each** for its existing 32 MiB bound,
+plus Windows link/junction substitution checks. The optional
+`secure-pytest` packaging extra avoids installing pytest on source-only
+systems that don't use the frozen pytest runtime. The logging plugin and
+`caplog` behavior remain enabled; external plugin autoload is disabled.
+This guard is per-file, **not** a complete filesystem quota. Physical 4/8 GiB
+Ollama and cross-process RAM acceptance remain outstanding.

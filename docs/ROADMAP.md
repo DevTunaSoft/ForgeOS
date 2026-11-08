@@ -11,7 +11,7 @@
 | Safe Git workspaces | **Implemented prototype:** per-task worktrees, path/budget validation, transactional edits | Broader recovery fault injection, demonstrated end-to-end rollback on Windows |
 | Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints and `resume-safe` | Resume additional phases safely, long-run crash/restart acceptance |
 | Execution isolation | **Implemented prototype:** packaged Windows `unittest` AppContainer path; fail closed on unsupported presets | Secure coverage for additional frameworks, adversarial Windows acceptance |
-| Python `pytest` packaged isolation | **In progress:** [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29) | Independent CI/review/merge; do not call shipped before merge |
+| Python `pytest` packaged isolation | **In progress:** successor to [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29), addressing a Windows NUL logging failure | Pass the actual frozen Windows pytest AppContainer smoke, regression suite and code review before merge |
 | Diagnostics and repair learning | **Implemented experimental:** SHA-256 evidence, bounded summaries, aggregate learning | Encrypted retention, broader structured parsers, verified learning decisions |
 | RAM-aware performance | **Implemented experimental:** pagination, bounded logs, memory-aware selection, on-demand RSS | Real Windows 4/8 GiB physical/VM tests, full process tree/model memory |
 | Windows executable | **Implemented prototype:** PyInstaller packaging, hosted GUI lifecycle/pagination and AppContainer smoke | Real Windows install, local model, task lifecycle and safe distribution |
@@ -24,7 +24,7 @@
 
 ## Near-term engineering priorities
 
-1. **Secure broader test execution without Docker.** Validate PR #29's packaged `pytest` runtime and retain a strict fail-closed policy for unsupported runtimes.
+1. **Secure broader test execution without Docker.** Validate the rebuilt packaged `pytest` runtime with bounded AppContainer logging and retain strict fail-closed behavior for unsupported runtimes.
 2. **Finish transactional recovery and interruption handling.** Inject crashes, partial writes, invalid journals, stale leases, process kills, malformed checkpoints, and resume across real Windows restarts.
 3. **Strengthen memory efficiency and visibility.** Avoid unbounded subprocess/output/context allocations; capture process-tree usage under workloads representative of 4/8/16/32 GiB Windows systems, carefully distinguishing model and application RAM.
 4. **Validate the complete Windows usage path.** Launch installed EXE, connect to local Ollama, run generated edits, test/repair, stop/restart, inspect worktree and archive evidence on a real desktop.

@@ -37,7 +37,7 @@ The `.github/workflows/windows-exe.yml` workflow on `main`:
 5. Executes a packaged `--smoke` command for frozen imports.
 6. Starts actual Tkinter dashboard widgets in a headless GUI lifecycle harness, verifies tabs/queue, measures own-process RAM, runs the event loop, then closes cleanly.
 7. Populates a disposable SQLite fixture with **520 synthetic tasks**, checks four GUI pages (150/150/150/70), navigates back and asserts the paging RSS growth stays within the test's 64 MiB threshold.
-8. Runs the frozen AppContainer security smoke, with an outer watchdog and nonzero failure on failed containment checks.
+8. Runs the frozen AppContainer security smoke, testing both unittest and pytest in the same zero-capability sandbox (plus snapshot file, environment and localhost denial) with an outer watchdog; any failed containment check exits nonzero.
 9. Verifies the canonical offline user guide exists **inside** the packaged EXE
    during the actual frozen Tkinter GUI lifecycle smoke.
 
@@ -45,10 +45,10 @@ These are genuine hosted CI checks, **not** a substitute for a person launching 
 
 ## Test execution trust boundary
 
-- The **frozen Windows** workflow uses a restricted AppContainer + Job Object + disposable snapshot for its currently supported `python-unittest` test preset.
+- The **frozen Windows** workflow uses a restricted AppContainer + Job Object + disposable snapshot for `python-unittest` and experimental **bundled `python-pytest`**. The pytest module, including normal logging/caplog behavior, is loaded only inside the hidden test child; its logging file stays in the owned snapshot and is disk-limited by the native watchdog.
 - **Unsupported frozen presets fail closed**; the program must not fall back to unrestricted host commands to make testing appear successful.
 - The **source/development** workflow may run generated project tests on the host with explicit opt-in; do not test untrusted repositories there.
-- Python `pytest` secure frozen support is proposed in [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29), which is **not on `main` until merged**.
+- The original [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29) hit a Windows AppContainer failure when pytest opened the protected `NUL` device. Its feature has been reimplemented with snapshot-owned, watched logging in this successor development PR. Do not call it shipped on `main` before this PR passes CI and merges.
 - Docker is not part of the required ForgeOS architecture.
 
 See [architecture and security boundaries](ARCHITECTURE.md) and [user guide](USER_GUIDE.md).
@@ -58,7 +58,7 @@ See [architecture and security boundaries](ARCHITECTURE.md) and [user guide](USE
 In PowerShell from the repository root:
 
 ```powershell
-py -3.12 -m pip install "pyinstaller>=6.0,<7" .
+py -3.12 -m pip install "pyinstaller>=6.0,<7" ".[secure-pytest]"
 py -3.12 -m unittest discover -s tests -v
 py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" forgeos_build/launcher.py
 ```

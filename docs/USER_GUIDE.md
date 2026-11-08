@@ -6,9 +6,12 @@
 > **Start with a disposable test repository.** Source/development-mode test execution can run generated repository code on your Windows computer. Never check the host-test permission box for code you do not trust. Windows frozen executable isolation supports only designated presets; unsupported presets fail closed.
 
 The packaged Windows prototype uses a restricted **AppContainer** boundary for
-its designated `python-unittest` test workload. Other frozen presets do not
-inherit that permission automatically and must fail closed; running source
-code on the host is a different, explicitly trusted mode.
+its designated `python-unittest` and experimental `python-pytest` test
+workloads. Other frozen presets do not inherit that permission automatically
+and must fail closed; running source code on the host is a different,
+explicitly trusted mode. The pytest runner keeps its logging plugin but
+redirects its file output to a snapshot-owned, size-monitored local file.
+Third-party pytest plugin autoload is disabled for the frozen sandbox.
 
 ## How to open this guide inside ForgeOS
 
@@ -203,7 +206,7 @@ py -m forgeos resume-safe --workspace-parent C:\forgeos-work --allow-host-tests
 | `py -m forgeos learning stats` | Verified repair-learning statistics |
 | `py -m forgeos memory` | One-time own-process memory measurement |
 
-The CLI has a broader list of test preset names than the secure Windows packaged runner actually supports. **Preset visibility does not imply it is safe or usable in every environment.**
+The CLI has a broader list of test preset names than the secure Windows packaged runner actually supports. **Preset visibility does not imply it is safe or usable in every environment.** For the packaged Windows EXE, `python-pytest` now uses the **bundled pytest module** in the same restricted AppContainer as unittest; the package is optional for source-only installations. Its logging file is redirected away from Windows `NUL` into the disposable snapshot and watched against a 32 MiB per-file limit. Other third-party pytest plugins do not autoload in that sandbox.
 
 ## 8. Troubleshooting
 
@@ -215,7 +218,7 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 | Ollama connection failure | Install/start Ollama and confirm the local server; `ollama list` should show a model |
 | Auto model selection fails | No installed model fits the preflight heuristic, or the local model list is unavailable; use a smaller installed model |
 | Host execution permission prompt | Only grant permission for code you trust; otherwise stop |
-| Unsupported preset in packaged Windows | Packaged secure runner currently supports `python-unittest` on main; never bypass the fail-closed restriction |
+| Unsupported preset in packaged Windows | Packaged secure runner supports `python-unittest` and experimental bundled `python-pytest`; npm/Go/Cargo/.NET presets remain unsupported in frozen mode. Never bypass the fail-closed restriction |
 | Task is Blocked after restart | Run `recover`, inspect workspace/journal/checkpoint, then use eligible guarded recovery |
 | Diagnostic evidence cannot be opened | Archive may be missing, truncated, over size limit or fail integrity validation; do not treat an incomplete report as successful acceptance |
 | App feels slow or low on memory | Choose a smaller local model, reduce context, review `memory`; telemetry covers ForgeOS only, not Ollama or compilers |
