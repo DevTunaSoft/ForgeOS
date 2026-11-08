@@ -5,6 +5,11 @@
 > [!WARNING]
 > **Start with a disposable test repository.** Source/development-mode test execution can run generated repository code on your Windows computer. Never check the host-test permission box for code you do not trust. Windows frozen executable isolation supports only designated presets; unsupported presets fail closed.
 
+The packaged Windows prototype uses a restricted **AppContainer** boundary for
+its designated `python-unittest` test workload. Other frozen presets do not
+inherit that permission automatically and must fail closed; running source
+code on the host is a different, explicitly trusted mode.
+
 ## How to open this guide inside ForgeOS
 
 Once ForgeOS is open, select **Activity & diagnostics**, then choose

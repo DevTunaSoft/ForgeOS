@@ -42,7 +42,8 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("docs/USER_GUIDE.md;forgeos", build)
         self.assertIn("offline_user_guide_available", build)
         self.assertIn("How to use ForgeOS", guide)
-        self.assertIn("AppContainer", guide)
+        self.assertTrue("AppContainer" in guide,
+                        "User guide must explain the Windows AppContainer boundary")
 
     def test_relative_links_in_repository(self):
         self.assertEqual(docs.check_links(), [])
