@@ -51,7 +51,7 @@ def save_settings(path: Path, values: dict) -> None:
     parent.mkdir(parents=True, exist_ok=True)
     if parent.is_symlink() or path.is_symlink():
         raise ValueError("Refusing to write desktop settings through a symlink")
-    data = json.dumps(_sanitize(values), indent=2) + "\\n"
+    data = json.dumps(_sanitize(values), indent=2) + "\n"
     fd, temporary = tempfile.mkstemp(prefix=".desktop-settings-", suffix=".tmp", dir=parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as output:
