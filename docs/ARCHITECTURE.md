@@ -42,7 +42,8 @@ flowchart TB
 | `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
 | `src/forgeos/local_models.py` | Experimental loopback-only chat adapter for llama.cpp, LM Studio and configurable local OpenAI-style endpoints; bounded requests/responses, no proxy/redirects |
-| `src/forgeos/huggingface_catalog.py` | Opt-in read-only public GGUF repository metadata and file hash/size inspection |
+| `src/forgeos/huggingface_catalog.py` | Opt-in public GGUF metadata, pinned commit revision, hash/size inspection |
+| `src/forgeos/gguf_download.py` | Experimental pinned and SHA-256-verified resumable GGUF downloader, native per-target lock, disk budget and atomic publication; does not execute model weights |
 | `forgeos_build/launcher.py` | Frozen Windows executable launcher and CI acceptance modes |
 | `tests/` | Regression, recovery, security, GUI, diagnostics and memory tests |
 | `.github/workflows/` | Python CI and Windows packaged smoke/acceptance |

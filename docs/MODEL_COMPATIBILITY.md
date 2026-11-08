@@ -12,8 +12,9 @@
 | llama.cpp loopback `/v1/chat/completions` | New experimental adapter | Server/Windows integration unverified |
 | LM Studio loopback `/v1/chat/completions` | New experimental adapter | Server/Windows integration unverified |
 | Other loopback OpenAI-compatible servers | New experimental adapter | Backend-specific compatibility unverified |
-| Hugging Face public GGUF search and file-size/hash metadata | New read-only experimental catalog | Live Hugging Face GUI workflow unverified |
-| Hugging Face download, resume, install and update | **Not implemented** | — |
+| Hugging Face public GGUF search and file-size/hash metadata | New experimental metadata catalog | Live Hugging Face GUI workflow unverified |
+| Hugging Face GGUF download and SHA-256 resume verification | **New experimental implementation** with pinned revision, partial journal, disk budget and atomic publish | Real multi-GiB Windows/network acceptance unverified |
+| Integrated GGUF execution, update and uninstall | **Not implemented** | Runtime and full model manager remain planned |
 | Native GGUF loading, managed llama.cpp binaries, automatic process lifecycle | **Not implemented** | — |
 | Automatic cross-backend intelligent task/agent router | **Not implemented** | — |
 | Advanced model memory monitoring, idle unload and OOM recovery | **Not implemented** | — |
@@ -64,6 +65,8 @@ forgeos models --backend lm-studio --endpoint http://127.0.0.1:1234/v1
 # Search Hugging Face metadata (opt-in internet request, not inference)
 forgeos model-catalog search "Qwen2.5-Coder"
 forgeos model-catalog files Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+# Replace the filename with the exact result of model-catalog files:
+forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-FILENAME.gguf
 
 # Retain existing Ollama usage, or opt into a local compatible server
 forgeos plan 1 --model qwen2.5-coder:3b
@@ -84,9 +87,15 @@ inference runtime, or can legally be used for your application.
 
 Search and file inspection contact the Hugging Face public HTTPS API **only
 when requested**. The GUI does not send project source or secrets to the Hub.
-The read-only file listing can display SHA-256 values supplied as Git LFS OIDs;
-missing hashes are shown as missing. It does not download files or claim
-verification of their contents.
+The file listing can display SHA-256 values supplied as Git LFS OIDs.
+Select a GGUF file with an available SHA-256 and click **Download and verify**.
+ForgeOS asks for confirmation before contacting the Hub for that file,
+pins a revision, reserves disk space, writes to a resumable `.part` file,
+and verifies the final bytes before atomic publication under
+`~/.forgeos/models`. A missing hash, insufficient disk, untrusted redirect,
+corrupted journal, unexpected byte count or mismatched SHA-256 fails closed.
+The downloaded GGUF is **not automatically loaded** by an inference server.
+Do not mistake metadata/LFS hash verification for model code/license security.
 
 ## Conservative model shortlist for CPU-first Windows machines
 
@@ -126,8 +135,8 @@ and Windows end-to-end acceptance evidence is recorded.
   to 2 MiB. Low-memory profile limits generation length, but external runtimes
   control model weights, threads, caches and idle unload.
 - Streaming generation, structured-output mode, tool-call parsing, LM Studio
-  metadata differences, backend failover, full GGUF downloads and in-process
-  model execution remain future work.
+  metadata differences, backend failover, completed live multi-gigabyte
+  download acceptance and in-process model execution remain future work.
 - Local automatic model selection is only possible when a server advertises
   positive model sizes; otherwise explicit model choice is required.
 - The Hub requires internet access for discovery. Once models are obtained and
@@ -155,8 +164,9 @@ model management. Do not mark these verified without corresponding evidence.
 3. Add a managed, signed/checksummed **llama.cpp CPU runtime** with absolute
    executable paths, controlled launch/stop, idle unloading, and process-tree
    memory limits; no Docker required.
-4. Add robust Hugging Face downloads using pinned revision, trusted checksums,
-   atomic resume/quarantine, disk-space and memory preflight, and safe deletion.
+4. Finish real Windows acceptance for the initial resumable, pinned-revision
+   Hugging Face download implementation, then add safe deletion, version
+   updates and integrated runtime installation.
 5. Add task-role routing, one-model-at-a-time lifecycle, benchmark-driven
    scoring and OOM fallback without silent task re-execution.
 6. Measure user-visible latency, code quality, task completion, RAM and CPU

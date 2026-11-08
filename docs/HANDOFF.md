@@ -1007,3 +1007,47 @@ tests, docs gate and Windows packaged EXE smoke. Then test a real
 llama-server on the i7-1370P with one small GGUF at a time, record memory
 snapshots and exact model hash. Follow with resumable HF downloads and
 managed llama.cpp CPU binaries, maintaining a single GUI and no Docker.
+
+
+### Follow-up — verified GGUF model download prototype (PR #51 candidate)
+
+A third implementation segment adds \`src/forgeos/gguf_download.py\`,
+updates \`src/forgeos/huggingface_catalog.py\` for immutable repository
+revision lookup, and extends the **existing** GUI dialog and CLI with
+on-demand GGUF downloads.
+
+The download design is deliberately fail-closed:
+- Public Hugging Face repo + full pinned 40-character revision only.
+- Exact file must be enumerated at that revision, have a positive declared
+  size, and carry a valid LFS SHA-256 in the Hub file metadata.
+- Maximum single download 16 GiB by default, reserve 1 GiB disk free;
+  read/write/re-hash in bounded 1 MiB chunks; never load weights into RAM.
+- Use a native cross-process kernel file lock and a strict JSON partial
+  journal; resume only matching size/revision/hash and an HTTP 206 response
+  with the exact Content-Range.
+- Restrict redirected weight fetches to HTTPS Hugging Face/CDN hosts, do
+  not pass authentication or project source, and do not use network proxies.
+- On a valid hash, atomically rename \`.part\` to the final GGUF and write
+  a provenance manifest. Quarantine a bad digest; never overwrite an
+  existing mismatched model.
+- No automatic model execution, binary installation, signed distribution,
+  all-model update or removal yet.
+
+New tests \`tests/test_gguf_download.py\` exercise resume, range fallback,
+bad digests, malicious paths, symlinks, existing model preservation, and
+disk pressure. \`tests/test_huggingface_catalog.py\` adds pinned revision
+tests. CLI adds \`model-download\`. GUI's Hugging Face popup adds a
+filename chooser and confirm-before-download action on a background worker.
+
+**Verification:** code and test files committed; full CI, packaged EXE,
+real multi-GiB download on Windows, network proxy/CDN compatibility, and
+model loading are NOT yet verified at the moment of writing this entry.
+Fail the release gate until source regressions, Windows frozen packaging,
+and a real on-device end-to-end exercise pass. This prototype intentionally
+does not claim that downloaded weights are immediately usable by ForgeOS
+without a separate local llama.cpp or similar inference backend.
+
+**Next:** inspect the latest PR #51 check-run logs, repair root causes,
+rerun all suites and backend/hardware acceptance, then implement model
+manager removal/update, managed llama.cpp runtime and smart low-RAM
+task routing without duplicating the canonical routing or task store.

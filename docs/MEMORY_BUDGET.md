@@ -4,7 +4,10 @@
 
 The added loopback-compatible local inference adapter limits outbound
 JSON payloads to 512 KiB, local API catalogs to 2 MiB, and model responses
-to 8 MiB. Hugging Face metadata responses are capped at 2 MiB and requested
+to 8 MiB. GGUF downloads stream at most 1 MiB per buffer and rehash from
+disk rather than retaining large model files in process memory. Their
+default maximum is 16 GiB per file with a separate 1 GiB disk reserve.
+These values are source limits, not verified full-Windows resource profiles. Hugging Face metadata responses are capped at 2 MiB and requested
 only on demand. The existing RAM-aware model file heuristic is reused when
 an OpenAI-compatible server actually reports model sizes. Otherwise
 automatic selection fails safely, requiring an explicit model name.

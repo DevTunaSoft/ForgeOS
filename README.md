@@ -130,13 +130,16 @@ ForgeOS originally used **Ollama only**. The multi-model feature branch adds
 dependency-free **loopback OpenAI-compatible adapters** for llama.cpp, LM Studio
 and configurable local servers, while preserving Ollama and the existing
 RAM-aware selector. The same ForgeOS GUI now offers a backend selector, local
-endpoint field and **read-only Hugging Face GGUF catalog browser**. This is
+endpoint field and **experimental Hugging Face GGUF catalog and verified weight downloader**. This is
 a **prototype awaiting CI and real-runtime acceptance**, not a verified
 local model installer or unified native inference engine.
 
-The Hugging Face browser can search public GGUF repositories and inspect
-published file sizes/hash metadata when explicitly requested; ForgeOS
-**cannot download, install, run, update or remove GGUF files itself** yet.
+The Hugging Face browser can search public GGUF repositories, inspect file
+sizes and hashes, and **download and verify** selected GGUF weights on
+demand. Downloads are pinned to an immutable revision, hashed with SHA-256,
+resumable after interruption and published atomically if verification passes.
+ForgeOS **cannot yet run the downloaded GGUF directly, manage llama.cpp
+binaries, update or remove model weights through a complete model manager**.
 An external inference server must already be running locally for non-Ollama
 inference. No Docker, paid API or cloud inference is required for this
 connector. An endpoint is restricted to literal loopback addresses.

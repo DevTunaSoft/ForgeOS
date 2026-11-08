@@ -91,9 +91,13 @@ not overwrite existing project work.
 
 Click **Browse Hugging Face** to search public GGUF repositories. Select a
 result and click **Inspect GGUF sizes** to see published weight sizes and
-whether Git LFS SHA-256 metadata is present. This is **discovery only**:
-downloads, installation, updating, model removal and actual model
-compatibility checks are not yet available inside ForgeOS. Browsing requires
+whether Git LFS SHA-256 metadata is present. To download, choose a GGUF file with a published SHA-256 and click
+**Download and verify**. ForgeOS confirms the request, checks disk space,
+pins a Hugging Face revision, resumes interrupted partial files and verifies
+the SHA-256 before saving under `~/.forgeos/models`. Downloaded weights are
+not yet installed into a managed inference runtime; they must be opened in
+a compatible local server. Model updates, removal and full running-model
+compatibility tests are still planned. Browsing requires
 internet, but ForgeOS does not use Hugging Face hosted inference.
 
 Examples for advanced users:
@@ -102,6 +106,7 @@ Examples for advanced users:
 forgeos models --backend llama.cpp
 forgeos model-catalog search "Qwen2.5-Coder"
 forgeos model-catalog files Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-K-M.gguf
 forgeos plan 1 --backend lm-studio --model your-exact-local-model-id
 ```
 
