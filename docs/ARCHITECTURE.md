@@ -56,8 +56,10 @@ flowchart TB
 `LocalChatModel` with the same `plan()` / `generate_edits()` interface
 for supported loopback chat endpoints. The engine records non-Ollama
 backend and endpoint in the task checkpoint execution contract. Legacy
-Ollama contracts stay unchanged. Automatic safe recovery still
-reconstructs Ollama only: non-Ollama recovery integration is **not complete**.
+Ollama contracts stay unchanged. The experimental `resume-safe` path now
+reconstructs non-Ollama providers from validated backend/endpoint/model
+checkpoint fields, preserving the existing lease-fencing and file-hash
+checks. Real-model restart and failure-injection acceptance remains unverified.
 
 All provider URLs must be literal IPv4/IPv6 loopback over HTTP with no
 credentials, redirects or HTTP proxy. This is a network restriction, **not**
