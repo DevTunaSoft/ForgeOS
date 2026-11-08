@@ -90,15 +90,15 @@ use Option B.
 2. Open **PowerShell** in that repository folder.
 3. Install ForgeOS:
 
-   \`\`\`powershell
+   ```powershell
    py -m pip install -e .
-   \`\`\`
+   ```
 
 4. Launch the one desktop interface:
 
-   \`\`\`powershell
+   ```powershell
    py -m forgeos gui
-   \`\`\`
+   ```
 
 There is no mandatory Docker setup and no separate paid AI application.
 
@@ -118,7 +118,7 @@ it cannot promise a local model will fit in RAM or VRAM.
 
 **Step 1 — Pick the project.** On the **Development** tab, find
 **Project repository**, select **Browse**, and choose a folder that already
-contains a local Git repository (a \`.git\` directory). ForgeOS cannot yet
+contains a local Git repository (a `.git` directory). ForgeOS cannot yet
 create an entire new project from an arbitrary empty folder in the GUI.
 
 **Step 2 — Describe what you want.** Under **Tell ForgeOS what to build**,
@@ -129,8 +129,8 @@ type a clear, small change. For example:
 > unrelated files.
 
 **Step 3 — Choose how to run it.** Leave **Local model (auto = RAM-aware)**
-set to \`auto\` if an appropriate local coding model is installed. Select the
-matching **Test suite** (for a Python unittest project, \`python-unittest\`),
+set to `auto` if an appropriate local coding model is installed. Select the
+matching **Test suite** (for a Python unittest project, `python-unittest`),
 set **Repair retries** between 0 and 5, and choose a **Workspace folder**.
 Workspaces are separate from your original Git repository.
 
@@ -200,9 +200,9 @@ stored separately, up to the configured archival limit.
 If a diagnostic record provides a **64-character SHA-256 reference**, the
 advanced CLI can retrieve the retained original:
 
-\`\`\`powershell
+```powershell
 py -m forgeos diagnostics show YOUR_64_CHARACTER_REFERENCE
-\`\`\`
+```
 
 Original logs can contain sensitive data. Do not paste them into public
 issues, attach them to releases, or give them to untrusted people. Logs over
@@ -211,16 +211,16 @@ incomplete capture a verified success.
 
 ### Check RAM from PowerShell
 
-\`\`\`powershell
+```powershell
 py -m forgeos memory
-\`\`\`
+```
 
 The optional *source checkout* benchmark exercises synthetic output,
 not your project or Ollama:
 
-\`\`\`powershell
+```powershell
 py tools/memory_benchmark.py --mib 12 --cycles 3 --check
-\`\`\`
+```
 
 See [Memory budget and acceptance](MEMORY_BUDGET.md) for limits and the
 difference between Python allocations, ForgeOS working-set memory, and
@@ -237,15 +237,15 @@ do not assume ForgeOS will continue autonomously after restart.
    anything you need before attempting further work.
 3. From a source installation, this command inspects recovery statuses:
 
-   \`\`\`powershell
+   ```powershell
    py -m forgeos recover
-   \`\`\`
+   ```
 
 4. For a checkpoint that is *explicitly resumable*, advanced users can run:
 
-   \`\`\`powershell
+   ```powershell
    py -m forgeos resume-safe --workspace-parent C:\forgeos-work --allow-host-tests
-   \`\`\`
+   ```
 
    **Warning:** This enables execution of project tests on your host.
    Use only a workspace containing trusted code. The command will skip
@@ -255,9 +255,9 @@ do not assume ForgeOS will continue autonomously after restart.
 5. If a pending edit journal requires rollback, carefully inspect the
    workspace first; then use:
 
-   \`\`\`powershell
+   ```powershell
    py -m forgeos recover-edits C:\forgeos-work\task-1
-   \`\`\`
+   ```
 
 The final command is meant for a **specific** affected task worktree, not a
 random project folder. It does not guarantee that every possible interruption
@@ -271,25 +271,25 @@ IDs with your own.
 
 | Purpose | Command |
 |---|---|
-| Launch the GUI | \`py -m forgeos gui\` |
-| Add a task | \`py -m forgeos add C:\my-project "Fix a known bug"\` |
-| Show saved tasks as JSON | \`py -m forgeos list\` |
-| Generate a local AI plan | \`py -m forgeos plan 1 --model auto\` |
-| Run a test preset | \`py -m forgeos test 1 --preset python-unittest\` |
-| Edit, test, repair (trusted repo only) | \`py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --allow-host-tests\` |
-| Resume a specific checkpoint | \`py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --allow-host-tests --resume\` |
-| Inspect interrupted task statuses | \`py -m forgeos recover\` |
-| Resume eligible saved checkpoints | \`py -m forgeos resume-safe --workspace-parent C:\forgeos-work --allow-host-tests\` |
-| Recover a pending edit journal | \`py -m forgeos recover-edits C:\forgeos-work\task-1\` |
-| View memory | \`py -m forgeos memory\` |
-| View diagnostics summary | \`py -m forgeos diagnostics stats\` |
-| Restore an original log | \`py -m forgeos diagnostics show YOUR_64_CHARACTER_REFERENCE\` |
-| Repair-learning statistics | \`py -m forgeos learning stats\` |
-| Inspect trusted filters | \`py -m forgeos filters status\` |
+| Launch the GUI | `py -m forgeos gui` |
+| Add a task | `py -m forgeos add C:\my-project "Fix a known bug"` |
+| Show saved tasks as JSON | `py -m forgeos list` |
+| Generate a local AI plan | `py -m forgeos plan 1 --model auto` |
+| Run a test preset | `py -m forgeos test 1 --preset python-unittest` |
+| Edit, test, repair (trusted repo only) | `py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --allow-host-tests` |
+| Resume a specific checkpoint | `py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --allow-host-tests --resume` |
+| Inspect interrupted task statuses | `py -m forgeos recover` |
+| Resume eligible saved checkpoints | `py -m forgeos resume-safe --workspace-parent C:\forgeos-work --allow-host-tests` |
+| Recover a pending edit journal | `py -m forgeos recover-edits C:\forgeos-work\task-1` |
+| View memory | `py -m forgeos memory` |
+| View diagnostics summary | `py -m forgeos diagnostics stats` |
+| Restore an original log | `py -m forgeos diagnostics show YOUR_64_CHARACTER_REFERENCE` |
+| Repair-learning statistics | `py -m forgeos learning stats` |
+| Inspect trusted filters | `py -m forgeos filters status` |
 
 The six currently selectable test presets are
-\`python-unittest\`, \`python-pytest\`, \`npm-test\`, \`cargo-test\`,
-\`go-test\`, and \`dotnet-test\`. **Availability in the menu does not
+`python-unittest`, `python-pytest`, `npm-test`, `cargo-test`,
+`go-test`, and `dotnet-test`. **Availability in the menu does not
 mean every preset works safely inside the frozen Windows sandbox.** Current
 secure frozen support is limited; unsupported runtimes fail closed.
 
@@ -301,7 +301,7 @@ the downloaded ZIP. Follow the [Windows build guide](WINDOWS_BUILD.md).
 A successful CI build does not prove every desktop environment is supported.
 
 **"Project must be an existing local Git repository."** Choose the folder
-of your *existing* project containing a \`.git\` directory. Do not point at
+of your *existing* project containing a `.git` directory. Do not point at
 ForgeOS's empty workspace parent.
 
 **"No installed local Ollama model fits..."** Start Ollama, download a
@@ -344,10 +344,10 @@ is still under development.
 ## 10. Safety, data storage, and limitations
 
 - ForgeOS task records are stored by default under
-  \`%USERPROFILE%\.forgeos\tasks.sqlite3\` on Windows. Worktrees, model
+  `%USERPROFILE%\.forgeos\tasks.sqlite3` on Windows. Worktrees, model
   installations and diagnostic archives are separate resources.
 - Original captured logs are stored locally by default under
-  \`%USERPROFILE%\.forgeos\diagnostics\`. Archives are **not encrypted at
+  `%USERPROFILE%\.forgeos\diagnostics`. Archives are **not encrypted at
   rest** and may contain project secrets; don't share them.
 - Keep passwords, tokens and sensitive personal details out of task
   descriptions, code examples and public issue reports.
