@@ -10,8 +10,9 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from .core import Store, Ollama, run_test
+from .core import Store, Ollama
 from .engine import execute_task
+from .task_actions import plan_task, test_task
 
 PRESETS = ("python-unittest", "python-pytest", "npm-test",
            "cargo-test", "go-test", "dotnet-test")
@@ -359,7 +360,7 @@ def launch(db_path, *, acceptance: bool = False):
             chosen_workspace = Path(workspaces.get()).expanduser()
             chosen_retries = repair_count.get()
             chosen_host_permission = allow_host_tests.get()
-            if operation == "run" and not chosen_host_permission:
+            if operation in {"run", "test"} and not chosen_host_permission:
                 raise ValueError("Enable the host test execution checkbox before starting.")
             if operation == "run" and not 0 <= chosen_retries <= 5:
                 raise ValueError("Repair retries must be between 0 and 5.")
@@ -375,11 +376,9 @@ def launch(db_path, *, acceptance: bool = False):
         def worker():
             worker_store = Store(db_path)
             try:
-                task = worker_store.get(task_id)
                 if operation == "plan":
-                    worker_store.update(task_id, "planning", increment=True)
-                    value = Ollama(model=chosen_model).plan(task["description"])
-                    worker_store.update(task_id, "planned", result=value)
+                    value = plan_task(
+                        worker_store, task_id, model=Ollama(model=chosen_model))
                 elif operation == "run":
                     result = execute_task(
                         worker_store, task_id, chosen_workspace,
@@ -389,20 +388,14 @@ def launch(db_path, *, acceptance: bool = False):
                     )
                     value = json.dumps(result, indent=2)
                 else:
-                    worker_store.update(task_id, "testing", increment=True)
-                    result = run_test(task["project"], chosen_preset)
-                    worker_store.update(
-                        task_id, "passed" if result["passed"] else "failed",
-                        result=json.dumps(result),
-                        error="" if result["passed"] else result["output"],
-                    )
+                    result = test_task(
+                        worker_store, task_id, chosen_preset,
+                        allow_host_tests=chosen_host_permission)
                     value = json.dumps(result, indent=2)
             except Exception as exc:
+                # All operations own their state and lease. GUI errors must
+                # never overwrite a task taken over by another process.
                 value = f"{type(exc).__name__}: {exc}"
-                # The engine manages its own blocked status and preserves the
-                # workspace location; do not overwrite its recorded result.
-                if operation != "run":
-                    worker_store.update(task_id, "blocked", error=value)
             finally:
                 worker_store.close()
             events.put((task_id, operation, value))

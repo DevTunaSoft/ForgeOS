@@ -3,7 +3,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from .core import Store, Ollama, run_test
+from .core import Store, Ollama
 
 def default_db():
     return Path.home()/'.forgeos'/'tasks.sqlite3'
@@ -28,6 +28,8 @@ def main(argv=None):
     plan=sub.add_parser('plan'); plan.add_argument('id',type=int); plan.add_argument('--model',default='qwen2.5-coder:3b')
     test=sub.add_parser('test'); test.add_argument('id',type=int); test.add_argument('--preset',required=True,
          choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'])
+    test.add_argument('--allow-host-tests',action='store_true',
+                      help='Explicitly authorize tests in a trusted project; packaged Windows remains isolated')
     run=sub.add_parser('run',help='Generate, test and repair edits in a Git worktree')
     run.add_argument('id',type=int)
     run.add_argument('--workspace-parent',required=True)
@@ -93,32 +95,9 @@ def main(argv=None):
             changed = recover_edits(Path(args.workspace))
             print('Recovered edit journal' if changed else 'No pending edit journal')
         elif args.action=='plan':
-            from uuid import uuid4
-            task = store.get(args.id)
-            if task["status"] not in {"queued", "planned"}:
-                raise ValueError("Task is not eligible for planning")
-            owner = uuid4().hex
-            if not store.acquire_lease(args.id, owner):
-                raise ValueError("Task already has an active execution lease")
-            try:
-                if not store.transition(args.id, {"queued", "planned"}, "planning",
-                                        increment=True, lease_owner=owner):
-                    raise ValueError("Task status changed before planning")
-                try:
-                    output = Ollama(model=args.model).plan(task["description"])
-                    if not store.heartbeat_lease(args.id, owner):
-                        raise RuntimeError("Task planning lease was lost")
-                    if not store.transition(args.id, {"planning"}, "planned",
-                                            result=output, lease_owner=owner):
-                        raise RuntimeError("Task changed during planning")
-                except Exception as exc:
-                    # A reclaimed lease cannot overwrite another worker.
-                    store.transition(args.id, {"planning"}, "blocked",
-                                     error=str(exc), result="", lease_owner=owner)
-                    raise
-                print(output)
-            finally:
-                store.release_lease(args.id, owner)
+            from .task_actions import plan_task
+            output = plan_task(store, args.id, model=Ollama(model=args.model))
+            print(output)
         elif args.action=='resume-safe':
             from .recovery import resume_safe
             sink = (lambda event: print(json.dumps(event, ensure_ascii=False), flush=True)
@@ -144,11 +123,9 @@ def main(argv=None):
             if not result['passed']:
                 return 1
         elif args.action=='test':
-            task=store.get(args.id)
-            store.update(args.id,'testing',increment=True)
-            result=run_test(task['project'],args.preset)
-            store.update(args.id,'passed' if result['passed'] else 'failed',
-                         error='' if result['passed'] else result['output'],result=json.dumps(result))
+            from .task_actions import test_task
+            result=test_task(store,args.id,args.preset,
+                             allow_host_tests=args.allow_host_tests)
             print(json.dumps(result,indent=2))
             if not result['passed']:
                 return 1

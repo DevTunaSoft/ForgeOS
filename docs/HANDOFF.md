@@ -766,3 +766,30 @@ pass before merge; no real Windows/Ollama hardware acceptance was performed.
 - At authoring: CI/Windows packaging are not yet verified. Run Linux and
   Windows 3.10/3.12 tests, documentation integrity and frozen EXE/GUI/
   AppContainer smoke before merging; inspect failures and re-run.
+
+## Unified GUI and CLI planning/testing safeguards — 2026-11-07 (review branch)
+
+- Starting main: `d28f224a5438972167a84e5ec0f7bf1fe0260154`.
+- Branch: `hardening/unified-gui-cli-task-actions`.
+- Defects: desktop planning/testing still used unconditional task updates
+  without lease protection, and a packaged GUI's standalone test button
+  called the direct test runner instead of the engine's AppContainer path.
+  CLI `test` likewise lacked explicit host-test permission.
+- Added one canonical `src/forgeos/task_actions.py` for both frontends,
+  reusing the existing SQLite lease/transition and engine runtime. Planning
+  is eligible only from queued/planned; direct manual testing is eligible
+  from queued/planned/failed. Completed and checkpoint-blocked tasks cannot
+  be overwritten by a manual test action.
+- Standalone tests now require an explicit trust opt-in from GUI checkbox or
+  CLI `--allow-host-tests`; they route through `engine._run_workspace_tests`
+  so frozen Windows only uses permitted AppContainer presets and fail-closed
+  behavior. Incomplete output cannot approve a task.
+- Removed unowned GUI exception-state write that could clobber another
+  worker's task. GUI worker thread continues to use a dedicated Store.
+- Added tests for GUI source contract, shared planning lease behavior,
+  opt-in preflight, result persistence, failed/incomplete evidence,
+  protected completed tasks, live lease replacement and CLI flag routing.
+- User guide, roadmap and architecture updated alongside implementation.
+- CI acceptance, Windows real-machine behavior and local Ollama testing
+  were **not verified** at authoring; require Linux+Windows 3.10/3.12,
+  docs integrity and frozen Windows GUI/AppContainer smoke before merge.
