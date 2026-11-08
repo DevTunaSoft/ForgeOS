@@ -1634,3 +1634,8 @@ qualified planning and the no-evidence fail-closed path.
 ### GUI contract repair after dynamic task roles
 
 The first validation of the shared task-role selector found two stale source-contract assertions, not runtime defects. One still required the removed hardcoded role="implementation" path; it now requires role=chosen_role. The final-qualification GUI test also expected dialog-local wording removed by the poll-scope repair; it now asserts the persisted Activity warning that cancelled evidence leaves routing disabled.
+
+
+## #56 local acceptance evidence recorder
+
+Started the post-PR-51 physical acceptance phase from verified main `7c582f8`. The new acceptance module captures one bounded local JSON snapshot rather than adding another monitoring service. It records host/runtime memory, OS/Python/machine identity, source Git SHA when discoverable, and a chunked SHA-256 of the frozen executable when applicable. With a running managed GGUF it reuses the existing exact benchmark identity, self-test and one-shot managed memory report. Only allowlisted model/runtime/settings/self-test fields are serialized, so endpoint credentials, temporary API keys, raw model replies and project source are excluded. The GUI runs collection off the Tk thread and keeps the managed model busy for the duration. A CLI host-only snapshot is also available.

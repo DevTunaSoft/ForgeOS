@@ -461,3 +461,13 @@ memory ceiling before a planning prompt is sent. Missing, stale, over-budget or
 unqualified evidence blocks the plan. The existing plain-text plan result
 contract is preserved for compatibility; no second router or evidence format
 was introduced.
+
+
+### #56 local physical-acceptance evidence recorder
+
+- [x] Add an explicit bounded local acceptance snapshot using only standard-library/native probes already owned by ForgeOS.
+- [x] Record OS/Python/machine identity, physical/system memory, ForgeOS process memory, exact source Git SHA when discoverable and frozen executable SHA-256 when running packaged.
+- [x] When a verified managed GGUF is active, reuse its existing benchmark identity, inference self-test and process-tree memory report; never serialize the ephemeral API secret or raw response.
+- [x] Save atomically under `~/.forgeos/acceptance`; no background sampler or second database.
+- [x] Expose the recorder in Activity & diagnostics plus a host-only CLI command.
+- [ ] Run the recorder on the target Windows 11 i7-1370P / 32 GiB machine using the exact shipping candidate and real managed GGUF; attach/report the resulting evidence before closing #53/#55/#56.

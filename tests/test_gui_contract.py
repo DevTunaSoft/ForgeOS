@@ -348,6 +348,23 @@ class DashboardContractTests(unittest.TestCase):
                 self.assertIn(fragment, source)
         self.assertNotIn('role="implementation"', source)
 
+    def test_acceptance_snapshot_reuses_activity_worker_and_managed_controller(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'acceptance_events = Queue(maxsize=1)',
+                'text="Run local acceptance snapshot"',
+                'from .acceptance import write_acceptance_snapshot',
+                'write_acceptance_snapshot(active)',
+                'managed["busy"] = True',
+                'acceptance_events.get_nowait()',
+                '"Physical Windows evidence: "',
+                '"Frozen EXE SHA-256: "',
+                '"Managed model evidence: "'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

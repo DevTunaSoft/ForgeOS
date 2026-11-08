@@ -558,3 +558,12 @@ When the active verified local GGUF has completed final qualification for the
 ForgeOS checks the same final evidence, exact model/runtime hashes and current
 memory budget before sending the planning request. If planning evidence is not
 qualified, ForgeOS stops instead of silently using another model.
+
+
+### Capture a local acceptance snapshot
+
+Open **Activity & diagnostics** and choose **Run local acceptance snapshot**. ForgeOS writes one bounded JSON evidence file under `~/.forgeos/acceptance`. The report records the current operating system, physical RAM snapshot, ForgeOS process memory, source Git commit when available, and the SHA-256 of the running frozen ForgeOS executable when applicable.
+
+If a verified managed GGUF is already running, the same button also performs the existing local-model self-test and records its exact model/runtime hashes, startup/self-test latency and managed peak-memory reading. It does **not** store the temporary API credential, project source, or raw model response.
+
+From PowerShell, `py -m forgeos acceptance` captures the host/source or frozen-executable portion without a GUI-managed model session. A snapshot is evidence from that machine only; it does not by itself complete the Windows release gate.
