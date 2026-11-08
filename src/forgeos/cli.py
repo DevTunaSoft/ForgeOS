@@ -28,6 +28,11 @@ def main(argv=None):
     catalog=sub.add_parser('model-catalog',help='Opt-in Hugging Face public GGUF discovery')
     catalog.add_argument('operation',choices=('search','files'))
     catalog.add_argument('query',help='Search phrase or repository ID')
+    download=sub.add_parser('model-download',
+                            help='Explicitly download one GGUF with pinned SHA-256')
+    download.add_argument('repository',help='Public Hugging Face owner/model')
+    download.add_argument('filename',help='Exact GGUF filename listed by model-catalog')
+    download.add_argument('--directory',default='',help='Optional local model folder')
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
     evidence.add_argument('operation',choices=['show','stats'])
     evidence.add_argument('reference',nargs='?')
@@ -78,6 +83,13 @@ def main(argv=None):
             values = _cli_model(backend=args.backend, model='auto',
                                   endpoint=args.endpoint).installed()
         print(json.dumps(values, indent=2))
+        return 0
+    if args.action == 'model-download':
+        from .gguf_download import download_gguf
+        result = download_gguf(
+            args.repository, args.filename,
+            directory=args.directory or None)
+        print(json.dumps(result, indent=2))
         return 0
     if args.action == 'model-catalog':
         from .huggingface_catalog import search_gguf, list_gguf_files
