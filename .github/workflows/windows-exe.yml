@@ -48,6 +48,28 @@ jobs:
         run: |
           $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList "--smoke" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Frozen smoke test failed: $($process.ExitCode)" }
+      - name: Frozen artifact-to-source acceptance identity
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD 'artifact-acceptance-report.json'
+          $args = '--acceptance-snapshot-report "' + $report + '"'
+          $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList $args -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Frozen acceptance identity failed: $($process.ExitCode)" }
+          if (!(Test-Path $report)) { throw "Frozen acceptance identity report missing" }
+          $json = Get-Content -Raw $report | ConvertFrom-Json
+          $expectedCommit = "${{ github.sha }}".ToLowerInvariant()
+          $actualHash = (Get-FileHash -Algorithm SHA256 "$PWD/dist/ForgeOS.exe").Hash.ToLowerInvariant()
+          if ($json.artifact.build_source_commit -ne $expectedCommit) {
+            throw "Embedded source SHA mismatch: $($json.artifact.build_source_commit) != $expectedCommit"
+          }
+          if ($json.artifact.executable_sha256 -ne $actualHash) {
+            throw "Executable SHA-256 mismatch"
+          }
+          if (-not $json.physical_windows_evidence) {
+            throw "Frozen report did not identify Windows evidence"
+          }
+          Write-Host "Verified source commit: $expectedCommit"
+          Write-Host "Verified executable SHA-256: $actualHash"
       - name: Frozen Tkinter GUI startup and cleanup acceptance
         shell: pwsh
         run: |

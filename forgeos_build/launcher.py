@@ -41,6 +41,8 @@ def main(argv=None):
                         help="Check packaged imports without opening a window")
     parser.add_argument("--gui-acceptance-report", metavar="PATH",
                         help="Exercise actual Tk GUI and write a local JSON report")
+    parser.add_argument("--acceptance-snapshot-report", metavar="PATH",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--sandbox-unittest", action="store_true",
                         help=argparse.SUPPRESS)
     parser.add_argument("--sandbox-pytest", action="store_true",
@@ -57,6 +59,29 @@ def main(argv=None):
     if args.secure_sandbox_smoke:
         from forgeos.secure_smoke import run_secure_smoke
         return run_secure_smoke()
+    if args.acceptance_snapshot_report:
+        from forgeos.acceptance import collect_acceptance_snapshot
+        try:
+            result = collect_acceptance_snapshot()
+            Path(args.acceptance_snapshot_report).write_text(
+                json.dumps(result, indent=2), encoding="utf-8")
+        except BaseException as exc:
+            result = {"error": type(exc).__name__ + ": " + str(exc)}
+            try:
+                Path(args.acceptance_snapshot_report).write_text(
+                    json.dumps(result, indent=2), encoding="utf-8")
+            except OSError:
+                pass
+            return 13
+        artifact = result.get("artifact", {})
+        return 0 if (
+            result.get("physical_windows_evidence") is True
+            and artifact.get("frozen_executable") is True
+            and isinstance(artifact.get("build_source_commit"), str)
+            and len(artifact["build_source_commit"]) == 40
+            and isinstance(artifact.get("executable_sha256"), str)
+            and len(artifact["executable_sha256"]) == 64
+        ) else 13
     if args.gui_acceptance_report:
         # A temporary empty DB, no AI model loads and no network calls.
         from forgeos.gui import launch

@@ -1649,3 +1649,8 @@ The #56 recorder initially could hash a downloaded frozen EXE but could not prov
 ### Acceptance GUI contract assertion repair
 
 The first #56 checkpoint showed three source-contract failures caused only by over-specific quote matching around multi-line string fragments in the Activity log. The runtime logging code already emitted the intended Physical Windows, frozen EXE SHA-256 and managed-model evidence fields. The contract test now asserts the actual stable text fragments rather than Python source quoting.
+
+
+### Frozen acceptance identity independent verification
+
+The packaged-executable gate now exercises the acceptance recorder inside the real frozen `ForgeOS.exe`, not only in unit tests. A hidden launcher mode writes a local snapshot, then PowerShell independently checks the embedded source commit against `github.sha` and compares the recorder's EXE SHA-256 with `Get-FileHash`. Any mismatch or missing Windows/frozen identity fails packaging before upload. This closes the evidence-chain gap between source, packaged artifact and later physical Windows acceptance.

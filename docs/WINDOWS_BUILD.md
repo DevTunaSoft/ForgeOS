@@ -118,3 +118,10 @@ establish these guarantees.
 ### Artifact-to-source acceptance identity
 
 Every GitHub-built frozen EXE now contains a tiny `build_info.json` with the exact 40-character Git SHA supplied by the workflow. **Run local acceptance snapshot** records that embedded source SHA together with a freshly calculated SHA-256 of the actual `ForgeOS.exe` bytes. This provides the source→artifact identity pair required for physical release evidence even after the EXE is downloaded away from its Git checkout.
+
+
+The hosted packaging workflow also makes the finished `ForgeOS.exe` run its hidden acceptance-snapshot mode and independently compares:
+- embedded `artifact.build_source_commit` against the exact GitHub workflow SHA; and
+- the EXE's self-computed SHA-256 against PowerShell `Get-FileHash`.
+
+A mismatch fails the Windows packaging job before artifact upload.
