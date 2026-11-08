@@ -48,7 +48,7 @@ The diagram describes the **implemented prototype path**, not an unattended prod
 | Plain-language development | Task creation, Ollama planning, structured multi-file edit requests | Local Ollama must be separately installed and running |
 | Git workspace safety | Per-task worktrees, edit validation, transactional edit journals | Generated edits stay available for manual inspection; no automatic publication |
 | Test/repair cycle | Bounded retries, selected test presets, failure feedback | Not a universal build/test tool; security varies by runtime |
-| Persistence and recovery | SQLite tasks, execution leases, edit recovery, checkpoint-aware resumption | Only eligible checkpoint phases can be resumed; never assume arbitrary crash recovery |
+| Persistence and recovery | SQLite tasks, lease-fenced GUI/CLI planning/testing, edit recovery, checkpoint-aware resumption | Only eligible checkpoint phases can be resumed; never assume arbitrary crash recovery |
 | Windows test isolation | Packaged EXE uses a fail-closed AppContainer runner for Python `unittest` and experimental bundled `pytest` | Other presets remain unsupported in the packaged secure runtime; hosted smoke does not prove real-PC security; see [Windows guide](docs/WINDOWS_BUILD.md) |
 | Diagnostics | Raw evidence archives, SHA-256 checks, compact AI summaries, failure categories | Raw logs can include secrets; archive capacity and retention are bounded |
 | Repair learning | Test-verified failure signatures, aggregated outcome statistics | Does **not** silently replay previous fixes |
@@ -90,7 +90,7 @@ Using the GUI:
 2. Type a specific development task under **Tell ForgeOS what to build**.
 3. Select **Add task**, then select the task in the queue.
 4. Choose a local model (or `auto`), a test preset, and a workspace folder.
-5. Use **Generate plan** for planning; use **Build / test / repair** only after understanding the code-execution warning.
+5. Use **Generate plan** for planning. Enable **Host test execution** only for a trusted repository before selecting **Run tests only** or **Build / test / repair**. Both test operations use the same guarded runtime selection.
 6. Review results in **Activity & diagnostics**, then inspect the generated Git worktree before accepting changes.
 
 **Source/development mode:** generated project tests may run on your computer after explicit host-execution permission. **Do not opt in for untrusted code.** Packaged Windows runtime restrictions are described in [Security and responsible use](#security-and-responsible-use).
@@ -104,7 +104,7 @@ You can also open it **offline inside ForgeOS** via **Activity & diagnostics →
 py -m forgeos add C:\path\to\existing-repo "Fix startup error"
 py -m forgeos list
 py -m forgeos plan 1 --model auto
-py -m forgeos test 1 --preset python-unittest
+py -m forgeos test 1 --preset python-unittest --allow-host-tests
 py -m forgeos recover
 py -m forgeos memory
 py -m forgeos diagnostics stats
@@ -118,7 +118,9 @@ To run the autonomous edit/test/repair **source-mode** prototype against a trust
 py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --preset python-unittest --allow-host-tests
 ```
 
-Create the workspace parent folder before running this CLI command. The `--allow-host-tests` flag permits source-mode execution of project code on the host. It is **not** a declaration that the host is sandboxed.
+Create the workspace parent folder before running this CLI command. The `--allow-host-tests` flag is also required for the CLI's standalone `test` action. It permits trusted source-mode test execution; **it is not a declaration that the host is fully sandboxed**. In the packaged Windows application, designated Python test presets use the fail-closed AppContainer path. The standalone manual test operates on the selected original repository, not ForgeOS's generated worktree, and will not overwrite a passed or blocked task.
+
+CLI and GUI planning/testing now use the same SQLite task lease and status-transition checks, instead of separate implementations. This reduces the risk of concurrent operations overwriting each other's results; physical Windows crash/restart acceptance remains outstanding.
 
 Supported CLI recovery commands also include `resume-safe`, `run --resume` and `recover-edits`, with strict workspace/checkpoint validation. Read the [manual](docs/USER_GUIDE.md#6-recovery-after-an-interruption) before using them.
 
@@ -130,8 +132,9 @@ The project includes disk-backed output capture, bounded UI previews, SHA-256 ev
 
 ## Experimental packaged pytest test isolation (PR #43)
 
-ForgeOS is adding support for `python-pytest` using the **same restricted
-Windows AppContainer** as `python-unittest`, with no host execution fallback.
+ForgeOS includes **experimental packaged** `python-pytest` support using the
+same restricted Windows AppContainer as `python-unittest`, with no host
+execution fallback for those supported presets.
 The Windows EXE build installs pytest as an **optional packaging extra**,
 not a mandatory dependency for the lightweight core. The frozen child writes
 pytest's log file into a monitored disposable snapshot, avoiding its default
@@ -144,7 +147,7 @@ other frozen test presets remain fail-closed.
 ## Security and responsible use
 
 - Generated code is **untrusted**. In source mode, enable host tests only for trusted repositories you are willing to execute locally.
-- The frozen Windows executable has a **fail-closed AppContainer** path for its supported `python-unittest` preset; it does not automatically extend to arbitrary test frameworks. **No Docker required.**
+- The frozen Windows executable has a **fail-closed AppContainer** path for its supported `python-unittest` and experimental `python-pytest` presets, including the manual test action. It does not automatically extend to other frameworks. **No Docker required.**
 - ForgeOS validates edit paths and limits the size and count of generated file replacements. Isolated Git worktrees and transaction journals help keep changes reviewable and recoverable, but they are not an all-purpose security sandbox.
 - **Raw diagnostic logs are sensitive and stored locally without at-rest encryption**. Do not include credentials in tasks, upload the evidence store or publish it in a handoff.
 - Do not treat a green build badge, synthetic GUI test or hosted Windows smoke test as proof of safe unattended app building on a real user PC.
