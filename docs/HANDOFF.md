@@ -722,3 +722,23 @@ pass before merge; no real Windows/Ollama hardware acceptance was performed.
 - CI and physical Windows hardware acceptance remain unverified at this
   commit. Next: Linux/Windows Python 3.10/3.12, docs, frozen EXE acceptance,
   any root-cause fixes, then merge only on verified green checks.
+
+## Concurrent planning safeguards — 2026-11-07 (review branch)
+
+- Starting main commit: `fab3fbe088897b6afa616cdc9706c852e158ee5e`.
+- Branch: `hardening/planning-lease-safety`.
+- CLI `plan` now reuses the existing SQLite execution lease and bounded
+  model runner. It accepts only queued/planned tasks, acquires a per-task
+  lease, performs a lease-owner guarded transition to planning, then
+  atomically stores a completed plan or blocked error while retaining
+  ownership. Lease release happens in `finally`.
+- `Store.transition` now optionally validates lease owner and atomically
+  persists result/error, preserving original behavior for older callers.
+- `Store.recover` leaves live-lease planning tasks alone; genuinely
+  stale/unleased planning tasks still return to queued.
+- Tests cover live planner/recover interaction, concurrent owner refusal,
+  completed-task preservation, model errors and stale lease protection.
+- Hosted CI and real Windows hardware acceptance are unverified at commit
+  creation. Next: verify full Linux/Windows matrix, documentation and frozen
+  executable, remediate any failures; physical concurrent planning and
+  crash/restart acceptance remain outstanding.

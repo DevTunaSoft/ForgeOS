@@ -206,7 +206,7 @@ a workspace before recovery.
 | `py -m forgeos gui` | Open desktop interface |
 | `py -m forgeos add PATH "request"` | Add task for an existing local repo |
 | `py -m forgeos list` | Stream task history as JSON |
-| `py -m forgeos plan ID --model auto` | Ask local model to plan |
+| `py -m forgeos plan ID --model auto` | Ask local model to plan a queued/planned task (exclusive lease; completed tasks cannot be overwritten) |
 | `py -m forgeos test ID --preset python-unittest` | Run selected tests |
 | `py -m forgeos run ID --workspace-parent PATH --allow-host-tests` | Prototype edit/test/repair cycle on trusted source |
 | `py -m forgeos recover` | Mark interrupted states for safe inspection |
@@ -230,6 +230,7 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 | Host execution permission prompt | Only grant permission for code you trust; otherwise stop |
 | Unsupported preset in packaged Windows | Packaged secure runner supports `python-unittest` and experimental bundled `python-pytest`; npm/Go/Cargo/.NET presets remain unsupported in frozen mode. Never bypass the fail-closed restriction |
 | Task is Blocked after restart | Run `recover`, inspect workspace/journal/checkpoint, then use eligible guarded recovery |
+| Task is already being planned or completed | Wait for the active planner or inspect task history. ForgeOS will not start a second concurrent plan or re-plan a passed/failed task |
 | Diagnostic evidence cannot be opened | Archive may be missing, truncated, over size limit or fail integrity validation; do not treat an incomplete report as successful acceptance |
 | App feels slow or low on memory | Choose a smaller local model, reduce context, review `memory`; telemetry covers ForgeOS only, not Ollama or compilers |
 

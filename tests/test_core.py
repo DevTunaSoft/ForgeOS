@@ -255,6 +255,39 @@ class ForgeOSTests(unittest.TestCase):
         self.assertTrue(self.store.release_lease(task,'replacement'))
 
 
+    def test_planning_lease_prevents_recovery_until_stale(self):
+        task = self.store.add(str(self.repo), "long planning")
+        self.assertTrue(self.store.acquire_lease(task, "planner"))
+        self.assertTrue(self.store.transition(task, {"queued"}, "planning",
+                                              lease_owner="planner", increment=True))
+        self.assertEqual(self.store.recover(stale_after=30), 0)
+        self.assertEqual(self.store.get(task)["status"], "planning")
+        self.assertFalse(self.store.transition(
+            task, {"planning"}, "planned", result="stolen", lease_owner="impostor"))
+        self.assertEqual(self.store.get(task)["status"], "planning")
+        with self.store.db:
+            self.store.db.execute("UPDATE task_leases SET heartbeat=? WHERE task_id=?",
+                                  (time.time() - 100, task))
+        self.assertEqual(self.store.recover(stale_after=30), 1)
+        self.assertEqual(self.store.get(task)["status"], "queued")
+        self.assertFalse(self.store.transition(
+            task, {"planning"}, "planned", result="stale", lease_owner="planner"))
+
+    def test_lease_guarded_transition_writes_result_atomically(self):
+        task = self.store.add(str(self.repo), "plan")
+        self.assertTrue(self.store.acquire_lease(task, "worker"))
+        self.assertTrue(self.store.transition(task, {"queued"}, "planning",
+                                              lease_owner="worker"))
+        self.assertTrue(self.store.transition(task, {"planning"}, "planned",
+                                              result="planned text", lease_owner="worker"))
+        self.assertEqual(self.store.get(task)["result"], "planned text")
+        self.assertFalse(self.store.transition(task, {"planned"}, "blocked",
+                                               error="bad", lease_owner="wrong"))
+        self.assertEqual(self.store.get(task)["status"], "planned")
+        with self.assertRaisesRegex(ValueError, "lease owner"):
+            self.store.transition(task, {"planned"}, "blocked", lease_owner="")
+        self.assertTrue(self.store.release_lease(task, "worker"))
+
     def test_unknown_task_cannot_receive_lease(self):
         with self.assertRaisesRegex(ValueError,'No task'):
             self.store.acquire_lease(999,'ghost')
