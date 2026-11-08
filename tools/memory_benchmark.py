@@ -18,7 +18,7 @@ from forgeos.diagnostics import EvidenceStore
 from forgeos.model_routing import (
     local_memory_settings, process_memory, safe_model_file_budget, system_memory,
 )
-from forgeos.output_capture import run_streamed_process
+from forgeos.output_capture import MAX_VISIBLE_BYTES, run_streamed_process
 
 
 def main(argv=None):
@@ -61,7 +61,8 @@ def main(argv=None):
                 tracemalloc.stop()
             all_passed = all_passed and (
                 report["capture_complete"] and
-                bool(report["evidence_reference"]) and
+                (report["capture_source_bytes"] <= MAX_VISIBLE_BYTES
+                 or bool(report["evidence_reference"])) and
                 report["returncode"] == 0 and
                 peak < 32 * 1024 * 1024)
             final_capture = {

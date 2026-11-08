@@ -40,6 +40,17 @@ class MemoryBenchmarkTests(unittest.TestCase):
         if values["process_rss_bytes_after"] is not None:
             self.assertGreater(values["process_rss_bytes_after"], 0)
 
+    def test_small_complete_logs_do_not_require_a_separate_archive(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "memory_benchmark.py"),
+             "--mib", "1", "--check"],
+            cwd=ROOT, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr[-3000:])
+        values = json.loads(result.stdout)
+        self.assertTrue(values["complete"])
+        self.assertFalse(values["archive_recoverable"])
+        self.assertEqual(values["source_bytes"], 1024 * 1024)
+
     def test_invalid_cycle_count_fails_fast(self):
         for cycle in ("0", "11"):
             command = [sys.executable,
