@@ -65,6 +65,10 @@ def _record(root: Path, entry: Path) -> tuple[Path, dict]:
     _reject_existing_link(journal, root)
     if not entry.is_dir() or not journal.is_file() or journal.stat().st_size > 4096:
         raise ValueError("Retirement journal missing or oversized")
+    # A journal shared through a hard link could be mutated outside the
+    # managed storage tree after validation. Do not trust or delete it.
+    if journal.stat().st_nlink != 1:
+        raise ValueError("Hard-linked retirement journal is not trusted")
     try:
         data = json.loads(journal.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
@@ -220,6 +224,15 @@ def restore_download(identifier: str, *,
     model.parent.mkdir(parents=True, exist_ok=True)
     _reject_existing_link(model.parent, root)
     with _exclusive_download_lock(lock):
+        # The lock protects our own downloader, but another process can
+        # replace a journal or a destination while we waited for it.
+        # Re-read the authoritative journal and path under the lock.
+        locked_model, locked_info = _record(root, entry)
+        if locked_model != model or locked_info != info:
+            raise RuntimeError("Retirement journal changed while waiting for lock")
+        for item in (model, manifest, saved_weight, saved_manifest,
+                     partial, download_journal):
+            _reject_existing_link(item, root)
         if partial.exists() or download_journal.exists():
             raise RuntimeError("Cannot restore over unfinished GGUF download")
         stored_weight, stored_manifest = saved_weight.exists(), saved_manifest.exists()
@@ -231,9 +244,18 @@ def restore_download(identifier: str, *,
             raise RuntimeError("Retirement bytes or manifest missing")
         _validate_bytes(saved_weight if stored_weight else model, root, info)
         _validate_manifest(saved_manifest if stored_manifest else manifest, root, info)
+        # A stale symlink or newly hard-linked destination must never be
+        # accepted even if it appeared during a lengthy SHA-256 check.
+        for item in (model, manifest, saved_weight, saved_manifest):
+            _reject_existing_link(item, root)
+        if (stored_weight and model.exists() or
+                stored_manifest and manifest.exists()):
+            raise RuntimeError("Restore refuses to overwrite existing files")
         if stored_weight:
+            _single_link(saved_weight)
             _move(saved_weight, model)
         if stored_manifest:
+            _single_link(saved_manifest)
             _move(saved_manifest, manifest)
         verify_download(model, directory=root)
         (entry / "journal.json").unlink()

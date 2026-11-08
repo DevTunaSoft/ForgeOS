@@ -432,3 +432,6 @@ The Managed local GGUF window's **Choose from ForgeOS downloads** picker now inc
 ### Restore a recoverably retired local model in the desktop app
 
 Open **Managed local GGUF**, choose **Restore a retired GGUF (recoverable)** and select the appropriate retirement journal. Choose **Restore selected GGUF** and confirm. ForgeOS checks the stored SHA-256 and original manifest, refuses to overwrite an occupied destination, and puts the model back in the original revisioned folder. The model picker can then select the restored weight. Interrupted retirement or restore records can also be recovered if their journal is still valid; a record marked **needs manual inspection** is not automatically restored. Stop any externally running inference process that may use these files. This action is offline and does not delete files to reclaim storage.
+
+
+**Recovery integrity:** ForgeOS refuses recovery journals shared via filesystem hard links, checks the recovery identity again after obtaining the download lock, and checks for occupied destination files before moving weights. If recovery is rejected, do not delete the recovery journal or overwrite destination files; inspect the conflict and retry only when safe. An external program that changes files concurrently is not fully isolated by the current cooperative ForgeOS lock.

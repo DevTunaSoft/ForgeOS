@@ -95,6 +95,61 @@ class ModelRetirementTests(unittest.TestCase):
         outside.unlink()
         self.assertEqual(self.restore(ticket["id"])["status"], "restored")
 
+    def test_hardlinked_recovery_journal_is_not_trusted_or_deleted(self):
+        import os
+        ticket = self.retire()
+        journal = (self.root / ".forgeos-retired" /
+                   ticket["id"] / "journal.json")
+        outside = self.root.parent / (self.root.name + "-journal-link.json")
+        try:
+            os.link(journal, outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unsupported on this filesystem")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        with self.assertRaisesRegex(ValueError, "Hard-linked"):
+            self.restore(ticket["id"])
+        self.assertEqual(list_retired(self.root)[0]["status"],
+                         "needs_manual_inspection")
+        self.assertTrue(journal.exists())
+        outside.unlink()
+        self.assertEqual(self.restore(ticket["id"])["status"], "restored")
+
+    def test_restore_detects_journal_swap_during_lock_wait(self):
+        from forgeos import model_retirement as retirement
+        ticket = self.retire()
+        real_lock = retirement._exclusive_download_lock
+        journal = (self.root / ".forgeos-retired" /
+                   ticket["id"] / "journal.json")
+        from contextlib import contextmanager
+        @contextmanager
+        def change_journal(lock):
+            with real_lock(lock):
+                data = json.loads(journal.read_text())
+                data["identity"]["sha256"] = "f" * 64
+                journal.write_text(json.dumps(data))
+                yield
+        with patch("forgeos.model_retirement._exclusive_download_lock",
+                   side_effect=change_journal):
+            with self.assertRaisesRegex(RuntimeError, "changed while waiting"):
+                self.restore(ticket["id"])
+        self.assertFalse(self.model.exists())
+        self.assertTrue(journal.exists())
+
+    def test_restore_detects_destination_created_during_hash(self):
+        from forgeos import model_retirement as retirement
+        ticket = self.retire()
+        real_validate = retirement._validate_bytes
+        def inject_conflict(path, root, info):
+            real_validate(path, root, info)
+            self.model.write_bytes(b"important independent data")
+        with patch("forgeos.model_retirement._validate_bytes",
+                   side_effect=inject_conflict):
+            with self.assertRaisesRegex(RuntimeError, "overwrite"):
+                self.restore(ticket["id"])
+        self.assertEqual(self.model.read_bytes(), b"important independent data")
+        self.assertTrue((self.root / ".forgeos-retired" /
+                         ticket["id"] / "weights.gguf").exists())
+
     def test_partial_download_blocks_both_retire_and_restore(self):
         partial = self.model.with_name("coder.gguf.part")
         partial.write_bytes(b"partial")

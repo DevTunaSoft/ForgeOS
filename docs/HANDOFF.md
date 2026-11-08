@@ -1368,3 +1368,8 @@ Follow-up recovery hardening adds POSIX directory fsync of the newly created ret
 Security: retirement now checks that model and manifest each have exactly one filesystem hard link before and after full verification; restore validates the same requirement on both archived or interrupted original locations. This blocks moving user files whose bytes are shared with another hard-linked name. Added tests for model, manifest, and archived weight hard-link cases, plus source contract test for GUI wiring.
 
 **Verification:** run the latest SHA CI six-check matrix; no full GGUF physical Windows runtime, NTFS reparse/hardlink race simulation, file-handle contention test, or runtime process-tree memory measurement has yet been performed. Code remains experimental and PR #51 must stay draft until system acceptance.
+
+
+## 2026-11-08 restore race and journal integrity hardening
+
+After the Windows 8.3-path test fix, **commit 2c92d159 passed all six hosted checks**. This next change strengthens the existing model retirement workflow rather than adding a duplicate manager: reject hard-linked recovery journals (otherwise external names can mutate journal contents), re-read and compare the journal after acquiring the model download lock, recheck symlinks/destination conflicts immediately before each restore move, and recheck source hard-link counts. Three deterministic fault-injection tests cover journal hard links, journal swap while waiting for the lock, and destination appearance during model hashing. The new head requires CI before it is accepted. The remaining cross-process race between last check and os.replace still requires Windows native filesystem/handle acceptance and stronger atomic non-overwrite semantics.
