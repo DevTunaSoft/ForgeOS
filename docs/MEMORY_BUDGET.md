@@ -74,3 +74,19 @@ Do not claim production or a minimum specification based on GitHub CI alone.
 For 4 GiB, the intended feature set is lightweight core operation; locally
 running large models is not expected to fit. Inability to fit any installed
 model should produce a clear preflight error, never automatic cloud fallback.
+
+
+## On-demand working-set telemetry (in development)
+
+ForgeOS now has a stdlib-only native working-set probe on Windows and Linux.
+Windows reports GetProcessMemoryInfo process working set, peak working set,
+and private committed memory. Linux reads /proc/self/status VmRSS and VmHWM;
+private memory is unknown rather than guessed. No monitoring daemon or
+continuous polling is installed.
+
+Run: `python -m forgeos memory` for a one-shot system/own-process report,
+and `python tools/memory_benchmark.py --mib 12 --cycles 3 --check`
+for synthetic repeated-capture allocations and post-GC RSS readings.
+This does **not** include the Ollama process, child compilers, memory-mapped
+models or shared GPU allocations, and cannot establish the 4/8 GiB hardware
+acceptance requirements on its own.

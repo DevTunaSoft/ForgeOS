@@ -27,6 +27,71 @@ class MemorySnapshot(NamedTuple):
     available_bytes: int
 
 
+class ProcessMemorySnapshot(NamedTuple):
+    """One-shot process working set, with optional private-commit measurement."""
+    rss_bytes: int
+    peak_rss_bytes: int
+    private_bytes: int | None
+
+
+def process_memory() -> ProcessMemorySnapshot | None:
+    """Read *this* ForgeOS/Python process without agents or third-party deps.
+
+    This does not include Ollama, test subprocesses, integrated GPU or VRAM.
+    It must be called explicitly, never on a background polling loop.
+    """
+    if os.name == "nt":
+        # PROCESS_MEMORY_COUNTERS_EX matches Psapi.h on 32-bit and 64-bit
+        # Windows. Use c_size_t for all SIZE_T members.
+        class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_ulong), ("PageFaultCount", ctypes.c_ulong),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+                ("PrivateUsage", ctypes.c_size_t),
+            ]
+        record = PROCESS_MEMORY_COUNTERS_EX()
+        record.cb = ctypes.sizeof(record)
+        try:
+            kernel = ctypes.windll.kernel32
+            psapi = ctypes.windll.psapi
+            kernel.GetCurrentProcess.restype = ctypes.c_void_p
+            psapi.GetProcessMemoryInfo.argtypes = [
+                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+            psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+            process = kernel.GetCurrentProcess()
+            if psapi.GetProcessMemoryInfo(process, ctypes.byref(record), record.cb):
+                return ProcessMemorySnapshot(
+                    int(record.WorkingSetSize),
+                    int(record.PeakWorkingSetSize),
+                    int(record.PrivateUsage))
+        except (AttributeError, OSError, ValueError):
+            return None
+        return None
+    status = Path("/proc/self/status")
+    if status.is_file():
+        try:
+            readings = {}
+            with status.open("r", encoding="ascii") as stream:
+                for line in stream:
+                    if line.startswith(("VmRSS:", "VmHWM:")):
+                        key, _, rest = line.partition(":")
+                        readings[key] = int(rest.strip().split()[0]) * 1024
+            current = readings.get("VmRSS")
+            high = readings.get("VmHWM")
+            if current is not None and high is not None:
+                return ProcessMemorySnapshot(current, max(current, high), None)
+        except (OSError, ValueError, IndexError):
+            return None
+    return None
+
+
 def system_memory() -> MemorySnapshot | None:
     """Read native memory without third-party dependencies or background agents."""
     if os.name == "nt":
