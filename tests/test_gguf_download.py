@@ -220,6 +220,26 @@ class GGUFDownloadTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertTrue(_allowed_download_url(url))
 
+    def test_redirect_handler_rejects_untrusted_destination_before_request(self):
+        from urllib.request import Request
+        from forgeos.gguf_download import _SafeModelRedirects
+        handler = _SafeModelRedirects()
+        source = Request("https://huggingface.co/Owner/Model/resolve/main/a.gguf")
+        for destination in (
+                "https://unrelated.hf.co/weights",
+                "https://huggingface.co.attacker.example/weights",
+                "http://cas-bridge.xethub.hf.co/weights",
+                "https://attacker@cas-bridge.xethub.hf.co/weights"):
+            with self.subTest(destination=destination):
+                with self.assertRaisesRegex(RuntimeError, "untrusted host"):
+                    handler.redirect_request(source, None, 302, "Found", {},
+                                             destination)
+        allowed = handler.redirect_request(
+            source, None, 302, "Found", {},
+            "https://transfer.xethub.hf.co/weights")
+        self.assertEqual(allowed.full_url,
+                         "https://transfer.xethub.hf.co/weights")
+
     def test_missing_hash_and_oversize_rejected_before_disk_or_fetch(self):
         with patch("forgeos.gguf_download.list_gguf_files",
                    return_value=[{"path": FILE, "bytes": len(BODY), "sha256": None}]), \
