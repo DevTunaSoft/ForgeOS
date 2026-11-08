@@ -69,7 +69,14 @@ def main(argv=None):
     run.add_argument('id',type=int)
     run.add_argument('--workspace-parent',required=True)
     run.add_argument('--preset',default='python-unittest',choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'])
-    run.add_argument('--model',default='qwen2.5-coder:3b')
+    run.add_argument('--model',default='qwen2.5-coder:3b',
+                     help='Model name; qualified-auto requires final verified local evidence')
+    run.add_argument('--role',default='implementation',
+                     choices=('planning','implementation','review_refactor','debugging',
+                              'test_generation','security_review','documentation',
+                              'context_summarization'))
+    run.add_argument('--qualification-directory',default='',
+                     help='Optional local final-qualification evidence directory')
     for command in (plan, run):
         command.add_argument('--backend', choices=BACKENDS, default='ollama',
                              help='Local inference runtime; defaults to Ollama')
@@ -211,7 +218,10 @@ def main(argv=None):
             result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,
                                 model=_cli_model(backend=args.backend, model=args.model,
                                                    endpoint=args.endpoint),max_repairs=args.max_repairs,
-                                allow_host_tests=args.allow_host_tests,resume=args.resume)
+                                allow_host_tests=args.allow_host_tests,resume=args.resume,
+                                role=args.role,
+                                qualification_directory=(Path(args.qualification_directory)
+                                                         if args.qualification_directory else None))
             print(json.dumps(result,indent=2))
             if not result['passed']:
                 return 1

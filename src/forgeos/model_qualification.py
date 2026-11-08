@@ -4,10 +4,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+from pathlib import Path
+import re
 
 FINAL_JSON_RATE = 0.95
 FINAL_OBJECTIVE_RATE = 0.80
 QUALIFICATION_SCHEMA = 1
+MAX_QUALIFICATION_RECORD_BYTES = 64 * 1024
+MAX_QUALIFICATION_RECORDS = 128
+MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}")
+SUPPORTED_QUALIFIED_BACKENDS = frozenset({"llama.cpp"})
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,12 @@ def qualify_role_evidence(record: dict) -> dict:
     role = record.get("role")
     if not isinstance(role, str) or not role:
         raise ValueError("Qualification role required")
+    backend = record.get("backend")
+    model_name = record.get("model_name")
+    if backend not in SUPPORTED_QUALIFIED_BACKENDS:
+        raise ValueError("Backend lacks ForgeOS runtime identity attestation")
+    if not isinstance(model_name, str) or not MODEL_NAME.fullmatch(model_name):
+        raise ValueError("Invalid qualified model identifier")
     total = record.get("tasks")
     json_ok = record.get("json_successes")
     objective_ok = record.get("objective_successes")
@@ -68,6 +80,8 @@ def qualify_role_evidence(record: dict) -> dict:
         "model_sha256": model_sha,
         "runtime_sha256": runtime_sha,
         "role": role,
+        "backend": backend,
+        "model_name": model_name,
         "tasks": total,
         "json_successes": json_ok,
         "objective_successes": objective_ok,
@@ -84,8 +98,41 @@ def qualify_role_evidence(record: dict) -> dict:
     return normalized
 
 
+def load_qualification_records(directory: str | Path | None = None) -> list[dict]:
+    """Load only bounded local final-qualification JSON evidence."""
+    root = (Path(directory).expanduser() if directory is not None
+            else Path.home() / ".forgeos" / "benchmarks")
+    if not root.exists():
+        return []
+    root = root.resolve(strict=True)
+    if not root.is_dir() or root.is_symlink():
+        raise OSError("Qualification evidence directory is unsafe")
+    records = []
+    for path in sorted(root.glob("qualification-*.json")):
+        if len(records) >= MAX_QUALIFICATION_RECORDS:
+            break
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            stat = path.stat()
+            if stat.st_nlink != 1 or stat.st_size > MAX_QUALIFICATION_RECORD_BYTES:
+                continue
+            raw = path.read_bytes()
+            if len(raw) > MAX_QUALIFICATION_RECORD_BYTES:
+                continue
+            value = json.loads(raw.decode("utf-8"))
+            if isinstance(value, dict):
+                records.append(value)
+        except (OSError, UnicodeError, ValueError):
+            continue
+    return records
+
+
 def route_qualified_role(role: str, records: list[dict], *,
-                         memory_budget_bytes: int) -> dict:
+                         memory_budget_bytes: int,
+                         backend: str | None = None,
+                         model_sha256: str | None = None,
+                         runtime_sha256: str | None = None) -> dict:
     """Choose the smallest measured-qualified model that fits memory."""
     if not isinstance(role, str) or not role:
         raise ValueError("Role required")
@@ -103,6 +150,14 @@ def route_qualified_role(role: str, records: list[dict], *,
             continue
         if item["role"] != role or not item["qualified"]:
             continue
+        if backend is not None and item["backend"] != backend:
+            continue
+        if model_sha256 is not None and item["model_sha256"] != _sha(
+                model_sha256, "required model SHA-256"):
+            continue
+        if runtime_sha256 is not None and item["runtime_sha256"] != _sha(
+                runtime_sha256, "required runtime SHA-256"):
+            continue
         if item["peak_memory_bytes"] > memory_budget_bytes:
             continue
         candidates.append(item)
@@ -114,6 +169,8 @@ def route_qualified_role(role: str, records: list[dict], *,
     chosen = candidates[0]
     return {
         "role": role,
+        "backend": chosen["backend"],
+        "model_name": chosen["model_name"],
         "model_sha256": chosen["model_sha256"],
         "runtime_sha256": chosen["runtime_sha256"],
         "evidence_sha256": chosen["evidence_sha256"],

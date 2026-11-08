@@ -407,3 +407,16 @@ qualification remain disabled.
 - [x] The managed runtime is held busy during recovery so idle-unload cannot race a resumed checkpoint.
 - [x] Results are summarized in the existing Activity log and task list is refreshed when recovery completes.
 - [ ] Exercise a real interrupted managed GGUF test/repair checkpoint on physical Windows and verify process restart/recovery across an application relaunch.
+
+
+### #55 qualified execution integration
+
+The autonomous build/test/repair engine now recognizes an explicit `qualified-auto`
+mode for the ForgeOS-managed llama.cpp path. Before any prompt is sent it requires
+the active process to expose pinned model and runtime SHA-256 identities, loads only
+bounded local `qualification-*.json` evidence, applies the final 95% structured /
+80% objective gate, enforces the current managed-runtime memory ceiling, and requires
+the selected evidence to match the active model/runtime hashes. The evidence digest
+and role are persisted in task checkpoints. Invalid or missing evidence fails closed.
+Generic local endpoints and Ollama remain manual for final-qualified routing until
+ForgeOS can cryptographically attest their runtime identity; no weak fallback is used.

@@ -1557,3 +1557,18 @@ A focused compatibility audit found that `LocalChatModel` intentionally keeps th
 ### Checkpoint CI repair after managed recovery integration
 
 The first checkpoint run correctly caught compatibility assumptions in the new recovery tests. The managed recovery fixture used a non-canonical loopback endpoint without `/v1`, while production validation requires the canonical endpoint. Historical tests also still asserted that every SHA-pinned managed checkpoint must be rejected, which is no longer the contract: parsing is now allowed, but execution still requires authenticated re-attestation. Those assertions were updated to verify preserved hashes instead. The unauthenticated legacy managed checkpoint continues to fail closed with the established error wording. A test that attempted to prove the private API key was absent from the object's private `__dict__` was corrected; the security contract is that no public credential attribute or serialized checkpoint exists, not that the runtime can authenticate without storing the ephemeral secret in private memory.
+
+
+## 2026-11-08 qualified-auto task-engine integration
+
+The #55 final qualification gate is now wired into the real autonomous task engine
+for the ForgeOS-managed llama.cpp path. An explicit `qualified-auto` task resolves
+only when local bounded final evidence matches the active model SHA, runtime SHA,
+role and current memory budget. The engine changes the request to the verified
+`forgeos-managed` identity only after this gate, and persists both qualification
+role and normalized evidence SHA-256 in the task checkpoint. Missing, malformed,
+unqualified, over-budget or identity-mismatched evidence blocks before model
+generation. Recovery continues to fail closed for managed GGUF checkpoints because
+the private localhost API credential is ephemeral and authenticated process
+recreation is not yet implemented. Ollama/LM Studio/generic local endpoints are not
+claimed as final-qualified automatic routes until runtime identity can be attested.

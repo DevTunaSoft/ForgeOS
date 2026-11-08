@@ -136,6 +136,8 @@ def _execute_task(
     max_repairs: int = 2, allow_host_tests: bool = False,
     generate: Callable[[Ollama, str], str] = _generate,
     resume: bool = False, lease_owner: str = "",
+    role: str = "implementation",
+    qualification_directory: Path | None = None,
 ) -> dict:
     """Run one task in a new worktree; preserve workspace for inspection.
 
@@ -146,6 +148,8 @@ def _execute_task(
         raise ValueError("Host test execution requires explicit --allow-host-tests")
     if not isinstance(max_repairs, int) or isinstance(max_repairs, bool) or not 0 <= max_repairs <= 5:
         raise ValueError("max_repairs must be 0..5")
+    if not isinstance(role, str) or not role.strip() or len(role) > 80:
+        raise ValueError("Task role is required")
     task = store.get(task_id)
     eligible_statuses = {"blocked"} if resume else {"queued", "planned"}
     if task["status"] not in eligible_statuses:
@@ -193,7 +197,38 @@ def _execute_task(
             ws = create_workspace(task["project"], task_id, destination)
         model = model or Ollama()
         model_name = getattr(model, "model", None)
-        if model_name == "auto":
+        qualification = None
+        if model_name == "qualified-auto":
+            from .model_qualification import (
+                load_qualification_records, route_qualified_role,
+            )
+            from .model_routing import (
+                managed_runtime_memory_ceiling, system_memory,
+            )
+            backend_name = getattr(model, "backend", "ollama")
+            model_hash = getattr(model, "managed_model_sha256", None)
+            runtime_hash = getattr(model, "managed_runtime_sha256", None)
+            if (backend_name != "llama.cpp"
+                    or not isinstance(model_hash, str)
+                    or not isinstance(runtime_hash, str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", model_hash)
+                    or not re.fullmatch(r"[a-f0-9]{64}", runtime_hash)):
+                raise ValueError(
+                    "qualified-auto currently requires an active ForgeOS-managed "
+                    "llama.cpp model with pinned model/runtime SHA-256 identities")
+            memory_budget = managed_runtime_memory_ceiling(system_memory())
+            if not isinstance(memory_budget, int) or memory_budget <= 0:
+                raise RuntimeError("No safe memory budget is available for qualified routing")
+            qualification = route_qualified_role(
+                role, load_qualification_records(qualification_directory),
+                memory_budget_bytes=memory_budget, backend="llama.cpp",
+                model_sha256=model_hash, runtime_sha256=runtime_hash)
+            if qualification["model_name"] != "forgeos-managed":
+                raise RuntimeError(
+                    "Qualified evidence does not identify the active ForgeOS-managed model")
+            model_name = qualification["model_name"]
+            model.model = model_name
+        elif model_name == "auto":
             if getattr(model, "backend", "ollama") == "ollama":
                 from .model_routing import choose_installed_model
                 model_name = choose_installed_model(task["description"])
@@ -203,6 +238,11 @@ def _execute_task(
         if not isinstance(model_name, str) or not model_name.strip():
             raise ValueError("Model must expose a stable model identifier")
         contract = {"preset": preset, "max_repairs": max_repairs, "model": model_name}
+        if qualification is not None:
+            contract.update(
+                qualification_role=role,
+                qualification_evidence_sha256=qualification["evidence_sha256"],
+            )
         if getattr(model, "backend", "ollama") != "ollama":
             contract.update(backend=model.backend, endpoint=model.base)
         if model_name == "forgeos-managed":
@@ -375,7 +415,8 @@ def execute_task(
     preset: str = "python-unittest", model: Ollama | None = None,
     max_repairs: int = 2, allow_host_tests: bool = False,
     generate: Callable[[Ollama, str], str] = _generate,
-    resume: bool = False,
+    resume: bool = False, role: str = "implementation",
+    qualification_directory: Path | None = None,
 ) -> dict:
     """Acquire an exclusive task lease, then run the guarded task engine."""
     if not allow_host_tests:
@@ -389,6 +430,7 @@ def execute_task(
             store, task_id, workspace_parent, preset=preset, model=model,
             max_repairs=max_repairs, allow_host_tests=allow_host_tests,
             generate=generate, resume=resume, lease_owner=owner,
+            role=role, qualification_directory=qualification_directory,
         )
     finally:
         store.release_lease(task_id, owner)

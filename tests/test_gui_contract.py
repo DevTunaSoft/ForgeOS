@@ -294,6 +294,14 @@ class DashboardContractTests(unittest.TestCase):
                 self.assertIn(fragment, source)
         self.assertNotIn('api_key=contract', source)
 
+    def test_qualified_auto_is_exposed_without_duplicate_model_manager(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn("qualified-auto = verified", source)
+        self.assertIn('chosen_model not in (manager.model_name, "qualified-auto")', source)
+        self.assertIn('role="implementation"', source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

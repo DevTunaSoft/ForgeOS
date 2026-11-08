@@ -169,7 +169,7 @@ def launch(db_path, *, acceptance: bool = False):
     options.pack(fill="x", pady=(0, 10))
     first = ttk.Frame(options)
     first.pack(fill="x")
-    ttk.Label(first, text="Local model (auto = RAM-aware)").pack(side="left")
+    ttk.Label(first, text="Local model (auto = RAM-aware; qualified-auto = verified)").pack(side="left")
     ttk.Entry(first, textvariable=model, width=23).pack(side="left", padx=(6, 18))
     ttk.Label(first, text="Test suite").pack(side="left")
     ttk.Combobox(first, textvariable=preset, values=PRESETS,
@@ -1411,7 +1411,7 @@ def launch(db_path, *, acceptance: bool = False):
             managed_key = None
             if manager is not None and chosen_endpoint == manager.endpoint:
                 if (not manager.running() or chosen_backend != "llama.cpp"
-                        or chosen_model != manager.model_name):
+                        or chosen_model not in (manager.model_name, "qualified-auto")):
                     raise ValueError("Active managed model settings do not match")
                 managed_key = manager.api_key
                 managed["last_used"] = time.monotonic()
@@ -1460,6 +1460,7 @@ def launch(db_path, *, acceptance: bool = False):
                         preset=chosen_preset, model=selected_model(),
                         max_repairs=chosen_retries,
                         allow_host_tests=chosen_host_permission,
+                        role="implementation",
                     )
                     value = json.dumps(result, indent=2)
                 else:

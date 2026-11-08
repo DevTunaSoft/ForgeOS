@@ -15,6 +15,8 @@ def evidence(model="a", *, role="implementation", tasks=20,
         "model_sha256": model * 64,
         "runtime_sha256": "b" * 64,
         "role": role,
+        "backend": "llama.cpp",
+        "model_name": "forgeos-managed",
         "tasks": tasks,
         "json_successes": json_ok,
         "objective_successes": objective_ok,
@@ -56,6 +58,8 @@ class ModelQualificationTests(unittest.TestCase):
         self.assertEqual(chosen["model_sha256"], "1" * 64)
         self.assertEqual(chosen["selection_policy"],
                          "smallest-measured-qualified-model")
+        self.assertEqual(chosen["backend"], "llama.cpp")
+        self.assertEqual(chosen["model_name"], "forgeos-managed")
 
     def test_router_fails_closed_for_unqualified_or_over_budget(self):
         failed = evidence(json_ok=18)
@@ -81,6 +85,27 @@ class ModelQualificationTests(unittest.TestCase):
             "implementation", [invalid, valid],
             memory_budget_bytes=8_000_000_000)
         self.assertEqual(chosen["rejected_invalid_records"], 1)
+
+    def test_backend_without_runtime_attestation_is_rejected(self):
+        item = evidence()
+        item["backend"] = "ollama"
+        with self.assertRaisesRegex(ValueError, "runtime identity"):
+            qualify_role_evidence(item)
+
+    def test_loader_is_bounded_and_ignores_malformed_files(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        from forgeos.model_qualification import load_qualification_records
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "qualification-good.json").write_text(
+                json.dumps(evidence()), encoding="utf-8")
+            (root / "qualification-bad.json").write_text("{bad", encoding="utf-8")
+            (root / "other.json").write_text(json.dumps(evidence()), encoding="utf-8")
+            values = load_qualification_records(root)
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0]["model_name"], "forgeos-managed")
 
     def test_evidence_digest_changes_when_identity_changes(self):
         first = qualify_role_evidence(evidence("a"))

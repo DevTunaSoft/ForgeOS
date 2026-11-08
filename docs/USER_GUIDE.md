@@ -516,3 +516,15 @@ same cancellation and keeps the window open until the partial evidence is
 saved. The evidence records contract/objective results, timing, response byte
 counts and error types; it does not save raw model replies or project source.
 A screening pass is not final model qualification and does not enable routing.
+
+
+### Qualified automatic model use
+
+`qualified-auto` is an advanced safety mode for an already running verified
+ForgeOS-managed GGUF. It does not guess that a model is good enough. ForgeOS requires
+local final-qualification evidence for the task role, verifies that evidence against
+the exact active GGUF and llama.cpp runtime SHA-256 identities, checks the measured
+memory requirement against the current safe runtime budget, and refuses to start if
+anything does not match. The current GUI uses the implementation role for build/test/
+repair tasks. Final qualification records are not created by the five-task screening
+button; screening remains a preliminary filter only.

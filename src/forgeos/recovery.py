@@ -22,8 +22,11 @@ def _checkpoint_contract(checkpoint):
     legacy = {"preset", "max_repairs", "model"}
     extended = legacy | {"backend", "endpoint"}
     managed_extended = extended | {"managed_model_sha256", "managed_runtime_sha256"}
+    qualified_managed = managed_extended | {
+        "qualification_role", "qualification_evidence_sha256"}
     if (not isinstance(contract, dict)
-            or set(contract) not in (legacy, extended, managed_extended)):
+            or set(contract) not in (legacy, extended, managed_extended,
+                                     qualified_managed)):
         raise ValueError("Missing or invalid checkpoint execution contract")
     preset = contract["preset"]
     repairs = contract["max_repairs"]
@@ -36,14 +39,14 @@ def _checkpoint_contract(checkpoint):
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("Invalid checkpoint model identifier")
     result = {"preset": preset, "max_repairs": repairs, "model": model}
-    if set(contract) in (extended, managed_extended):
+    if set(contract) in (extended, managed_extended, qualified_managed):
         backend = contract["backend"]
         endpoint = contract["endpoint"]
         if not isinstance(backend, str) or backend not in DEFAULT_ENDPOINTS:
             raise ValueError("Invalid checkpoint local inference backend")
         if not isinstance(endpoint, str) or validate_endpoint(endpoint) != endpoint:
             raise ValueError("Invalid checkpoint local inference endpoint")
-        if set(contract) == managed_extended:
+        if set(contract) in (managed_extended, qualified_managed):
             hashes = (contract["managed_model_sha256"],
                       contract["managed_runtime_sha256"])
             if (backend != "llama.cpp" or model != "forgeos-managed"

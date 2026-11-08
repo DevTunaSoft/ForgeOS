@@ -169,6 +169,67 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual((self.repo / "app.py").read_text(),
                          "def value():\n return 42\n")
 
+
+    def test_qualified_auto_rejects_unqualified_active_model_before_generation(self):
+        from unittest.mock import patch
+        class QualifiedManaged:
+            backend = "llama.cpp"
+            base = "http://127.0.0.1:17101/v1"
+            model = "qualified-auto"
+            managed_model_sha256 = "a" * 64
+            managed_runtime_sha256 = "b" * 64
+        with patch("forgeos.model_qualification.load_qualification_records",
+                   return_value=[]), \
+             patch("forgeos.model_routing.system_memory",
+                   return_value=__import__("forgeos.model_routing",
+                       fromlist=["MemorySnapshot"]).MemorySnapshot(16*1024**3, 12*1024**3)):
+            with self.assertRaisesRegex(RuntimeError, "No measured-qualified"):
+                execute_task(
+                    self.store, self.task, self.root,
+                    model=QualifiedManaged(), allow_host_tests=True,
+                    generate=lambda *_: (_ for _ in ()).throw(
+                        AssertionError("Unqualified model prompt sent")))
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+
+    def test_qualified_auto_pins_evidence_digest_in_checkpoint(self):
+        from unittest.mock import patch
+        from forgeos.model_qualification import qualify_role_evidence
+        from forgeos.model_routing import MemorySnapshot
+        class QualifiedManaged:
+            backend = "llama.cpp"
+            base = "http://127.0.0.1:17101/v1"
+            model = "qualified-auto"
+            managed_model_sha256 = "a" * 64
+            managed_runtime_sha256 = "b" * 64
+        raw = {
+            "schema": 1, "kind": "role-qualification",
+            "model_sha256": "a" * 64, "runtime_sha256": "b" * 64,
+            "role": "implementation", "backend": "llama.cpp",
+            "model_name": "forgeos-managed", "tasks": 20,
+            "json_successes": 20, "objective_successes": 18,
+            "model_bytes": 1_000_000_000,
+            "peak_memory_bytes": 2_000_000_000,
+            "median_latency_seconds": 1.2,
+        }
+        expected = qualify_role_evidence(raw)["evidence_sha256"]
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        with patch("forgeos.model_qualification.load_qualification_records",
+                   return_value=[raw]), \
+             patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(16*1024**3, 12*1024**3)), \
+             patch("forgeos.engine._run_workspace_tests",
+                   side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(
+                    self.store, self.task, self.root,
+                    model=QualifiedManaged(), allow_host_tests=True,
+                    generate=lambda *_: manifest)
+        contract = json.loads(self.store.get(self.task)["result"])["contract"]
+        self.assertEqual(contract["model"], "forgeos-managed")
+        self.assertEqual(contract["qualification_role"], "implementation")
+        self.assertEqual(contract["qualification_evidence_sha256"], expected)
+
     def test_host_tests_require_opt_in(self):
         with self.assertRaises(ValueError):
             execute_task(self.store, self.task, self.root)
