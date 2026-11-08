@@ -62,6 +62,26 @@ def _managed_idle_due(*, last_used, now, task_busy, operation_busy,
             and now - last_used >= idle_seconds)
 
 
+def _managed_session_event(controller, *, now, last_used, task_busy,
+                           operation_busy, stop_failed=False) -> str | None:
+    """Classify one managed-model lifecycle event without extra timers.
+
+    A process crash takes priority over idle unload. Do not tamper with
+    credentials or stop the server while a task/operation is running. If
+    cleanup itself previously failed, latch until an explicit user retry
+    to avoid spawning an infinite background stop loop.
+    """
+    if (controller is None or task_busy or operation_busy or stop_failed):
+        return None
+    if not controller.running():
+        return "crashed"
+    if _managed_idle_due(
+            last_used=last_used, now=now, task_busy=False,
+            operation_busy=False):
+        return "idle"
+    return None
+
+
 def launch(db_path, *, acceptance: bool = False):
     """Create the single desktop GUI; optionally self-verify its real lifecycle."""
     if type(acceptance) is not bool:
@@ -104,7 +124,8 @@ def launch(db_path, *, acceptance: bool = False):
     page_size = 150
     events = Queue()
     managed_events = Queue(maxsize=2)
-    managed = {"controller": None, "busy": False, "last_used": None}
+    managed = {"controller": None, "busy": False, "last_used": None,
+               "unexpected_exit": False, "stop_failed": False}
     busy = {"value": False}
     closing = {"value": False}
 
@@ -874,6 +895,8 @@ def launch(db_path, *, acceptance: bool = False):
                 action, controller, outcome, error = managed_events.get_nowait()
                 managed["busy"] = False
                 if error:
+                    if action == "stop":
+                        managed["stop_failed"] = True
                     if action == "install" and controller[0].winfo_exists():
                         controller[1].set("CPU runtime installation failed: " + error)
                     status.set("Managed llama.cpp operation failed")
@@ -891,6 +914,8 @@ def launch(db_path, *, acceptance: bool = False):
                 elif action == "start":
                     managed["controller"] = controller
                     managed["last_used"] = time.monotonic()
+                    managed["unexpected_exit"] = False
+                    managed["stop_failed"] = False
                     backend.set("llama.cpp")
                     model.set(outcome["model"])
                     endpoint.set(outcome["endpoint"])
@@ -899,6 +924,7 @@ def launch(db_path, *, acceptance: bool = False):
                         outcome["endpoint"] + ", model SHA-256 " +
                         outcome["sha256"] + "; process " + str(outcome["pid"]))
                 else:
+                    was_crash = managed["unexpected_exit"]
                     if managed["controller"] is controller:
                         managed["controller"] = None
                         if model.get() == "forgeos-managed":
@@ -906,18 +932,30 @@ def launch(db_path, *, acceptance: bool = False):
                             model.set("auto")
                             endpoint.set("")
                     managed["last_used"] = None
-                    status.set("Managed local model stopped")
-                    log("Managed local llama.cpp server stopped and credentials cleared.")
+                    managed["unexpected_exit"] = False
+                    managed["stop_failed"] = False
+                    status.set(
+                        "Local llama.cpp server exited unexpectedly"
+                        if was_crash else "Managed local model stopped")
+                    log("Managed local llama.cpp credentials cleared after "
+                        + ("unexpected process exit." if was_crash
+                           else "normal server shutdown."))
         except Empty:
             pass
         controller = managed["controller"]
-        if (controller is not None
-                and _managed_idle_due(
-                    last_used=managed["last_used"], now=time.monotonic(),
-                    task_busy=busy["value"],
-                    operation_busy=managed["busy"])):
-            # Unload the memory-heavy CPU model after five minutes without
-            # requests. Never interrupt planning/editing/test/repair.
+        lifecycle = _managed_session_event(
+            controller, now=time.monotonic(), last_used=managed["last_used"],
+            task_busy=busy["value"], operation_busy=managed["busy"],
+            stop_failed=managed["stop_failed"])
+        if lifecycle == "crashed":
+            managed["unexpected_exit"] = True
+            request_managed_stop(controller)
+            log("Managed llama.cpp process exited unexpectedly; releasing "
+                "temporary credentials and switching back to Ollama. "
+                "Inspect diagnostics before explicitly restarting the model.")
+        elif lifecycle == "idle":
+            # Unload the memory-heavy CPU model after five idle minutes;
+            # avoid interrupting planning, edits, tests and repair.
             request_managed_stop(controller)
             log("Managed local model idle for 5 minutes: unloading to free RAM.")
         if not closing["value"]:
