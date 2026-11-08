@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from .core import MAX_CHECKPOINT_BYTES, Ollama
+from .local_models import DEFAULT_ENDPOINTS, create_model, validate_endpoint
 from .engine import execute_task
 
 PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
@@ -17,7 +18,9 @@ PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
 
 def _checkpoint_contract(checkpoint):
     contract = checkpoint.get("contract")
-    if not isinstance(contract, dict) or set(contract) != {"preset", "max_repairs", "model"}:
+    legacy = {"preset", "max_repairs", "model"}
+    extended = legacy | {"backend", "endpoint"}
+    if not isinstance(contract, dict) or set(contract) not in (legacy, extended):
         raise ValueError("Missing or invalid checkpoint execution contract")
     preset = contract["preset"]
     repairs = contract["max_repairs"]
@@ -29,7 +32,18 @@ def _checkpoint_contract(checkpoint):
         raise ValueError("Invalid checkpoint repair budget")
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("Invalid checkpoint model identifier")
-    return {"preset": preset, "max_repairs": repairs, "model": model}
+    result = {"preset": preset, "max_repairs": repairs, "model": model}
+    if set(contract) == extended:
+        backend = contract["backend"]
+        endpoint = contract["endpoint"]
+        if not isinstance(backend, str) or backend not in DEFAULT_ENDPOINTS:
+            raise ValueError("Invalid checkpoint local inference backend")
+        if not isinstance(endpoint, str) or validate_endpoint(endpoint) != endpoint:
+            raise ValueError("Invalid checkpoint local inference endpoint")
+        # Reuse the exact originally persisted server identity. Never
+        # substitute a port, backend, cloud endpoint, or different model.
+        result.update(backend=backend, endpoint=endpoint)
+    return result
 
 
 def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
@@ -105,7 +119,16 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
             record("skipped", {"id": task["id"], "reason": "Repair budget override mismatch"})
             continue
         try:
-            model = model_factory(model=contract["model"])
+            if "backend" in contract:
+                model = create_model(
+                    backend=contract["backend"],
+                    model=contract["model"],
+                    endpoint=contract["endpoint"],
+                )
+            else:
+                # Existing Ollama checkpoints and injected test factories
+                # preserve the same behavior as before this extension.
+                model = model_factory(model=contract["model"])
             result = execute(
                 store, task["id"], parent, preset=contract["preset"],
                 model=model, max_repairs=contract["max_repairs"],
