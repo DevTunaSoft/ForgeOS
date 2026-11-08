@@ -173,12 +173,17 @@ class ModelRetirementTests(unittest.TestCase):
                    side_effect=lambda path: observed.append(path)):
             ticket = self.retire()
             saved = self.root / ".forgeos-retired" / ticket["id"]
-            self.assertIn(saved, observed)
-            self.assertIn(self.model.parent, observed)
+            # Windows temp roots can use 8.3 aliases (RUNNER~1 vs
+            # runneradmin). Compare canonical paths, not spellings.
+            self.assertIn(saved.resolve(), [p.resolve() for p in observed])
+            self.assertIn(self.model.parent.resolve(),
+                          [p.resolve() for p in observed])
             observed.clear()
             self.restore(ticket["id"])
-        self.assertIn(self.model.parent, observed)
-        self.assertIn(self.root / ".forgeos-retired", observed)
+        self.assertIn(self.model.parent.resolve(),
+                      [p.resolve() for p in observed])
+        self.assertIn((self.root / ".forgeos-retired").resolve(),
+                      [p.resolve() for p in observed])
 
     def test_directory_sync_fault_after_weight_move_retains_recovery_id(self):
         from forgeos import model_retirement as retirement
