@@ -90,3 +90,13 @@ for synthetic repeated-capture allocations and post-GC RSS readings.
 This does **not** include the Ollama process, child compilers, memory-mapped
 models or shared GPU allocations, and cannot establish the 4/8 GiB hardware
 acceptance requirements on its own.
+
+## Hosted Windows packaged GUI lifecycle check (PR #37)
+
+The frozen Windows executable is now exercised by GitHub Actions with an
+actual hidden Tkinter window, real widgets, notebook tabs, event loop and
+clean close(), reporting one-shot own-process RSS in local JSON. A 90-second
+outer watchdog prevents hung UI startup from stalling packaging indefinitely.
+This is a hosted Windows GUI lifecycle test, not an installed
+4/8 GiB Windows user device, local Ollama inference, or autonomous
+end-to-end acceptance. Such real-world tests remain mandatory.

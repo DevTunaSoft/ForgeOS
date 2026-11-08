@@ -493,3 +493,22 @@ nonmaterialized CLI exports, full Unicode/output preservation, streaming
 cursor early close, and one shared offline memory-report source. Full CI and
 frozen AppContainer packaging/smoke must pass; 4/8 GiB physical acceptance
 remains unverified.
+
+## PR #37: frozen Tkinter GUI lifecycle acceptance (pending CI)
+
+Branch feat/frozen-gui-startup-acceptance, based on PR #36 merged commit
+2c3af3d8270a7b915ddb492bc16b41915f2be1bb.
+gui.launch(db_path, acceptance=True) now initializes normal widgets with a
+temporary database, withdraws the window, validates tab names and queue
+initialization on the Tk main thread, processes a short event-loop cycle,
+samples its own process RAM, and invokes the standard close() cleanup.
+Tk construction errors explicitly close the SQLite Store.
+The existing frozen executable launcher supports --gui-acceptance-report
+and writes local JSON, failing with a nonzero exit on unverifiable startup.
+Windows packaging CI invokes the *packaged EXE* under a 90s watchdog
+and validates report fields, then still executes the existing zero-capability
+AppContainer smoke with no fallback. Headless regression tests mock success
+and failure without an X display; hosted Windows performs actual GUI startup.
+Remaining: real 4/8 GiB physical/VM user desktop acceptance, Ollama
+connectivity, edit/test/repair execution, crash recovery, memory soak,
+and any required security hardening from observed runtime defects.

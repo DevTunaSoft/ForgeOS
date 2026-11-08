@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from queue import Empty, Queue
 import threading
@@ -26,12 +27,21 @@ def _format_task(task: dict) -> tuple:
             task["description"][:140])
 
 
-def launch(db_path):
+def launch(db_path, *, acceptance: bool = False):
+    """Create the single desktop GUI; optionally self-verify its real lifecycle."""
+    if type(acceptance) is not bool:
+        raise ValueError("acceptance must be boolean")
+    started_at = time.perf_counter()
+    report = {"gui_started": False, "closed_cleanly": False} if acceptance else None
     store = Store(db_path)
     # Interrupted tasks must not silently restart: a worktree may contain
     # generated changes that require manual inspection.
     recovered = store.recover()
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except BaseException:
+        store.close()
+        raise
     root.title("ForgeOS | Autonomous Development Dashboard")
     root.geometry("1160x790")
     root.minsize(880, 620)
@@ -377,5 +387,38 @@ def launch(db_path):
     refresh()
     if recovered:
         log(f"Recovered {recovered} interrupted task statuses. Edit/test tasks are blocked for workspace inspection; worktrees were not deleted.")
+    if acceptance:
+        root.withdraw()
+        def verify_gui():
+            try:
+                root.update_idletasks()
+                names = [tabs.tab(tab, "text") for tab in tabs.tabs()]
+                if names != ["Development", "Activity & diagnostics"]:
+                    raise RuntimeError("Unexpected GUI tab configuration")
+                if not tree.winfo_exists():
+                    raise RuntimeError("Task queue was not constructed")
+                from .model_routing import process_memory
+                memory = process_memory()
+                if memory is None or memory.rss_bytes <= 0:
+                    raise RuntimeError("GUI process working-set measurement unavailable")
+                report.update({
+                    "gui_started": True,
+                    "tabs": names,
+                    "queue_initialized": True,
+                    "ram_after_gui_startup_bytes": memory.rss_bytes if memory else None,
+                    "startup_elapsed_seconds": round(time.perf_counter() - started_at, 3),
+                    "scope": "Frozen Tk widgets and event loop; not Ollama/user hardware",
+                })
+            except Exception as exc:
+                report["error"] = type(exc).__name__ + ": " + str(exc)
+            finally:
+                try:
+                    close()
+                except Exception as exc:
+                    report["error"] = type(exc).__name__ + ": " + str(exc)
+                else:
+                    report["closed_cleanly"] = True
+        root.after(300, verify_gui)
     poll()
     root.mainloop()
+    return report if acceptance else None
