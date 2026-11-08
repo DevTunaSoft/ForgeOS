@@ -300,7 +300,7 @@ class DashboardContractTests(unittest.TestCase):
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertIn("qualified-auto = verified", source)
         self.assertIn('chosen_model not in (manager.model_name, "qualified-auto")', source)
-        self.assertIn('role="implementation"', source)
+        self.assertIn("role=chosen_role", source)
 
     def test_final_qualification_gui_reuses_managed_benchmark_worker(self):
         from pathlib import Path
@@ -317,7 +317,7 @@ class DashboardContractTests(unittest.TestCase):
                 'record["runtime_failures"]',
                 'record["safety_violations"]',
                 'record.get("qualified", False)',
-                'partial evidence is not routeable'):
+                'routing remains disabled'):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 

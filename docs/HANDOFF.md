@@ -1629,3 +1629,8 @@ identity/memory/evidence checks. `qualified-auto` planning now requires final
 current memory budget before the model receives a prompt. Existing plan output
 remains plain text so task/CLI compatibility is preserved. Tests cover successful
 qualified planning and the no-evidence fail-closed path.
+
+
+### GUI contract repair after dynamic task roles
+
+The first validation of the shared task-role selector found two stale source-contract assertions, not runtime defects. One still required the removed hardcoded role="implementation" path; it now requires role=chosen_role. The final-qualification GUI test also expected dialog-local wording removed by the poll-scope repair; it now asserts the persisted Activity warning that cancelled evidence leaves routing disabled.
