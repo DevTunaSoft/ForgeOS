@@ -36,7 +36,7 @@ def _safe_name(name: str) -> tuple[str, ...]:
     segments = name.split("/")
     if len(segments) > 8 or not all(SAFE_PART.fullmatch(x) and
                                     x not in (".", "..") and
-                                    not x.rstrip(". ").upper() in
+                                    not x.split(".", 1)[0].upper() in
                                     {"CON", "PRN", "AUX", "NUL", "COM1", "LPT1"}
                                     for x in segments):
         raise ValueError("Unsafe GGUF file path")
@@ -66,10 +66,11 @@ def _reject_existing_link(target: Path, root: Path) -> None:
 @contextmanager
 def _exclusive_download_lock(lock_path: Path):
     """Kernel-held lock releases on process exit without permanent stale locks."""
-    with lock_path.open("a+b") as fd:
-        fd.seek(0)
-        fd.write(b"\x00")
-        fd.flush()
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(descriptor, "r+b") as fd:
+        if fd.seek(0, os.SEEK_END) == 0:
+            fd.write(b"\x00")
+            fd.flush()
         fd.seek(0)
         if os.name == "nt":
             import msvcrt
