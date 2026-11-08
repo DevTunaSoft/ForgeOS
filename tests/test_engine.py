@@ -122,6 +122,50 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual((self.repo / "app.py").read_text(),
                          "def value():\n return 42\n")
 
+    def test_managed_model_hashes_are_pinned_in_checkpoint_without_secret(self):
+        from unittest.mock import patch
+        class PrivateLocalModel:
+            backend = "llama.cpp"
+            base = "http://127.0.0.1:17101/v1"
+            model = "forgeos-managed"
+            managed_model_sha256 = "a" * 64
+            managed_runtime_sha256 = "b" * 64
+            api_key = "SECRET-MUST-NEVER-BE-IN-CHECKPOINT"
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        with patch("forgeos.engine._run_workspace_tests",
+                   side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(
+                    self.store, self.task, self.root,
+                    model=PrivateLocalModel(), allow_host_tests=True,
+                    generate=lambda _model, _prompt: manifest)
+        snapshot = json.loads(self.store.get(self.task)["result"])
+        contract = snapshot["contract"]
+        self.assertEqual(contract["model"], "forgeos-managed")
+        self.assertEqual(contract["backend"], "llama.cpp")
+        self.assertEqual(contract["managed_model_sha256"], "a" * 64)
+        self.assertEqual(contract["managed_runtime_sha256"], "b" * 64)
+        self.assertNotIn("SECRET-MUST-NEVER", json.dumps(snapshot))
+        self.assertEqual(self.store.get(self.task)["status"], "testing")
+        self.store.recover()
+        from forgeos.recovery import _checkpoint_contract
+        with self.assertRaisesRegex(ValueError, "authenticated process recreation"):
+            _checkpoint_contract(json.loads(self.store.get(self.task)["result"]))
+
+    def test_managed_model_without_verified_hashes_fails_before_generation(self):
+        class UnpinnedModel:
+            backend = "llama.cpp"
+            base = "http://127.0.0.1:17101/v1"
+            model = "forgeos-managed"
+        with self.assertRaisesRegex(ValueError, "pinned model/runtime SHA"):
+            execute_task(self.store, self.task, self.root,
+                         model=UnpinnedModel(), allow_host_tests=True,
+                         generate=lambda *_: (_ for _ in ()).throw(
+                             AssertionError("Unpinned model prompt sent")))
+        self.assertEqual((self.repo / "app.py").read_text(),
+                         "def value():\\n return 42\\n")
+
     def test_host_tests_require_opt_in(self):
         with self.assertRaises(ValueError):
             execute_task(self.store, self.task, self.root)

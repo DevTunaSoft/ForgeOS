@@ -6,6 +6,7 @@ replays the execution contract persisted with each checkpoint.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .core import MAX_CHECKPOINT_BYTES, Ollama
@@ -50,7 +51,7 @@ def _checkpoint_contract(checkpoint):
                       contract["managed_runtime_sha256"])
             if (backend != "llama.cpp" or model != "forgeos-managed"
                     or any(not isinstance(v, str) or
-                           not __import__("re").fullmatch(r"[a-f0-9]{64}", v)
+                           not re.fullmatch(r"[a-f0-9]{64}", v)
                            for v in hashes)):
                 raise ValueError("Invalid managed GGUF checkpoint identity")
             raise ValueError(
