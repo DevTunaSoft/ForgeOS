@@ -39,7 +39,7 @@ does not prove real llama.cpp inference or Windows memory performance.
 The `.github/workflows/windows-exe.yml` workflow on `main`:
 
 1. Uses Python 3.12 on a GitHub-hosted Windows runner.
-2. Compiles Python source and executes the regression tests.
+2. Compiles Python source. The separate required **Foundation tests** workflow executes the full regression suite on Windows and Linux (Python 3.10/3.12), so packaging does not duplicate that suite.
 3. Builds a one-file windowed PyInstaller executable.
 4. Checks that the EXE exists and has a nontrivial size.
 5. Executes a packaged `--smoke` command for frozen imports.

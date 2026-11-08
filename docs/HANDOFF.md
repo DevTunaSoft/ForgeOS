@@ -1424,3 +1424,15 @@ committed-memory accounting and its configured ceiling. The existing native
 Windows memory-limit test now also verifies the accounting helper instead of
 spawning a duplicate test process. The existing managed-model dialog gains a
 single **Show model memory** action; there is no background sampler.
+
+
+## 2026-11-08 CI packaging de-duplication
+
+After the feature-branch trigger duplication was removed, a second CI overlap
+remained: `windows-exe.yml` executed the entire unittest suite even though the
+required Foundation matrix already executes the same suite on Windows Python
+3.12 (and additionally Windows 3.10 plus both Linux versions). The packaging
+workflow now owns only source compilation, PyInstaller packaging, frozen import
+smoke, real Tk lifecycle/paging acceptance and secure AppContainer smoke.
+Regression coverage remains mandatory in the separate Foundation workflow.
+This reduces repeated CI work without removing a validation category.
