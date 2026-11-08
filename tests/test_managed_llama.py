@@ -6,11 +6,13 @@ inference or a real Windows process-tree ownership acceptance test.
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
+from urllib.request import Request
 
 from forgeos.local_models import LocalChatModel, create_model
 from forgeos.managed_llama import (
@@ -143,6 +145,101 @@ class ManagedLlamaTests(unittest.TestCase):
             self.assertEqual(observed, {
                 "PATH": "C:/bin", "SYSTEMROOT": "C:/Windows",
                 "LOCALAPPDATA": "C:/Users/u/AppData/Local"})
+
+    @unittest.skipIf(os.name == "nt", "POSIX shebang-based runtime harness")
+    def test_real_local_process_authentication_inference_and_clean_shutdown(self):
+        """Exercise actual OS process, loopback HTTP, bearer auth and teardown.
+
+        Uses a tiny explicitly local Python HTTP stub, never downloads or
+        runs llama.cpp weights. A real Windows/GGUF acceptance is separate.
+        """
+        self.exe.write_text(r'''#!/usr/bin/env python3
+import argparse
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+parser = argparse.ArgumentParser(add_help=False)
+for arg in ("host", "port", "alias", "api-key-file"):
+    parser.add_argument("--" + arg, required=True)
+options, other = parser.parse_known_args()
+with open(options.api_key_file, encoding="ascii") as secret:
+    api_key = secret.read().strip()
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def reply(self, status, data):
+        raw = json.dumps(data).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def authenticated(self):
+        return self.headers.get("Authorization") == "Bearer " + api_key
+
+    def do_GET(self):
+        if self.path == "/health":
+            self.reply(200, {"status": "ok"})
+        elif self.path == "/v1/models":
+            if not self.authenticated():
+                self.reply(401, {"error": "missing bearer"})
+                return
+            self.reply(200, {"data": [{"id": options.alias}]})
+        else:
+            self.reply(404, {"error": "unknown path"})
+
+    def do_POST(self):
+        if self.path != "/v1/chat/completions":
+            self.reply(404, {"error": "unknown path"})
+            return
+        if not self.authenticated():
+            self.reply(401, {"error": "missing bearer"})
+            return
+        size = int(self.headers.get("Content-Length", "0"))
+        if size < 1 or size > 65536:
+            self.reply(413, {"error": "oversized request"})
+            return
+        request = json.loads(self.rfile.read(size))
+        if not request.get("messages"):
+            self.reply(400, {"error": "missing messages"})
+            return
+        self.reply(200, {"choices": [{
+            "finish_reason": "stop",
+            "message": {"content": "{\\\"files\\\":[]}"}
+        }]})
+
+ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
+''', encoding="utf-8")
+        self.exe.chmod(0o700)
+        binary_sha = hashlib.sha256(self.exe.read_bytes()).hexdigest()
+        controller = ManagedLlamaServer()
+        try:
+            with patch("forgeos.managed_llama.safe_model_file_budget",
+                       return_value=1024):
+                details = controller.start(
+                    executable=self.exe, executable_sha256=binary_sha,
+                    model_path=self.model, timeout=12, context=512, threads=1)
+            self.assertTrue(controller.running())
+            self.assertGreater(details["pid"], 1)
+            client = LocalChatModel(
+                backend="llama.cpp", model=ALIAS,
+                endpoint=details["endpoint"], api_key=controller.api_key)
+            self.assertEqual(client.installed()[0]["name"], ALIAS)
+            self.assertEqual(client.generate_edits("Create no files"),
+                             '{"files":[]}')
+            from forgeos.local_models import _open
+            with self.assertRaises(HTTPError) as unauthenticated:
+                with _open(Request(details["endpoint"] + "/models"), timeout=3):
+                    pass
+            self.assertEqual(unauthenticated.exception.code, 401)
+        finally:
+            controller.stop()
+        self.assertFalse(controller.running())
+        self.assertIsNone(controller.api_key)
+        self.assertIsNone(controller.endpoint)
 
     def test_installed_cpu_rechecks_official_archive_and_every_dll(self):
         controller = ManagedLlamaServer()
