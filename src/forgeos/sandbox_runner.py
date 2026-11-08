@@ -89,18 +89,23 @@ def run_pytest() -> int:
         from .test_runtime import RUNTIME_DIR
         logfile = root / RUNTIME_DIR / "pytest-log.txt"
         raw_log = os.environ.get("FORGEOS_TEST_LOG_FILE", "")
+        raw_output = os.environ.get("FORGEOS_TEST_OUTPUT_FILE", "")
         supplied = Path(raw_log) if raw_log else None
-        # Windows may normalize a temporary path or 8.3/casing when
-        # resolving cwd. Compare the canonical OWNED parent, not its
-        # spelling, and still reject a renamed/logged external file.
-        if (supplied is None or not supplied.is_absolute()
+        primary = Path(raw_output) if raw_output else None
+        # The TRUSTED parent validates both paths, reparse points, and the
+        # snapshot root *before* launching the child. Within a zero-capability
+        # AppContainer, re-resolving .forgeos-runtime can raise WinError 5
+        # even when opening a known, granted child file is permitted.
+        # Compare the two snapshot-owned paths lexically without a second
+        # directory open/resolve, and let the parent watchdog catch link
+        # substitutions, oversize outputs and unsafe directory changes.
+        if (supplied is None or primary is None
+                or not supplied.is_absolute() or not primary.is_absolute()
                 or supplied.name != "pytest-log.txt"
+                or primary.name != "test-output.txt"
                 or supplied.parent.name != RUNTIME_DIR
-                or supplied.parent.is_symlink()
-                or not supplied.parent.is_dir()
-                or supplied.parent.resolve(strict=True) !=
-                   logfile.parent.resolve(strict=True)
-                or supplied.is_symlink()):
+                or primary.parent.name != RUNTIME_DIR
+                or supplied != primary.with_name("pytest-log.txt")):
             raise RuntimeError("Secure pytest log path is invalid")
         logfile = supplied
         sys.path.insert(0, str(root))
