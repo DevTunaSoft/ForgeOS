@@ -308,11 +308,16 @@ class ManagedLlamaServer:
         job = self._windows_job
         self._windows_job = None
         try:
+            job_error = None
             if job is not None:
-                # All child processes are terminated when the job closes.
-                _release_windows_job(job)
+                # A Windows Job Object release can fail. Do not skip the
+                # process cleanup when the native API reports an error.
+                try:
+                    _release_windows_job(job)
+                except OSError as exc:
+                    job_error = exc
             if process is not None:
-                if process.poll() is None and job is None:
+                if process.poll() is None and (job is None or job_error is not None):
                     if os.name != "nt":
                         _terminate_posix_group(process.pid, signal.SIGTERM)
                     process.terminate()
@@ -323,6 +328,8 @@ class ManagedLlamaServer:
                         _terminate_posix_group(process.pid, signal.SIGKILL)
                     process.kill()
                     process.wait(timeout=4)
+            if job_error is not None:
+                raise job_error
         finally:
             temporary = self._secrets
             self._secrets = None

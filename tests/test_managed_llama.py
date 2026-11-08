@@ -362,6 +362,26 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                 grouped.assert_called_once()
                 proc.terminate.assert_called_once()
 
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object cleanup")
+    def test_job_release_failure_still_terminates_process_and_erases_secret(self):
+        controller = ManagedLlamaServer()
+        proc = Mock()
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+        controller.process = proc
+        controller._windows_job = 1234
+        controller.api_key = "sensitive-test-key"
+        controller.endpoint = "http://127.0.0.1:12345/v1"
+        with patch("forgeos.managed_llama._release_windows_job",
+                   side_effect=OSError("native job release failed")):
+            with self.assertRaisesRegex(OSError, "native job release failed"):
+                controller.stop()
+        proc.terminate.assert_called_once_with()
+        proc.wait.assert_called_once_with(timeout=4)
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+        self.assertIsNone(controller.endpoint)
+
     def test_failed_server_start_does_not_leave_process_or_secret(self):
         proc = Mock()
         proc.poll.return_value = 7
