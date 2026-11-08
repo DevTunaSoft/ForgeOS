@@ -126,7 +126,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 
 **Owners:** `model_routing.py`, lifecycle controller, existing `MEMORY_BUDGET.md` and process telemetry.
 
-- [ ] Configurable global memory ceiling and OS-reserve margin; include ForgeOS, runtime process tree, model mapping, KV cache, compilers, test runner and shared GPU allocations where measurable.
+- [x] **Partial experimental enforcement:** managed Windows llama-server now receives a Job Object job-memory ceiling derived from current available physical RAM with a preserved OS/workload reserve. This is not yet user-configurable and does not measure model mappings, KV cache, compilers or shared GPU allocations; those measured/global-budget pieces remain open.
 - [ ] Admission preflight using conservative weights + context/KV estimate + reserve + competing child-process usage; reject or downshift before Windows approaches instability.
 - [ ] Lazy load one selected model; reuse warm model for adjacent tasks, idle-unload after policy timeout; bound the number of heavyweight executions.
 - [ ] Native CPU-thread tuning and benchmarking (physical cores vs hyperthreads), Windows processor affinity where justified, safe worker queue limits and cancellation.

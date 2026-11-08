@@ -24,7 +24,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
 from .local_models import LocalChatModel, _open
-from .model_routing import local_memory_settings, safe_model_file_budget, system_memory
+from .model_routing import (
+    local_memory_settings, managed_runtime_memory_ceiling,
+    safe_model_file_budget, system_memory,
+)
 
 CHUNK_BYTES = 1024 * 1024
 MAX_MANIFEST_BYTES = 4096
@@ -204,7 +207,8 @@ class _WindowsNativeProcess:
 
 
 def _launch_windows_suspended_job(argv: list[str], cwd: Path,
-                                  env: dict[str, str]):
+                                  env: dict[str, str],
+                                  memory_limit_bytes: int):
     """Create llama-server suspended, attach Job Object, then resume it.
 
     No child instruction can execute before Job Object assignment, eliminating
@@ -213,6 +217,9 @@ def _launch_windows_suspended_job(argv: list[str], cwd: Path,
     import ctypes
     from . import windows_containment as win
 
+    if (type(memory_limit_bytes) is not int
+            or memory_limit_bytes < 512 * 1024**2):
+        raise ValueError("Managed Windows memory ceiling is too small")
     command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline(argv))
     environment = win._environment_block(env)
     environment_pointer = (ctypes.cast(environment, ctypes.c_void_p)
@@ -233,8 +240,10 @@ def _launch_windows_suspended_job(argv: list[str], cwd: Path,
         limits = win.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         limits.BasicLimitInformation.LimitFlags = (
             win.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            | win.JOB_OBJECT_LIMIT_ACTIVE_PROCESS)
+            | win.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            | win.JOB_OBJECT_LIMIT_JOB_MEMORY)
         limits.BasicLimitInformation.ActiveProcessLimit = 8
+        limits.JobMemoryLimit = memory_limit_bytes
         if not win.kernel32.SetInformationJobObject(
                 job, win.JobObjectExtendedLimitInformation,
                 ctypes.byref(limits), ctypes.sizeof(limits)):
@@ -348,11 +357,17 @@ class ManagedLlamaServer:
         # Recheck available physical memory after verifying large model
         # and binary bytes, immediately before starting the native server.
         # A competing app may have consumed RAM during the slow SHA-256 pass.
-        if model_file.stat().st_size > safe_model_file_budget(system_memory()):
+        memory = system_memory()
+        if model_file.stat().st_size > safe_model_file_budget(memory):
             raise RuntimeError(
                 "Free RAM fell below the conservative model budget "
                 "before native inference startup; close other apps "
                 "or choose a smaller verified GGUF")
+        runtime_ceiling = managed_runtime_memory_ceiling(memory)
+        if os.name == "nt" and not runtime_ceiling:
+            raise RuntimeError(
+                "ForgeOS could not reserve enough Windows memory headroom "
+                "for managed local inference")
 
         try:
             self._secrets = tempfile.TemporaryDirectory(prefix="forgeos-llama-")
@@ -372,7 +387,7 @@ class ManagedLlamaServer:
                     "--no-webui"]
             if os.name == "nt":
                 self.process, self._windows_job = _launch_windows_suspended_job(
-                    argv, binary.parent, _child_environment())
+                    argv, binary.parent, _child_environment(), runtime_ceiling)
             else:
                 self.process = subprocess.Popen(
                     argv, shell=False, cwd=str(binary.parent),
@@ -405,7 +420,8 @@ class ManagedLlamaServer:
                         raise RuntimeError("Managed server reported the wrong model")
                     return {"endpoint": self.endpoint, "model": ALIAS,
                             "sha256": self.model_sha256, "runtime_sha256":
-                                self.runtime_sha256, "pid": self.process.pid}
+                                self.runtime_sha256, "pid": self.process.pid,
+                            "memory_ceiling_bytes": runtime_ceiling}
                 except (HTTPError, URLError, TimeoutError, OSError,
                         ConnectionError, ValueError):
                     pass

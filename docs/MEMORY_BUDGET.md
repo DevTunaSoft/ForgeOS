@@ -196,3 +196,21 @@ themselves, so downstream applications must also manage retention.
 The managed local llama.cpp startup now refuses explicit context sizes above the **current** adaptive `local_memory_settings().num_ctx` limit. A caller can select a smaller context; it cannot force an oversized KV-cache request simply by overriding the default on a low-RAM host. After SHA-256 verification of the GGUF and runtime binary, ForgeOS again samples available RAM immediately before launching the native server and rejects the model if its file size no longer fits the canonical conservative budget. No additional background watcher, resident memory cache, or polling daemon was added.
 
 These are **preflight heuristics, not guaranteed peak-RAM quotas**. llama.cpp still allocates architecture-specific KV cache, compute buffers and memory mappings; another process can change free RAM between the final check and allocation. Real Windows 8/16/32 GiB runtime acceptance and process-tree telemetry remain open.
+
+
+## Managed Windows job-wide memory ceiling (draft PR #51)
+
+ForgeOS now derives a coarse managed-runtime ceiling from the same native
+system-memory snapshot used for model admission. The policy preserves at least
+1 GiB and up to 4 GiB (or one quarter of physical RAM) for Windows/the rest of
+the workload, then applies the remaining currently available physical-memory
+headroom as a **Job Object job-memory limit** before the suspended
+`llama-server` process is resumed. This extends the existing Job Object; it
+does not add a monitor, daemon, polling thread, or second memory policy.
+
+The limit is deliberately a coarse safety ceiling, not an estimate of the
+model's true peak RSS/commit or KV-cache size. If Windows cannot establish at
+least a 512 MiB managed ceiling, ForgeOS refuses managed inference. Real
+llama.cpp behavior under the cap, memory-mapped weights, integrated-GPU/shared
+memory, OOM exit diagnostics and 8/16/32 GiB tuning still require physical
+Windows measurements.

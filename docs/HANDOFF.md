@@ -1398,3 +1398,17 @@ A branch/roadmap/issues audit was performed after repeated-looking GitHub activi
 ## 2026-11-08 roadmap drift correction and Actions labeling
 
 A second anti-duplication audit compared the current branch to `runtime_installer.py`, `managed_llama.py`, `model_inventory.py`, `model_retirement.py` and the active roadmap. Stale roadmap rows incorrectly described the pinned runtime installer and bounded GGUF inventory/lifecycle as wholly planned. They are now marked partial experimental implementations with the genuinely missing acceptance work separated explicitly. GitHub Actions workflows also now set distinct run names (Foundation tests, Windows EXE, Documentation) so the All workflows page no longer presents three different PR workflows under the same ambiguous PR-title heading. This is documentation/CI clarity work only; it does not claim real native GGUF inference acceptance.
+
+
+## 2026-11-08 managed local-model memory-governance checkpoint
+
+After the anti-duplication audit, work moved to the distinct issue #55 gap
+rather than revisiting retirement/recovery. The existing Windows managed
+llama-server Job Object now receives a job-wide memory ceiling derived from
+the canonical system-memory snapshot while preserving OS/workload headroom.
+The process is still created suspended, so the limit is configured before any
+llama-server instruction executes. The one-shot memory report exposes the same
+ceiling. Tests cover deterministic 4/8/32 GiB policy cases and, on hosted
+Windows, query the native Job Object to verify `JOB_OBJECT_LIMIT_JOB_MEMORY`
+and the exact configured limit. This is an enforcement primitive, not proof
+that a particular GGUF fits; real model OOM behavior and tuning remain open.

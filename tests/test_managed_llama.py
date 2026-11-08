@@ -363,6 +363,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value={"num_ctx": 8192}),
               patch("forgeos.managed_llama.safe_model_file_budget",
                     return_value=8) as budget,
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
               patch("forgeos.managed_llama.system_memory"),
               patch("forgeos.managed_llama.subprocess.Popen") as spawn):
             with self.assertRaisesRegex(RuntimeError, "Free RAM fell"):
@@ -374,6 +376,41 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             spawn.assert_not_called()
         self.assertIsNone(controller.process)
         self.assertIsNone(controller.api_key)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object memory limit")
+    def test_windows_managed_job_applies_memory_ceiling(self):
+        import ctypes
+        from forgeos import windows_containment as win
+        from forgeos.managed_llama import (
+            _launch_windows_suspended_job, _release_windows_job)
+        import sys
+        proc = None
+        job = None
+        try:
+            ceiling = 768 * 1024**2
+            proc, job = _launch_windows_suspended_job(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                Path.cwd(), {}, ceiling)
+            limits = win.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            returned = ctypes.c_ulong()
+            self.assertTrue(win.kernel32.QueryInformationJobObject(
+                job, win.JobObjectExtendedLimitInformation,
+                ctypes.byref(limits), ctypes.sizeof(limits),
+                ctypes.byref(returned)))
+            self.assertTrue(
+                limits.BasicLimitInformation.LimitFlags
+                & win.JOB_OBJECT_LIMIT_JOB_MEMORY)
+            self.assertEqual(int(limits.JobMemoryLimit), ceiling)
+        finally:
+            if job is not None:
+                _release_windows_job(job)
+            if proc is not None:
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                proc.close()
 
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):
         from forgeos.managed_llama import _verified_model, _verified_runtime
@@ -395,6 +432,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
               patch("forgeos.managed_llama._open", side_effect=read_health),
               patch("forgeos.managed_llama.LocalChatModel.installed",
                     return_value=[{"name": ALIAS}]),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=3 * 1024**3),
               patch("forgeos.managed_llama.subprocess.Popen",
                     return_value=proc) as launch,
               patch("forgeos.managed_llama._launch_windows_suspended_job",
@@ -409,6 +448,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(info["model"], ALIAS)
             self.assertEqual(info["sha256"], self.model_sha)
             self.assertEqual(info["runtime_sha256"], self.exe_sha)
+            self.assertEqual(info["memory_ceiling_bytes"], 3 * 1024**3)
             self.assertTrue(server.running())
             command = (native_launch.call_args.args[0]
                        if os.name == "nt" else launch.call_args.args[0])
@@ -438,6 +478,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertIsNone(server.process)
             if __import__("os").name == "nt":
                 native_launch.assert_called_once()
+                self.assertEqual(native_launch.call_args.args[3], 3 * 1024**3)
                 launch.assert_not_called()
                 released.assert_called_once_with(1234)
                 proc.terminate.assert_not_called()
@@ -530,7 +571,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         try:
             proc, job = _launch_windows_suspended_job(
                 [sys.executable, "-c", "import time; time.sleep(30)"],
-                Path.cwd(), {})
+                Path.cwd(), {}, 1024**3)
             self.assertIsNotNone(job)
             self.assertIsNone(proc.poll())
             _release_windows_job(job)
