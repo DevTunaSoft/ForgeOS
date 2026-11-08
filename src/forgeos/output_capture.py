@@ -28,7 +28,8 @@ CHUNK_BYTES = 64 * 1024
 def _is_plain_path(path: Path, *, directory: bool) -> bool:
     """Reject reparse points, junctions and symlinks, without following them."""
     info = path.lstat()
-    if info.st_file_attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0) if hasattr(info, "st_file_attributes") else False:
+    attrs = getattr(info, "st_file_attributes", 0)
+    if attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
         return False
     return stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
 

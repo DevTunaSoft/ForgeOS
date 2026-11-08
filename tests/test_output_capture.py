@@ -158,12 +158,10 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
                 return 1
         file = self.root / "test-output.txt"
         file.write_bytes(b"small")
-        class SyntheticStream:
-            def fileno(self): return self._file.fileno()
-            def __init__(self, file): self._file = file
         kernel = FakeKernel()
         with tempfile.TemporaryFile(mode="w+b") as stdout:
-            file.write_bytes(b"0" * (MAX_RAW_BYTES + 1))
+            with file.open("wb") as sink:
+                sink.truncate(MAX_RAW_BYTES + 1)
             with self.assertRaisesRegex(OSError, "Child-generated test output"):
                 wait_native_output_bounded(
                     1, 2, stdout, 2, kernel32=kernel, wait_timeout=258,
@@ -228,7 +226,8 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         kernel = Completed()
         file = self.root / "test-output.txt"
         with tempfile.TemporaryFile(mode="w+b") as stdout:
-            file.write_bytes(b"z" * (MAX_RAW_BYTES + 1))
+            with file.open("wb") as sink:
+                sink.truncate(MAX_RAW_BYTES + 1)
             with self.assertRaisesRegex(OSError, "Child-generated test output"):
                 wait_native_output_bounded(
                     1, 2, stdout, 2, kernel32=kernel, wait_timeout=258,
