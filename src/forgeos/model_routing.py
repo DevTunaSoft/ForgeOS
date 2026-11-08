@@ -159,6 +159,35 @@ def safe_model_file_budget(snapshot: MemorySnapshot | None) -> int:
     return min(DEFAULT_SIZE_LIMIT, usable * 2 // 3)
 
 
+def managed_runtime_memory_ceiling(
+        snapshot: MemorySnapshot | None,
+        requested_max_bytes: int | None = None) -> int | None:
+    """Return a coarse job-wide RAM ceiling while preserving OS headroom.
+
+    This is intentionally based on currently available physical memory, not a
+    guessed llama.cpp KV-cache formula. Windows can enforce the returned value
+    with a Job Object; other platforms may expose it only as admission data.
+    """
+    if requested_max_bytes is not None:
+        if (type(requested_max_bytes) is not int
+                or requested_max_bytes < 512 * 1024**2):
+            raise ValueError(
+                "Managed runtime memory cap must be at least 512 MiB")
+    if snapshot is None:
+        return requested_max_bytes
+    total, free = snapshot
+    if (type(total) is not int or type(free) is not int or total <= 0 or free < 0):
+        raise ValueError("Invalid physical memory snapshot")
+    free = min(total, free)
+    reserve = max(1024 * 1024**2, min(4 * GIB, total // 4))
+    ceiling = max(0, free - reserve)
+    # A native server with less than 512 MiB of permitted committed memory is
+    # not useful enough to start safely; admission should fail instead.
+    if ceiling < 512 * 1024**2:
+        return 0
+    return min(ceiling, requested_max_bytes) if requested_max_bytes else ceiling
+
+
 def local_memory_settings() -> dict:
     """Prefer smaller context and automatic model unload on low-RAM devices."""
     snapshot = system_memory()
@@ -185,8 +214,9 @@ def memory_report() -> dict:
         "forgeos_process_peak_rss_bytes": process.peak_rss_bytes if process else None,
         "forgeos_process_private_bytes": process.private_bytes if process else None,
         "safe_local_model_file_budget_bytes": safe_model_file_budget(system),
+        "managed_runtime_memory_ceiling_bytes": managed_runtime_memory_ceiling(system),
         "local_model_settings": local_memory_settings(),
-        "warning": "One-shot own-process reading; excludes Ollama/child process/GPU RAM",
+        "warning": "One-shot own-process reading; managed ceiling is a coarse admission/enforcement bound; excludes Ollama/child process measured usage and GPU RAM",
     }
 
 

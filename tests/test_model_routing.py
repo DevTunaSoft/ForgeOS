@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 from forgeos.model_routing import (
     MemorySnapshot, ProcessMemorySnapshot, choose_installed_model,
-    installed_models, local_memory_settings, process_memory,
-    safe_model_file_budget,
+    installed_models, local_memory_settings, managed_runtime_memory_ceiling,
+    process_memory, safe_model_file_budget,
 )
 
 MODELS = [
@@ -97,6 +97,32 @@ class LocalModelRoutingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             choose_installed_model("task", available=MODELS,
                                    memory_limit_bytes=True)
+
+    def test_managed_runtime_memory_ceiling_preserves_headroom(self):
+        gib = 1024 ** 3
+        self.assertIsNone(managed_runtime_memory_ceiling(None))
+        self.assertEqual(
+            managed_runtime_memory_ceiling(MemorySnapshot(32*gib, 24*gib)),
+            20*gib)
+        self.assertEqual(
+            managed_runtime_memory_ceiling(MemorySnapshot(8*gib, 6*gib)),
+            4*gib)
+        self.assertEqual(
+            managed_runtime_memory_ceiling(
+                MemorySnapshot(32*gib, 24*gib), 3*gib),
+            3*gib)
+        self.assertEqual(
+            managed_runtime_memory_ceiling(
+                MemorySnapshot(8*gib, 6*gib), 12*gib),
+            4*gib)
+        self.assertEqual(
+            managed_runtime_memory_ceiling(MemorySnapshot(4*gib, 1*gib)),
+            0)
+        with self.assertRaises(ValueError):
+            managed_runtime_memory_ceiling(MemorySnapshot(0, 0))
+        with self.assertRaisesRegex(ValueError, "at least 512 MiB"):
+            managed_runtime_memory_ceiling(
+                MemorySnapshot(8*gib, 6*gib), 511 * 1024**2)
 
     def test_automatic_low_memory_profiles(self):
         gib = 1024 ** 3

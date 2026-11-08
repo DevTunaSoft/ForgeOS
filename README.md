@@ -5,13 +5,13 @@
 [![Python CI](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/ci.yml/badge.svg)](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/ci.yml)
 [![Windows executable](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/windows-exe.yml/badge.svg)](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/windows-exe.yml)
 ![Stage](https://img.shields.io/badge/status-active%20prototype-orange)
-![Models](https://img.shields.io/badge/AI-local%20Ollama-blue)
+![Models](https://img.shields.io/badge/AI-Ollama%20%2B%20experimental%20local%20endpoints-blue)
 ![Docker](https://img.shields.io/badge/Docker-not%20required-informational)
 
 > [!IMPORTANT]
 > **ForgeOS is under active development, not a production-ready autonomous application builder.** Its desktop application, local AI integration, Git workspaces, guarded code editing, diagnostics, and selected testing/recovery paths are real prototypes. Full hands-off delivery of arbitrary Windows EXEs, Android APKs and websites is a goal—not a current guarantee. Read the [feature status](#current-capabilities-and-limitations) and [security notes](#security-and-responsible-use) before using it on important projects.
 
-**[What ForgeOS will and will not do](docs/PRODUCT_VISION.md) · [Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
+**[What ForgeOS will and will not do](docs/PRODUCT_VISION.md) · [Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Multi-LLM implementation roadmap](docs/MULTI_LLM_ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
 
 ## The vision
 
@@ -124,6 +124,43 @@ CLI and GUI planning/testing now use the same SQLite task lease and status-trans
 
 Supported CLI recovery commands also include `resume-safe`, `run --resume` and `recover-edits`, with strict workspace/checkpoint validation. Read the [manual](docs/USER_GUIDE.md#6-recovery-after-an-interruption) before using them.
 
+## Experimental local multi-model support (review branch)
+
+ForgeOS originally used **Ollama only**. The multi-model feature branch adds
+dependency-free **loopback OpenAI-compatible adapters** for llama.cpp, LM Studio
+and configurable local servers, while preserving Ollama and the existing
+RAM-aware selector. The same ForgeOS GUI now offers a backend selector, local
+endpoint field and **experimental Hugging Face GGUF catalog and verified weight downloader**. This is
+an **experimental implementation with hosted CI passing, but real-runtime acceptance pending**, not a verified
+local model installer or unified native inference engine.
+
+The Hugging Face browser can search public GGUF repositories, inspect file
+sizes and hashes, and **download and verify** selected GGUF weights on
+demand. Downloads are pinned to an immutable revision, hashed with SHA-256,
+resumable after interruption and published atomically if verification passes.
+The feature branch implements single-server unexpected-exit detection and fail-closed credential cleanup without extra background timers, as well as a **pinned official Windows x64 CPU llama.cpp
+runtime installer**, now available from the existing **Run verified local GGUF**
+dialog via **Install verified official Windows CPU runtime (opt-in)**. It downloads
+only on explicit confirmation, verifies the pinned ZIP and all bundled binaries
+and DLLs against that archive, and never silently executes an installer script,
+runs Docker, or downloads weights. Select a ForgeOS SHA-verified GGUF and click
+**Start installed CPU runtime**: the entire installed runtime bundle is verified
+again immediately before the existing authenticated, localhost-only server
+starts. **Start manual runtime** remains available for independently trusted,
+SHA-pinned user-provided binaries. The frozen EXE does **not** bundle
+llama-server, DLLs, or models; this experimental path has regression/hosted CI
+evidence, **not yet real Windows/GGUF end-to-end acceptance**. Native DLL
+load-time mutation and port/process-ownership races remain open release risks.
+
+External llama.cpp, LM Studio or other compatible servers may still be
+used through the existing local endpoint adapters.
+
+Read the [model compatibility and setup guide](docs/MODEL_COMPATIBILITY.md)
+for clear statuses, CLI examples and security boundaries. The
+[complete multi-LLM engineering roadmap](docs/MULTI_LLM_ROADMAP.md) tracks all
+required model management, memory governance, routing, recovery, QA, beginner GUI
+and documentation work as implemented, experimental, unverified or planned.
+
 ## Local AI and memory efficiency
 
 ForgeOS currently targets **Ollama at 127.0.0.1:11434**; it does not require a paid AI subscription or send code to a cloud model as part of this route. The selected Ollama model must already be installed. Automatic selection considers installed model names, approximate file sizes and available RAM, but **file size is not a runtime memory guarantee**.
@@ -171,3 +208,61 @@ Detailed sources: [Product requirements](docs/REQUIREMENTS.md) · [Project roadm
 Development happens openly at [DevTunaSoft/ForgeOS](https://github.com/DevTunaSoft/ForgeOS). Before proposing a change, read [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and reproducible test failures can be reported through [GitHub Issues](https://github.com/DevTunaSoft/ForgeOS/issues); include non-sensitive reproduction steps and your OS/runtime, **not** passwords or raw logs with private data.
 
 *License: no repository license is currently published. Do not assume the code is open-source-licensed merely because it is publicly readable.*
+
+
+### Further model-management work
+
+The draft branch now includes a **bounded offline inventory** of existing
+Hugging Face GGUF downloads, available from **Run verified local GGUF →
+Choose from ForgeOS downloads** and through `forgeos models-local`.
+`forgeos model-verify-local <path>` streams an explicit SHA-256 recheck
+without loading the model. Listing metadata is not equivalent to
+reverification; the managed runtime rehashes before launching.
+Full native binary/model installation, imported GGUF management, update,
+uninstall and intelligent model switching remain open roadmap milestones.
+
+**Optional cloud models are on the roadmap, not yet integrated**:
+OpenAI/ChatGPT, Anthropic/Claude and other approved endpoints will require
+explicit consent and spending/privacy controls. ForgeOS does not assume
+free ChatGPT or Claude consumer accounts provide free API access.
+
+
+**Experimental process containment (PR #51):** the managed CPU llama-server
+now attaches to a Windows Job Object configured to terminate the owned
+process tree when closed; Linux/POSIX uses an owned process session.
+The short interval between process creation and Windows Job assignment,
+listener/process authentication, direct GGUF execution on real hardware
+and clean cancellation of all native child processes remain unaccepted.
+The generated project-test AppContainer is a separate trust boundary.
+
+
+### Latest multi-LLM GUI integration verification (experimental branch)
+
+On 2026-11-08, feature commit `c541041926c6c726e7fa034f6591318188bd2a17` passed all six required hosted checks: four Linux/Windows Python 3.10/3.12 test jobs, documentation integrity, and Windows EXE packaging (18,524,708 bytes), including frozen GUI and secure AppContainer smoke. The suite executed **349 tests per platform run** (with OS-specific skips). An **offline real POSIX subprocess/loopback integration test** now verifies process startup, authenticated model-style HTTP, request output, and cleanup using a tiny local fake server, **not a real llama.cpp runtime or GGUF inference**. Production/real-Windows acceptance remains open; PR #51 is draft and unmerged.
+
+
+### GGUF download interruption recovery (experimental branch)
+
+Cached GGUF weights now need a matching pinned identity manifest before success is reported. Interrupted model publication can safely recreate a missing manifest after a full SHA-256 and GGUF header check without a second weight download. Conflicting manifests, journals and stray partial files are preserved and rejected. Windows reserved device filenames are rejected. See the recovery guidance in docs/USER_GUIDE.md. Real Windows and multi-gigabyte acceptance remain pending.
+
+
+### Pausing and resuming a large GGUF download (experimental PR #51)
+
+In the existing Hugging Face browser, the **Pause download** button cooperatively stops a transfer and retains the checked revision's partial bytes and journal. A later request for the same repository/weight revision resumes via an exact HTTP range and rechecks the final SHA-256. Download progress and the separate final SHA-256 verification phase are shown without keeping giant data or event queues in RAM. Closing the model browser while a transfer is active requests pause and closes only after the worker acknowledges. A network read can remain blocked for up to its configured timeout, so pause is not instantaneous. No background downloader, Docker, cloud inference, or new desktop app was added.
+
+
+The experimental managed GGUF server additionally caps manually requested context to the current system RAM profile and performs a second memory-budget check immediately before native inference startup, after hashing the GGUF and runtime. These safeguards reject some memory pressure but do not replace native process RAM monitoring or proven low-memory Windows benchmarks.
+
+
+**Latest experimental branch CI checkpoint (Nov 8, 2026):** `37af510c` passed six hosted checks, including 365 regression tests inside Windows packaging and frozen GUI/AppContainer smoke. A real Windows 11 session with a verified GGUF and llama.cpp must still be tested before this PR can be called release-ready.
+
+
+### Recoverable local GGUF model retirement (experimental)
+
+The CLI can now retire one locally SHA-verified GGUF without deleting its bytes, and later restore it from an ID. Use the existing model folder: run python -m forgeos models-local, then python -m forgeos model-retire-local "ABSOLUTE_PATH.gguf" --confirm. Run python -m forgeos models-retired to list recovery IDs; run python -m forgeos model-restore-local "RETIREMENT_ID" to recover. Pass --directory PATH for alternate local model storage. All model moves use the existing download lock and pinned SHA-256 manifest. A durable journal supports crash-interrupted file moves. **Retirement retains the weight bytes on disk and does not free space.** Stop any actively running model first. Physical Windows process-in-use and abrupt power-failure testing remain unverified.
+
+
+The same recoverable retirement action is available in the existing desktop Manage local GGUF > Choose from ForgeOS downloads picker. It is disabled while ForgeOS is performing a task or owns a managed model process; a worker thread performs the full SHA-256 recheck, and the recovery ID is shown on completion.
+
+
+The existing managed GGUF window can now **restore a retired model** using the same verified journal as the CLI. Restoration is explicit, offline, and non-overwriting; the worker hashes weights without blocking the Tk interface. Retirement/restoration additionally rejects hard-linked model or manifest files to avoid manipulating bytes also accessible outside the model directory.

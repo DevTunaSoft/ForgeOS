@@ -136,6 +136,9 @@ def _execute_task(
     max_repairs: int = 2, allow_host_tests: bool = False,
     generate: Callable[[Ollama, str], str] = _generate,
     resume: bool = False, lease_owner: str = "",
+    role: str = "implementation",
+    qualification_directory: Path | None = None,
+    qualification_evidence_sha256: str | None = None,
 ) -> dict:
     """Run one task in a new worktree; preserve workspace for inspection.
 
@@ -146,6 +149,8 @@ def _execute_task(
         raise ValueError("Host test execution requires explicit --allow-host-tests")
     if not isinstance(max_repairs, int) or isinstance(max_repairs, bool) or not 0 <= max_repairs <= 5:
         raise ValueError("max_repairs must be 0..5")
+    if not isinstance(role, str) or not role.strip() or len(role) > 80:
+        raise ValueError("Task role is required")
     task = store.get(task_id)
     eligible_statuses = {"blocked"} if resume else {"queued", "planned"}
     if task["status"] not in eligible_statuses:
@@ -193,13 +198,59 @@ def _execute_task(
             ws = create_workspace(task["project"], task_id, destination)
         model = model or Ollama()
         model_name = getattr(model, "model", None)
-        if model_name == "auto":
-            from .model_routing import choose_installed_model
-            model_name = choose_installed_model(task["description"])
+        qualification = None
+        if model_name == "qualified-auto":
+            from .model_qualification import resolve_qualified_managed_model
+            qualification = resolve_qualified_managed_model(
+                model, role=role, directory=qualification_directory,
+                evidence_sha256=qualification_evidence_sha256)
+            model_name = qualification["model_name"]
+        elif qualification_evidence_sha256 is not None:
+            raise ValueError(
+                "Pinned qualification evidence requires qualified-auto model selection")
+        elif model_name == "auto":
+            if getattr(model, "backend", "ollama") == "ollama":
+                from .model_routing import choose_installed_model
+                model_name = choose_installed_model(task["description"])
+            else:
+                model_name = model._choose_model(task["description"])
             model.model = model_name
         if not isinstance(model_name, str) or not model_name.strip():
             raise ValueError("Model must expose a stable model identifier")
         contract = {"preset": preset, "max_repairs": max_repairs, "model": model_name}
+        if qualification is not None:
+            qualification_root = ""
+            if qualification_directory is not None:
+                requested_root = Path(qualification_directory).expanduser()
+                if requested_root.is_symlink():
+                    raise OSError("Qualification evidence directory is unsafe")
+                resolved_root = requested_root.resolve(strict=True)
+                if not resolved_root.is_dir():
+                    raise OSError("Qualification evidence directory is unsafe")
+                qualification_root = str(resolved_root)
+            contract.update(
+                qualification_role=role,
+                qualification_evidence_sha256=qualification["evidence_sha256"],
+                qualification_directory=qualification_root,
+            )
+        if getattr(model, "backend", "ollama") != "ollama":
+            contract.update(backend=model.backend, endpoint=model.base)
+        if model_name == "forgeos-managed":
+            # A random port and alias are NOT durable model identity. Record
+            # verified GGUF and runtime hashes. Safe recovery may resume only
+            # after an authenticated managed runtime re-attests these hashes.
+            model_hash = getattr(model, "managed_model_sha256", None)
+            runtime_hash = getattr(model, "managed_runtime_sha256", None)
+            if (getattr(model, "backend", None) != "llama.cpp"
+                    or not isinstance(model_hash, str)
+                    or not isinstance(runtime_hash, str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", model_hash)
+                    or not re.fullmatch(r"[a-f0-9]{64}", runtime_hash)):
+                raise ValueError(
+                    "Managed GGUF inference requires a pinned model/runtime "
+                    "SHA-256 identity")
+            contract.update(managed_model_sha256=model_hash,
+                            managed_runtime_sha256=runtime_hash)
         prompt = (
             "Return ONLY strict JSON with exactly this schema: "
             '{"files":[{"path":"relative/file.py","content":"complete replacement text"}]}. '
@@ -354,7 +405,9 @@ def execute_task(
     preset: str = "python-unittest", model: Ollama | None = None,
     max_repairs: int = 2, allow_host_tests: bool = False,
     generate: Callable[[Ollama, str], str] = _generate,
-    resume: bool = False,
+    resume: bool = False, role: str = "implementation",
+    qualification_directory: Path | None = None,
+    qualification_evidence_sha256: str | None = None,
 ) -> dict:
     """Acquire an exclusive task lease, then run the guarded task engine."""
     if not allow_host_tests:
@@ -368,6 +421,8 @@ def execute_task(
             store, task_id, workspace_parent, preset=preset, model=model,
             max_repairs=max_repairs, allow_host_tests=allow_host_tests,
             generate=generate, resume=resume, lease_owner=owner,
+            role=role, qualification_directory=qualification_directory,
+            qualification_evidence_sha256=qualification_evidence_sha256,
         )
     finally:
         store.release_lease(task_id, owner)

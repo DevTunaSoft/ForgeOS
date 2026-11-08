@@ -1,6 +1,6 @@
 # ForgeOS — User manual
 
-**Audience:** first-time users, testers, and developers evaluating the current ForgeOS prototype. **Current scope:** existing local Git repositories, local Ollama AI, selected code editing/testing, diagnostics and recovery. ForgeOS does not yet provide a one-click production app builder.
+**Audience:** first-time users, testers, and developers evaluating the current ForgeOS prototype. **Current scope:** existing local Git repositories, local Ollama AI and experimental loopback model adapters on the feature branch, selected code editing/testing, diagnostics and recovery. ForgeOS does not yet provide a one-click production app builder.
 
 > [!WARNING]
 > **Start with a disposable test repository.** Source/development-mode test execution can run generated repository code on your Windows computer. Never check the host-test permission box for code you do not trust. Windows frozen executable isolation supports only designated presets; unsupported presets fail closed.
@@ -75,6 +75,106 @@ git commit -m "Initial practice project"
 
 If `git commit` asks for identity details, configure your own Git author name and email. A preexisting Git repository is required; ForgeOS does not currently create and configure arbitrary application projects for you.
 
+## New: using more than one local AI runtime (experimental feature branch)
+
+In **Development → Execution settings**, you can now select **Inference
+backend**: Ollama, llama.cpp, LM Studio, or another local OpenAI-compatible
+server. Leave **Local endpoint** empty for the standard port, or specify
+a literal loopback URL such as `http://127.0.0.1:8080/v1`.
+
+For manually selected external local endpoints, the model server must
+already be running on your computer. Type its **exact advertised model ID**
+into **Local model**. For non-Ollama servers, `auto` only works if the
+server reports model sizes; otherwise select a name manually.
+Use **Generate plan** first to verify that the local server responds before
+trying to generate source edits. A model/server failure should block the task,
+not overwrite existing project work.
+
+Click **Browse Hugging Face** to search public GGUF repositories. Select a
+result and click **Inspect GGUF sizes** to see published weight sizes and
+whether Git LFS SHA-256 metadata is present. To download, choose a GGUF file with a published SHA-256 and click
+**Download and verify**. ForgeOS confirms the request, checks disk space,
+pins a Hugging Face revision, resumes interrupted partial files and verifies
+the SHA-256 before saving under `~/.forgeos/models`. Downloaded weights are
+not automatically loaded. **Experimental managed local GGUF launch** is
+available in the same GUI with two options: an explicit opt-in
+pinned official Windows x64 CPU runtime installer, or a user-provided
+`llama-server.exe` with independently verified SHA-256. Automatic
+background downloads are forbidden. Model updates/removal and real
+Windows model acceptance tests are still planned. Browsing requires
+internet, but ForgeOS does not use Hugging Face hosted inference.
+
+### Optional: run your downloaded GGUF from inside ForgeOS (experimental PR #51)
+
+This is an optional feature on the multi-LLM feature branch, **not yet
+released on main**. A real Windows 11 llama.cpp session with a GGUF has
+not been independently accepted; use a disposable repository first.
+
+1. Under **Execution settings** select **Browse Hugging Face**, review a
+   model's license, choose a compatible GGUF, then **Download and verify**.
+   This optional internet request is separate from all local inference.
+2. Open **Run verified local GGUF**. On **Windows x64**, click **Install
+   verified official Windows CPU runtime (opt-in)** and **confirm** the
+   one-time pinned official llama.cpp release download. ForgeOS validates
+   the archive SHA-256 and checks every extracted executable and DLL. This
+   step does not install a system service, use Docker, or download weights.
+   Existing installations are reverified without another download.
+3. The installer shows **downloading/verification progress, success or errors**
+   directly in this same GGUF dialog. Once complete, choose the downloaded
+   GGUF with **Choose from ForgeOS downloads**, then
+   click **Start installed CPU runtime**. The local runtime archive, DLLs,
+   executable and GGUF are verified again in a worker thread before launch.
+   ForgeOS binds localhost, uses an ephemeral API key and CPU-only settings.
+   If the model is too large for conservative available RAM, choose a
+   smaller quantized GGUF.
+4. **Manual alternative:** obtain a trusted `llama-server.exe` and its
+   dependencies yourself, independently confirm the executable's
+   64-character lowercase SHA-256, select your GGUF and click
+   **Start manual runtime**. This route verifies the EXE and GGUF, but
+   cannot independently attest all manually supplied DLLs.
+5. Once started, ForgeOS selects backend `llama.cpp`, model
+   `forgeos-managed` and the private local endpoint. Try **Generate plan**
+   with a small task before enabling file-edit/test workflows.
+6. Click **Stop local model**, close ForgeOS after tasks complete, or
+   allow its five-minute idle unload to release model RAM. The idle
+   timeout does not interrupt a currently active task.
+
+**Security and remaining limits:** the official archive checksum is an
+integrity control, not a publisher signature. Native DLL loading can still
+be subject to same-user file races; Windows process creation currently has
+a short job-attachment window. One local managed model runs at a time.
+Session credentials are not persisted for automatic post-crash recovery.
+If the local model process exits unexpectedly, ForgeOS detects this in its
+existing GUI event loop **after active tasks complete**, attempts to clean
+up the terminated process and ephemeral secret, then restores Ollama as
+the safe default. The user must intentionally start a verified local GGUF
+again; ForgeOS never silently reloads changed weights. A failed cleanup
+attempt is logged and latched to avoid an endless retry loop; use
+**Stop local model** to retry manually. This is fail-closed state handling,
+not automatic restart after system reboot. Real model quality, startup/stop
+behavior, memory and Windows 11 acceptance remain unverified. No paid API is needed for this route.
+See [model compatibility and risks](MODEL_COMPATIBILITY.md).
+
+Examples for advanced users:
+
+```powershell
+forgeos models --backend llama.cpp
+forgeos model-catalog search "Qwen2.5-Coder"
+forgeos model-catalog files Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-K-M.gguf
+forgeos plan 1 --backend lm-studio --model your-exact-local-model-id
+```
+
+The Ollama default remains unchanged. Keep only one model loaded if RAM is
+tight. A model switch is not an authorization to restart an interrupted
+workflow with different weights. The experimental `resume-safe` command
+reconstructs the original recorded local provider, model and endpoint
+rather than replacing them with the current GUI selection. It still
+requires the existing host-test permission and validates the task workspace
+and hashes; real crash/restart behavior remains to be verified. Read the
+[full model compatibility guide](MODEL_COMPATIBILITY.md) for limitations,
+troubleshooting and a RAM-conscious model shortlist.
+
 ## 2. Understand the screen
 
 The one-window desktop prototype has **two tabs**:
@@ -83,7 +183,8 @@ The one-window desktop prototype has **two tabs**:
 | --- | --- | --- |
 | **Development** | Project repository and **Browse** | Points ForgeOS to a local Git repository |
 | **Development** | **Tell ForgeOS what to build** | Plain-English development task description |
-| **Development** | Local model | Explicit Ollama model or `auto` selection from installed models |
+| **Development** | Local model | Ollama or explicit local compatible model; `auto` requires available model-size metadata |
+| **Development** | Run verified local GGUF | Experimental one-GUI managed CPU llama.cpp start/stop with SHA-pinned user-provided executable and downloaded verified GGUF |
 | **Development** | Test suite | Framework preset (availability depends on runtime) |
 | **Development** | Repair retries | Limits how many correction attempts are allowed |
 | **Development** | Workspace folder | Separate destination for temporary Git worktrees |
@@ -256,12 +357,204 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 - [Report a defect](https://github.com/DevTunaSoft/ForgeOS/issues)
 
 
-### GUI task completion resilience
+## Experimental local model inventory and re-verification
 
-ForgeOS keeps the desktop queue poll scheduled even if a transient refresh,
-widget, or local database read raises an exception. Worker threads also always
-publish a completion event back to the Tk thread, including failures opening or
-closing their worker database connection. This prevents a failed background
-operation from permanently leaving task buttons disabled. If the GUI still
-appears stuck, preserve the task database and workspace, restart ForgeOS, and
-inspect the task status/recovery state rather than deleting files.
+The **Run verified local GGUF** window now offers **Choose from ForgeOS
+downloads**, which lists existing GGUF files that still have a matching
+pinned download manifest. The list is metadata-only and does **not**
+rehash multi-gigabyte models; a full rehash is performed when the managed
+server is started.
+
+Advanced users can run `forgeos models-local` to list model weights and
+`forgeos model-verify-local "C:\\Users\\You\\.forgeos\\models\\...\\model.gguf"`
+to recheck one SHA-256 explicitly, without downloading or running anything.
+Do not treat a model shown in the list as independently compatible,
+licensed, executable or memory-safe. Missing/changed weights may be
+displayed as unavailable and cannot be used by the managed process.
+
+
+### Managed model shutdown and process cleanup (experimental)
+
+On Windows, ForgeOS now attempts to attach its user-provided llama-server
+process to a kill-on-close native Windows Job Object so child processes
+terminate when the managed session ends. On POSIX, it uses a dedicated
+process group. An actual Windows job lifecycle integration test is included,
+but the tiny interval between process launch and Job attachment is still
+not eliminated; physical Windows verification is pending.
+Do not confuse model process cleanup with AppContainer isolation of
+generated project tests. Close or stop a model only after the active
+ForgeOS AI task completes.
+
+
+### Recovering an interrupted GGUF download
+
+Choose Browse Hugging Face and select the same repository and GGUF file. ForgeOS uses the immutable revision and SHA-256 to resume partial downloads. If the fully verified model was published but a crash prevented saving its manifest, repeating that selection checks the entire weight file and restores the missing manifest without transferring weights again.
+
+If ForgeOS reports a conflicting manifest, an inconsistent download journal or a stray partial file, do not delete anything blindly: preserve the model directory for inspection. Correctly hashed files that are not actually GGUF are quarantined. This is experimental until tested using real multi-gigabyte files on Windows.
+
+
+### Pause or resume a large GGUF download
+
+1. In **Browse Hugging Face**, search, inspect the desired GGUF file, and choose **Download and verify**. Check license and free disk space first.
+2. Watch the progress message for the **Download** phase, followed by a separate **Verify** phase. Model weights are read and hashed incrementally rather than loaded entirely into RAM.
+3. Select **Pause download** to stop after the current network read and preserve the partial file and download journal. Closing the browser during a download also requests pause and waits for the worker before the dialog closes.
+4. Resume by selecting the *same* public repository and GGUF file later. ForgeOS pins the concrete revision/hash from Hugging Face, requests only missing bytes when the revision is unchanged, and validates the entire result before publishing the model.
+5. If the upstream revision changed, the old partial is **not** silently combined with new model weights; inspect the old directory and decide whether to keep it. Avoid manually deleting interrupted files unless you have verified they are no longer needed.
+
+Pausing is cooperative, not instantaneous while a network socket read is blocked (up to the configured timeout). Closing the entire ForgeOS process forcibly is not equivalent to using Pause. Verification itself may also be paused before final publication. This feature has simulated transfer tests; real multi-gigabyte Windows download, pause, resume and power-loss testing remain pending.
+
+
+### Memory warning when starting a local GGUF model
+
+ForgeOS chooses a conservative default context based on available system RAM. If a manually entered context exceeds the current RAM profile, startup is refused rather than risking a large llama.cpp KV-cache allocation. The app also checks available RAM again just before launching the local server, because memory may have changed while verifying the model's large SHA-256. Close competing applications, select a smaller GGUF, or use a smaller context within the suggested memory profile, then retry. A passed check cannot promise there will never be a later out-of-memory failure.
+
+
+### Recoverable GGUF retirement and restoration
+
+When you no longer want a local downloaded GGUF in the active inventory, first stop any llama.cpp server using it. The experimental CLI-only retirement feature moves the selected file and its pinned manifest into local, same-volume recovery storage. This is a reversible removal from the active list, **not disk space reclamation**. No cloud calls, inference, or deletion occur.
+
+1. Inspect active models using: python -m forgeos models-local
+2. Optionally recheck the weights with: python -m forgeos model-verify-local "ABSOLUTE_PATH.gguf"
+3. Explicitly retire just one model with: python -m forgeos model-retire-local "ABSOLUTE_PATH.gguf" --confirm
+4. Save the 32-character retirement ID from the output. To inspect all IDs use: python -m forgeos models-retired
+5. Restore with: python -m forgeos model-restore-local "RETIREMENT_ID"
+
+Each command accepts --directory PATH to select nondefault model storage. A retirement refuses an unfinished .part or .part.json transfer. A complete SHA-256 check occurs under the existing exclusive download lock. The recovery journal is written *before* either original file is moved, and remains available if one rename fails. Restoration rechecks the identity and SHA-256, refuses overwriting existing files, and handles either half-completed move. If models-retired says interrupted_retirement_or_restore, use its ID for a retry. If it says needs_manual_inspection, do not manually delete files; preserve them for diagnosis.
+
+**Safety limitations:** A running external llama-server might still be reading this model, even when the CLI has no evidence of it; stop native inference first. The lock coordinates ForgeOS downloads and retire/restore, not arbitrary foreign processes. Windows junction/reparse-point races, real power-loss resilience, and active-model GUI interlocks still require real-machine acceptance.
+
+
+### Recoverable model retirement from the desktop
+
+The Managed local GGUF window's **Choose from ForgeOS downloads** picker now includes **Retire selected GGUF (recoverable)**. Select an existing downloaded GGUF and confirm the dialog. ForgeOS refuses to start this operation while an AI task, local model operation or owned llama.cpp server is active. It computes the entire file SHA-256 outside the GUI event thread, uses the existing exclusive download lock and returns a recovery ID. The picker remains open during verification so the result is not silently lost. Keep the recovery ID for the command-line model-restore-local operation; models-retired can list IDs again. The weights remain on disk and do not free storage. If another independently launched llama-server is running, close it manually before using this feature: ForgeOS can guard only its own managed session.
+
+
+### Restore a recoverably retired local model in the desktop app
+
+Open **Managed local GGUF**, choose **Restore a retired GGUF (recoverable)** and select the appropriate retirement journal. Choose **Restore selected GGUF** and confirm. ForgeOS checks the stored SHA-256 and original manifest, refuses to overwrite an occupied destination, and puts the model back in the original revisioned folder. The model picker can then select the restored weight. Interrupted retirement or restore records can also be recovered if their journal is still valid; a record marked **needs manual inspection** is not automatically restored. Stop any externally running inference process that may use these files. This action is offline and does not delete files to reclaim storage.
+
+
+**Recovery integrity:** ForgeOS refuses recovery journals shared via filesystem hard links, checks the recovery identity again after obtaining the download lock, and checks for occupied destination files before moving weights. If recovery is rejected, do not delete the recovery journal or overwrite destination files; inspect the conflict and retry only when safe. An external program that changes files concurrently is not fully isolated by the current cooperative ForgeOS lock.
+
+
+### Managed local model memory snapshot
+
+While a ForgeOS-managed local model is running, open **Managed local GGUF** and
+choose **Show model memory**. On Windows, ForgeOS reports the Job Object memory
+ceiling plus peak committed memory for the managed process tree and the peak
+for a single process. This is a one-shot reading; ForgeOS does not continuously
+poll the model in the background. It does not include GPU/shared graphics
+memory and should not be interpreted as a complete performance benchmark.
+
+
+### Test a managed local model before using it on a project
+
+After starting a verified managed GGUF, select **Test local model** in the
+Managed local GGUF window. ForgeOS sends a fixed harmless prompt containing
+no project files or task text. The model must return the exact empty edit
+contract `{"files":[]}` as valid JSON. ForgeOS reports pass/fail and elapsed
+time in Activity & diagnostics; on Windows it also includes the available
+one-shot Job Object peak-memory reading. A failed self-test does not edit a
+workspace, run project tests, or silently switch to a cloud model.
+
+
+### Optional managed-model RAM cap
+
+The **Max model RAM MiB** field in Managed local GGUF is optional. Leave it
+blank to use ForgeOS's automatic safe ceiling. On Windows, entering a value
+of 512 MiB or greater can only reduce the automatically calculated Job Object
+ceiling; it cannot grant the model more memory than ForgeOS considers safe
+from the current RAM snapshot. This controls the managed llama.cpp process
+tree only, not the whole computer or project test processes.
+
+
+### Save a benchmark baseline before comparing local models
+
+While a verified managed GGUF is running, open **Managed local GGUF** and choose
+**Save benchmark baseline**. ForgeOS performs the harmless empty-edit JSON
+self-test and saves a small JSON evidence record under
+`~/.forgeos/benchmarks`. It records pinned GGUF repository/revision/file/SHA,
+runtime SHA/release tag when known, context, threads, RAM tier, startup and
+self-test latency, configured model-memory ceiling and available one-shot
+Windows Job Object peak memory.
+
+The record deliberately excludes the managed API key, local endpoint and
+project source. It is labelled baseline-only and cannot qualify or route a
+model. License and quantization remain explicitly unverified until #54 stores
+trusted source metadata for those fields.
+
+
+### Screening benchmark rules
+
+ForgeOS now has a fixed local screening corpus for eight roles: planning,
+implementation, review/refactor, debugging, test generation, security review,
+documentation and context summarization. There are exactly five screening
+tasks per role. The scorer is deterministic: it checks either an exact JSON
+items schema or the existing ForgeOS edit-manifest contract plus explicit
+required/forbidden markers. It does not ask another AI to judge the answer and
+does not execute generated project code during screening.
+
+A role survives screening only with at least **4/5 valid JSON/contracts** and
+**3/5 objective rubric passes**. Screening is intentionally weaker than final
+qualification; the router still requires the issue #55 qualification evidence
+(95% structured output, 80% objective success, <=5% timeout/crash/OOM and zero
+fail-open safety violations).
+
+
+### Run a five-task role screening from the GUI
+
+With a verified managed GGUF running, open **Managed local GGUF**, choose one
+of the eight **Screening role** values, and select **Run 5-task role
+screening**. ForgeOS sends only the fixed synthetic prompts for that role. The
+screen shows progress after each prompt and keeps the model/task interlocks
+active so normal project work cannot overlap the screening run.
+
+**Cancel screening** is cooperative: the response already being generated may
+finish, then ForgeOS stops before the next prompt and writes the partial
+evidence file. Closing the managed-model window during screening requests the
+same cancellation and keeps the window open until the partial evidence is
+saved. The evidence records contract/objective results, timing, response byte
+counts and error types; it does not save raw model replies or project source.
+A screening pass is not final model qualification and does not enable routing.
+
+
+### Qualified automatic model use
+
+`qualified-auto` is an advanced safety mode for an already running verified
+ForgeOS-managed GGUF. It does not guess that a model is good enough. ForgeOS requires
+local final-qualification evidence for the task role, verifies that evidence against
+the exact active GGUF and llama.cpp runtime SHA-256 identities, checks the measured
+memory requirement against the current safe runtime budget, and refuses to start if
+anything does not match. The current GUI uses the implementation role for build/test/
+repair tasks. Final qualification records are not created by the five-task screening
+button; screening remains a preliminary filter only.
+
+
+### Final measured model qualification
+
+After a managed GGUF passes the five-task role screen, the same **Managed local GGUF** window can run **Run 20-task final qualification** for the selected role. This sends only ForgeOS fixed synthetic benchmark prompts; it does not send project source. The run measures structured-output success, deterministic objective success, runtime failures, detected unsafe edit attempts, latency and managed peak memory.
+
+A model becomes routeable for that role only after the complete run meets every gate: at least 95% structured-output success, at least 80% objective success, no more than 5% runtime failures, zero detected safety violations, exact model/runtime SHA-256 identity and measured peak memory. **Cancel qualification** preserves partial evidence, but partial evidence can never enable qualified-auto.
+
+
+#### Interrupted qualified tasks
+
+A qualified task checkpoint remembers the exact qualification evidence it used.
+When Safe Resume is used with the same authenticated ForgeOS-managed runtime,
+ForgeOS rechecks the model/runtime hashes and the saved evidence digest before
+continuing. If the evidence file moved, changed, disappeared, or no longer fits the
+safe memory budget, recovery stops rather than choosing another model automatically.
+
+
+### Choose the task role
+
+Execution settings now include **Task role**. The default is **implementation**. Choose planning, review/refactor, debugging, test generation, security review, documentation, or context summarization when that better describes the work. When **qualified-auto** is selected, ForgeOS requires final qualification evidence for the exact chosen role and exact active managed model/runtime identity; it does not silently substitute evidence from another role.
+
+
+#### Qualified planning
+
+When the active verified local GGUF has completed final qualification for the
+`planning` role, selecting `qualified-auto` also protects **Generate plan**.
+ForgeOS checks the same final evidence, exact model/runtime hashes and current
+memory budget before sending the planning request. If planning evidence is not
+qualified, ForgeOS stops instead of silently using another model.

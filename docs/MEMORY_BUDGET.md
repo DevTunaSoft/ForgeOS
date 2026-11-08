@@ -1,5 +1,22 @@
 # ForgeOS low-memory engineering and acceptance
 
+## Multi-model adapter RAM boundary (feature branch)
+
+The added loopback-compatible local inference adapter limits outbound
+JSON payloads to 512 KiB, local API catalogs to 2 MiB, and model responses
+to 8 MiB. GGUF downloads stream at most 1 MiB per buffer and rehash from
+disk rather than retaining large model files in process memory. Their
+default maximum is 16 GiB per file with a separate 1 GiB disk reserve.
+These values are source limits, not verified full-Windows resource profiles. Hugging Face metadata responses are capped at 2 MiB and requested
+only on demand. The existing RAM-aware model file heuristic is reused when
+an OpenAI-compatible server actually reports model sizes. Otherwise
+automatic selection fails safely, requiring an explicit model name.
+
+These caps constrain **ForgeOS's own allocations only**, not the external
+llama.cpp / LM Studio server, memory-mapped weights, KV cache, integrated
+graphics, operating system or build/test processes. No claimed 8 GB, 16 GB
+or 32 GB inference throughput is proven without measurements.
+
 ## Design targets, not verified minimum requirements
 
 | System RAM | Target |
@@ -172,3 +189,52 @@ interrupted, resumed, skipped and failed counts. This mode has no new
 dependencies or model loads. The default complete JSON report is preserved
 for compatibility. External consumers may collect streamed output
 themselves, so downstream applications must also manage retention.
+
+
+## Managed GGUF second-stage RAM admission (draft PR #51)
+
+The managed local llama.cpp startup now refuses explicit context sizes above the **current** adaptive `local_memory_settings().num_ctx` limit. A caller can select a smaller context; it cannot force an oversized KV-cache request simply by overriding the default on a low-RAM host. After SHA-256 verification of the GGUF and runtime binary, ForgeOS again samples available RAM immediately before launching the native server and rejects the model if its file size no longer fits the canonical conservative budget. No additional background watcher, resident memory cache, or polling daemon was added.
+
+These are **preflight heuristics, not guaranteed peak-RAM quotas**. llama.cpp still allocates architecture-specific KV cache, compute buffers and memory mappings; another process can change free RAM between the final check and allocation. Real Windows 8/16/32 GiB runtime acceptance and process-tree telemetry remain open.
+
+
+## Managed Windows job-wide memory ceiling (draft PR #51)
+
+ForgeOS now derives a coarse managed-runtime ceiling from the same native
+system-memory snapshot used for model admission. The policy preserves at least
+1 GiB and up to 4 GiB (or one quarter of physical RAM) for Windows/the rest of
+the workload, then applies the remaining currently available physical-memory
+headroom as a **Job Object job-memory limit** before the suspended
+`llama-server` process is resumed. This extends the existing Job Object; it
+does not add a monitor, daemon, polling thread, or second memory policy.
+
+The limit is deliberately a coarse safety ceiling, not an estimate of the
+model's true peak RSS/commit or KV-cache size. If Windows cannot establish at
+least a 512 MiB managed ceiling, ForgeOS refuses managed inference. Real
+llama.cpp behavior under the cap, memory-mapped weights, integrated-GPU/shared
+memory, OOM exit diagnostics and 8/16/32 GiB tuning still require physical
+Windows measurements.
+
+
+## On-demand managed process-tree peak accounting
+
+The existing Windows managed-runtime Job Object can now be queried on demand
+for its configured job memory limit, peak committed memory across the job and
+peak committed memory used by any one associated process. Windows maintains
+these peak counters for the Job Object; ForgeOS reads them only when requested.
+No timer, telemetry daemon or high-frequency sampler was added. The GUI exposes
+this as **Show model memory** while a managed model is active.
+
+These counters are Windows committed-memory accounting, not working-set/RSS,
+GPU memory, tokens-per-second or a complete model benchmark. They are useful
+for detecting actual native process-tree pressure and comparing runs, but
+physical target-machine measurements remain required.
+
+
+## Optional user cap on managed Windows model memory
+
+The canonical `managed_runtime_memory_ceiling()` policy now accepts an
+optional user maximum. Values below 512 MiB are refused. A requested cap is
+intersected with the automatic safe ceiling, so it can reduce native model
+memory but can never override current system headroom. The same value is
+passed into the existing Windows Job Object limit before process resume.

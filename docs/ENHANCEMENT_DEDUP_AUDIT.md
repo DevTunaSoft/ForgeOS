@@ -115,3 +115,32 @@ Dispositions: **EXISTING** = code already provides this baseline; **EXTEND** = r
 6. **#49**: interactive Windows GUI/Ollama/full task acceptance remains a release gate. Preserve AppContainer.
 
 **Audit limitations:** This is a source-level functional overlap review. It is not formal proof of architecture uniqueness, absence of race conditions, or validation of all Windows installations. CI successes provide regression evidence only for the checks that ran. Features marked EXTEND and NEW still require implementation.
+
+
+## PR #51 re-audit — 2026-11-08
+
+A fresh comparison of the current multi-LLM branch, the open implementation issues (#53–#56), the last 30 commits and this ownership map found **no justification for another local-model subsystem, downloader, GUI, router, recovery engine, test framework or model database**.
+
+### Capabilities that already exist on PR #51 and must not be reimplemented
+
+- Local OpenAI-compatible adapters for llama.cpp / LM Studio / loopback endpoints: extend `local_models.py`.
+- Hugging Face discovery and resumable verified GGUF transfer: extend `huggingface_catalog.py` and `gguf_download.py`.
+- Managed CPU-first llama.cpp lifecycle, runtime verification and Windows Job Object containment: extend `managed_llama.py` and existing `windows_containment.py`.
+- Adaptive RAM/context preflight: extend `model_routing.py`; do not create another router.
+- GGUF lifecycle/recovery: extend `model_inventory.py` and `model_retirement.py`; do not create a second inventory database.
+- GUI model controls: remain inside the existing Tk GUI.
+- Autonomous task recovery: remain in the existing Store/engine/recovery/transaction pipeline.
+
+### Remaining work that is genuinely new acceptance work
+
+1. Real Windows llama.cpp + GGUF execution and full plan/edit/test/recovery acceptance.
+2. Process-tree memory measurement/governance and measured model benchmarks.
+3. Windows reparse/junction and native filesystem acceptance not covered by current source-level link checks.
+4. Real LM Studio/other loopback endpoint compatibility runs.
+5. Model metadata/license/suitability UX and safe import/update/repair behavior not already covered by retirement/restore.
+6. Physical Windows accessibility, installer/use walkthrough and release evidence.
+
+### Mandatory anti-duplication gate
+
+Before implementation, compare the proposed behavior against:
+(1) this file's canonical owner table, (2) `MULTI_LLM_ROADMAP.md`, (3) open issues #53–#56, and (4) recent commits on the active branch. If a source owner already exists, improve it in place. A new module is allowed only for a distinct responsibility that cannot be cleanly owned by an existing module. Repeated hardening of the same risk without a newly identified failure mode or acceptance criterion is not a roadmap item.

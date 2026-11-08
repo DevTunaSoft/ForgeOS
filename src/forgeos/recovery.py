@@ -6,9 +6,11 @@ replays the execution contract persisted with each checkpoint.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .core import MAX_CHECKPOINT_BYTES, Ollama
+from .local_models import DEFAULT_ENDPOINTS, create_model, validate_endpoint
 from .engine import execute_task
 
 PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
@@ -17,7 +19,15 @@ PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
 
 def _checkpoint_contract(checkpoint):
     contract = checkpoint.get("contract")
-    if not isinstance(contract, dict) or set(contract) != {"preset", "max_repairs", "model"}:
+    legacy = {"preset", "max_repairs", "model"}
+    extended = legacy | {"backend", "endpoint"}
+    managed_extended = extended | {"managed_model_sha256", "managed_runtime_sha256"}
+    qualified_managed = managed_extended | {
+        "qualification_role", "qualification_evidence_sha256",
+        "qualification_directory"}
+    if (not isinstance(contract, dict)
+            or set(contract) not in (legacy, extended, managed_extended,
+                                     qualified_managed)):
         raise ValueError("Missing or invalid checkpoint execution contract")
     preset = contract["preset"]
     repairs = contract["max_repairs"]
@@ -29,12 +39,62 @@ def _checkpoint_contract(checkpoint):
         raise ValueError("Invalid checkpoint repair budget")
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("Invalid checkpoint model identifier")
-    return {"preset": preset, "max_repairs": repairs, "model": model}
+    result = {"preset": preset, "max_repairs": repairs, "model": model}
+    if set(contract) in (extended, managed_extended, qualified_managed):
+        backend = contract["backend"]
+        endpoint = contract["endpoint"]
+        if not isinstance(backend, str) or backend not in DEFAULT_ENDPOINTS:
+            raise ValueError("Invalid checkpoint local inference backend")
+        if not isinstance(endpoint, str) or validate_endpoint(endpoint) != endpoint:
+            raise ValueError("Invalid checkpoint local inference endpoint")
+        if set(contract) in (managed_extended, qualified_managed):
+            hashes = (contract["managed_model_sha256"],
+                      contract["managed_runtime_sha256"])
+            if (backend != "llama.cpp" or model != "forgeos-managed"
+                    or any(not isinstance(v, str) or
+                           not re.fullmatch(r"[a-f0-9]{64}", v)
+                           for v in hashes)):
+                raise ValueError("Invalid managed GGUF checkpoint identity")
+            result.update(
+                managed_model_sha256=hashes[0],
+                managed_runtime_sha256=hashes[1])
+            if set(contract) == qualified_managed:
+                role = contract["qualification_role"]
+                evidence = contract["qualification_evidence_sha256"]
+                directory = contract["qualification_directory"]
+                if (not isinstance(role, str) or not role or len(role) > 80
+                        or not isinstance(evidence, str)
+                        or not re.fullmatch(r"[a-f0-9]{64}", evidence)
+                        or not isinstance(directory, str) or len(directory) > 4096):
+                    raise ValueError("Invalid qualified-model checkpoint evidence")
+                if directory:
+                    try:
+                        root = Path(directory)
+                        resolved = root.resolve(strict=True)
+                    except OSError as exc:
+                        raise ValueError(
+                            "Qualification evidence directory is unavailable") from exc
+                    if (not root.is_absolute() or root.is_symlink()
+                            or not resolved.is_dir() or str(resolved) != directory):
+                        raise ValueError("Invalid qualification evidence directory")
+                result.update(
+                    qualification_role=role,
+                    qualification_evidence_sha256=evidence,
+                    qualification_directory=directory)
+        elif backend == "llama.cpp" and model == "forgeos-managed":
+            raise ValueError(
+                "Managed local GGUF checkpoint needs verified runtime and "
+                "model identity; automatic recovery is not yet supported")
+        # Reuse the exact originally persisted server identity. Never
+        # substitute a port, backend, cloud endpoint, or different model.
+        result.update(backend=backend, endpoint=endpoint)
+    return result
 
 
 def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 allow_host_tests=False, execute=execute_task,
-                model_factory=Ollama, on_event=None, collect_results=True):
+                model_factory=Ollama, managed_model_factory=None,
+                on_event=None, collect_results=True):
     """Guarded resumption with optional constant-memory event reporting.
 
     The default report shape is unchanged. Streaming callers may disable
@@ -46,6 +106,8 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         raise ValueError("collect_results must be boolean")
     if on_event is not None and not callable(on_event):
         raise ValueError("on_event must be callable")
+    if managed_model_factory is not None and not callable(managed_model_factory):
+        raise ValueError("managed_model_factory must be callable")
     if preset is not None and preset not in PRESETS:
         raise ValueError("Invalid test preset override")
     if max_repairs is not None and (
@@ -105,11 +167,56 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
             record("skipped", {"id": task["id"], "reason": "Repair budget override mismatch"})
             continue
         try:
-            model = model_factory(model=contract["model"])
+            if "managed_model_sha256" in contract:
+                if managed_model_factory is None:
+                    record("skipped", {
+                        "id": task["id"],
+                        "reason": (
+                            "Managed GGUF checkpoint requires an authenticated "
+                            "currently running ForgeOS-managed runtime"),
+                    })
+                    continue
+                model = managed_model_factory(contract)
+                expected = {
+                    "backend": "llama.cpp",
+                    "model": "forgeos-managed",
+                    "base": contract["endpoint"],
+                    "managed_model_sha256": contract["managed_model_sha256"],
+                    "managed_runtime_sha256": contract["managed_runtime_sha256"],
+                }
+                actual = {name: getattr(model, name, None)
+                          for name in expected}
+                if actual != expected:
+                    raise ValueError(
+                        "Authenticated managed runtime does not match checkpoint identity")
+                if getattr(model, "authenticated", False) is not True:
+                    raise ValueError(
+                        "Managed checkpoint recovery requires authenticated runtime")
+            elif "backend" in contract:
+                model = create_model(
+                    backend=contract["backend"],
+                    model=contract["model"],
+                    endpoint=contract["endpoint"],
+                )
+            else:
+                # Existing Ollama checkpoints and injected test factories
+                # preserve the same behavior as before this extension.
+                model = model_factory(model=contract["model"])
+            qualified_resume = {}
+            if "qualification_evidence_sha256" in contract:
+                model.model = "qualified-auto"
+                qualified_resume = {
+                    "role": contract["qualification_role"],
+                    "qualification_evidence_sha256":
+                        contract["qualification_evidence_sha256"],
+                    "qualification_directory": (
+                        Path(contract["qualification_directory"])
+                        if contract["qualification_directory"] else None),
+                }
             result = execute(
                 store, task["id"], parent, preset=contract["preset"],
                 model=model, max_repairs=contract["max_repairs"],
-                allow_host_tests=True, resume=True,
+                allow_host_tests=True, resume=True, **qualified_resume,
             )
             if result["passed"]:
                 kind, value = "resumed", task["id"]
