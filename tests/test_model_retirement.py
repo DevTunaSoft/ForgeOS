@@ -221,6 +221,23 @@ class ModelRetirementTests(unittest.TestCase):
             self.restore(ticket["id"])
         self.assertEqual(list_retired(self.root)[0]["status"], "needs_manual_inspection")
 
+    def test_malformed_journal_filename_fails_closed_without_file_moves(self):
+        ticket = self.retire()
+        journal = self.root / ".forgeos-retired" / ticket["id"] / "journal.json"
+        original = json.loads(journal.read_text())
+        archived = self.root / ".forgeos-retired" / ticket["id"] / "weights.gguf"
+        for filename in (None, 7, {}, [], "../escape.gguf", ""):
+            with self.subTest(filename=filename):
+                record = json.loads(json.dumps(original))
+                record["identity"]["file"] = filename
+                journal.write_text(json.dumps(record))
+                with self.assertRaises((ValueError, TypeError)):
+                    self.restore(ticket["id"])
+                self.assertTrue(archived.exists())
+                self.assertFalse(self.model.exists())
+        journal.write_text(json.dumps(original))
+        self.assertEqual(self.restore(ticket["id"])["status"], "restored")
+
     def test_directory_sync_covers_journal_and_both_atomic_renames(self):
         from forgeos import model_retirement as retirement
         observed = []

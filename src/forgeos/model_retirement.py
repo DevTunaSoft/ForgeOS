@@ -83,10 +83,15 @@ def _record(root: Path, entry: Path) -> tuple[Path, dict]:
             or not isinstance(info["revision"], str) \
             or not REVISION.fullmatch(info["revision"]) \
             or not isinstance(info["sha256"], str) or not SHA.fullmatch(info["sha256"]) \
+            or not isinstance(info["file"], str) \
             or type(info["bytes"]) is not int or not 16 <= info["bytes"] <= MAX_MODEL_BYTES:
         raise ValueError("Unsafe retired model identity")
+    try:
+        safe_parts = _safe_name(info["file"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Unsafe retired model filename") from exc
     model = root.joinpath(*info["repo"].split("/"), info["revision"],
-                          *_safe_name(info["file"]))
+                          *safe_parts)
     if data["path"] != model.relative_to(root).as_posix():
         raise ValueError("Retirement journal path disagrees with identity")
     _reject_existing_link(model, root)
