@@ -101,12 +101,27 @@ def _verified_runtime(binary: str | Path, expected_sha256: str) -> Path:
     return path
 
 
+# Minimal operating-system variables only. In particular, do not inherit
+# GGML_*, CUDA_*, OMP_*, PYTHON*, DLL injection, provider credentials, proxy
+# settings or arbitrary model-server feature toggles from the user's shell.
+# A negative prefix filter is insufficient because inference engines and
+# native libraries may introduce new environment switches in later versions.
+_CHILD_ENV_KEYS = frozenset((
+    "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR",
+    "USERPROFILE", "HOME", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA",
+    "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+))
+
+
 def _child_environment() -> dict[str, str]:
-    """Drop env switches that could enable downloads, proxies or remote binds."""
-    denied = ("LLAMA_", "HF_", "HUGGINGFACE_", "OPENAI_", "ANTHROPIC_",
-              "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+    """Provide the smallest predictable OS environment to the model server.
+
+    The runtime executable is invoked by absolute path with its own cwd.
+    No application/provider secrets or inherited llama/GGML/GPU overrides
+    should be forwarded to the untrusted local inference subprocess.
+    """
     return {key: value for key, value in os.environ.items()
-            if not key.upper().startswith(denied)}
+            if key.upper() in _CHILD_ENV_KEYS}
 
 
 def _unused_loopback_port() -> int:

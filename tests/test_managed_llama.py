@@ -109,16 +109,36 @@ class ManagedLlamaTests(unittest.TestCase):
             self.exe.chmod(0o700)
         self.assertEqual(_verified_runtime(self.exe, self.exe_sha), self.exe)
 
-    def test_private_child_env_drops_cloud_tokens_proxy_and_llama_override(self):
+    def test_private_child_env_is_os_allowlist_not_prefix_denylist(self):
         inputs = {
-            "PATH": "safe", "LLAMA_ARG_HOST": "0.0.0.0",
+            "PATH": "safe", "SYSTEMROOT": "C:/Windows",
+            "TEMP": "C:/Temp", "HOME": "/tmp/user",
+            "LLAMA_ARG_HOST": "0.0.0.0",
             "HF_TOKEN": "secret", "OPENAI_API_KEY": "secret",
             "ANTHROPIC_API_KEY": "secret", "HTTPS_PROXY": "proxy",
-            "NO_PROXY": "localhost", "SAFE_VALUE": "preserved",
+            "NO_PROXY": "localhost", "SAFE_VALUE": "untrusted",
+            "GGML_CUDA_ENABLE_UNIFIED_MEMORY": "1",
+            "OMP_NUM_THREADS": "128", "CUDA_VISIBLE_DEVICES": "0",
+            "PYTHONPATH": "/tmp/untrusted", "LD_PRELOAD": "bad.so",
+            "DYLD_INSERT_LIBRARIES": "bad.dylib",
+            "FORGEOS_SECRET": "do-not-inherit",
         }
         with patch.dict("forgeos.managed_llama.os.environ", inputs, clear=True):
             self.assertEqual(_child_environment(), {
-                "PATH": "safe", "SAFE_VALUE": "preserved"})
+                "PATH": "safe", "SYSTEMROOT": "C:/Windows",
+                "TEMP": "C:/Temp", "HOME": "/tmp/user"})
+
+    def test_child_environment_preserves_only_required_case_insensitive_os_keys(self):
+        with patch.dict("forgeos.managed_llama.os.environ", {
+                "Path": "C:/bin", "SystemRoot": "C:/Windows",
+                "LOCALAPPDATA": "C:/Users/u/AppData/Local",
+                "COMSPEC": "C:/Windows/cmd.exe",
+                "HUGGINGFACE_HUB_TOKEN": "secret",
+                "HTTP_PROXY": "https://proxy.example",
+                "GGML_LOG_LEVEL": "5"}, clear=True):
+            self.assertEqual(_child_environment(), {
+                "Path": "C:/bin", "SystemRoot": "C:/Windows",
+                "LOCALAPPDATA": "C:/Users/u/AppData/Local"})
 
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):
         from forgeos.managed_llama import _verified_model, _verified_runtime
