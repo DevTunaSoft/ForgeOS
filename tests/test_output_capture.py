@@ -117,6 +117,38 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         finally:
             capture.close()
 
+    def test_owned_pytest_log_is_allowlisted_but_other_paths_rejected(self):
+        from forgeos.output_capture import validate_secure_output_path
+        directory = self.root / ".forgeos-runtime"
+        directory.mkdir(exist_ok=True)
+        owned = directory / "pytest-log.txt"
+        self.assertEqual(validate_secure_output_path(self.root, owned), owned)
+        with self.assertRaises(ValueError):
+            validate_secure_output_path(self.root, directory / "external.log")
+
+    def test_pytest_log_overflow_terminates_native_job(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        directory = self.root / ".forgeos-runtime"
+        directory.mkdir(exist_ok=True)
+        log = directory / "pytest-log.txt"
+        with log.open("wb") as stream:
+            stream.truncate(MAX_RAW_BYTES + 1)
+        class Kernel:
+            killed = False
+            def WaitForSingleObject(self, process, ms):
+                return 0
+            def TerminateJobObject(self, job, status):
+                self.killed = True
+                return 1
+        kernel = Kernel()
+        with tempfile.TemporaryFile(mode="w+b") as native:
+            with self.assertRaisesRegex(OSError, "disk limit"):
+                wait_native_output_bounded(
+                    10, 11, native, 5, kernel32=kernel,
+                    wait_timeout=258, wait_object_0=0,
+                    watched_files=(log,))
+        self.assertTrue(kernel.killed)
+
     def test_native_disk_output_watchdog_kills_oversize_job(self):
         from forgeos.output_capture import wait_native_output_bounded
         class FakeWindowsKernel:

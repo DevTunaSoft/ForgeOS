@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from forgeos.sandbox_runner import run_unittest
+from forgeos.sandbox_runner import run_unittest, run_pytest
 
 
 def _secure_env(root: Path, output: Path) -> dict[str, str]:
@@ -48,6 +50,51 @@ class SandboxRunnerTests(unittest.TestCase):
             finally:
                 os.chdir(previous)
             self.assertIn("OK", output.read_text(encoding="utf-8"))
+
+    def test_pytest_uses_owned_logfile_without_windows_nul(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / ".forgeos-runtime" / "test-output.txt"
+            logs = root / ".forgeos-runtime" / "pytest-log.txt"
+            output.parent.mkdir()
+            calls = []
+            fake = SimpleNamespace(main=lambda args: calls.append(args) or 0)
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                env = _secure_env(root, output)
+                env["FORGEOS_TEST_LOG_FILE"] = str(logs)
+                with patch.dict(os.environ, env, clear=True), \
+                     patch.dict(sys.modules, {"pytest": fake}):
+                    self.assertEqual(run_pytest(), 0)
+                    self.assertNotIn("FORGEOS_BOOTSTRAP_LOCALAPPDATA", os.environ)
+                    self.assertTrue(
+                        Path(os.environ["APPDATA"]).resolve().is_relative_to(root))
+            finally:
+                os.chdir(previous)
+            self.assertEqual(len(calls), 1)
+            self.assertIn("--log-file=" + str(logs), calls[0])
+            self.assertIn("--log-file-mode=w", calls[0])
+            self.assertNotIn("-p no:logging", calls[0])
+            self.assertIn("--capture=no", calls[0])
+
+    def test_pytest_refuses_external_log_path_before_import(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / ".forgeos-runtime" / "test-output.txt"
+            output.parent.mkdir()
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                env = _secure_env(root, output)
+                env["FORGEOS_TEST_LOG_FILE"] = str(root.parent / "outside.txt")
+                with patch.dict(os.environ, env, clear=True), \
+                     patch.dict(sys.modules, {"pytest": SimpleNamespace(main=lambda args: 0)}):
+                    self.assertEqual(run_pytest(), 92)
+            finally:
+                os.chdir(previous)
+            self.assertIn("log path is invalid",
+                          output.read_text(encoding="utf-8"))
 
     def test_rejects_output_path_escape(self):
         with tempfile.TemporaryDirectory() as tmp:
