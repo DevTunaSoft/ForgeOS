@@ -26,6 +26,11 @@ RESERVED_DISK_BYTES = GIB
 SAFE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
 ALLOWED_CDN = ("huggingface.co", "cdn-lfs.huggingface.co",
                "cas-bridge.xethub.hf.co", "cas-server.xethub.hf.co")
+WINDOWS_RESERVED_NAMES = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{x}" for x in range(1, 10)),
+    *(f"LPT{x}" for x in range(1, 10)),
+})
 
 
 def _safe_name(name: str) -> tuple[str, ...]:
@@ -36,8 +41,9 @@ def _safe_name(name: str) -> tuple[str, ...]:
     segments = name.split("/")
     if len(segments) > 8 or not all(SAFE_PART.fullmatch(x) and
                                     x not in (".", "..") and
-                                    not x.split(".", 1)[0].upper() in
-                                    {"CON", "PRN", "AUX", "NUL", "COM1", "LPT1"}
+                                    not x.endswith((".", " ")) and
+                                    x.split(".", 1)[0].upper()
+                                    not in WINDOWS_RESERVED_NAMES
                                     for x in segments):
         raise ValueError("Unsafe GGUF file path")
     return tuple(segments)
@@ -131,6 +137,12 @@ def _digest(path: Path) -> str:
     return checksum.hexdigest()
 
 
+def _gguf_header(path: Path) -> bool:
+    """Reject mislabeled or invalid weight headers before publishing."""
+    with path.open("rb") as source:
+        return source.read(4) == b"GGUF"
+
+
 def _write_json_atomic(destination: Path, value: dict):
     temporary = destination.with_name(destination.name + ".tmp-" + uuid.uuid4().hex)
     try:
@@ -181,11 +193,39 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
                 "bytes": size, "sha256": checksum}
     with _exclusive_download_lock(lock):
         if destination.exists():
-            if destination.is_file() and destination.stat().st_size == size and (
-                    _digest(destination) == checksum):
-                return {"status": "already_verified", "path": str(destination),
-                        **expected}
-            raise RuntimeError("Existing GGUF does not match the pinned checksum")
+            if (not destination.is_file() or destination.stat().st_size != size
+                    or _digest(destination) != checksum):
+                raise RuntimeError("Existing GGUF does not match the pinned checksum")
+            if not _gguf_header(destination):
+                raise RuntimeError("Existing GGUF is missing the GGUF header")
+            # Repair the manifest after a crash between the weight rename
+            # and its atomic metadata publication, without redownloading.
+            if manifest.exists():
+                if not manifest.is_file() or manifest.stat().st_size > 4096:
+                    raise RuntimeError("Existing GGUF manifest is not a valid file")
+                try:
+                    installed = json.loads(manifest.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError, ValueError) as exc:
+                    raise RuntimeError("Corrupt existing GGUF manifest") from exc
+                if installed != expected:
+                    raise RuntimeError("Existing GGUF manifest identity mismatch")
+            if metadata.exists():
+                if not metadata.is_file() or metadata.stat().st_size > 4096:
+                    raise RuntimeError("Corrupt published GGUF download journal")
+                try:
+                    prior = json.loads(metadata.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError, ValueError) as exc:
+                    raise RuntimeError("Corrupt published GGUF download journal") from exc
+                if prior != expected:
+                    raise RuntimeError("Published GGUF journal identifies different weights")
+            if partial.exists():
+                raise RuntimeError("Published GGUF has unresolved partial download")
+            if not manifest.exists():
+                _write_json_atomic(manifest, expected)
+            if metadata.exists():
+                metadata.unlink()
+            return {"status": "already_verified", "path": str(destination),
+                    **expected}
         if partial.exists() != metadata.exists():
             raise RuntimeError("Incomplete download journal needs manual inspection")
         if partial.exists():
@@ -250,11 +290,16 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
                     os.fsync(output.fileno())
         if position != size:
             raise RuntimeError("Model download interrupted; partial bytes retained for resumption")
+        error = None
         if _digest(partial) != checksum:
+            error = "Downloaded GGUF failed SHA-256; corrupt file quarantined"
+        elif not _gguf_header(partial):
+            error = "Downloaded model lacks GGUF header; file quarantined"
+        if error is not None:
             quarantined = partial.with_name(partial.name + ".corrupt-" + uuid.uuid4().hex)
             os.replace(partial, quarantined)
             metadata.unlink(missing_ok=True)
-            raise RuntimeError("Downloaded GGUF failed SHA-256; corrupt file quarantined")
+            raise RuntimeError(error)
         os.replace(partial, destination)
         _write_json_atomic(manifest, expected)
         metadata.unlink(missing_ok=True)

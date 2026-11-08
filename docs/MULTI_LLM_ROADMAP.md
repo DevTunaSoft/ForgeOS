@@ -283,3 +283,11 @@ consent and show potentially transmitted context, apply safe credential
 storage, exact domain allowlists, token/spend budgets, audit traces, rate-limit
 and fail-closed handling. No such provider or automatic cloud fallback is
 currently implemented. Free consumer chat plans are not free API entitlements.
+
+
+### GGUF atomic-publication recovery increment (2026-11-08)
+
+- [x] Extend the existing GGUF downloader to verify cached hash, header, manifest and transfer journal; repair a missing manifest after interrupted publication without redownloading.
+- [x] Preserve ambiguous partials and mismatched manifests rather than overwriting them. Reject Windows COM1–9, LPT1–9 and trailing-dot path segments.
+- [x] Add injected interruption, forged metadata, orphan partial, invalid-content and Windows filename regression cases. No duplicate database or new model application.
+- [ ] Confirm latest Linux/Windows CI and EXE packaging; test actual large Hugging Face weights, native Windows crash/restart and inference before closing #54.

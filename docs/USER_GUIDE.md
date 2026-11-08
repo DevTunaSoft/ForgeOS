@@ -384,3 +384,10 @@ not eliminated; physical Windows verification is pending.
 Do not confuse model process cleanup with AppContainer isolation of
 generated project tests. Close or stop a model only after the active
 ForgeOS AI task completes.
+
+
+### Recovering an interrupted GGUF download
+
+Choose Browse Hugging Face and select the same repository and GGUF file. ForgeOS uses the immutable revision and SHA-256 to resume partial downloads. If the fully verified model was published but a crash prevented saving its manifest, repeating that selection checks the entire weight file and restores the missing manifest without transferring weights again.
+
+If ForgeOS reports a conflicting manifest, an inconsistent download journal or a stray partial file, do not delete anything blindly: preserve the model directory for inspection. Correctly hashed files that are not actually GGUF are quarantined. This is experimental until tested using real multi-gigabyte files on Windows.

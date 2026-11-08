@@ -1300,3 +1300,10 @@ Previous complete CI on `3ca69efacda1c387aa9dd111f556468723d162ab`: **all six re
 Commit `3b1a2bf291ad2f48faeed1fdb247871f2e39019f` corrects `ManagedLlamaServer.stop()` so a native Windows Job Object release `OSError` no longer bypasses process termination/wait and secret cleanup. The exception is re-raised after best-effort child cleanup and the existing unconditional secrets cleanup. A Windows-specific mocked failure-injection regression test checks termination, wait, and removal of API credentials and endpoint. No new runtime dependency, Docker requirement, model process, or cloud API integration was introduced.
 
 **Acceptance pending:** Linux/Windows test matrix, Windows packaging, and a real Windows native Job Object failure injection on physical hardware. If the native handle release itself fails, the OS job handle may still require separate investigation; this patch does not guarantee cleanup of a broken kernel handle. Continue #53 with process-start/port-ownership races, then #54 GGUF lifecycle and #55 RAM governance.
+
+
+## 2026-11-08 GGUF model-publication crash recovery
+
+Work package C / issue #54: the existing downloader previously returned already_verified after hashing a published GGUF even when the required .forgeos.json manifest had been lost to a crash after the final model rename. The cached path now checks full SHA-256, GGUF magic, exact pinned manifest identity and any transfer journal, rebuilding an absent manifest only after full revalidation. Conflicts and orphan partials fail closed without overwriting user bytes. Invalid GGUF content is quarantined and the full Windows COM/LPT reserved device filename family is rejected.
+
+Five offline regression tests cover crash-after-promotion, forged manifest/journal, orphan partial, malformed GGUF content and missing-manifest repair; unsafe Windows names are added to existing path tests. README, beginner guide and roadmap updated. Pending: latest 6-job hosted CI and frozen EXE acceptance, real large weights, physical Windows stability and llama.cpp runtime testing. Continue issue #54 and memory routing issue #55 in the canonical modules.

@@ -15,7 +15,7 @@ from forgeos.gguf_download import (
 REPO = "Qwen/Coder-GGUF"
 REVISION = "a" * 40
 FILE = "coder-Q4_K_M.gguf"
-BODY = b"0123456789abcdefghijklmnopqrstuvwxyz"
+BODY = b"GGUF0123456789abcdefghijklmnopqrstuvwxyz"
 DIGEST = hashlib.sha256(BODY).hexdigest()
 
 
@@ -69,6 +69,86 @@ class GGUFDownloadTests(unittest.TestCase):
             self.assertEqual(cached["status"], "already_verified")
             no_network.assert_not_called()
 
+    def test_crash_after_weight_promotion_recovers_manifest_offline(self):
+        from forgeos import gguf_download as gd
+        original = gd._write_json_atomic
+        def fail_manifest(dest, value):
+            if dest.name.endswith(".forgeos.json"):
+                raise OSError("simulated manifest crash")
+            return original(dest, value)
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)), \
+             patch("forgeos.gguf_download._write_json_atomic",
+                   side_effect=fail_manifest):
+            with self.assertRaisesRegex(OSError, "manifest crash"):
+                self.download()
+        model = self.root / "Qwen" / "Coder-GGUF" / REVISION / FILE
+        manifest = model.with_name(FILE + ".forgeos.json")
+        journal = model.with_name(FILE + ".part.json")
+        self.assertEqual(model.read_bytes(), BODY)
+        self.assertFalse(manifest.exists())
+        self.assertTrue(journal.exists())
+        with patch("forgeos.gguf_download._open_weight") as network:
+            self.assertEqual(self.download()["status"], "already_verified")
+            network.assert_not_called()
+        self.assertEqual(json.loads(manifest.read_text())["sha256"], DIGEST)
+        self.assertFalse(journal.exists())
+
+    def test_cache_rejects_forged_manifest_and_journal_without_overwrite(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        manifest = model.with_name(FILE + ".forgeos.json")
+        journal = model.with_name(FILE + ".part.json")
+        manifest.write_text(json.dumps({"sha256": "f" * 64}))
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "manifest identity mismatch"):
+                self.download()
+            network.assert_not_called()
+        manifest.unlink()
+        journal.write_text(json.dumps({"repo": "wrong"}))
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "journal identifies different"):
+                self.download()
+            network.assert_not_called()
+        self.assertEqual(model.read_bytes(), BODY)
+        self.assertFalse(manifest.exists())
+
+    def test_cache_refuses_ambiguous_orphan_partial(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        partial = model.with_name(FILE + ".part")
+        partial.write_bytes(b"important unfinished bytes")
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "unresolved partial"):
+                self.download()
+            network.assert_not_called()
+        self.assertEqual(partial.read_bytes(), b"important unfinished bytes")
+
+    def test_matching_hash_but_invalid_gguf_magic_is_quarantined(self):
+        invalid = b"FAKE" + BODY[4:]
+        with patch("forgeos.gguf_download.list_gguf_files",
+                   return_value=[{"path": FILE, "bytes": len(invalid),
+                                  "sha256": hashlib.sha256(invalid).hexdigest()}]), \
+             patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(invalid)):
+            with self.assertRaisesRegex(RuntimeError, "lacks GGUF header"):
+                self.download()
+        self.assertFalse(list(self.root.rglob("*.gguf")))
+        self.assertEqual(len(list(self.root.rglob("*.corrupt-*"))), 1)
+
+    def test_existing_correct_file_recreates_lost_manifest(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        manifest = model.with_name(FILE + ".forgeos.json")
+        manifest.unlink()
+        with patch("forgeos.gguf_download._open_weight") as network:
+            self.assertEqual(self.download()["status"], "already_verified")
+            network.assert_not_called()
+        self.assertEqual(json.loads(manifest.read_text())["sha256"], DIGEST)
+
     def test_interruption_preserves_partial_and_exact_resume(self):
         first = BODY[:13]
         with patch("forgeos.gguf_download._open_weight",
@@ -114,7 +194,8 @@ class GGUFDownloadTests(unittest.TestCase):
         self.assertEqual(quarantined[0].read_bytes(), b"x" * len(BODY))
 
     def test_rejects_bad_paths_and_dangerous_redirects(self):
-        for file in ("../coder.gguf", "bad\\coder.gguf", "CON.gguf",
+        for file in ("../coder.gguf", "bad\\coder.gguf", "CON.gguf", "COM2/x.gguf", "LPT9/x.gguf",
+                     "lpt4/dir/x.gguf", "trailing./coder.gguf", "aux/x.gguf",
                      "a//x.gguf", "a/../x.gguf", "/x.gguf",
                      "evil.gguf:stream", "x" * 400 + ".gguf"):
             with self.subTest(file=file), self.assertRaises(ValueError):
