@@ -216,6 +216,19 @@ class ManagedLlamaTests(unittest.TestCase):
         proc.terminate.assert_called_once()
         self.assertIsNone(controller.process)
 
+    def test_managed_checkpoint_fails_closed_without_pinned_session_identity(self):
+        from forgeos.recovery import _checkpoint_contract
+        checkpoint = {"contract": {
+            "preset": "python-unittest", "max_repairs": 1,
+            "model": "forgeos-managed", "backend": "llama.cpp",
+            "endpoint": "http://127.0.0.1:17089/v1"}}
+        with self.assertRaisesRegex(ValueError, "automatic recovery is not yet supported"):
+            _checkpoint_contract(checkpoint)
+        # Existing manually configured llama.cpp checkpoints still work.
+        checkpoint["contract"]["model"] = "normal-coder"
+        self.assertEqual(
+            _checkpoint_contract(checkpoint)["model"], "normal-coder")
+
     def test_authenticated_api_key_transmitted_only_to_local_endpoint(self):
         client = LocalChatModel(backend="llama.cpp", model="forgeos-managed",
                                 endpoint="http://127.0.0.1:17089/v1",

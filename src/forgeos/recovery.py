@@ -40,6 +40,14 @@ def _checkpoint_contract(checkpoint):
             raise ValueError("Invalid checkpoint local inference backend")
         if not isinstance(endpoint, str) or validate_endpoint(endpoint) != endpoint:
             raise ValueError("Invalid checkpoint local inference endpoint")
+        # Private managed llama.cpp API credentials are ephemeral per GUI
+        # session, and the random port is not a durable process identity.
+        # Until the checkpoint pins model + runtime SHA and reconstructs a
+        # managed server, never silently resume against a reused port.
+        if backend == "llama.cpp" and model == "forgeos-managed":
+            raise ValueError(
+                "Managed local GGUF checkpoint needs verified runtime and "
+                "model identity; automatic recovery is not yet supported")
         # Reuse the exact originally persisted server identity. Never
         # substitute a port, backend, cloud endpoint, or different model.
         result.update(backend=backend, endpoint=endpoint)
