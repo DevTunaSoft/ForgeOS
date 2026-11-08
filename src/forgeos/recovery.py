@@ -20,7 +20,9 @@ def _checkpoint_contract(checkpoint):
     contract = checkpoint.get("contract")
     legacy = {"preset", "max_repairs", "model"}
     extended = legacy | {"backend", "endpoint"}
-    if not isinstance(contract, dict) or set(contract) not in (legacy, extended):
+    managed_extended = extended | {"managed_model_sha256", "managed_runtime_sha256"}
+    if (not isinstance(contract, dict)
+            or set(contract) not in (legacy, extended, managed_extended)):
         raise ValueError("Missing or invalid checkpoint execution contract")
     preset = contract["preset"]
     repairs = contract["max_repairs"]
@@ -33,17 +35,27 @@ def _checkpoint_contract(checkpoint):
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("Invalid checkpoint model identifier")
     result = {"preset": preset, "max_repairs": repairs, "model": model}
-    if set(contract) == extended:
+    if set(contract) in (extended, managed_extended):
         backend = contract["backend"]
         endpoint = contract["endpoint"]
         if not isinstance(backend, str) or backend not in DEFAULT_ENDPOINTS:
             raise ValueError("Invalid checkpoint local inference backend")
         if not isinstance(endpoint, str) or validate_endpoint(endpoint) != endpoint:
             raise ValueError("Invalid checkpoint local inference endpoint")
-        # Private managed llama.cpp API credentials are ephemeral per GUI
-        # session, and the random port is not a durable process identity.
-        # Until the checkpoint pins model + runtime SHA and reconstructs a
-        # managed server, never silently resume against a reused port.
+        # Even with verified model/runtime SHA stored, the private API key
+        # is ephemeral. Until the correct process can be authenticated and
+        # restarted on the original task lease, fail closed.
+        if set(contract) == managed_extended:
+            hashes = (contract["managed_model_sha256"],
+                      contract["managed_runtime_sha256"])
+            if (backend != "llama.cpp" or model != "forgeos-managed"
+                    or any(not isinstance(v, str) or
+                           not __import__("re").fullmatch(r"[a-f0-9]{64}", v)
+                           for v in hashes)):
+                raise ValueError("Invalid managed GGUF checkpoint identity")
+            raise ValueError(
+                "Managed local GGUF checkpoint requires authenticated "
+                "process recreation; automatic recovery is not yet supported")
         if backend == "llama.cpp" and model == "forgeos-managed":
             raise ValueError(
                 "Managed local GGUF checkpoint needs verified runtime and "

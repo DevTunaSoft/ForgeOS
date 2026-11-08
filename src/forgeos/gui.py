@@ -746,19 +746,25 @@ def launch(db_path, *, acceptance: bool = False):
             button.configure(state="disabled")
         def worker():
             worker_store = Store(db_path)
+            def selected_model():
+                instance = create_model(
+                    backend=chosen_backend, model=chosen_model,
+                    endpoint=chosen_endpoint, api_key=managed_key)
+                if managed_key is not None:
+                    # Store both verified immutable content identities in
+                    # the engine checkpoint; NEVER persist the API secret.
+                    instance.managed_model_sha256 = manager.model_sha256
+                    instance.managed_runtime_sha256 = manager.runtime_sha256
+                return instance
             try:
                 if operation == "plan":
                     value = plan_task(
                         worker_store, task_id,
-                        model_factory=lambda: create_model(
-                            backend=chosen_backend, model=chosen_model,
-                            endpoint=chosen_endpoint, api_key=managed_key))
+                        model_factory=selected_model)
                 elif operation == "run":
                     result = execute_task(
                         worker_store, task_id, chosen_workspace,
-                        preset=chosen_preset, model=create_model(
-                            backend=chosen_backend, model=chosen_model,
-                            endpoint=chosen_endpoint, api_key=managed_key),
+                        preset=chosen_preset, model=selected_model(),
                         max_repairs=chosen_retries,
                         allow_host_tests=chosen_host_permission,
                     )

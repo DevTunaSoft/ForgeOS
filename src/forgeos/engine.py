@@ -205,6 +205,22 @@ def _execute_task(
         contract = {"preset": preset, "max_repairs": max_repairs, "model": model_name}
         if getattr(model, "backend", "ollama") != "ollama":
             contract.update(backend=model.backend, endpoint=model.base)
+        if model_name == "forgeos-managed":
+            # A random port and alias are NOT durable model identity. Record
+            # verified GGUF and runtime hashes for future safe resumption.
+            # Until native reattestation exists, recovery still refuses.
+            model_hash = getattr(model, "managed_model_sha256", None)
+            runtime_hash = getattr(model, "managed_runtime_sha256", None)
+            if (getattr(model, "backend", None) != "llama.cpp"
+                    or not isinstance(model_hash, str)
+                    or not isinstance(runtime_hash, str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", model_hash)
+                    or not re.fullmatch(r"[a-f0-9]{64}", runtime_hash)):
+                raise ValueError(
+                    "Managed GGUF inference requires a pinned model/runtime "
+                    "SHA-256 identity")
+            contract.update(managed_model_sha256=model_hash,
+                            managed_runtime_sha256=runtime_hash)
         prompt = (
             "Return ONLY strict JSON with exactly this schema: "
             '{"files":[{"path":"relative/file.py","content":"complete replacement text"}]}. '

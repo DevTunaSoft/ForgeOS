@@ -224,6 +224,16 @@ class ManagedLlamaTests(unittest.TestCase):
             "endpoint": "http://127.0.0.1:17089/v1"}}
         with self.assertRaisesRegex(ValueError, "automatic recovery is not yet supported"):
             _checkpoint_contract(checkpoint)
+        checkpoint["contract"].update(
+            managed_model_sha256="a" * 64,
+            managed_runtime_sha256="b" * 64)
+        with self.assertRaisesRegex(ValueError, "authenticated process recreation"):
+            _checkpoint_contract(checkpoint)
+        checkpoint["contract"]["managed_model_sha256"] = "bad-hash"
+        with self.assertRaisesRegex(ValueError, "Invalid managed GGUF checkpoint identity"):
+            _checkpoint_contract(checkpoint)
+        del checkpoint["contract"]["managed_model_sha256"]
+        del checkpoint["contract"]["managed_runtime_sha256"]
         # Existing manually configured llama.cpp checkpoints still work.
         checkpoint["contract"]["model"] = "normal-coder"
         self.assertEqual(
