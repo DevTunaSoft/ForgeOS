@@ -107,7 +107,11 @@ forgeos plan 1 --backend lm-studio --model your-exact-local-model-id
 
 The Ollama default remains unchanged. Keep only one model loaded if RAM is
 tight. A model switch is not an authorization to restart an interrupted
-workflow with different weights. Read the
+workflow with different weights. The experimental `resume-safe` command
+reconstructs the original recorded local provider, model and endpoint
+rather than replacing them with the current GUI selection. It still
+requires the existing host-test permission and validates the task workspace
+and hashes; real crash/restart behavior remains to be verified. Read the
 [full model compatibility guide](MODEL_COMPATIBILITY.md) for limitations,
 troubleshooting and a RAM-conscious model shortlist.
 
