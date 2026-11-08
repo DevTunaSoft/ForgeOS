@@ -39,12 +39,15 @@ Windows measurements before being stated as supported minimum specifications.
 - No Docker, paid API calls, background polling service, second GUI or
   duplicate inference backend are required.
 
-Native Windows Job Object/AppContainer stdout now uses a low-frequency
-500-ms watchdog that terminates the job if its temporary output file grows
-past 32 MiB. Child-generated framework files (including the frozen unittest
-test-output.txt) are not yet independently watched while the process runs,
-so that remaining path needs a separate disk-pressure guard. Real-world
-Windows test runners, GPU model memory and full task-cycle RSS still need QA.
+Native Windows Job Object/AppContainer stdout uses a low-frequency 500-ms
+watchdog. The frozen unittest test-output.txt now participates in the same
+watchdog, and the runner terminates the Job Object if either exceeds 32 MiB
+or the child substitutes an unsafe link. Only the owned execution snapshot's
+fixed output path can be monitored; arbitrary host paths are rejected before
+the sandbox launch. The final file size is checked again at process exit.
+Tests may create other arbitrary files in their snapshot, so this is **not**
+a global quota for all child-created files. Real Windows GUI/AI tests, GPU
+model RAM and full task-cycle process RSS still need measured acceptance.
 Raw archives may contain secrets and are not encrypted at rest.
 
 ## Reproducible benchmark

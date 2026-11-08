@@ -435,3 +435,31 @@ twice per second, with no background agent. Invalid UTF-8 original evidence
 can be SHA-verified and displayed safely with replacement markers. Tests
 cover native disk limit termination, successful process exit and binary
 preview behavior. The final PR head still needs independent CI proof.
+
+## PR #33 — secure frozen unittest output disk guard
+
+Branch: feat/secure-test-output-watchdog, based on merged PR #32 (a811b40e).
+The existing output_capture.py native Windows job wait polls every 500 ms.
+It now inspects the frozen unittest's dedicated .forgeos-runtime/test-output.txt
+as well as inherited stdout. The monitor:
+- accepts only the exact snapshot-owned output path;
+- rejects symlinks, Windows reparse points/junctions and nonregular files;
+- accepts a legitimately not-yet-created child file;
+- checks size at each polling interval and after process exit;
+- terminates the contained Job Object on unsafe path, read failure or 32 MiB
+  overflow, without fallback to unrestricted host execution;
+- preserves original SHA evidence when the output is within the limit.
+
+secure_runner.py threads the fixed path through run_secure_appcontainer() into
+_run_appcontainer_process(). No new sandbox, daemon, Docker or alternate GUI.
+The AppContainer grants, restricted token and profile cleanup are unchanged.
+
+Regression tests in tests/test_output_capture.py and tests/test_secure_runner.py:
+oversized secondary output, symlink substitution preserving outside files,
+directory link paths, output appearing mid-wait, safe output, final-poll
+overflow and fail-before-launch invalid output path.
+
+Remaining: verify latest commit on Linux/Windows 3.10/3.12 and packaged
+Windows EXE AppContainer boundary smoke. Merge only after successful CI.
+Physical 4/8 GiB Windows GUI/AI and long-run memory acceptance remains open.
+Arbitrary other generated files still lack an aggregate disk quota.

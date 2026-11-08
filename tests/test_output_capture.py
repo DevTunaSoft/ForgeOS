@@ -215,6 +215,44 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_secure_output_path(self.root, expected)
 
+    def test_child_creates_secondary_output_during_wait(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        path = self.root / "test-output.txt"
+        class Kernel:
+            waits = 0
+            killed = False
+            def WaitForSingleObject(self, process, ms):
+                self.waits += 1
+                if self.waits == 2:
+                    with path.open("wb") as sink:
+                        sink.truncate(MAX_RAW_BYTES + 1)
+                return 0 if self.killed else 258
+            def TerminateJobObject(self, job, code):
+                self.killed = True
+                return 1
+        kernel = Kernel()
+        with tempfile.TemporaryFile(mode="w+b") as stdout:
+            with self.assertRaisesRegex(OSError, "Child-generated test output"):
+                wait_native_output_bounded(
+                    1, 2, stdout, 3, kernel32=kernel, wait_timeout=258,
+                    wait_object_0=0, watched_files=(path,))
+        self.assertTrue(kernel.killed)
+        self.assertGreaterEqual(kernel.waits, 2)
+
+    def test_child_generated_output_within_limit_completes(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        file = self.root / "test-output.txt"
+        file.write_bytes(b"ERROR limited\n")
+        class Kernel:
+            def WaitForSingleObject(self, process, ms): return 0
+            def TerminateJobObject(self, job, code):
+                raise AssertionError("Safe completed output was killed")
+        with tempfile.TemporaryFile(mode="w+b") as stdout:
+            status = wait_native_output_bounded(
+                1, 2, stdout, 3, kernel32=Kernel(), wait_timeout=258,
+                wait_object_0=0, watched_files=(file,))
+        self.assertEqual(status, 0)
+
     def test_watch_checks_final_size_even_if_process_already_exited(self):
         from forgeos.output_capture import wait_native_output_bounded
         class Completed:
