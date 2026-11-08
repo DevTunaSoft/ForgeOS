@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | Single GUI and persistent task queue | **Implemented prototype:** Tkinter UI, SQLite tasks/leases, paginated history, activity views and shared GUI/CLI plan/test actions | Beginner usability, accessibility and real machine soak |
 | Local AI planning/editing | **Implemented prototype:** local Ollama planning, JSON file replacements, bounded source metadata | Deeper planning and whole-app creation, robust real-model acceptance |
-| Experimental local multi-backend adapters | **Feature-branch candidate:** loopback chat adapters for llama.cpp, LM Studio and custom local endpoints; GUI selector | CI, real servers, packaged EXE, backend-aware resumption |
+| Experimental local multi-backend adapters | **Feature-branch candidate:** loopback chat adapters for llama.cpp, LM Studio and custom local endpoints; GUI selector | CI, real servers, packaged EXE, real Windows restart validation |
 | Hugging Face GGUF catalog | **Feature-branch candidate:** opt-in read-only repository/weight metadata browser | Download, checksum validation, install/update/delete and runtime integration |
 | Safe Git workspaces | **Implemented prototype:** per-task worktrees, path/budget validation, transactional edits | Broader recovery fault injection, demonstrated end-to-end rollback on Windows |
 | Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints, `resume-safe`, lease-fenced engine state publication | Resume additional phases safely, long-run crash/restart and concurrent worker acceptance |
@@ -32,7 +32,7 @@ The proposed model branch must pass Python CI, Windows frozen packaging,
 real llama.cpp/LM Studio local endpoint acceptance, and clean recovery tests
 before its status advances beyond experimental. The next required increments
 are managed CPU llama.cpp runtime, safe resumable HF downloads, canonical
-model profiles, backend-aware recovery and measured 16/32 GB Windows memory
+model profiles, measured backend recovery and 16/32 GB Windows memory
 benchmarks. Cross-agent automatic routing, OOM failover and task-specialized
 capability scoring are **planned**, not complete. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
