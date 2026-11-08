@@ -46,7 +46,7 @@ class TaskListStreamingContractTests(unittest.TestCase):
              redirect_stdout(output):
             self.assertEqual(main(["--db", str(self.db), "list"]), 0)
         self.assertEqual(json.loads(output.getvalue()), before)
-        self.assertIn("✅", output.getvalue())
+        self.assertIn("✅", json.loads(output.getvalue())[0]["result"])
 
 
 if __name__ == "__main__":
