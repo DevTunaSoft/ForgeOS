@@ -117,15 +117,24 @@ def launch(db_path, *, acceptance: bool = False):
     style.configure("Accent.TButton", padding=(12, 8))
     style.configure("TButton", padding=(9, 6))
 
-    project = tk.StringVar()
-    model = tk.StringVar(value="auto")
-    task_role = tk.StringVar(value="implementation")
-    backend = tk.StringVar(value="ollama")
-    endpoint = tk.StringVar(value="")
-    preset = tk.StringVar(value="python-unittest")
-    workspaces = tk.StringVar(value=str(Path.home() / ".forgeos" / "workspaces"))
+    # Persist only user-selected nonsecret preferences. Never persist runtime
+    # credentials, generated code, or task descriptions in this file.
+    from .desktop_settings import load_settings, save_settings
+    settings_path = Path.home() / ".forgeos" / "desktop-settings.json"
+    saved = {} if acceptance else load_settings(settings_path)
+
+    def setting(name, default):
+        return saved.get(name, default)
+
+    project = tk.StringVar(value=setting("project", ""))
+    model = tk.StringVar(value=setting("model", "auto"))
+    task_role = tk.StringVar(value=setting("task_role", "implementation"))
+    backend = tk.StringVar(value=setting("backend", "ollama"))
+    endpoint = tk.StringVar(value=setting("endpoint", ""))
+    preset = tk.StringVar(value=setting("preset", "python-unittest"))
+    workspaces = tk.StringVar(value=setting("workspaces", str(Path.home() / ".forgeos" / "workspaces")))
     allow_host_tests = tk.BooleanVar(value=False)
-    repair_count = tk.IntVar(value=2)
+    repair_count = tk.IntVar(value=setting("repair_count", 2))
     status = tk.StringVar(value="Ready")
     counts = tk.StringVar(value="")
     page = {"offset": 0}
@@ -1855,6 +1864,17 @@ def launch(db_path, *, acceptance: bool = False):
                     "Managed server did not stop", str(exc))
                 return
             managed["controller"] = None
+        if not acceptance:
+            try:
+                save_settings(settings_path, {
+                    "project": project.get(), "model": model.get(),
+                    "task_role": task_role.get(), "backend": backend.get(),
+                    "endpoint": endpoint.get(), "preset": preset.get(),
+                    "workspaces": workspaces.get(),
+                    "repair_count": repair_count.get(),
+                })
+            except (OSError, ValueError) as exc:
+                messagebox.showwarning("Settings not saved", str(exc))
         store.close()
         root.destroy()
 
