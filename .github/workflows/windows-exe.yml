@@ -40,6 +40,24 @@ jobs:
         run: |
           $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList "--smoke" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Frozen smoke test failed: $($process.ExitCode)" }
+      - name: Frozen Tkinter GUI startup and cleanup acceptance
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD 'gui-acceptance-report.json'
+          $args = '--gui-acceptance-report "' + $report + '"'
+          $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList $args -PassThru
+          if (-not $process.WaitForExit(90000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path $report) { Get-Content $report }
+            throw 'Frozen GUI exceeded 90-second watchdog'
+          }
+          if (Test-Path $report) { Get-Content $report }
+          if ($process.ExitCode -ne 0) { throw "Frozen GUI failed: $($process.ExitCode)" }
+          if (!(Test-Path $report)) { throw 'Frozen GUI acceptance report missing' }
+          $json = Get-Content -Raw $report | ConvertFrom-Json
+          if (-not $json.gui_started -or -not $json.queue_initialized -or -not $json.closed_cleanly) {
+            throw 'Frozen GUI initialization/cleanup was not verified'
+          }
       - name: Frozen secure AppContainer boundary smoke test
         shell: pwsh
         run: |

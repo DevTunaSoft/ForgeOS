@@ -36,6 +36,15 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('from .model_routing import memory_report', text)
         self.assertNotIn("root.after(1000, show_memory)", text)
 
+    def test_acceptance_exercises_actual_tk_event_loop(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn("root.withdraw()", source)
+        self.assertIn("root.after(300, verify_gui)", source)
+        self.assertIn('queue_initialized', source)
+        self.assertIn("root.mainloop()", source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)
