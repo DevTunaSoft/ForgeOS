@@ -34,7 +34,7 @@ class SecureRunnerContractTests(unittest.TestCase):
              patch.object(sys, "frozen", True, create=True), \
              patch("forgeos.secure_runner.run_secure_appcontainer") as runner:
             with self.assertRaisesRegex(RuntimeError, "does not yet support"):
-                run_secure_windows_test(self.runtime, "python-pytest")
+                run_secure_windows_test(self.runtime, "npm-test")
             runner.assert_not_called()
 
     def test_symlinked_output_is_rejected_before_appcontainer_launch(self):
@@ -62,6 +62,46 @@ class SecureRunnerContractTests(unittest.TestCase):
         self.assertEqual(env["FORGEOS_BOOTSTRAP_LOCALAPPDATA"], "1")
         self.assertEqual(env["FORGEOS_EXECUTION_SNAPSHOT"], "1")
         self.assertNotIn("APPDATA", env)
+
+    def test_frozen_pytest_watches_both_owned_files_and_keeps_appcontainer(self):
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        logfile = self.root / RUNTIME_DIR / "pytest-log.txt"
+        output.write_text("1 passed", encoding="utf-8")
+        fake = {
+            "passed": True, "returncode": 0, "output": "",
+            "capture_complete": True,
+            "containment": "windows-zero-capability-appcontainer+job-object",
+            "capability_count": 0, "network_capabilities_granted": False,
+        }
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=fake) as runner:
+            result = run_secure_windows_test(self.runtime, "python-pytest")
+        self.assertTrue(result["passed"])
+        args, options = runner.call_args
+        self.assertEqual(args[0][1], "--sandbox-pytest")
+        self.assertEqual(args[2]["FORGEOS_TEST_LOG_FILE"], str(logfile))
+        self.assertEqual(options["watched_output"], output)
+        self.assertEqual(options["watched_extra_outputs"], (logfile,))
+
+    def test_symlinked_pytest_log_refused_before_launch(self):
+        outside = self.root / "outside.txt"
+        outside.write_text("safe")
+        logfile = self.root / RUNTIME_DIR / "pytest-log.txt"
+        try:
+            logfile.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlinks unavailable")
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner.run_secure_appcontainer") as runner:
+            with self.assertRaisesRegex(ValueError, "link or special"):
+                run_secure_windows_test(self.runtime, "python-pytest")
+        runner.assert_not_called()
+        self.assertEqual(outside.read_text(), "safe")
 
     def test_frozen_unittest_uses_appcontainer_and_owned_output_path(self):
         output = self.root / RUNTIME_DIR / "test-output.txt"

@@ -48,7 +48,12 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
     if not getattr(sys, "frozen", False):
         raise RuntimeError(
             "Production AppContainer runner requires the frozen ForgeOS runtime")
-    if preset != "python-unittest":
+    child_modes = {
+        "python-unittest": "--sandbox-unittest",
+        "python-pytest": "--sandbox-pytest",
+    }
+    child_mode = child_modes.get(preset)
+    if child_mode is None:
         raise RuntimeError(
             f"Secure Windows runner does not yet support preset: {preset}")
     executable = Path(sys.executable).resolve(strict=True)
@@ -57,12 +62,27 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
     # creating any Windows child/AppContainer grants.
     from .output_capture import validate_secure_output_path
     monitored = validate_secure_output_path(runtime.path, output_file)
+    extra_outputs = ()
+    if preset == "python-pytest":
+        # Pytest's logging plugin opens os.devnull by default, which a
+        # zero-capability AppContainer may not access. Supply a fixed local
+        # file and watch its growth alongside the original test output.
+        log_file = runtime.path / RUNTIME_DIR / "pytest-log.txt"
+        extra_outputs = (validate_secure_output_path(runtime.path, log_file),)
     env = _bootstrap_environment(runtime)
     env["FORGEOS_TEST_OUTPUT_FILE"] = str(output_file)
-    argv = [str(executable), "--sandbox-unittest"]
+    if extra_outputs:
+        env["FORGEOS_TEST_LOG_FILE"] = str(extra_outputs[0])
+    argv = [str(executable), child_mode]
+    kwargs = {
+        "executable": executable,
+        "timeout": timeout,
+        "watched_output": monitored,
+    }
+    if extra_outputs:
+        kwargs["watched_extra_outputs"] = extra_outputs
     result = run_secure_appcontainer(
-        argv, runtime.path, env,
-        executable=executable, timeout=timeout, watched_output=monitored)
+        argv, runtime.path, env, **kwargs)
     try:
         if output_file.is_file() and not output_file.is_symlink():
             from .output_capture import summarize_output_file

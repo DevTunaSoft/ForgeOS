@@ -47,6 +47,8 @@ def run_secure_smoke() -> int:
                 "import unittest\n"
                 f"OUTSIDE = Path({str(outside)!r})\n"
                 f"PORT = {port}\n"
+                "def test_pytest_native_assertion():\n"
+                "    assert os.environ.get('FORGEOS_EXECUTION_SNAPSHOT') == '1'\n"
                 "class SecureBoundary(unittest.TestCase):\n"
                 "    def test_inside_write(self):\n"
                 "        Path('inside.txt').write_text('ok')\n"
@@ -68,21 +70,29 @@ def run_secure_smoke() -> int:
             )
             runtime = create_windows_low_integrity_snapshot(workspace)
             try:
-                result = run_secure_windows_test(
-                    runtime, "python-unittest", timeout=45)
+                results = [
+                    ("unittest", run_secure_windows_test(
+                        runtime, "python-unittest", timeout=45)),
+                    ("pytest", run_secure_windows_test(
+                        runtime, "python-pytest", timeout=45)),
+                ]
             finally:
                 remove_test_snapshot(workspace)
-            if not result.get("passed"):
-                _write_report(
-                    "Secure sandbox tests failed.\n"
-                    + result.get("output", "no test output"))
-                return 3
-            if result.get("capability_count") != 0:
-                _write_report("Secure runner unexpectedly received capabilities")
-                return 4
-            if result.get("network_capabilities_granted"):
-                _write_report("Secure runner unexpectedly received network capability")
-                return 5
+            for label, result in results:
+                if not result.get("passed"):
+                    _write_report(
+                        f"Secure {label} sandbox tests failed.\n"
+                        + result.get("output", "no test output"))
+                    return 3
+                if result.get("capability_count") != 0:
+                    _write_report(
+                        f"Secure {label} runner unexpectedly received capabilities")
+                    return 4
+                if result.get("network_capabilities_granted"):
+                    _write_report(
+                        f"Secure {label} runner unexpectedly received network capability")
+                    return 5
+            result = results[-1][1]
             if outside.exists():
                 _write_report("Secure runner wrote outside disposable snapshot")
                 return 6

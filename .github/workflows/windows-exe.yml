@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install package and PyInstaller
-        run: python -m pip install --upgrade pip "pyinstaller>=6.0,<7" .
+        run: python -m pip install --upgrade pip "pyinstaller>=6.0,<7" ".[secure-pytest]"
       - name: Validate Python sources
         run: python -m compileall -q src tests
       - name: Execute regression tests

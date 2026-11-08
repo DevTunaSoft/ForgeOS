@@ -585,3 +585,59 @@ launcher fail-closed behavior and user guide instructions. The existing
 verify Python matrix, Windows frozen actual GUI and AppContainer smoke,
 merge the clean single-guide PR, then close the superseded conflicting draft.
 Physical real-user Windows and end-to-end AI acceptance remain incomplete.
+
+
+## Rebuilt bundled Windows pytest AppContainer (PR #43; pending CI)
+
+Branch `feat/secure-pytest-watchdog-rebuild` rebases the intentions of
+open, stale/conflicted PR #29 onto merged `main` at
+`8697b443fb65dbc013b7fa8813e8e3b741278d62`. Root cause in the old
+Windows packaging smoke: pytest's logging plugin default FileHandler opens
+`\\\\.\\nul`, denied by the zero-capability AppContainer. Do not weaken
+sandbox permissions, disable test containment or bypass a failed smoke.
+
+Implementation in the existing owners:
+- `pyproject.toml` adds optional extra `secure-pytest` so core installs do
+  not incur a mandatory pytest dependency. Windows packaging selects the extra.
+- `sandbox_runner.py` adds a hidden bundled `run_pytest` mode using
+  `pytest.main`. It directs normal pytest logging to an explicit fixed
+  `.forgeos-runtime/pytest-log.txt` path, retains the logging plugin and
+  keeps no-cache-provider and external-plugin autoload disabled.
+- `secure_runner.py` selects one of two frozen test-child flags, validates
+  the secondary owned log file, and passes it to the existing AppContainer
+  Job Object native output watcher. No new sandbox or daemon.
+- `output_capture.py` allowlists only the exact owned test-output and
+  pytest-log filenames under the disposable snapshot; `appcontainer.py`
+  validates and monitors a maximum of two owned files, each <=32 MiB.
+- `secure_smoke.py` executes both unittest and native pytest in the
+  zero-capability Windows boundary, testing snapshot writes, no inherited
+  secret/bootstrap, blocked outside-file writing and localhost denial.
+- Tests cover output-file link/overflow guards, helper arguments, frozen
+  mode selection, snapshot environment and failure handling.
+
+Requirements: all four foundation OS/Python jobs, documentation integrity,
+packaged Windows EXE, GUI/paging/offline-help acceptance, **actual frozen
+AppContainer smoke for both unittest/pytest**. Until independently passing,
+this is development branch functionality, not shipped. If it passes, merge
+and close old stale PR #29 without duplicate/unsafe merge. Remaining:
+other framework isolation, genuine Windows/Ollama end-to-end workflow,
+crash-injection, process-tree memory benchmarks and 4/8 GiB acceptance.
+
+
+### PR #43 completion evidence and remaining acceptance
+
+The corrected branch head `f496189117188b19a458fa5aa44c7a4dc4a39c1d`
+passed foundation tests for Windows/Linux Python 3.10 and 3.12,
+documentation integrity, frozen Windows EXE packaging, frozen Tk GUI
+startup/paging/offline manual, and the actual hosted Windows secure
+AppContainer smoke for BOTH unittest and pytest (run 42437425300).
+Two Windows defects were fixed before passing: environment path aliases
+(Windows canonical temp paths) and an unnecessary attempt to re-open
+`.forgeos-runtime` with `Path.resolve(strict=True)` inside a zero-capability
+child. The parent validates paths before launch and its job watchdog detects
+unsafe substitution and size violations; the child now uses the pair of
+parent-provided lexical paths without forbidden directory operations.
+The package itself still excludes Git, Ollama models and external build
+chains. Real device Ollama build/test/repair and low-RAM hardware acceptance
+remain unverified. PR #29 must be closed rather than merged to avoid
+reintroducing its older unguarded implementation.

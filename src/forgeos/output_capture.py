@@ -48,9 +48,10 @@ def validate_secure_output_path(root: Path, candidate: Path) -> Path:
     # while the original snapshot path is still a valid spelling. Compare
     # the parent by canonical identity only after confirming the immediate
     # path segments have the exact ForgeOS-owned names and no reparse links.
-    if (not candidate.is_absolute() or candidate.name != "test-output.txt"
+    if (not candidate.is_absolute()
+            or candidate.name not in {"test-output.txt", "pytest-log.txt"}
             or candidate.parent.name != RUNTIME_DIR):
-        raise ValueError("Secure output monitor requires the owned unittest output path")
+        raise ValueError("Secure output monitor requires a ForgeOS-owned output path")
     if not _is_plain_path(candidate.parent.parent, directory=True):
         raise ValueError("Secure output root must be a plain directory")
     if not _is_plain_path(candidate.parent, directory=True):
