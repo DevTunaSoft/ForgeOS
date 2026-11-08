@@ -51,6 +51,23 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(len({row["id"] for row in first + middle + last}), 360)
         self.assertEqual(self.store.counts()["total"], 510)
 
+    def test_streaming_task_export_preserves_order_and_full_content(self):
+        ids = []
+        for index in range(200):
+            task = self.store.add(str(self.repo), "streaming " + str(index))
+            self.store.update(task, "passed" if index % 2 else "blocked",
+                              result="payload:" + str(index) + "💾")
+            ids.append(task)
+        stream = self.store.iter_tasks()
+        first = next(stream)
+        self.assertEqual(first["id"], ids[-1])
+        self.assertEqual(first["result"], "payload:199💾")
+        stream.close()
+        rows = list(self.store.iter_tasks())
+        self.assertEqual(len(rows), 200)
+        self.assertEqual([r["id"] for r in rows], list(reversed(ids)))
+        self.assertEqual(rows[-1]["result"], "payload:0💾")
+
     def test_paged_task_counts_and_invalid_inputs(self):
         task = self.store.add(str(self.repo), "first")
         self.store.update(task, "passed")
