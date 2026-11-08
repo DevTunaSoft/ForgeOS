@@ -63,7 +63,7 @@ These status labels describe **availability and scope**, not perfection: **imple
 
 ## What ForgeOS can actually do today
 
-The current [Windows EXE prototype](WINDOWS_BUILD.md) can open a single desktop interface. It can save task descriptions in a local SQLite database, display paginated history, and keep larger historical results off the main GUI list.
+The current [Windows EXE prototype](WINDOWS_BUILD.md) can open a single desktop interface. **This is not a general Windows app builder.** It can save task descriptions in a local SQLite database, display paginated history, and keep larger historical results off the main GUI list.
 
 Given an existing **local Git repository**, the user can enter a plain-English task, select an installed Ollama model or `auto`, generate a plan, and initiate an experimental build/test/repair loop. The engine validates edit requests, writes to **separate Git worktrees**, retains transactional edit journals, and keeps results available for manual inspection.
 
