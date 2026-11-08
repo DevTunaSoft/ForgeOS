@@ -42,17 +42,27 @@ def validate_secure_output_path(root: Path, candidate: Path) -> Path:
     """
     from .test_runtime import RUNTIME_DIR
     root = Path(root).resolve(strict=True)
-    expected = root / RUNTIME_DIR / "test-output.txt"
-    if not isinstance(candidate, Path) or candidate != expected:
+    if not isinstance(candidate, Path):
+        raise ValueError("Secure output monitor requires a Path")
+    # Windows Path.resolve() can canonicalize an 8.3/short parent name,
+    # while the original snapshot path is still a valid spelling. Compare
+    # the parent by canonical identity only after confirming the immediate
+    # path segments have the exact ForgeOS-owned names and no reparse links.
+    if (not candidate.is_absolute() or candidate.name != "test-output.txt"
+            or candidate.parent.name != RUNTIME_DIR):
         raise ValueError("Secure output monitor requires the owned unittest output path")
-    if not _is_plain_path(expected.parent, directory=True):
+    if not _is_plain_path(candidate.parent.parent, directory=True):
+        raise ValueError("Secure output root must be a plain directory")
+    if not _is_plain_path(candidate.parent, directory=True):
         raise ValueError("Secure test output directory must be a plain directory")
+    if candidate.parent.parent.resolve(strict=True) != root:
+        raise ValueError("Secure output monitor requires the owned unittest output path")
     try:
-        if not _is_plain_path(expected, directory=False):
+        if not _is_plain_path(candidate, directory=False):
             raise ValueError("Secure test output may not be a link or special file")
     except FileNotFoundError:
         pass
-    return expected
+    return candidate
 
 
 def _watched_size(path: Path) -> int:
