@@ -185,7 +185,7 @@ and streaming capture are prototype-level improvements.
 - Implemented prototype: capped Tk log retention, lightweight task list, and bounded evidence preview (outcome #41).
 - Outstanding acceptance gate: 4 GiB Windows GUI and basic workflow runtime test (outcome #49).
 - Outstanding acceptance gate: 8 GiB installed local-model and regression test (outcomes #23, #45, #49).
-- Remaining edge case: child-generated separate Windows unittest output file lacks an in-flight disk-growth guard (outcome #47).
+- Implemented, pending CI: child-generated frozen Windows unittest output shares the 32 MiB native runtime disk watchdog (outcome #47).
 - Outstanding acceptance gate: extended process-tree RAM and leak measurements (outcomes #45, #49).
 
 See MEMORY_BUDGET.md. This extension does not add new numbered enhancement

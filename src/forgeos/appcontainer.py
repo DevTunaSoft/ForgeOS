@@ -644,7 +644,8 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
                               env: dict[str, str], timeout: int = 180,
                               active_process_limit: int = 64,
                               process_memory_bytes: int = 1024 * 1024 * 1024,
-                              job_memory_bytes: int = 2 * 1024 * 1024 * 1024) -> dict:
+                              job_memory_bytes: int = 2 * 1024 * 1024 * 1024,
+                              watched_outputs: tuple[Path, ...] = ()) -> dict:
     """Run a process tree in a zero-capability AppContainer and Job Object."""
     if os.name != "nt":
         raise OSError("Secure AppContainer execution is Windows-only")
@@ -748,7 +749,7 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
         status = wait_native_output_bounded(
             process, job, output, timeout, kernel32=wc.kernel32,
             wait_timeout=wc.WAIT_TIMEOUT,
-            wait_object_0=wc.WAIT_OBJECT_0)
+            wait_object_0=wc.WAIT_OBJECT_0, watched_files=watched_outputs)
         if status == wc.WAIT_TIMEOUT:
             if not wc.kernel32.TerminateJobObject(job, 124):
                 raise wc._win_error("TerminateJobObject(Secure AppContainer)")
@@ -803,7 +804,8 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
 
 def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                             executable: str | Path,
-                            timeout: int = 180) -> dict:
+                            timeout: int = 180,
+                            watched_output: Path | None = None) -> dict:
     """Run autonomous code with zero capabilities and no weaker fallback.
 
     Only the disposable execution snapshot and the ForgeOS-owned executable are
@@ -824,6 +826,10 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
         raise ValueError("Secure execution paths are invalid")
     if not isinstance(env, dict):
         raise ValueError("Secure execution environment must be a dictionary")
+    watched = ()
+    if watched_output is not None:
+        from .output_capture import validate_secure_output_path
+        watched = (validate_secure_output_path(root, watched_output),)
 
     result = None
     with _temporary_probe_profile() as (_profile_name, sid):
@@ -853,7 +859,8 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                 grant(runner.parent, "RX")
             grant(runner, "RX")
             result = _run_appcontainer_process(
-                sid, argv, cwd=root, env=env, timeout=timeout)
+                sid, argv, cwd=root, env=env, timeout=timeout,
+                watched_outputs=watched)
         finally:
             cleanup_errors = []
             for path, recursive in reversed(grants):

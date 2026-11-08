@@ -11,6 +11,7 @@ from collections import deque
 import locale
 import os
 from pathlib import Path
+import stat
 import subprocess
 import tempfile
 import threading
@@ -24,32 +25,100 @@ TAIL_BYTES = 512 * 1024
 CHUNK_BYTES = 64 * 1024
 
 
+def _is_plain_path(path: Path, *, directory: bool) -> bool:
+    """Reject reparse points, junctions and symlinks, without following them."""
+    info = path.lstat()
+    attrs = getattr(info, "st_file_attributes", 0)
+    if attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return False
+    return stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
+
+
+def validate_secure_output_path(root: Path, candidate: Path) -> Path:
+    """Only a ForgeOS-owned, direct child output file may be monitored.
+
+    Do not accept a caller-provided arbitrary host path or a path leading
+    through a Windows junction. This executes before creating AppContainer.
+    """
+    from .test_runtime import RUNTIME_DIR
+    root = Path(root).resolve(strict=True)
+    if not isinstance(candidate, Path):
+        raise ValueError("Secure output monitor requires a Path")
+    # Windows Path.resolve() can canonicalize an 8.3/short parent name,
+    # while the original snapshot path is still a valid spelling. Compare
+    # the parent by canonical identity only after confirming the immediate
+    # path segments have the exact ForgeOS-owned names and no reparse links.
+    if (not candidate.is_absolute() or candidate.name != "test-output.txt"
+            or candidate.parent.name != RUNTIME_DIR):
+        raise ValueError("Secure output monitor requires the owned unittest output path")
+    if not _is_plain_path(candidate.parent.parent, directory=True):
+        raise ValueError("Secure output root must be a plain directory")
+    if not _is_plain_path(candidate.parent, directory=True):
+        raise ValueError("Secure test output directory must be a plain directory")
+    if candidate.parent.parent.resolve(strict=True) != root:
+        raise ValueError("Secure output monitor requires the owned unittest output path")
+    try:
+        if not _is_plain_path(candidate, directory=False):
+            raise ValueError("Secure test output may not be a link or special file")
+    except FileNotFoundError:
+        pass
+    return candidate
+
+
+def _watched_size(path: Path) -> int:
+    """Reject link substitution, even if a child changes its output at runtime."""
+    if not _is_plain_path(path.parent, directory=True):
+        raise OSError("Watched output directory replaced with link or special file")
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return 0  # The legitimate child has not created its file yet.
+    attrs = getattr(metadata, "st_file_attributes", 0)
+    if (not stat.S_ISREG(metadata.st_mode)
+            or attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+        raise OSError("Watched output changed into link or special file")
+    return metadata.st_size
+
+
 def wait_native_output_bounded(process, job, stream, timeout: int, *,
                                kernel32, wait_timeout: int,
-                               wait_object_0: int) -> int:
-    """Low-frequency native Windows wait with temporary output disk guard.
+                               wait_object_0: int,
+                               watched_files: tuple[Path, ...] = ()) -> int:
+    """Check native stdout and explicit child-created file every ~500 ms.
 
-    Does not change execution token, handle allowlist, Job Object limits or
-    child command. Existing caller keeps final timeout/exit-code logic.
+    On any inaccessible, oversized or substituted watched output, terminate
+    the contained Job Object and fail closed. Also check upon process exit,
+    avoiding the old final-poll race.
     """
+    if not isinstance(watched_files, tuple) or len(watched_files) > 2 or any(
+            not isinstance(item, Path) for item in watched_files):
+        raise ValueError("Invalid native output watch list")
     deadline = time.monotonic() + timeout
+
+    def enforce_limit():
+        try:
+            size = os.fstat(stream.fileno()).st_size
+            if size > MAX_RAW_BYTES:
+                raise OSError("Native stdout exceeded 32 MiB disk limit")
+            for candidate in watched_files:
+                if _watched_size(candidate) > MAX_RAW_BYTES:
+                    raise OSError("Child-generated test output exceeded 32 MiB disk limit")
+        except OSError as exc:
+            if not kernel32.TerminateJobObject(job, 125):
+                raise OSError("Failed to terminate unsafe test output job") from exc
+            kernel32.WaitForSingleObject(process, 5000)
+            raise OSError("Test output disk limit/unsafe path: " + str(exc)) from exc
+
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
+            enforce_limit()
             return wait_timeout
-        wait_ms = min(500, max(1, int(remaining * 1000)))
-        state = kernel32.WaitForSingleObject(process, wait_ms)
-        if state == wait_object_0:
-            return state
+        state = kernel32.WaitForSingleObject(
+            process, min(500, max(1, int(remaining * 1000))))
+        enforce_limit()
         if state != wait_timeout:
             return state
-        if os.fstat(stream.fileno()).st_size > MAX_RAW_BYTES:
-            if not kernel32.TerminateJobObject(job, 125):
-                raise OSError("Could not terminate oversized native test output")
-            kernel32.WaitForSingleObject(process, 5000)
-            raise OSError(
-                "Native test output exceeded 32 MiB disk limit; "
-                "Job Object terminated to protect storage")
         if time.monotonic() >= deadline:
             return wait_timeout
 
