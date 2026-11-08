@@ -71,6 +71,36 @@ class DashboardContractTests(unittest.TestCase):
         self.assertNotIn("worker_store.update(", source)
         self.assertIn('operation in {"run", "test"}', source)
 
+    def test_managed_llama_idle_unload_is_bounded_and_task_safe(self):
+        from forgeos.gui import _managed_idle_due
+        self.assertFalse(_managed_idle_due(
+            last_used=None, now=400, task_busy=False,
+            operation_busy=False))
+        self.assertFalse(_managed_idle_due(
+            last_used=100, now=399.9, task_busy=False,
+            operation_busy=False))
+        self.assertTrue(_managed_idle_due(
+            last_used=100, now=400, task_busy=False,
+            operation_busy=False))
+        for task_busy, model_busy in ((True, False), (False, True),
+                                      (True, True)):
+            with self.subTest(task_busy=task_busy, model_busy=model_busy):
+                self.assertFalse(_managed_idle_due(
+                    last_used=100, now=999,
+                    task_busy=task_busy, operation_busy=model_busy))
+        self.assertTrue(_managed_idle_due(
+            last_used=100, now=110, task_busy=False,
+            operation_busy=False, idle_seconds=10))
+
+    def test_idle_cleanup_reuses_existing_tk_event_loop(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('request_managed_stop(controller)', source)
+        self.assertIn('root.after(150, poll)', source)
+        self.assertIn('last_used=managed["last_used"]', source)
+        self.assertNotIn('threading.Timer(', source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)
