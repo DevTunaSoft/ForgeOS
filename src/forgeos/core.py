@@ -143,51 +143,58 @@ class Store:
         self.db.close()
 
 
+MAX_OLLAMA_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
 class Ollama:
     def __init__(self, base='http://127.0.0.1:11434', model='qwen2.5-coder:3b'):
         if base != 'http://127.0.0.1:11434':
             raise ValueError('Starter only permits the local Ollama endpoint')
         self.base, self.model = base, model
 
-    def generate_edits(self, prompt: str) -> str:
-        """Request complete JSON edits rather than a planning essay."""
+    def _complete(self, prompt: str, *, edits: bool = False) -> str:
+        """Bound network input, context length and RAM retention per request."""
+        from .model_routing import choose_installed_model, local_memory_settings
         if self.model == "auto":
-            from .model_routing import choose_installed_model
             self.model = choose_installed_model(prompt)
+        settings = local_memory_settings()
+        options = {
+            'num_ctx': settings['num_ctx'] if edits else
+            min(4096, settings['num_ctx']),
+            'num_predict': settings['num_predict'] if edits else
+            min(900, settings['num_predict']),
+        }
         payload = json.dumps({
-            'model': self.model, 'prompt': prompt, 'stream': False, 'format': 'json',
-            'options': {'num_ctx': 8192, 'num_predict': 4096},
+            'model': self.model, 'prompt': prompt, 'stream': False,
+            'format': 'json' if edits else '',
+            'options': options, 'keep_alive': settings['keep_alive'],
         }).encode()
         req = Request(self.base + '/api/generate', data=payload,
                       headers={'Content-Type': 'application/json'})
         with urlopen(req, timeout=180) as response:
-            body = json.load(response)
+            bounded = response.read(MAX_OLLAMA_RESPONSE_BYTES + 1)
+        if len(bounded) > MAX_OLLAMA_RESPONSE_BYTES:
+            raise RuntimeError(
+                'Local AI response exceeded safe memory limit; try smaller edits')
+        body = json.loads(bounded)
+        if not isinstance(body, dict):
+            raise RuntimeError('Ollama response was not structured JSON')
         result = body.get('response', '')
         if not isinstance(result, str) or not result.strip():
-            raise RuntimeError('Ollama returned no edits')
+            raise RuntimeError('Ollama returned no usable response')
         return result
 
+    def generate_edits(self, prompt: str) -> str:
+        """Request bounded JSON edits without loading an unbounded response."""
+        return self._complete(prompt, edits=True)
+
     def plan(self, description: str) -> str:
-        if self.model == "auto":
-            from .model_routing import choose_installed_model
-            self.model = choose_installed_model(description)
         prompt = (
             'You are a software planning assistant. Produce a concise, testable plan. '
             'Do not claim to have executed code. Include risks and acceptance tests.\n\nTask:\n'
             + description
         )
-        payload = json.dumps({
-            'model': self.model, 'prompt': prompt, 'stream': False,
-            'options': {'num_ctx': 4096, 'num_predict': 900},
-        }).encode()
-        req = Request(self.base + '/api/generate', data=payload,
-                      headers={'Content-Type': 'application/json'})
-        with urlopen(req, timeout=180) as response:
-            body = json.load(response)
-        result = body.get('response', '')
-        if not isinstance(result, str) or not result.strip():
-            raise RuntimeError('Ollama returned no plan')
-        return result
+        return self._complete(prompt)
 
 
 def _containment_name(low_integrity: bool) -> str:

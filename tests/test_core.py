@@ -60,6 +60,32 @@ class ForgeOSTests(unittest.TestCase):
         self.assertFalse(result['passed'])
     def test_local_only_ollama(self):
         with self.assertRaises(ValueError): Ollama(base='https://example.org')
+    def test_ollama_request_limits_local_response_and_unloads_small_ram(self):
+        import io
+        from forgeos.model_routing import MemorySnapshot
+        import json
+        def response(data):
+            class Resp(io.BytesIO):
+                def __enter__(self): return self
+                def __exit__(self, *args): self.close()
+            return Resp(data)
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(4*1024**3, 3*1024**3)), \
+             patch("forgeos.core.urlopen",
+                   return_value=response(json.dumps({"response":"plan ready"}).encode())) as mocked:
+            value = Ollama().plan("make an app")
+            self.assertEqual(value, "plan ready")
+            body = json.loads(mocked.call_args.args[0].data)
+            self.assertEqual(body["keep_alive"], 0)
+            self.assertEqual(body["options"]["num_ctx"], 1024)
+            self.assertEqual(body["options"]["num_predict"], 900)
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(4*1024**3, 3*1024**3)), \
+             patch("forgeos.core.urlopen",
+                   return_value=response(b"z" * (8*1024*1024+1))):
+            with self.assertRaisesRegex(RuntimeError, "memory limit"):
+                Ollama().generate_edits("test")
+
     def test_fuzz_task_descriptions_round_trip(self):
         rng=random.Random(20261107)
         alphabet=string.ascii_letters+string.digits+" \\n\\tΩ漢字'\\\";--"

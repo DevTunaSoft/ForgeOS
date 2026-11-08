@@ -2,7 +2,10 @@ import io
 import json
 import unittest
 from unittest.mock import patch
-from forgeos.model_routing import choose_installed_model, installed_models
+from forgeos.model_routing import (
+    MemorySnapshot, choose_installed_model, installed_models,
+    local_memory_settings, safe_model_file_budget,
+)
 
 MODELS = [
     {"name":"qwen2.5-coder:3b","size":2_000_000_000},
@@ -49,10 +52,64 @@ class LocalModelRoutingTests(unittest.TestCase):
             def __exit__(self, *args):
                 self.close()
         data = json.dumps({"models":MODELS}).encode()
-        with patch("forgeos.model_routing.urlopen",return_value=Response(data)) as mock:
+        with patch("forgeos.model_routing.urlopen",return_value=Response(data)) as mock, \
+             patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(32*1024**3, 24*1024**3)):
             result = choose_installed_model("Fix a button")
         self.assertEqual(result,"qwen2.5-coder:3b")
         self.assertEqual(mock.call_args.args[0],"http://127.0.0.1:11434/api/tags")
+
+    def test_low_ram_protects_against_oversized_installed_models(self):
+        gib = 1024 ** 3
+        scenarios = [
+            (4, 3, 0),
+            (8, 6, 2_000_000_000),
+            (16, 12, 5_000_000_000),
+            (32, 24, 9_000_000_000),
+        ]
+        for total, free, expected in scenarios:
+            with self.subTest(total=total, free=free):
+                budget = safe_model_file_budget(
+                    MemorySnapshot(total * gib, free * gib))
+                candidates = [m for m in MODELS
+                              if m["size"] <= budget and "coder" in m["name"]]
+                self.assertEqual(max((m["size"] for m in candidates), default=0), expected)
+
+    def test_explicit_memory_budget_and_failed_preflight(self):
+        self.assertEqual(choose_installed_model(
+            "Fix concurrent recovery security bugs", available=MODELS,
+            memory_limit_bytes=2_500_000_000), "qwen2.5-coder:3b")
+        with self.assertRaisesRegex(RuntimeError, "safe memory budget"):
+            choose_installed_model("important task", available=MODELS,
+                                   memory_limit_bytes=500_000_000)
+        with self.assertRaises(ValueError):
+            choose_installed_model("task", available=MODELS,
+                                   memory_limit_bytes=True)
+
+    def test_automatic_low_memory_profiles(self):
+        gib = 1024 ** 3
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(4*gib, 3*gib)):
+            self.assertEqual(local_memory_settings()["num_ctx"], 1024)
+            self.assertEqual(local_memory_settings()["keep_alive"], 0)
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(8*gib, 6*gib)):
+            self.assertEqual(local_memory_settings()["num_ctx"], 2048)
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(32*gib, 24*gib)):
+            self.assertEqual(local_memory_settings()["num_ctx"], 8192)
+        self.assertEqual(safe_model_file_budget(None), 1024**3)
+
+    def test_unbounded_catalog_is_rejected(self):
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.close()
+        with patch("forgeos.model_routing.urlopen",
+                   return_value=Response(b"x" * (2*1024*1024+1))):
+            with self.assertRaisesRegex(ValueError, "catalog exceeded"):
+                installed_models()
 
     def test_unknown_models_can_fallback_to_installed_general_model(self):
         chosen=choose_installed_model(

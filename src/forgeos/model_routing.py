@@ -4,8 +4,12 @@ Model file size is an imperfect proxy for runtime memory and capability.
 No model is downloaded or executed during selection.
 """
 from __future__ import annotations
+import ctypes
 import json
+import os
+from pathlib import Path
 import re
+from typing import NamedTuple
 from urllib.request import urlopen
 
 LOCAL_OLLAMA = "http://127.0.0.1:11434"
@@ -14,13 +18,105 @@ CODE_NAMES = ("coder", "code", "devstral", "starcoder", "codestral", "qwen", "de
 HARD_TASKS = {"security", "race", "concurrent", "architecture", "refactor",
               "hardening", "fuzz", "integration", "complex", "crash", "recovery"}
 DEFAULT_SIZE_LIMIT = 16 * 1024 * 1024 * 1024
+MAX_CATALOG_BYTES = 2 * 1024 * 1024
+GIB = 1024 ** 3
+
+
+class MemorySnapshot(NamedTuple):
+    total_bytes: int
+    available_bytes: int
+
+
+def system_memory() -> MemorySnapshot | None:
+    """Read native memory without third-party dependencies or background agents."""
+    if os.name == "nt":
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+        status = MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(status)
+        try:
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return MemorySnapshot(int(status.ullTotalPhys), int(status.ullAvailPhys))
+        except (AttributeError, OSError, ValueError):
+            return None
+        return None
+    # Linux can be memory-limited by a container. Never assume host memory
+    # is the workload's available budget if a cgroup limit is smaller.
+    if Path("/proc/meminfo").is_file():
+        try:
+            data = {}
+            with Path("/proc/meminfo").open("r", encoding="ascii") as stream:
+                for line in stream:
+                    name, _, amount = line.partition(":")
+                    if name in {"MemTotal", "MemAvailable"}:
+                        data[name] = int(amount.strip().split()[0]) * 1024
+            total, available = data.get("MemTotal"), data.get("MemAvailable")
+            if total and available is not None:
+                limit_file = Path("/sys/fs/cgroup/memory.max")
+                current_file = Path("/sys/fs/cgroup/memory.current")
+                try:
+                    limit = limit_file.read_text(encoding="ascii").strip()
+                    if limit.isdecimal() and current_file.is_file():
+                        cap = int(limit)
+                        consumed = int(current_file.read_text(encoding="ascii").strip())
+                        if cap > 0:
+                            total = min(total, cap)
+                            available = min(available, max(0, cap - consumed))
+                except (OSError, ValueError):
+                    pass
+                return MemorySnapshot(total, max(0, min(available, total)))
+        except (OSError, ValueError):
+            pass
+    return None
+
+
+def safe_model_file_budget(snapshot: MemorySnapshot | None) -> int:
+    """Conservative preflight, not a guarantee about runtime/model KV-cache RAM."""
+    if snapshot is None:
+        # Unknown memory: prefer tiny installed models rather than guessing big.
+        return 1024 ** 3
+    total, free = snapshot
+    if (type(total) is not int or type(free) is not int or total <= 0 or free < 0):
+        raise ValueError("Invalid physical memory snapshot")
+    free = min(total, free)
+    reserve = max(768 * 1024 ** 2, min(2 * GIB, total // 4))
+    usable = max(0, free - reserve)
+    # File size underestimates quantized model overhead/KV cache; add headroom.
+    return min(DEFAULT_SIZE_LIMIT, usable * 2 // 3)
+
+
+def local_memory_settings() -> dict:
+    """Prefer smaller context and automatic model unload on low-RAM devices."""
+    snapshot = system_memory()
+    total = snapshot.total_bytes if snapshot else 4 * GIB
+    free = snapshot.available_bytes if snapshot else 2 * GIB
+    if total <= 6 * GIB or free <= 2 * GIB:
+        return {"num_ctx": 1024, "num_predict": 1024, "keep_alive": 0}
+    if total <= 12 * GIB or free <= 4 * GIB:
+        return {"num_ctx": 2048, "num_predict": 2048, "keep_alive": 0}
+    if total <= 24 * GIB or free <= 8 * GIB:
+        return {"num_ctx": 4096, "num_predict": 3072, "keep_alive": "5m"}
+    return {"num_ctx": 8192, "num_predict": 4096, "keep_alive": "5m"}
+
 
 
 def installed_models(*, endpoint: str = LOCAL_OLLAMA) -> list[dict]:
     if endpoint != LOCAL_OLLAMA:
         raise ValueError("Only local Ollama model discovery is allowed")
     with urlopen(endpoint + "/api/tags", timeout=10) as response:
-        payload = json.load(response)
+        raw = response.read(MAX_CATALOG_BYTES + 1)
+    if len(raw) > MAX_CATALOG_BYTES:
+        raise ValueError("Ollama model catalog exceeded memory safety limit")
+    payload = json.loads(raw)
     if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
         raise ValueError("Invalid local model catalog")
     return payload["models"]
@@ -28,7 +124,8 @@ def installed_models(*, endpoint: str = LOCAL_OLLAMA) -> list[dict]:
 
 def choose_installed_model(task: str, *, available: list[dict] | None = None,
                            endpoint: str = LOCAL_OLLAMA,
-                           max_model_bytes: int = DEFAULT_SIZE_LIMIT) -> str:
+                           max_model_bytes: int = DEFAULT_SIZE_LIMIT,
+                           memory_limit_bytes: int | None = None) -> str:
     """Select only from installed models using a stable, conservative heuristic."""
     if endpoint != LOCAL_OLLAMA:
         raise ValueError("Only local Ollama can be selected")
@@ -36,6 +133,12 @@ def choose_installed_model(task: str, *, available: list[dict] | None = None,
         raise ValueError("Task specification is required")
     if type(max_model_bytes) is not int or max_model_bytes <= 0:
         raise ValueError("Model size limit must be positive")
+    if memory_limit_bytes is not None:
+        if type(memory_limit_bytes) is not int or memory_limit_bytes < 0:
+            raise ValueError("Invalid memory budget")
+        max_model_bytes = min(max_model_bytes, memory_limit_bytes)
+    elif available is None:
+        max_model_bytes = min(max_model_bytes, safe_model_file_budget(system_memory()))
     catalog = installed_models(endpoint=endpoint) if available is None else available
     if not isinstance(catalog, list):
         raise ValueError("Invalid installed model list")
@@ -50,7 +153,8 @@ def choose_installed_model(task: str, *, available: list[dict] | None = None,
         candidates.append((name, size))
     if not candidates:
         raise RuntimeError(
-            "No suitable installed Ollama model within the configured size limit")
+            "No installed local Ollama model fits the safe memory budget; "
+            "install a smaller model or free system RAM")
     coder = [m for m in candidates if any(term in m[0].lower() for term in CODE_NAMES)]
     if coder:
         candidates = coder
