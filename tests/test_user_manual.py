@@ -77,7 +77,7 @@ class LivingManualContractTests(unittest.TestCase):
             self.assertIn('"' + preset + '"', self.gui)
             self.assertIn(preset, self.manual)
         for caution in [
-            "not a completed turnkey product", "not encrypted at",
+            "not yet a completed turnkey product", "not encrypted at",
             "not yet", "host", "Ollama", "4 GB", "8 GB", "AppContainer",
         ]:
             self.assertIn(caution.lower(), self.manual.lower())
