@@ -125,7 +125,7 @@ class BoundedSpool:
         self.file.close()
 
 
-def run_streamed_process(argv, root: Path, timeout: int, *, env=None) -> dict:
+def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None) -> dict:
     """Drain stdout/stderr incrementally, bounded by spool size and timeout."""
     capture = BoundedSpool()
     process = None
@@ -162,7 +162,7 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None) -> dict:
             raise OSError("Test output stream did not close")
         if read_error:
             raise OSError(f"Test output read failed: {type(read_error[0]).__name__}")
-        result = capture.finish(encoding=locale.getpreferredencoding(False) or "utf-8")
+        result = capture.finish(encoding=locale.getpreferredencoding(False) or "utf-8", store=store)
         return {
             "passed": returncode == 0,
             "returncode": returncode,
