@@ -22,7 +22,7 @@ class SecureDiagnosticTests(unittest.TestCase):
                  patch("forgeos.secure_runner.run_secure_appcontainer",
                        return_value={"passed": False, "returncode": 9, "output": "fallback"}) as run:
                 result = run_secure_windows_test(runtime, "python-unittest")
-            self.assertEqual(result["output"], original)
+            self.assertTrue(result["output"] == original, "Secure output content/line endings changed")
             self.assertEqual(result["returncode"], 9)
             self.assertFalse(result["passed"])
             run.assert_called_once()

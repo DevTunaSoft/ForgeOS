@@ -3,6 +3,7 @@
 Full output is archived first. If archiving fails, no output is shortened.
 """
 from __future__ import annotations
+import codecs
 import gzip
 import hashlib
 import os
@@ -49,31 +50,89 @@ class EvidenceStore:
         raw = text.encode("utf-8")
         if len(raw) > MAX_ARCHIVE_BYTES:
             raise ValueError("Output exceeds evidence archive limit")
-        reference = hashlib.sha256(raw).hexdigest()
-        target = self._path(reference)
-        if target.is_symlink():
-            raise ValueError("Refusing to overwrite symlinked evidence")
-        if target.exists():
-            try:
-                if self.get(reference) == text:
-                    return reference
-            except (OSError, ValueError, UnicodeError):
-                pass
+        from io import BytesIO
+        return self.put_stream(BytesIO(raw))
+
+    def put_stream(self, source) -> str:
+        """Atomically archive a byte stream without buffering it all in RAM."""
         fd, name = tempfile.mkstemp(prefix=".forgeos-", suffix=".tmp", dir=self.root)
         temporary = Path(name)
+        digest = hashlib.sha256()
+        count = 0
         try:
             if os.name != "nt":
                 os.fchmod(fd, 0o600)
             with os.fdopen(fd, "wb") as destination:
                 with gzip.GzipFile(fileobj=destination, mode="wb", mtime=0) as stream:
-                    stream.write(raw)
+                    while True:
+                        part = source.read(64 * 1024)
+                        if not part:
+                            break
+                        if not isinstance(part, bytes):
+                            raise TypeError("Archive stream must return bytes")
+                        count += len(part)
+                        if count > MAX_ARCHIVE_BYTES:
+                            raise ValueError("Output exceeds evidence archive limit")
+                        digest.update(part)
+                        stream.write(part)
                 destination.flush()
                 os.fsync(destination.fileno())
+            reference = digest.hexdigest()
+            target = self._path(reference)
+            if target.is_symlink():
+                raise ValueError("Refusing to overwrite symlinked evidence")
             os.replace(temporary, target)
             return reference
         finally:
             if temporary.exists():
                 temporary.unlink()
+
+    def preview(self, reference: str, *, max_chars: int = 240_000) -> str:
+        """SHA-verified small GUI excerpt, without decoding entire archive."""
+        if type(max_chars) is not int or not 2000 <= max_chars <= 240_000:
+            raise ValueError("GUI evidence preview budget is invalid")
+        location = self._path(reference)
+        if location.is_symlink() or not location.is_file():
+            raise ValueError("Diagnostic evidence unavailable or unsafe")
+        allowance = max_chars - 128
+        prefix_limit = allowance * 3 // 4
+        suffix_limit = allowance - prefix_limit
+        digest = hashlib.sha256()
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        byte_count = 0
+        chars = 0
+        complete = []
+        prefix, suffix = "", ""
+
+        def collect(part):
+            nonlocal chars, complete, prefix, suffix
+            chars += len(part)
+            if complete is not None:
+                complete.append(part)
+                if chars > max_chars:
+                    complete = None
+            if len(prefix) < prefix_limit:
+                prefix += part[:prefix_limit - len(prefix)]
+            suffix = (suffix + part)[-suffix_limit:]
+
+        with gzip.open(location, "rb") as stream:
+            while True:
+                block = stream.read(64 * 1024)
+                if not block:
+                    break
+                byte_count += len(block)
+                if byte_count > MAX_ARCHIVE_BYTES:
+                    raise ValueError("Diagnostic archive exceeds size limit")
+                digest.update(block)
+                collect(decoder.decode(block))
+            collect(decoder.decode(b"", final=True))
+        if digest.hexdigest() != reference:
+            raise ValueError("Diagnostic integrity check failed")
+        if complete is not None:
+            return "".join(complete)
+        omitted = max(0, chars - len(prefix) - len(suffix))
+        return (prefix + f"\n[... {omitted} characters omitted from GUI;"
+                " full original available with diagnostics show ...]\n" + suffix)
 
     def get(self, reference: str) -> str:
         path = self._path(reference)
@@ -203,10 +262,19 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
     from .error_learning import classify_failure
     outcome["failure_type"] = classify_failure(
         output, passed=result.get("passed"))
-    raw_bytes = len(output.encode("utf-8"))
+    measured = result.get("capture_source_bytes")
+    raw_bytes = (measured if type(measured) is int and measured >= 0
+                 else len(output.encode("utf-8")))
+    full_capture = result.get("capture_complete") is not False
+    stored_reference = result.get("evidence_reference")
     try:
-        reference = (store if store is not None else EvidenceStore()).put(output)
-    except (OSError, ValueError, UnicodeError) as exc:
+        if stored_reference is not None:
+            if not isinstance(stored_reference, str) or not _REF.fullmatch(stored_reference):
+                raise ValueError("Invalid prearchived evidence reference")
+            reference = stored_reference
+        else:
+            reference = (store if store is not None else EvidenceStore()).put(output)
+    except (OSError, ValueError, UnicodeError, TypeError) as exc:
         outcome["optimization"] = {
             "archived": False, "optimized": False, "source_bytes": raw_bytes,
             "reason": f"Archiving failed: {type(exc).__name__}"}
@@ -219,9 +287,13 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
         prepared, removed, filter_status = output, 0, "unavailable"
     concise = _focus(prepared, result.get("passed") is False, budget)
     if concise != output:
-        concise += f"\n[Full original diagnostic: forgeos diagnostics show {reference}]"
+        kind = ("Full original diagnostic" if full_capture
+                else "Partial captured diagnostic (original output exceeded limit)")
+        concise += f"\n[{kind}: forgeos diagnostics show {reference}]"
+    if not full_capture:
+        concise += "\n[ForgeOS: diagnostic capture incomplete; manual review required]"
     # Do not inflate tiny results just to include a recall hint.
-    if len(concise.encode("utf-8")) >= raw_bytes:
+    if full_capture and len(concise.encode("utf-8")) >= raw_bytes:
         concise, removed = output, 0
     context_bytes = len(concise.encode("utf-8"))
     outcome["output"] = concise
@@ -230,5 +302,7 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
         "context_bytes": context_bytes, "saved_bytes": max(0, raw_bytes - context_bytes),
         "optimized": concise != output, "preset": preset,
         "deduplicated_lines": removed, "filter_status": filter_status,
+        "capture_complete": full_capture,
+        "source_prearchived": stored_reference is not None,
     }
     return outcome

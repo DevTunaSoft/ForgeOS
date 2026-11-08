@@ -61,8 +61,10 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
         executable=executable, timeout=timeout)
     try:
         if output_file.is_file() and not output_file.is_symlink():
-            result["output"] = output_file.read_text(
-                encoding="utf-8", errors="replace")
+            from .output_capture import summarize_output_file
+            with output_file.open("rb") as output_stream:
+                result.update(summarize_output_file(
+                    output_stream, encoding="utf-8"))
     except OSError as exc:
         result["output"] = (
             result.get("output", "")[-12000:]

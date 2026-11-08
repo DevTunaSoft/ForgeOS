@@ -23,6 +23,18 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(self.store.get(task)['status'],'queued')
         self.store.close(); self.store=Store(self.root/'state'/'tasks.sqlite3')
         self.assertEqual(self.store.get(task)['description'],'Improve startup')
+    def test_brief_rows_omit_large_diagnostic_blobs(self):
+        task=self.store.add(str(self.repo),'Memory lightweight activity view')
+        large='z'*(2*1024*1024)
+        self.store.update(task,'passed',result=large,error=large)
+        brief=self.store.list(brief=True)
+        self.assertEqual(len(brief),1)
+        self.assertEqual(set(brief[0]),{'id','status','description'})
+        self.assertEqual(brief[0]['id'],task)
+        self.assertEqual(self.store.get(task)['result'],large)
+        with self.assertRaises(ValueError):
+            self.store.list(brief=1)
+
     def test_empty_and_non_repo_rejected(self):
         with self.assertRaises(ValueError): self.store.add(str(self.repo),'  ')
         with self.assertRaises(ValueError): self.store.add(str(self.root),'something')
@@ -60,6 +72,32 @@ class ForgeOSTests(unittest.TestCase):
         self.assertFalse(result['passed'])
     def test_local_only_ollama(self):
         with self.assertRaises(ValueError): Ollama(base='https://example.org')
+    def test_ollama_request_limits_local_response_and_unloads_small_ram(self):
+        import io
+        from forgeos.model_routing import MemorySnapshot
+        import json
+        def response(data):
+            class Resp(io.BytesIO):
+                def __enter__(self): return self
+                def __exit__(self, *args): self.close()
+            return Resp(data)
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(4*1024**3, 3*1024**3)), \
+             patch("forgeos.core.urlopen",
+                   return_value=response(json.dumps({"response":"plan ready"}).encode())) as mocked:
+            value = Ollama().plan("make an app")
+            self.assertEqual(value, "plan ready")
+            body = json.loads(mocked.call_args.args[0].data)
+            self.assertEqual(body["keep_alive"], 0)
+            self.assertEqual(body["options"]["num_ctx"], 1024)
+            self.assertEqual(body["options"]["num_predict"], 900)
+        with patch("forgeos.model_routing.system_memory",
+                   return_value=MemorySnapshot(4*1024**3, 3*1024**3)), \
+             patch("forgeos.core.urlopen",
+                   return_value=response(b"z" * (8*1024*1024+1))):
+            with self.assertRaisesRegex(RuntimeError, "memory limit"):
+                Ollama().generate_edits("test")
+
     def test_fuzz_task_descriptions_round_trip(self):
         rng=random.Random(20261107)
         alphabet=string.ascii_letters+string.digits+" \\n\\tΩ漢字'\\\";--"

@@ -450,8 +450,11 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         kernel32.CloseHandle(thread)
         thread = None
 
-        wait_ms = min(timeout * 1000, 0xFFFFFFFE)
-        status = kernel32.WaitForSingleObject(process, wait_ms)
+        from .output_capture import wait_native_output_bounded
+        status = wait_native_output_bounded(
+            process, job, output, timeout, kernel32=kernel32,
+            wait_timeout=WAIT_TIMEOUT,
+            wait_object_0=WAIT_OBJECT_0)
         if status == WAIT_TIMEOUT:
             if not kernel32.TerminateJobObject(job, 124):
                 raise _win_error("TerminateJobObject")
@@ -468,11 +471,12 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         output.flush()
         output.seek(0)
         encoding = locale.getpreferredencoding(False) or "utf-8"
-        text = output.read().decode(encoding, errors="replace")
+        from .output_capture import summarize_output_file
+        capture = summarize_output_file(output, encoding=encoding)
         return {
             "passed": code.value == 0,
             "returncode": int(code.value),
-            "output": text,
+            **capture,
             "ui_restrictions": ui_restrictions,
             "handle_allowlist": True,
             "containment": (

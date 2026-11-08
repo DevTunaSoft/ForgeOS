@@ -90,7 +90,9 @@ def apply_edits(root: Path, response: str) -> list[str]:
 def _context(root: Path, question: str = "") -> str:
     """Bounded, relevance-ranked symbols without source values."""
     from .context_index import render_context
-    return render_context(root, question)
+    from .model_routing import local_memory_settings
+    budget = min(8000, max(512, local_memory_settings()["num_ctx"] * 3 // 2))
+    return render_context(root, question, max_chars=budget)
 
 def _generate(model: Ollama, prompt: str) -> str:
     # The local Ollama API is already the only endpoint allowed by Ollama.
@@ -259,6 +261,10 @@ def _execute_task(
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
+            if outcome.get("capture_complete") is False:
+                raise RuntimeError(
+                    "Test output exceeds safe evidence limits or original archive "
+                    "could not be retained; automatic repair/approval blocked")
             previous_failure = last_output
             last_output = outcome["output"]
             if outcome["passed"]:

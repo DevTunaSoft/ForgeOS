@@ -103,6 +103,25 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
 
+    def test_incomplete_large_log_blocks_autonomous_pass(self):
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [
+            {"path": "app.py", "content": "def value():\n return 42\n"}]})
+        fake = {"passed": True, "returncode": 0,
+                "output": "[ForgeOS warning: incomplete]",
+                "capture_complete": False}
+        with patch("forgeos.engine._run_workspace_tests", return_value=fake) as runner:
+            with self.assertRaisesRegex(RuntimeError, "evidence limits"):
+                execute_task(self.store, self.task, self.root,
+                             allow_host_tests=True,
+                             generate=lambda model, prompt: manifest)
+        runner.assert_called_once()
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+        checkpoint = json.loads(self.store.get(self.task)["result"])
+        self.assertEqual(checkpoint["phase"], "test_pending")
+        self.assertEqual((self.repo / "app.py").read_text(),
+                         "def value():\n return 42\n")
+
     def test_host_tests_require_opt_in(self):
         with self.assertRaises(ValueError):
             execute_task(self.store, self.task, self.root)

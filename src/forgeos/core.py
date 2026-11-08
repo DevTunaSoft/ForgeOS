@@ -48,8 +48,13 @@ class Store:
                 (str(project_path), description.strip(), now, now))
         return int(cur.lastrowid)
 
-    def list(self):
-        return [dict(row) for row in self.db.execute('SELECT * FROM tasks ORDER BY id DESC')]
+    def list(self, *, brief: bool = False):
+        """Brief rows avoid materializing large result/diagnostic blobs for GUI."""
+        if type(brief) is not bool:
+            raise ValueError("brief must be boolean")
+        fields = "id,status,description" if brief else "*"
+        return [dict(row) for row in self.db.execute(
+            f"SELECT {fields} FROM tasks ORDER BY id DESC")]
 
     def get(self, task_id: int):
         row = self.db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
@@ -143,51 +148,60 @@ class Store:
         self.db.close()
 
 
+MAX_OLLAMA_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
 class Ollama:
     def __init__(self, base='http://127.0.0.1:11434', model='qwen2.5-coder:3b'):
         if base != 'http://127.0.0.1:11434':
             raise ValueError('Starter only permits the local Ollama endpoint')
         self.base, self.model = base, model
 
-    def generate_edits(self, prompt: str) -> str:
-        """Request complete JSON edits rather than a planning essay."""
+    def _complete(self, prompt: str, *, edits: bool = False) -> str:
+        """Bound network input, context length and RAM retention per request."""
+        from .model_routing import choose_installed_model, local_memory_settings
         if self.model == "auto":
-            from .model_routing import choose_installed_model
             self.model = choose_installed_model(prompt)
-        payload = json.dumps({
-            'model': self.model, 'prompt': prompt, 'stream': False, 'format': 'json',
-            'options': {'num_ctx': 8192, 'num_predict': 4096},
-        }).encode()
+        settings = local_memory_settings()
+        options = {
+            'num_ctx': settings['num_ctx'] if edits else
+            min(4096, settings['num_ctx']),
+            'num_predict': settings['num_predict'] if edits else
+            min(900, settings['num_predict']),
+        }
+        arguments = {
+            'model': self.model, 'prompt': prompt, 'stream': False,
+            'options': options, 'keep_alive': settings['keep_alive'],
+        }
+        if edits:
+            arguments['format'] = 'json'
+        payload = json.dumps(arguments).encode()
         req = Request(self.base + '/api/generate', data=payload,
                       headers={'Content-Type': 'application/json'})
         with urlopen(req, timeout=180) as response:
-            body = json.load(response)
+            bounded = response.read(MAX_OLLAMA_RESPONSE_BYTES + 1)
+        if len(bounded) > MAX_OLLAMA_RESPONSE_BYTES:
+            raise RuntimeError(
+                'Local AI response exceeded safe memory limit; try smaller edits')
+        body = json.loads(bounded)
+        if not isinstance(body, dict):
+            raise RuntimeError('Ollama response was not structured JSON')
         result = body.get('response', '')
         if not isinstance(result, str) or not result.strip():
-            raise RuntimeError('Ollama returned no edits')
+            raise RuntimeError('Ollama returned no usable response')
         return result
 
+    def generate_edits(self, prompt: str) -> str:
+        """Request bounded JSON edits without loading an unbounded response."""
+        return self._complete(prompt, edits=True)
+
     def plan(self, description: str) -> str:
-        if self.model == "auto":
-            from .model_routing import choose_installed_model
-            self.model = choose_installed_model(description)
         prompt = (
             'You are a software planning assistant. Produce a concise, testable plan. '
             'Do not claim to have executed code. Include risks and acceptance tests.\n\nTask:\n'
             + description
         )
-        payload = json.dumps({
-            'model': self.model, 'prompt': prompt, 'stream': False,
-            'options': {'num_ctx': 4096, 'num_predict': 900},
-        }).encode()
-        req = Request(self.base + '/api/generate', data=payload,
-                      headers={'Content-Type': 'application/json'})
-        with urlopen(req, timeout=180) as response:
-            body = json.load(response)
-        result = body.get('response', '')
-        if not isinstance(result, str) or not result.strip():
-            raise RuntimeError('Ollama returned no plan')
-        return result
+        return self._complete(prompt)
 
 
 def _containment_name(low_integrity: bool) -> str:
@@ -206,15 +220,8 @@ def _execute_test_process(argv, root: Path, timeout: int, *,
             argv, root, timeout=timeout, low_integrity=low_integrity, env=env)
     if low_integrity:
         raise ValueError('Low-integrity execution is only available on Windows')
-    result = subprocess.run(
-        argv, cwd=root, capture_output=True, text=True, env=env,
-        timeout=timeout, shell=False, errors='replace')
-    return {
-        'passed': result.returncode == 0,
-        'returncode': result.returncode,
-        'output': result.stdout + '\n' + result.stderr,
-        'containment': 'none',
-    }
+    from .output_capture import run_streamed_process
+    return run_streamed_process(argv, root, timeout, env=env)
 
 
 def run_test(project: str, command: str, timeout: int = 180, *,

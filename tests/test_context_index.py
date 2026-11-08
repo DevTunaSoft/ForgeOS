@@ -41,6 +41,15 @@ class ContextIndexTests(unittest.TestCase):
             self.skipTest("Symlinks unavailable")
         self.assertNotIn("escaped.py", render_context(self.root, "escaped"))
 
+    def test_low_memory_budget_limits_repository_index(self):
+        small = render_context(self.root, "engine repair", max_chars=512)
+        self.assertLessEqual(len(small), 512)
+        self.assertIn("Repository files", small)
+        with self.assertRaises(ValueError):
+            render_context(self.root, max_chars=511)
+        with self.assertRaises(ValueError):
+            render_context(self.root, max_chars=True)
+
     def test_large_ast_not_loaded(self):
         (self.root / "huge.py").write_text(
             "def private_signature():\n pass\n" + "# filler\n" * 14000)

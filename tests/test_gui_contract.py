@@ -14,6 +14,11 @@ class DashboardContractTests(unittest.TestCase):
         self.assertEqual(row[1], "Editing")
         self.assertEqual(len(row[2]), 140)
 
+    def test_brief_rows_work_in_gui_contract(self):
+        self.assertEqual(_format_task(
+            {"id": 9, "status": "testing", "description": "optimizing"}),
+            (9, "Testing", "optimizing"))
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

@@ -137,6 +137,30 @@ class DiagnosticTests(unittest.TestCase):
             self.assertEqual(self.store.get(record["optimization"]["reference"]), raw)
             self.assertEqual(record["returncode"], i % 2)
 
+    def test_gui_preview_streams_and_verifies_large_archive(self):
+        raw = "INFO build\n" * 180000 + "AssertionError: final\n"
+        reference = self.store.put(raw)
+        excerpt = self.store.preview(reference, max_chars=12000)
+        self.assertLessEqual(len(excerpt), 12000)
+        self.assertIn("AssertionError: final", excerpt)
+        self.assertIn("characters omitted", excerpt)
+        self.assertEqual(self.store.preview(self.store.put("small log")), "small log")
+        with self.assertRaises(ValueError):
+            self.store.preview(reference, max_chars=100)
+
+    def test_raw_evidence_binary_bytes_have_safe_gui_preview(self):
+        from io import BytesIO
+        ref = self.store.put_stream(BytesIO(b"\xff\xfe" + b"error\n"))
+        preview = self.store.preview(ref)
+        self.assertIn("error", preview)
+        self.assertIn("\ufffd", preview)
+
+    def test_gui_preview_detects_tampered_archive(self):
+        ref = self.store.put("original")
+        self.store._path(ref).write_bytes(gzip.compress(b"tampered"))
+        with self.assertRaises(ValueError):
+            self.store.preview(ref)
+
     def test_oversize_archive_fails_closed_to_raw(self):
         with self.assertRaises(ValueError):
             self.store.put("x" * (32 * 1024 * 1024 + 1))

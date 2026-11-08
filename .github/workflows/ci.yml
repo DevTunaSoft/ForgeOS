@@ -2,6 +2,11 @@ name: ForgeOS foundation tests
 on:
   push:
   pull_request:
+concurrency:
+  # Cancel superseded branch builds rather than consuming RAM and CI minutes
+  # testing old commits. Pull-request and push events share this group.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

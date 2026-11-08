@@ -169,3 +169,24 @@ test mechanism. No Docker or paid model API is required.
 
 The 52 lines above are acceptance outcomes, not 52 independent packages.
 **Before implementing anything new**, consult the [deduplication and ownership audit](ENHANCEMENT_DEDUP_AUDIT.md). Existing baselines stay in their current modules, partly completed items are extended in place, and only genuine gaps require new code. Do not count multiple UI views of the same backend feature as separate backends.
+
+
+## Memory-efficiency extension
+
+The existing diagnostics, runtime, model router and single GUI were
+enhanced in place. New output_capture.py is a shared bounded I/O helper
+that forwards complete evidence to the existing diagnostics archive; it
+is not a replacement test runner or evidence DB. Dynamic context allocation
+and streaming capture are prototype-level improvements.
+
+- Implemented prototype: RAM-aware context metadata cap (outcome #6).
+- Implemented prototype: dynamic local-model context sizing, 1024–8192 tokens (outcome #22).
+- Implemented prototype: bounded streamed test output with original SHA evidence at or under 32 MiB (outcome #26).
+- Implemented prototype: capped Tk log retention, lightweight task list, and bounded evidence preview (outcome #41).
+- Outstanding acceptance gate: 4 GiB Windows GUI and basic workflow runtime test (outcome #49).
+- Outstanding acceptance gate: 8 GiB installed local-model and regression test (outcomes #23, #45, #49).
+- Remaining edge case: child-generated separate Windows unittest output file lacks an in-flight disk-growth guard (outcome #47).
+- Outstanding acceptance gate: extended process-tree RAM and leak measurements (outcomes #45, #49).
+
+See MEMORY_BUDGET.md. This extension does not add new numbered enhancement
+goals and does not assert full 52-item completion.
