@@ -176,6 +176,7 @@ class EngineIntegrationTests(unittest.TestCase):
             backend = "llama.cpp"
             base = "http://127.0.0.1:17101/v1"
             model = "qualified-auto"
+            authenticated = True
             managed_model_sha256 = "a" * 64
             managed_runtime_sha256 = "b" * 64
         with patch("forgeos.model_qualification.load_qualification_records",
@@ -199,6 +200,7 @@ class EngineIntegrationTests(unittest.TestCase):
             backend = "llama.cpp"
             base = "http://127.0.0.1:17101/v1"
             model = "qualified-auto"
+            authenticated = True
             managed_model_sha256 = "a" * 64
             managed_runtime_sha256 = "b" * 64
         raw = {

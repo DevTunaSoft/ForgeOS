@@ -77,6 +77,7 @@ class TaskActionsTests(unittest.TestCase):
         model = Mock()
         model.model = "qualified-auto"
         model.backend = "llama.cpp"
+        model.authenticated = True
         model.managed_model_sha256 = "a" * 64
         model.managed_runtime_sha256 = "b" * 64
         model.plan.return_value = "Qualified planning result"
@@ -96,6 +97,7 @@ class TaskActionsTests(unittest.TestCase):
         model = Mock()
         model.model = "qualified-auto"
         model.backend = "llama.cpp"
+        model.authenticated = True
         model.managed_model_sha256 = "a" * 64
         model.managed_runtime_sha256 = "b" * 64
         with patch(
@@ -105,6 +107,21 @@ class TaskActionsTests(unittest.TestCase):
                 return_value=MemorySnapshot(16 * 1024**3, 12 * 1024**3)):
             with self.assertRaisesRegex(RuntimeError, "No measured-qualified"):
                 plan_task(self.store, self.task, model=model)
+        model.plan.assert_not_called()
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+
+    def test_qualified_auto_planning_requires_authenticated_runtime(self):
+        model = Mock()
+        model.model = "qualified-auto"
+        model.backend = "llama.cpp"
+        model.authenticated = False
+        model.managed_model_sha256 = "a" * 64
+        model.managed_runtime_sha256 = "b" * 64
+        with patch(
+                "forgeos.model_qualification.load_qualification_records") as records:
+            with self.assertRaisesRegex(ValueError, "authenticated"):
+                plan_task(self.store, self.task, model=model)
+        records.assert_not_called()
         model.plan.assert_not_called()
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
 
