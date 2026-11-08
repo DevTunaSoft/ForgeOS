@@ -40,6 +40,14 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('from .model_routing import memory_report', text)
         self.assertNotIn("root.after(1000, show_memory)", text)
 
+    def test_managed_model_memory_is_explicit_one_shot_gui_action(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[1] /
+                "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Show model memory"', text)
+        self.assertIn("controller.memory_report()", text)
+        self.assertNotIn("root.after(1000, show_model_memory)", text)
+
     def test_acceptance_exercises_actual_tk_event_loop(self):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1] /

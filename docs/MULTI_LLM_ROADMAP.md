@@ -133,7 +133,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [ ] Context pruning, source selection, summarization and prompt caches integrated with existing `context_index.py` and output pipeline (never a second context index).
 - [ ] On out-of-memory, timeout or crash: freeze task state, stop/reap runtime, recheck journal/checkpoint, suggest or select a smaller **compatible** model only at a safe boundary.
 - [ ] Guard repeated load/unload, rapid task switches, low disk, slow storage, CPU saturation and other concurrent builds.
-- [ ] Optional on-demand resource panel in the existing GUI; no high-frequency polling or mandatory third-party monitoring agent.
+- [x] **Partial on-demand resource visibility:** the existing managed-model GUI can request one-shot Windows Job Object peak committed-memory accounting and the active ceiling. No background polling or third-party monitoring agent is used; broader ForgeOS/build/GPU resource aggregation remains open.
 - [ ] Measure idle RAM and peak process-tree memory at 4/8/16/32 GiB tiers; 4 GiB may only support UI operations, not a resident useful coding model.
 
 **Exit:** real target-Windows soak tests, memory-pressure fault injection, stable reserve, no unexpected user-project modifications and reproducible RAM measurements.

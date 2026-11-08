@@ -214,3 +214,18 @@ least a 512 MiB managed ceiling, ForgeOS refuses managed inference. Real
 llama.cpp behavior under the cap, memory-mapped weights, integrated-GPU/shared
 memory, OOM exit diagnostics and 8/16/32 GiB tuning still require physical
 Windows measurements.
+
+
+## On-demand managed process-tree peak accounting
+
+The existing Windows managed-runtime Job Object can now be queried on demand
+for its configured job memory limit, peak committed memory across the job and
+peak committed memory used by any one associated process. Windows maintains
+these peak counters for the Job Object; ForgeOS reads them only when requested.
+No timer, telemetry daemon or high-frequency sampler was added. The GUI exposes
+this as **Show model memory** while a managed model is active.
+
+These counters are Windows committed-memory accounting, not working-set/RSS,
+GPU memory, tokens-per-second or a complete model benchmark. They are useful
+for detecting actual native process-tree pressure and comparing runs, but
+physical target-machine measurements remain required.

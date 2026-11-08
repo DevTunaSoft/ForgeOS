@@ -435,3 +435,13 @@ Open **Managed local GGUF**, choose **Restore a retired GGUF (recoverable)** and
 
 
 **Recovery integrity:** ForgeOS refuses recovery journals shared via filesystem hard links, checks the recovery identity again after obtaining the download lock, and checks for occupied destination files before moving weights. If recovery is rejected, do not delete the recovery journal or overwrite destination files; inspect the conflict and retry only when safe. An external program that changes files concurrently is not fully isolated by the current cooperative ForgeOS lock.
+
+
+### Managed local model memory snapshot
+
+While a ForgeOS-managed local model is running, open **Managed local GGUF** and
+choose **Show model memory**. On Windows, ForgeOS reports the Job Object memory
+ceiling plus peak committed memory for the managed process tree and the peak
+for a single process. This is a one-shot reading; ForgeOS does not continuously
+poll the model in the background. It does not include GPU/shared graphics
+memory and should not be interpreted as a complete performance benchmark.

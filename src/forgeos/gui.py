@@ -860,6 +860,41 @@ def launch(db_path, *, acceptance: bool = False):
             threading.Thread(target=worker, daemon=True).start()
             popup.destroy()
 
+        def show_model_memory():
+            controller = managed["controller"]
+            if controller is None or not controller.running():
+                messagebox.showinfo(
+                    "Managed model memory", "No managed local model is running.",
+                    parent=popup)
+                return
+            try:
+                report = controller.memory_report()
+            except (OSError, RuntimeError, ValueError) as exc:
+                messagebox.showerror(
+                    "Managed model memory", str(exc), parent=popup)
+                return
+            if report["scope"] != "windows_job_committed_memory":
+                messagebox.showinfo(
+                    "Managed model memory",
+                    "Process-tree committed-memory accounting is currently "
+                    "available for the managed Windows runtime only.",
+                    parent=popup)
+                return
+            mib = 1024 * 1024
+            limit = report["job_memory_limit_bytes"]
+            messagebox.showinfo(
+                "Managed model memory",
+                "One-shot Windows Job Object accounting\n\n"
+                f"Process: {report['pid']}\n"
+                f"Peak job committed memory: "
+                f"{report['peak_job_memory_used_bytes']/mib:,.1f} MiB\n"
+                f"Peak single-process committed memory: "
+                f"{report['peak_process_memory_used_bytes']/mib:,.1f} MiB\n"
+                f"Job memory ceiling: "
+                f"{limit/mib:,.1f} MiB"
+                if limit is not None else "Job memory ceiling: unavailable",
+                parent=popup)
+
         def do_stop():
             if busy["value"] or managed["busy"]:
                 messagebox.showerror(
@@ -880,6 +915,9 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Button(
             buttons_row, text="Start manual runtime",
             command=lambda: do_start(installed=False)).pack(side="left", padx=8)
+        ttk.Button(
+            buttons_row, text="Show model memory",
+            command=show_model_memory).pack(side="left", padx=8)
         ttk.Button(buttons_row, text="Stop local model", command=do_stop).pack(
             side="left", padx=8)
         ttk.Label(

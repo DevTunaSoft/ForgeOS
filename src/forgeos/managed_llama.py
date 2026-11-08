@@ -273,6 +273,32 @@ def _launch_windows_suspended_job(argv: list[str], cwd: Path,
         raise
 
 
+def _windows_job_memory_report(job) -> dict:
+    """Query one-shot Windows Job Object peak committed-memory accounting."""
+    import ctypes
+    from ctypes import wintypes
+    from . import windows_containment as win
+
+    if not job:
+        raise ValueError("Managed Windows Job Object is unavailable")
+    limits = win.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    returned = wintypes.DWORD()
+    if not win.kernel32.QueryInformationJobObject(
+            job, win.JobObjectExtendedLimitInformation,
+            ctypes.byref(limits), ctypes.sizeof(limits),
+            ctypes.byref(returned)):
+        raise OSError("Could not query managed llama-server memory accounting")
+    flags = int(limits.BasicLimitInformation.LimitFlags)
+    return {
+        "job_memory_limit_bytes": (
+            int(limits.JobMemoryLimit)
+            if flags & win.JOB_OBJECT_LIMIT_JOB_MEMORY else None),
+        "peak_job_memory_used_bytes": int(limits.PeakJobMemoryUsed),
+        "peak_process_memory_used_bytes": int(limits.PeakProcessMemoryUsed),
+        "scope": "windows_job_committed_memory",
+    }
+
+
 def _release_windows_job(job) -> None:
     """Close the kill-on-close job even if its members already exited."""
     from . import windows_containment as win
@@ -310,6 +336,23 @@ class ManagedLlamaServer:
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def memory_report(self) -> dict:
+        """Return one-shot managed-runtime accounting; never background-poll."""
+        if not self.running():
+            raise RuntimeError("No managed llama-server is running")
+        if os.name != "nt":
+            return {
+                "pid": self.process.pid,
+                "job_memory_limit_bytes": None,
+                "peak_job_memory_used_bytes": None,
+                "peak_process_memory_used_bytes": None,
+                "scope": "process_tree_accounting_unavailable",
+            }
+        if self._windows_job is None:
+            raise RuntimeError("Managed Windows Job Object is unavailable")
+        return {"pid": self.process.pid,
+                **_windows_job_memory_report(self._windows_job)}
 
     def start_installed_cpu(self, *, model_path: str | Path,
                             directory: str | Path | None = None,

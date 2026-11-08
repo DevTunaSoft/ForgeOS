@@ -1412,3 +1412,15 @@ ceiling. Tests cover deterministic 4/8/32 GiB policy cases and, on hosted
 Windows, query the native Job Object to verify `JOB_OBJECT_LIMIT_JOB_MEMORY`
 and the exact configured limit. This is an enforcement primitive, not proof
 that a particular GGUF fits; real model OOM behavior and tuning remain open.
+
+
+## 2026-11-08 one-shot managed process-tree memory accounting
+
+The preceding Windows job-memory enforcement checkpoint is verified green at
+`ab4d845cc5d972a50481fc825ea83f0c1cfa8b51`: Linux/Windows Python
+3.10/3.12, documentation and frozen Windows packaging all passed. The next
+distinct #55 increment reuses that same Job Object to expose one-shot peak
+committed-memory accounting and its configured ceiling. The existing native
+Windows memory-limit test now also verifies the accounting helper instead of
+spawning a duplicate test process. The existing managed-model dialog gains a
+single **Show model memory** action; there is no background sampler.

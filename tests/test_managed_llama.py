@@ -379,10 +379,9 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
 
     @unittest.skipUnless(os.name == "nt", "Windows Job Object memory limit")
     def test_windows_managed_job_applies_memory_ceiling(self):
-        import ctypes
-        from forgeos import windows_containment as win
         from forgeos.managed_llama import (
-            _launch_windows_suspended_job, _release_windows_job)
+            _launch_windows_suspended_job, _release_windows_job,
+            _windows_job_memory_report)
         import sys
         proc = None
         job = None
@@ -391,16 +390,12 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             proc, job = _launch_windows_suspended_job(
                 [sys.executable, "-c", "import time; time.sleep(30)"],
                 Path.cwd(), {}, ceiling)
-            limits = win.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-            returned = ctypes.c_ulong()
-            self.assertTrue(win.kernel32.QueryInformationJobObject(
-                job, win.JobObjectExtendedLimitInformation,
-                ctypes.byref(limits), ctypes.sizeof(limits),
-                ctypes.byref(returned)))
-            self.assertTrue(
-                limits.BasicLimitInformation.LimitFlags
-                & win.JOB_OBJECT_LIMIT_JOB_MEMORY)
-            self.assertEqual(int(limits.JobMemoryLimit), ceiling)
+            report = _windows_job_memory_report(job)
+            self.assertEqual(report["scope"], "windows_job_committed_memory")
+            self.assertEqual(report["job_memory_limit_bytes"], ceiling)
+            self.assertGreaterEqual(report["peak_job_memory_used_bytes"], 0)
+            self.assertGreaterEqual(
+                report["peak_process_memory_used_bytes"], 0)
         finally:
             if job is not None:
                 _release_windows_job(job)
@@ -411,6 +406,11 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     proc.kill()
                     proc.wait(timeout=5)
                 proc.close()
+
+    def test_memory_report_requires_active_server(self):
+        controller = ManagedLlamaServer()
+        with self.assertRaisesRegex(RuntimeError, "No managed llama-server"):
+            controller.memory_report()
 
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):
         from forgeos.managed_llama import _verified_model, _verified_runtime
