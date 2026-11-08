@@ -443,6 +443,26 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         with self.assertRaisesRegex(RuntimeError, "No managed llama-server"):
             controller.memory_report()
 
+    def test_benchmark_prompt_requires_active_managed_session(self):
+        controller = ManagedLlamaServer()
+        with self.assertRaisesRegex(RuntimeError, "must be running"):
+            controller.benchmark_prompt("synthetic")
+        process = Mock()
+        process.poll.return_value = None
+        controller.process = process
+        controller.endpoint = "http://127.0.0.1:17089/v1"
+        controller.api_key = "a" * 32
+        controller.model_name = ALIAS
+        with patch(
+                "forgeos.managed_llama.LocalChatModel.generate_edits",
+                return_value='{"items":["ok"]}') as generated:
+            self.assertEqual(
+                controller.benchmark_prompt("synthetic prompt"),
+                '{"items":["ok"]}')
+            generated.assert_called_once_with("synthetic prompt")
+        with self.assertRaises(ValueError):
+            controller.benchmark_prompt("")
+
     def test_inference_self_test_rejects_noncontract_output(self):
         controller = ManagedLlamaServer()
         process = Mock()

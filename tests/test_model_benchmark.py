@@ -96,6 +96,57 @@ class ModelBenchmarkTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             screening_summary(results + [results[0]])
 
+    def test_role_screening_runner_is_bounded_and_drops_raw_responses(self):
+        tasks = screening_tasks("planning")
+        answers = {
+            task.prompt: json.dumps({"items": list(task.expected_items)})
+            for task in tasks
+        }
+
+        class Controller(FakeController):
+            def __init__(self):
+                self.calls = []
+            def benchmark_prompt(self, prompt):
+                self.calls.append(prompt)
+                return answers[prompt]
+            def memory_report(self):
+                return {"peak_job_memory_used_bytes": 123}
+
+        controller = Controller()
+        progress = []
+        record = __import__(
+            "forgeos.model_benchmark", fromlist=["run_screening"]
+        ).run_screening(
+            controller, role="planning",
+            progress_callback=lambda done, total, result:
+                progress.append((done, total, result["task_id"])))
+        self.assertEqual(len(controller.calls), 5)
+        self.assertEqual(len(progress), 5)
+        self.assertTrue(record["summary"]["roles"]["planning"]["screening_pass"])
+        self.assertEqual(record["qualification_status"],
+                         "screening_only_not_qualified")
+        serialized = json.dumps(record)
+        self.assertNotIn("synthetic prompt", serialized)
+        self.assertNotIn('"response":', serialized)
+
+    def test_screening_runner_preserves_partial_cancelled_evidence(self):
+        import threading
+        from forgeos.model_benchmark import run_screening
+        event = threading.Event()
+        event.set()
+
+        class Controller(FakeController):
+            def benchmark_prompt(self, prompt):
+                raise AssertionError("cancelled run must not query model")
+            def memory_report(self):
+                return None
+
+        record = run_screening(
+            Controller(), role="security_review", cancel_event=event)
+        self.assertTrue(record["cancelled"])
+        self.assertEqual(record["results"], [])
+        self.assertFalse(record["summary"]["complete"])
+
     def test_fixed_ram_tiers(self):
         self.assertEqual(ram_tier(4 * GIB), "4-gib-gui-investigation")
         self.assertEqual(ram_tier(8 * GIB), "8-gib")

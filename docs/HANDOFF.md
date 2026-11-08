@@ -1499,3 +1499,16 @@ Screening never executes generated code and never uses an LLM-as-judge.
 Per-role screening requires 4/5 contract successes and 3/5 deterministic
 objective successes. The final 95%/80% qualification thresholds remain
 separate and the automatic router is still disabled.
+
+
+## 2026-11-08 bounded live screening runner
+
+The fixed screening corpus can now be executed against the already-running
+managed model through `ManagedLlamaServer.benchmark_prompt()` and
+`model_benchmark.run_screening()`. Only synthetic corpus prompts are sent.
+The runner records per-task contract/objective pass, elapsed time, response
+byte count and exception type, but deliberately does **not** persist raw model
+responses. Cancellation preserves partial results. The runner reuses the
+controller's pinned identity and one-shot memory accounting; it creates no
+second runtime, router, monitor or database. GUI exposure remains separate so
+progress/cancel behavior can be added without blocking Tk.

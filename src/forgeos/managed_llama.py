@@ -391,6 +391,17 @@ class ManagedLlamaServer:
             "startup_elapsed_seconds": self.startup_elapsed_seconds,
         }
 
+    def benchmark_prompt(self, prompt: str) -> str:
+        """Run one synthetic benchmark prompt through the active managed model."""
+        if (not self.running() or not self.endpoint or not self.api_key
+                or self.model_name != ALIAS):
+            raise RuntimeError("A verified managed llama-server must be running")
+        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
+            raise ValueError("Benchmark prompt must be 1..12000 characters")
+        return LocalChatModel(
+            backend="llama.cpp", model=ALIAS, endpoint=self.endpoint,
+            api_key=self.api_key).generate_edits(prompt)
+
     def inference_self_test(self) -> dict:
         """Exercise the active local model without sending project content."""
         if (not self.running() or not self.endpoint or not self.api_key
@@ -400,9 +411,7 @@ class ManagedLlamaServer:
             'Return only valid JSON with no markdown or explanation. '
             'The exact object must be {"files":[]}. Do not create or modify files.')
         started = time.perf_counter()
-        response = LocalChatModel(
-            backend="llama.cpp", model=ALIAS, endpoint=self.endpoint,
-            api_key=self.api_key).generate_edits(prompt)
+        response = self.benchmark_prompt(prompt)
         elapsed = time.perf_counter() - started
         encoded = response.encode("utf-8")
         if len(encoded) > 4096:

@@ -358,3 +358,13 @@ manifest parser for edit-producing roles. A role advances from screening only
 at 4/5 structured contracts and 3/5 objective passes. This does **not** satisfy
 the final 95% structured / 80% objective qualification gate and does not enable
 automatic routing.
+
+
+### #55 live screening runner status
+
+The screening harness can now run the fixed synthetic corpus against an active
+verified managed llama model, with optional per-role scope, progress callback
+and cancellation. Results persist only objective/contract scores, timing,
+response size and error type; raw model output is discarded. This is still a
+screening mechanism, not final qualification, and it does not execute generated
+code or enable role routing.

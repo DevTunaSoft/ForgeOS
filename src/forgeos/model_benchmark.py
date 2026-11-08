@@ -9,6 +9,7 @@ from pathlib import Path
 import platform
 import re
 import tempfile
+import time
 import uuid
 
 from .engine import EditError, parse_edits
@@ -350,9 +351,8 @@ def capture_baseline(controller) -> dict:
     }
 
 
-def write_baseline(controller, directory: str | Path | None = None) -> dict:
-    """Persist a unique bounded JSON record without overwriting prior evidence."""
-    record = capture_baseline(controller)
+def _write_record(record: dict, *, prefix: str,
+                  directory: str | Path | None = None) -> dict:
     root = (Path(directory).expanduser() if directory is not None
             else Path.home() / ".forgeos" / "benchmarks")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -363,11 +363,11 @@ def write_baseline(controller, directory: str | Path | None = None) -> dict:
     token = uuid.uuid4().hex
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     target = root / (
-        f"baseline-{stamp}-{record['model']['sha256'][:12]}-{token[:8]}.json")
+        f"{prefix}-{stamp}-{record['model']['sha256'][:12]}-{token[:8]}.json")
     temporary = root / ("." + target.name + "." + token + ".tmp")
     payload = json.dumps(record, indent=2, sort_keys=True) + "\n"
-    if len(payload.encode("utf-8")) > 64 * 1024:
-        raise RuntimeError("Benchmark baseline record exceeds bounded size")
+    if len(payload.encode("utf-8")) > 256 * 1024:
+        raise RuntimeError("Benchmark evidence record exceeds bounded size")
     try:
         with temporary.open("x", encoding="utf-8") as output:
             output.write(payload)
@@ -380,3 +380,94 @@ def write_baseline(controller, directory: str | Path | None = None) -> dict:
         if temporary.exists():
             temporary.unlink()
     return {"path": str(target), "record": record}
+
+
+def write_baseline(controller, directory: str | Path | None = None) -> dict:
+    """Persist a unique bounded JSON record without overwriting prior evidence."""
+    return _write_record(
+        capture_baseline(controller), prefix="baseline", directory=directory)
+
+
+def run_screening(controller, *, role: str | None = None,
+                  cancel_event=None, progress_callback=None) -> dict:
+    """Run the fixed synthetic corpus without persisting raw model responses."""
+    tasks = screening_tasks(role)
+    identity = controller.benchmark_identity()
+    results = []
+    cancelled = False
+    for index, task in enumerate(tasks, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
+        started = time.perf_counter()
+        response = None
+        try:
+            response = controller.benchmark_prompt(task.prompt)
+            scored = score_screening_response(task, response)
+            error_type = None
+        except Exception as exc:
+            if isinstance(exc, TimeoutError):
+                reason = "timeout"
+            elif isinstance(exc, MemoryError):
+                reason = "oom"
+            else:
+                reason = "model_error"
+            scored = {
+                "task_id": task.id, "role": task.role,
+                "json_contract": False, "objective_pass": False,
+                "reason": reason,
+            }
+            error_type = type(exc).__name__
+        elapsed = round(time.perf_counter() - started, 3)
+        result = {
+            **scored,
+            "elapsed_seconds": elapsed,
+            "response_bytes": (
+                len(response.encode("utf-8"))
+                if isinstance(response, str) else None),
+            "error_type": error_type,
+        }
+        results.append(result)
+        if progress_callback is not None:
+            progress_callback(index, len(tasks), result)
+    try:
+        memory = controller.memory_report()
+    except (OSError, RuntimeError, ValueError):
+        memory = None
+    summary = screening_summary(results)
+    return {
+        "schema": SCHEMA_VERSION,
+        "kind": "managed-model-screening",
+        "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+        "qualification_status": "screening_only_not_qualified",
+        "role_scope": role or "all",
+        "cancelled": cancelled,
+        "model": {
+            **identity["model"],
+            "quantization_from_filename":
+                _quantization(identity["model"]["file"]),
+            "quantization_verified": False,
+            "license_id": None,
+            "license_status": "not_recorded_in_download_manifest",
+        },
+        "runtime": identity["runtime"],
+        "settings": identity["settings"],
+        "results": results,
+        "summary": summary,
+        "managed_memory_after_screening": memory,
+        "limitations": [
+            "Screening does not execute generated code.",
+            "Raw model responses are not persisted.",
+            "Final role qualification requires the stricter #55 thresholds.",
+        ],
+    }
+
+
+def write_screening(controller, *, role: str | None = None,
+                    directory: str | Path | None = None,
+                    cancel_event=None, progress_callback=None) -> dict:
+    """Run and persist one bounded screening record."""
+    record = run_screening(
+        controller, role=role, cancel_event=cancel_event,
+        progress_callback=progress_callback)
+    return _write_record(record, prefix="screening", directory=directory)
