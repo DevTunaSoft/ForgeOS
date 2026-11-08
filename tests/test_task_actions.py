@@ -76,7 +76,10 @@ class TaskActionsTests(unittest.TestCase):
             result = test_task(self.store, self.task, "python-unittest",
                                allow_host_tests=True)
         self.assertEqual(result, outcome)
-        tests.assert_called_once_with(self.root / "repo", "python-unittest")
+        # Windows temp directories may have 8.3 aliases; compare against the
+        # canonical Git project path persisted by Store.add().
+        tests.assert_called_once_with(
+            Path(self.store.get(self.task)["project"]), "python-unittest")
         record = self.store.get(self.task)
         self.assertEqual(record["status"], "passed")
         self.assertEqual(json.loads(record["result"]), outcome)

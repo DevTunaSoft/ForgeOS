@@ -806,3 +806,14 @@ eligibility checks and successful exclusive lease acquisition. Additional
 tests confirm no invocation for completed tasks and exactly one model
 construction under a live planning lease. The initial failure is recorded
 here; full rerun/Windows packaged acceptance still required.
+
+### PR #50 Windows CI correction (in review)
+
+Linux tests passed after the lazy-model change, but Windows 3.12 exposed
+an independent test-fixture path comparison: the temporary directory
+appeared as both a Windows 8.3 short alias and its canonical long path.
+`Store.add()` intentionally stores `Path.resolve()` output. The test now
+asserts the exact canonical project path persisted in the task instead
+of assuming the unnormalized temporary-directory spelling. No production
+path transformation or security restriction was weakened. Rerun the
+entire Windows/Linux suite and frozen EXE acceptance before merge.
