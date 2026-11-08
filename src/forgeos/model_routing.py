@@ -207,7 +207,7 @@ def memory_report() -> dict:
         "safe_local_model_file_budget_bytes": safe_model_file_budget(system),
         "managed_runtime_memory_ceiling_bytes": managed_runtime_memory_ceiling(system),
         "local_model_settings": local_memory_settings(),
-        "warning": "One-shot own-process reading; managed ceiling is a coarse admission/enforcement bound and excludes GPU RAM",
+        "warning": "One-shot own-process reading; managed ceiling is a coarse admission/enforcement bound; excludes Ollama/child process measured usage and GPU RAM",
     }
 
 
