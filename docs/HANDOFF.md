@@ -561,3 +561,27 @@ An independent review of Markdown links across the documentation branch found **
 5. Do not add an actual GUI screenshot until a current branch build is launched and captured; label mockups as mockups.
 6. Preserve this handoff and the documentation gate during later feature work. Real physical Windows, Ollama and full task-run acceptance remain product blockers independent of documentation.
 
+
+
+## Canonical user guide embedded in Windows GUI (PR #41; pending CI)
+
+The documentation overhaul in PR #40 introduced one canonical
+`docs/USER_GUIDE.md`, a pull-request checklist and offline doc integrity
+checks. A concurrent older draft (#39) introduced a competing manual path,
+so it must **not** be merged; its useful offline-help concept was adapted
+here instead. Branch `feat/offline-user-guide-in-gui` is based on PR #40
+main commit `43d5d7001214ce355436c6a23c78a9cc6be7aa72`.
+
+The existing single Tk GUI adds an on-demand **How to use ForgeOS** control
+in Activity & diagnostics. It opens the existing canonical user guide as
+read-only scrollable Markdown, with no network, dedicated renderer, agent or
+background memory cost. The EXE build uses one --add-data entry to bundle
+`docs/USER_GUIDE.md` at the frozen resource path. The hosted Windows GUI
+acceptance requires the bundled guide to be available. Source checkouts
+support the project-root path even when Python imports from site-packages.
+Regression tests verify the source guide, command button, packaging path,
+launcher fail-closed behavior and user guide instructions. The existing
+`docs-sync.yml` checks documentation-link and code/doc pairing. Next:
+verify Python matrix, Windows frozen actual GUI and AppContainer smoke,
+merge the clean single-guide PR, then close the superseded conflicting draft.
+Physical real-user Windows and end-to-end AI acceptance remain incomplete.

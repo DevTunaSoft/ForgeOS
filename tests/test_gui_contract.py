@@ -54,6 +54,13 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('rss_growth_during_paging_bytes', text)
         self.assertIn('paginated_history_ok', text)
 
+    def test_canonical_user_guide_accessible_from_source(self):
+        from forgeos.gui import user_guide_path
+        path = user_guide_path()
+        self.assertIsNotNone(path)
+        self.assertEqual(path.name, "USER_GUIDE.md")
+        self.assertIn("ForgeOS", path.read_text(encoding="utf-8"))
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

@@ -13,6 +13,11 @@ The artifact retention period is **14 days**, and a successful Actions run must 
 
 ## What is bundled
 
+The EXE packages the Python/Tkinter ForgeOS application and an offline copy
+of the single canonical [User Guide](USER_GUIDE.md). From the running
+application, select **Activity & diagnostics → How to use ForgeOS**.
+The guide is read only when requested and needs no browser or internet access.
+
 The EXE packages the Python/Tkinter ForgeOS application. It does **not** package:
 
 - Git or an existing local project repository;
@@ -33,6 +38,8 @@ The `.github/workflows/windows-exe.yml` workflow on `main`:
 6. Starts actual Tkinter dashboard widgets in a headless GUI lifecycle harness, verifies tabs/queue, measures own-process RAM, runs the event loop, then closes cleanly.
 7. Populates a disposable SQLite fixture with **520 synthetic tasks**, checks four GUI pages (150/150/150/70), navigates back and asserts the paging RSS growth stays within the test's 64 MiB threshold.
 8. Runs the frozen AppContainer security smoke, with an outer watchdog and nonzero failure on failed containment checks.
+9. Verifies the canonical offline user guide exists **inside** the packaged EXE
+   during the actual frozen Tkinter GUI lifecycle smoke.
 
 These are genuine hosted CI checks, **not** a substitute for a person launching the EXE on a target Windows laptop with a real local Ollama model and an actual project.
 
@@ -53,7 +60,7 @@ In PowerShell from the repository root:
 ```powershell
 py -3.12 -m pip install "pyinstaller>=6.0,<7" .
 py -3.12 -m unittest discover -s tests -v
-py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src forgeos_build/launcher.py
+py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" forgeos_build/launcher.py
 ```
 
 The result should be `dist/ForgeOS.exe` if all commands succeed. Do not claim it succeeded without examining the actual files and command exit statuses.

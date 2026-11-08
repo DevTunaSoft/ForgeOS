@@ -94,6 +94,7 @@ Using the GUI:
 **Source/development mode:** generated project tests may run on your computer after explicit host-execution permission. **Do not opt in for untrusted code.** Packaged Windows runtime restrictions are described in [Security and responsible use](#security-and-responsible-use).
 
 Full screenshot-free, click-by-click instructions: [User manual](docs/USER_GUIDE.md).
+You can also open it **offline inside ForgeOS** via **Activity & diagnostics → How to use ForgeOS**. The EXE embeds this same canonical guide (not a second manual).
 
 ## Command-line workflows
 
