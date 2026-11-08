@@ -45,6 +45,15 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('queue_initialized', source)
         self.assertIn("root.mainloop()", source)
 
+    def test_frozen_acceptance_really_pages_queue_and_samples_rss(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[1] /
+                "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn("older_button.invoke()", text)
+        self.assertIn("newer_button.invoke()", text)
+        self.assertIn('rss_growth_during_paging_bytes', text)
+        self.assertIn('paginated_history_ok', text)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)
