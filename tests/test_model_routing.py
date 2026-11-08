@@ -108,10 +108,21 @@ class LocalModelRoutingTests(unittest.TestCase):
             managed_runtime_memory_ceiling(MemorySnapshot(8*gib, 6*gib)),
             4*gib)
         self.assertEqual(
+            managed_runtime_memory_ceiling(
+                MemorySnapshot(32*gib, 24*gib), 3*gib),
+            3*gib)
+        self.assertEqual(
+            managed_runtime_memory_ceiling(
+                MemorySnapshot(8*gib, 6*gib), 12*gib),
+            4*gib)
+        self.assertEqual(
             managed_runtime_memory_ceiling(MemorySnapshot(4*gib, 1*gib)),
             0)
         with self.assertRaises(ValueError):
             managed_runtime_memory_ceiling(MemorySnapshot(0, 0))
+        with self.assertRaisesRegex(ValueError, "at least 512 MiB"):
+            managed_runtime_memory_ceiling(
+                MemorySnapshot(8*gib, 6*gib), 511 * 1024**2)
 
     def test_automatic_low_memory_profiles(self):
         gib = 1024 ** 3

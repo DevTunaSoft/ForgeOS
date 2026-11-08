@@ -456,3 +456,13 @@ contract `{"files":[]}` as valid JSON. ForgeOS reports pass/fail and elapsed
 time in Activity & diagnostics; on Windows it also includes the available
 one-shot Job Object peak-memory reading. A failed self-test does not edit a
 workspace, run project tests, or silently switch to a cloud model.
+
+
+### Optional managed-model RAM cap
+
+The **Max model RAM MiB** field in Managed local GGUF is optional. Leave it
+blank to use ForgeOS's automatic safe ceiling. On Windows, entering a value
+of 512 MiB or greater can only reduce the automatically calculated Job Object
+ceiling; it cannot grant the model more memory than ForgeOS considers safe
+from the current RAM snapshot. This controls the managed llama.cpp process
+tree only, not the whole computer or project test processes.

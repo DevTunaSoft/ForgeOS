@@ -325,7 +325,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         check.assert_called_once_with(self.root)
         start.assert_called_once_with(
             executable=str(self.exe), executable_sha256=self.exe_sha,
-            model_path=self.model, timeout=18, threads=2, context=1024)
+            model_path=self.model, timeout=18, threads=2, context=1024,
+            memory_limit_bytes=None)
 
     def test_tampered_installed_runtime_never_spawns_server(self):
         controller = ManagedLlamaServer()
@@ -453,7 +454,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
               patch("forgeos.managed_llama.LocalChatModel.installed",
                     return_value=[{"name": ALIAS}]),
               patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
-                    return_value=3 * 1024**3),
+                    return_value=2 * 1024**3) as memory_ceiling,
               patch("forgeos.managed_llama.subprocess.Popen",
                     return_value=proc) as launch,
               patch("forgeos.managed_llama._launch_windows_suspended_job",
@@ -463,12 +464,15 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             info = server.start(
                 executable=self.exe, executable_sha256=self.exe_sha,
                 model_path=self.model, context=1024, threads=2,
-                timeout=1)
+                timeout=1, memory_limit_bytes=2 * 1024**3)
             self.assertEqual(info["endpoint"], "http://127.0.0.1:17089/v1")
             self.assertEqual(info["model"], ALIAS)
             self.assertEqual(info["sha256"], self.model_sha)
             self.assertEqual(info["runtime_sha256"], self.exe_sha)
-            self.assertEqual(info["memory_ceiling_bytes"], 3 * 1024**3)
+            self.assertEqual(info["memory_ceiling_bytes"], 2 * 1024**3)
+            memory_ceiling.assert_called_once()
+            self.assertEqual(
+                memory_ceiling.call_args.args[1], 2 * 1024**3)
             self.assertTrue(server.running())
             command = (native_launch.call_args.args[0]
                        if os.name == "nt" else launch.call_args.args[0])
@@ -498,7 +502,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertIsNone(server.process)
             if __import__("os").name == "nt":
                 native_launch.assert_called_once()
-                self.assertEqual(native_launch.call_args.args[3], 3 * 1024**3)
+                self.assertEqual(native_launch.call_args.args[3], 2 * 1024**3)
                 launch.assert_not_called()
                 released.assert_called_once_with(1234)
                 proc.terminate.assert_not_called()

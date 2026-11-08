@@ -393,7 +393,8 @@ class ManagedLlamaServer:
                             directory: str | Path | None = None,
                             timeout: int = DEFAULT_TIMEOUT,
                             threads: int | None = None,
-                            context: int | None = None) -> dict:
+                            context: int | None = None,
+                            memory_limit_bytes: int | None = None) -> dict:
         """Start the existing pinned CPU runtime after complete bundle verification.
 
         Reverify the original official release ZIP and every adjacent DLL,
@@ -406,11 +407,13 @@ class ManagedLlamaServer:
         return self.start(executable=verified["path"],
                           executable_sha256=verified["sha256"],
                           model_path=model_path, timeout=timeout,
-                          threads=threads, context=context)
+                          threads=threads, context=context,
+                          memory_limit_bytes=memory_limit_bytes)
 
     def start(self, *, executable: str | Path, executable_sha256: str,
               model_path: str | Path, timeout: int = DEFAULT_TIMEOUT,
-              threads: int | None = None, context: int | None = None) -> dict:
+              threads: int | None = None, context: int | None = None,
+              memory_limit_bytes: int | None = None) -> dict:
         if self.process is not None or self._secrets is not None:
             raise RuntimeError("A managed llama-server session already exists")
         if type(timeout) is not int or not 1 <= timeout <= MAX_TIMEOUT:
@@ -441,7 +444,8 @@ class ManagedLlamaServer:
                 "Free RAM fell below the conservative model budget "
                 "before native inference startup; close other apps "
                 "or choose a smaller verified GGUF")
-        runtime_ceiling = managed_runtime_memory_ceiling(memory)
+        runtime_ceiling = managed_runtime_memory_ceiling(
+            memory, memory_limit_bytes)
         if os.name == "nt" and not runtime_ceiling:
             raise RuntimeError(
                 "ForgeOS could not reserve enough Windows memory headroom "

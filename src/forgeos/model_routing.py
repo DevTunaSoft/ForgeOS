@@ -159,15 +159,22 @@ def safe_model_file_budget(snapshot: MemorySnapshot | None) -> int:
     return min(DEFAULT_SIZE_LIMIT, usable * 2 // 3)
 
 
-def managed_runtime_memory_ceiling(snapshot: MemorySnapshot | None) -> int | None:
+def managed_runtime_memory_ceiling(
+        snapshot: MemorySnapshot | None,
+        requested_max_bytes: int | None = None) -> int | None:
     """Return a coarse job-wide RAM ceiling while preserving OS headroom.
 
     This is intentionally based on currently available physical memory, not a
     guessed llama.cpp KV-cache formula. Windows can enforce the returned value
     with a Job Object; other platforms may expose it only as admission data.
     """
+    if requested_max_bytes is not None:
+        if (type(requested_max_bytes) is not int
+                or requested_max_bytes < 512 * 1024**2):
+            raise ValueError(
+                "Managed runtime memory cap must be at least 512 MiB")
     if snapshot is None:
-        return None
+        return requested_max_bytes
     total, free = snapshot
     if (type(total) is not int or type(free) is not int or total <= 0 or free < 0):
         raise ValueError("Invalid physical memory snapshot")
@@ -176,7 +183,9 @@ def managed_runtime_memory_ceiling(snapshot: MemorySnapshot | None) -> int | Non
     ceiling = max(0, free - reserve)
     # A native server with less than 512 MiB of permitted committed memory is
     # not useful enough to start safely; admission should fail instead.
-    return ceiling if ceiling >= 512 * 1024**2 else 0
+    if ceiling < 512 * 1024**2:
+        return 0
+    return min(ceiling, requested_max_bytes) if requested_max_bytes else ceiling
 
 
 def local_memory_settings() -> dict:

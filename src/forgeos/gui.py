@@ -446,6 +446,7 @@ def launch(db_path, *, acceptance: bool = False):
         exe_path = tk.StringVar()
         expected_hash = tk.StringVar()
         gguf_path = tk.StringVar()
+        memory_cap_mib = tk.StringVar()
         for title, variable, selector in (
                 ("llama-server binary", exe_path,
                  lambda: filedialog.askopenfilename(
@@ -462,10 +463,20 @@ def launch(db_path, *, acceptance: bool = False):
             ttk.Button(line, text="Browse", command=lambda v=variable, f=selector:
                        v.set(f() or v.get())).pack(side="left")
         hash_line = ttk.Frame(panel)
-        hash_line.pack(fill="x", pady=(0, 9))
+        hash_line.pack(fill="x", pady=(0, 7))
         ttk.Label(hash_line, text="Trusted binary SHA-256", width=23).pack(side="left")
         ttk.Entry(hash_line, textvariable=expected_hash).pack(
             side="left", fill="x", expand=True)
+        memory_line = ttk.Frame(panel)
+        memory_line.pack(fill="x", pady=(0, 9))
+        ttk.Label(
+            memory_line, text="Max model RAM MiB", width=23).pack(side="left")
+        ttk.Entry(memory_line, textvariable=memory_cap_mib, width=16).pack(
+            side="left")
+        ttk.Label(
+            memory_line,
+            text="Optional Windows cap; blank uses automatic safe ceiling."
+        ).pack(side="left", padx=8)
         install_state = tk.StringVar(
             value="Official CPU runtime installation is optional.")
         def install_official_runtime():
@@ -826,6 +837,15 @@ def launch(db_path, *, acceptance: bool = False):
                 return
             values = (exe_path.get().strip(), expected_hash.get().strip(),
                       gguf_path.get().strip())
+            memory_text = memory_cap_mib.get().strip()
+            memory_limit = None
+            if memory_text:
+                if not memory_text.isdecimal():
+                    raise ValueError("Max model RAM must be whole MiB or blank")
+                memory_mib = int(memory_text)
+                if memory_mib < 512:
+                    raise ValueError("Max model RAM must be at least 512 MiB")
+                memory_limit = memory_mib * 1024 * 1024
             if not values[2] or (not installed and not all(values)):
                 messagebox.showerror(
                     "Missing model information",
@@ -843,11 +863,13 @@ def launch(db_path, *, acceptance: bool = False):
                 try:
                     if installed:
                         outcome = controller.start_installed_cpu(
-                            model_path=values[2])
+                            model_path=values[2],
+                            memory_limit_bytes=memory_limit)
                     else:
                         outcome = controller.start(
                             executable=values[0],
-                            executable_sha256=values[1], model_path=values[2])
+                            executable_sha256=values[1], model_path=values[2],
+                            memory_limit_bytes=memory_limit)
                     managed_events.put(("start", controller, outcome, None))
                 except Exception as exc:
                     try:

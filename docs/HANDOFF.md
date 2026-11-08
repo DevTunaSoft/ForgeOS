@@ -1448,3 +1448,14 @@ contract and records elapsed time plus available one-shot memory accounting.
 The existing live POSIX localhost-process integration test now exercises this
 same self-test, so no duplicate server harness was added. Real native Windows
 llama.cpp/GGUF execution remains the decisive physical acceptance gate.
+
+
+## 2026-11-08 optional managed-runtime RAM cap
+
+The managed memory policy now accepts an optional user maximum and the
+existing Managed local GGUF dialog exposes it as **Max model RAM MiB**.
+The requested value is not a second policy: it is intersected with the
+automatic canonical ceiling and can only make the managed Job Object smaller.
+Cross-platform policy tests cover requested caps below/above the automatic
+limit and invalid sub-512 MiB values; the existing launch test verifies the
+effective cap is forwarded to the Windows Job Object path.

@@ -229,3 +229,12 @@ These counters are Windows committed-memory accounting, not working-set/RSS,
 GPU memory, tokens-per-second or a complete model benchmark. They are useful
 for detecting actual native process-tree pressure and comparing runs, but
 physical target-machine measurements remain required.
+
+
+## Optional user cap on managed Windows model memory
+
+The canonical `managed_runtime_memory_ceiling()` policy now accepts an
+optional user maximum. Values below 512 MiB are refused. A requested cap is
+intersected with the automatic safe ceiling, so it can reduce native model
+memory but can never override current system headroom. The same value is
+passed into the existing Windows Job Object limit before process resume.

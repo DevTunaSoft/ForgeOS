@@ -40,6 +40,14 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('from .model_routing import memory_report', text)
         self.assertNotIn("root.after(1000, show_memory)", text)
 
+    def test_managed_model_memory_cap_is_optional_and_not_a_second_policy(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[1] /
+                "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Max model RAM MiB"', text)
+        self.assertIn("memory_limit_bytes=memory_limit", text)
+        self.assertIn("Max model RAM must be at least 512 MiB", text)
+
     def test_managed_model_self_test_is_explicit_and_uses_existing_controller(self):
         from pathlib import Path
         text = (Path(__file__).resolve().parents[1] /
