@@ -35,6 +35,12 @@ def user_manual_path() -> Path | None:
                   if bundle else [])
     candidates.append(Path(__file__).resolve().parents[2] /
                       "docs" / "USER_MANUAL.md")
+    # Source CI may install ForgeOS as a wheel into site-packages while
+    # still running the checkout's tests from its root. Only use cwd as
+    # a fallback if it visibly contains the matching ForgeOS source tree.
+    checkout = Path.cwd()
+    if (checkout / "src" / "forgeos" / "gui.py").is_file():
+        candidates.append(checkout / "docs" / "USER_MANUAL.md")
     for candidate in candidates:
         try:
             if (not candidate.is_symlink() and candidate.is_file()
