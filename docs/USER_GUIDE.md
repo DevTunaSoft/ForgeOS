@@ -13,7 +13,7 @@
 2. Choose a **successful** run and open its **Artifacts** section.
 3. Download `ForgeOS-Windows-EXE`, unzip it, and double-click `ForgeOS.exe`.
 4. The EXE contains the Python desktop program but **not** Git, Ollama, a local AI model, or a complete app-building toolchain.
-5. If the program fails to start, consult [Troubleshooting](#troubleshooting) and [Windows build details](WINDOWS_BUILD.md).
+5. If the program fails to start, consult [Troubleshooting](#8-troubleshooting) and [Windows build details](WINDOWS_BUILD.md).
 
 CI artifacts expire after 14 days; a downloadable artifact is not the same as a signed product release.
 
