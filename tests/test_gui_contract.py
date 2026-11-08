@@ -8,6 +8,14 @@ from forgeos.gui import (
 
 
 class DashboardContractTests(unittest.TestCase):
+    def test_desktop_settings_are_restored_and_saved(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn("load_settings(settings_path)", source)
+        self.assertIn("save_settings(settings_path", source)
+        self.assertIn("if not acceptance:", source)
+        self.assertNotIn('"allow_host_tests": allow_host_tests.get()', source)
+
     def test_primary_actions_precede_expanding_queue(self):
         source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertLess(source.index('actions = ttk.Frame(dashboard)'),
