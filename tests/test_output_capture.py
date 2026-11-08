@@ -20,6 +20,13 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.store = EvidenceStore(self.root / "archives")
 
+    def test_windows_crlf_is_normalized_for_view_but_not_for_archive(self):
+        with tempfile.TemporaryFile(mode="w+b") as stream:
+            stream.write(b"FIRST\r\nSECOND\r\n")
+            result = summarize_output_file(stream, store=self.store)
+        self.assertEqual(result["output"], "FIRST\nSECOND\n")
+        self.assertEqual(result["capture_source_bytes"], len(b"FIRST\r\nSECOND\r\n"))
+
     def test_small_output_unmodified(self):
         with tempfile.TemporaryFile(mode="w+b") as stream:
             stream.write(b"okay\n")

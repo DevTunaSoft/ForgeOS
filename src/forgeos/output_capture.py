@@ -59,7 +59,9 @@ def summarize_output_file(stream: BinaryIO, *, encoding: str = "utf-8",
         except (OSError, ValueError) as exc:
             archive_error = type(exc).__name__
             complete = False
-    sample = _sample(stream, size, encoding=encoding)
+    # Preserve TextIOWrapper's universal newline behavior on native Windows
+    # outputs; raw archived bytes remain exact and SHA-256 verified.
+    sample = _sample(stream, size, encoding=encoding).replace("\r\n", "\n")
     if size > MAX_RAW_BYTES:
         sample += (f"\n[ForgeOS warning: test output exceeded {MAX_RAW_BYTES} bytes;"
                    " full evidence unavailable, test result requires review]")
