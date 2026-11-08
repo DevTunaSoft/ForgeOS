@@ -51,6 +51,17 @@ def user_guide_path() -> Path | None:
     return None
 
 
+def _managed_idle_due(*, last_used, now, task_busy, operation_busy,
+                      idle_seconds=300) -> bool:
+    """Cheap deterministic admission for unloading the single resident model.
+
+    Only the GUI's existing event polling invokes this; no new timer thread,
+    wake-lock, periodic subprocess or background memory sampling is created.
+    """
+    return (last_used is not None and not task_busy and not operation_busy
+            and now - last_used >= idle_seconds)
+
+
 def launch(db_path, *, acceptance: bool = False):
     """Create the single desktop GUI; optionally self-verify its real lifecycle."""
     if type(acceptance) is not bool:
@@ -93,7 +104,7 @@ def launch(db_path, *, acceptance: bool = False):
     page_size = 150
     events = Queue()
     managed_events = Queue(maxsize=2)
-    managed = {"controller": None, "busy": False}
+    managed = {"controller": None, "busy": False, "last_used": None}
     busy = {"value": False}
     closing = {"value": False}
 
@@ -153,7 +164,7 @@ def launch(db_path, *, acceptance: bool = False):
     ttk.Label(
         managed_row,
         text="Experimental CPU llama.cpp: user-provided trusted executable + "
-             "SHA-256, downloaded verified GGUF; no Docker",
+             "SHA-256, downloaded verified GGUF; unloads after 5m idle; no Docker",
         foreground="#52647b").pack(side="left", padx=(9, 0))
     second = ttk.Frame(options)
     second.pack(fill="x", pady=(8, 0))
@@ -374,6 +385,19 @@ def launch(db_path, *, acceptance: bool = False):
         except Exception as exc:
             messagebox.showerror("Cannot create task", str(exc))
 
+    def request_managed_stop(controller):
+        """Stop in the background; keep Tk and active task boundaries intact."""
+        managed["busy"] = True
+        status.set("Stopping managed local model...")
+        def worker():
+            try:
+                controller.stop()
+                managed_events.put(("stop", controller, None, None))
+            except Exception as exc:
+                managed_events.put((
+                    "stop", controller, None, f"{type(exc).__name__}: {exc}"))
+        threading.Thread(target=worker, daemon=True).start()
+
     def manage_local_gguf():
         """One-window, opt-in private llama-server lifecycle controller."""
         if managed["busy"]:
@@ -523,17 +547,7 @@ def launch(db_path, *, acceptance: bool = False):
                 messagebox.showinfo("Local model", "No managed model is active.",
                                     parent=popup)
                 return
-            managed["busy"] = True
-            status.set("Stopping managed local model...")
-            def worker():
-                try:
-                    controller.stop()
-                    managed_events.put(("stop", controller, None, None))
-                except Exception as exc:
-                    managed_events.put((
-                        "stop", controller, None,
-                        f"{type(exc).__name__}: {exc}"))
-            threading.Thread(target=worker, daemon=True).start()
+            request_managed_stop(controller)
             popup.destroy()
 
         ttk.Button(buttons_row, text="Start local model", command=do_start).pack(
@@ -724,6 +738,7 @@ def launch(db_path, *, acceptance: bool = False):
                         or chosen_model != manager.model_name):
                     raise ValueError("Active managed model settings do not match")
                 managed_key = manager.api_key
+                managed["last_used"] = time.monotonic()
             elif chosen_model == "forgeos-managed":
                 raise ValueError("Start the verified managed GGUF runtime before "
                                  "using the forgeos-managed model")
@@ -812,6 +827,7 @@ def launch(db_path, *, acceptance: bool = False):
                     tabs.select(activity)
                 elif action == "start":
                     managed["controller"] = controller
+                    managed["last_used"] = time.monotonic()
                     backend.set("llama.cpp")
                     model.set(outcome["model"])
                     endpoint.set(outcome["endpoint"])
@@ -826,10 +842,21 @@ def launch(db_path, *, acceptance: bool = False):
                             backend.set("ollama")
                             model.set("auto")
                             endpoint.set("")
+                    managed["last_used"] = None
                     status.set("Managed local model stopped")
                     log("Managed local llama.cpp server stopped and credentials cleared.")
         except Empty:
             pass
+        controller = managed["controller"]
+        if (controller is not None
+                and _managed_idle_due(
+                    last_used=managed["last_used"], now=time.monotonic(),
+                    task_busy=busy["value"],
+                    operation_busy=managed["busy"])):
+            # Unload the memory-heavy CPU model after five minutes without
+            # requests. Never interrupt planning/editing/test/repair.
+            request_managed_stop(controller)
+            log("Managed local model idle for 5 minutes: unloading to free RAM.")
         if not closing["value"]:
             root.after(150, poll)
 
