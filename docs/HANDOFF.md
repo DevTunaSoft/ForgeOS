@@ -1542,3 +1542,8 @@ Added a fail-closed final qualification layer separate from the existing five-ta
 ## Managed GGUF authenticated recovery checkpoint
 
 Removed the blanket rejection of every SHA-bound managed GGUF checkpoint without weakening fail-closed recovery. `resume_safe` now has an explicit managed-runtime handoff used only when a caller can provide the currently authenticated runtime. It re-attests the exact llama.cpp backend, loopback endpoint, forgeos-managed alias, model SHA-256, runtime SHA-256 and presence of the ephemeral API credential before calling the engine. No factory means the checkpoint is skipped; identity/auth mismatch fails without executing tests or model generation. This enables safe GUI wiring next while keeping CLI/background recreation disabled.
+
+
+## GUI safe recovery integration
+
+The single ForgeOS dashboard now exposes **Resume safe blocked tasks** in Activity & diagnostics. It reuses the existing background-worker/event-loop design and existing host-test permission. If the current managed GGUF is authenticated and running, recovery receives a fresh local client carrying the ephemeral API credential and the controller's exact model/runtime hashes; `resume_safe` independently re-attests those values against each checkpoint before execution. The managed controller is marked busy during the operation to prevent idle unload. Recovery reports resumed/skipped/failed work in the existing diagnostics log; no credential is written into task state.

@@ -273,6 +273,27 @@ class DashboardContractTests(unittest.TestCase):
                 self.assertIn(fragment, source)
         self.assertNotIn("threading.Timer(", source)
 
+
+    def test_safe_recovery_gui_uses_existing_worker_and_managed_identity(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Resume safe blocked tasks"',
+                'from .recovery import resume_safe',
+                'recovery_events = Queue(maxsize=1)',
+                'managed_model_factory=(',
+                'endpoint=active_manager.endpoint',
+                'api_key=active_manager.api_key',
+                'instance.managed_model_sha256 = active_manager.model_sha256',
+                'instance.managed_runtime_sha256 = active_manager.runtime_sha256',
+                'allow_host_tests=True',
+                'managed["busy"] = True',
+                'managed["busy"] = False'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+        self.assertNotIn('api_key=contract', source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

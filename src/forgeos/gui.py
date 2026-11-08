@@ -130,6 +130,7 @@ def launch(db_path, *, acceptance: bool = False):
     page_size = 150
     events = Queue()
     managed_events = Queue(maxsize=2)
+    recovery_events = Queue(maxsize=1)
     managed = {"controller": None, "busy": False, "last_used": None,
                "unexpected_exit": False, "stop_failed": False,
                "screening_cancel": None}
@@ -332,6 +333,73 @@ def launch(db_path, *, acceptance: bool = False):
 
     ttk.Button(activity, text="Show local memory snapshot",
                command=show_memory).pack(anchor="w", pady=(0, 8))
+
+    def resume_blocked_tasks():
+        if busy["value"] or managed["busy"]:
+            messagebox.showerror(
+                "Recovery busy",
+                "Finish the current task or managed-model operation first.")
+            return
+        if not allow_host_tests.get():
+            messagebox.showerror(
+                "Recovery requires test permission",
+                "Enable the host test execution checkbox before recovery. "
+                "Recovered tasks may execute project tests.")
+            return
+        try:
+            chosen_workspace = Path(workspaces.get()).expanduser().resolve(strict=True)
+        except OSError as exc:
+            messagebox.showerror("Recovery workspace unavailable", str(exc))
+            return
+        manager = managed["controller"]
+        active_manager = manager if manager is not None and manager.running() else None
+        busy["value"] = True
+        if active_manager is not None:
+            managed["busy"] = True
+            managed["last_used"] = time.monotonic()
+        status.set("Recovering safe blocked checkpoints...")
+        for button in buttons.values():
+            button.configure(state="disabled")
+
+        def worker():
+            worker_store = None
+            try:
+                from .recovery import resume_safe
+                worker_store = Store(db_path)
+
+                def managed_factory(contract):
+                    if active_manager is None:
+                        raise ValueError(
+                            "No authenticated managed runtime is currently active")
+                    instance = create_model(
+                        backend="llama.cpp", model="forgeos-managed",
+                        endpoint=active_manager.endpoint,
+                        api_key=active_manager.api_key)
+                    instance.managed_model_sha256 = active_manager.model_sha256
+                    instance.managed_runtime_sha256 = active_manager.runtime_sha256
+                    return instance
+
+                report = resume_safe(
+                    worker_store, chosen_workspace,
+                    allow_host_tests=True,
+                    managed_model_factory=(
+                        managed_factory if active_manager is not None else None))
+                recovery_events.put((report, None))
+            except Exception as exc:
+                recovery_events.put(
+                    (None, f"{type(exc).__name__}: {exc}"))
+            finally:
+                if worker_store is not None:
+                    try:
+                        worker_store.close()
+                    except Exception:
+                        pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    ttk.Button(
+        activity, text="Resume safe blocked tasks",
+        command=resume_blocked_tasks).pack(anchor="w", pady=(0, 8))
 
     def show_comparison():
         try:
@@ -1435,6 +1503,23 @@ def launch(db_path, *, acceptance: bool = False):
                     status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
                     log(f"Task #{task_id} / {operation}\n{value}")
                     tabs.select(activity)
+            except Empty:
+                pass
+            try:
+                report, recovery_error = recovery_events.get_nowait()
+                busy["value"] = False
+                managed["busy"] = False
+                for button in buttons.values():
+                    button.configure(state="normal")
+                refresh()
+                if recovery_error is not None:
+                    status.set("Safe recovery failed")
+                    log("Safe recovery failed\n" + recovery_error)
+                else:
+                    status.set("Safe recovery completed")
+                    log("Safe blocked-task recovery\n"
+                        + json.dumps(report, indent=2))
+                tabs.select(activity)
             except Empty:
                 pass
             try:

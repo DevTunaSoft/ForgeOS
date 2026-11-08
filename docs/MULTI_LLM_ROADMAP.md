@@ -397,3 +397,13 @@ qualification remain disabled.
 - [x] Missing authenticated runtime remains a skip, not an unsafe reconstruction; ordinary CLI/background recovery cannot silently recreate a managed session because the API secret is ephemeral.
 - [x] Hash, endpoint and missing-auth mismatches fail before task execution.
 - [ ] Wire the existing GUI-managed controller into the recovery action and validate interruption/resume against real llama.cpp on Windows.
+
+
+### GUI safe blocked-task recovery with managed re-attestation
+
+- [x] Add **Resume safe blocked tasks** to the existing Activity & diagnostics surface; no second recovery application.
+- [x] Recovery runs off the Tk thread and uses the existing workspace/test-permission controls.
+- [x] When a verified managed GGUF is already running, the GUI passes only its ephemeral authenticated endpoint plus exact model/runtime hashes into the recovery re-attestation path.
+- [x] The managed runtime is held busy during recovery so idle-unload cannot race a resumed checkpoint.
+- [x] Results are summarized in the existing Activity log and task list is refreshed when recovery completes.
+- [ ] Exercise a real interrupted managed GGUF test/repair checkpoint on physical Windows and verify process restart/recovery across an application relaunch.
