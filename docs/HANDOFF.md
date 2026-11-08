@@ -415,9 +415,23 @@ The early build also preceded put_stream(); subsequent commits integrated it.
 Treat the latest CI head as unverified until all four Ubuntu/Windows jobs and
 Windows executable including AppContainer security smoke succeed.
 
-Known unresolved concerns: native Windows temporary output files can still
-grow on disk during child execution before bounded reading occurs; a runtime
-file-size watchdog is needed. Real 4/8 GiB Windows GUI/inference/hardware
+Update: a 500-ms native Windows temporary stdout file watchdog was added
+in output_capture.py and reused by both native Windows Job Object executors.
+It terminates their jobs after the 32 MiB file limit. Remaining concern:
+the child-written separate frozen unittest output file is not yet watched
+until process exit; this requires additional disk-pressure hardening. Real 4/8 GiB Windows GUI/inference/hardware
 acceptance, peak working-set process-tree accounting and long-running
 resource-pressure tests remain unverified. Output evidence is unencrypted;
 never include archives in release assets. No new paid APIs or Docker.
+
+
+Low-memory follow-up corrections: a Windows-only failing assertion was traced
+to CRLF normalization differences between former read_text() and raw byte
+decoding in the new bounded output reader. The preview layer now restores
+universal newline behavior while preserving exact raw archive bytes; its
+regression assertion was changed to avoid difflib recursion on huge strings.
+A shared native output watchdog checks Job Object stdout file size only
+twice per second, with no background agent. Invalid UTF-8 original evidence
+can be SHA-verified and displayed safely with replacement markers. Tests
+cover native disk limit termination, successful process exit and binary
+preview behavior. The final PR head still needs independent CI proof.

@@ -39,9 +39,11 @@ Windows measurements before being stated as supported minimum specifications.
 - No Docker, paid API calls, background polling service, second GUI or
   duplicate inference backend are required.
 
-Important remaining limitation: native Windows child stdout writes to
-temporary files during execution. Their *in-progress disk size* is not
-yet hard-capped by a watchdog; post-execution reads are bounded. Real-world
+Native Windows Job Object/AppContainer stdout now uses a low-frequency
+500-ms watchdog that terminates the job if its temporary output file grows
+past 32 MiB. Child-generated framework files (including the frozen unittest
+test-output.txt) are not yet independently watched while the process runs,
+so that remaining path needs a separate disk-pressure guard. Real-world
 Windows test runners, GPU model memory and full task-cycle RSS still need QA.
 Raw archives may contain secrets and are not encrypted at rest.
 
