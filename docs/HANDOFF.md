@@ -1240,3 +1240,9 @@ CLI list/verify output. **Next:** verify latest CI on all targets and
 correct any failures, then extend Windows process-creation/port
 authentication, trustworthy binary installation and real CPU model
 performance acceptance.
+
+### Managed llama-server environment hardening — 2026-11-08
+
+Code commit `b35ca74168e03cd39176ab28cd55a7386e654767` replaced the inference child-process environment's permissive prefix-denylist with a strict allowlist of operating-system keys in `src/forgeos/managed_llama.py`. This prevents accidental inheritance of unknown future `GGML_*`, `CUDA_*`, `OMP_*`, `PYTHONPATH`, native loader injection, cloud API secrets, proxies and other arbitrary settings. The existing local executable path, isolated working directory, authenticated localhost API and lifecycle management remain unchanged. The original environment unit test was updated and an additional mixed-case Windows environment test was added to `tests/test_managed_llama.py`. This is a hardening change, not a proof of fully sandboxed native inference or a claim of physical Windows hardware acceptance.
+
+**Verification required:** run GitHub Linux/Windows Python 3.10/3.12 regression matrix, frozen Windows GUI packaging and secure AppContainer smoke on the latest commit. Investigate any legitimate runtime DLL/OS environment dependencies observed during real Windows llama.cpp acceptance. Do not silently restore arbitrary environment inheritance to fix a launch failure; add the smallest justified OS key and test it.
