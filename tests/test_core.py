@@ -174,6 +174,24 @@ class ForgeOSTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "memory limit"):
                 Ollama().generate_edits("test")
 
+    def test_ollama_slow_trickle_hits_total_deadline(self):
+        import io
+        from forgeos.model_routing import MemorySnapshot
+
+        class Trickle(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+            def read1(self, size=-1):
+                return super().read(1)
+
+        ticks = iter([0, 1, 100, 179, 180, 181])
+        with (patch("forgeos.model_routing.system_memory",
+                    return_value=MemorySnapshot(4*1024**3, 3*1024**3)),
+              patch("forgeos.core.urlopen", return_value=Trickle(b"abcdef")),
+              patch("forgeos.core.time.monotonic", side_effect=lambda: next(ticks))):
+            with self.assertRaisesRegex(TimeoutError, "total deadline"):
+                Ollama().plan("slow model")
+
     def test_fuzz_task_descriptions_round_trip(self):
         rng=random.Random(20261107)
         alphabet=string.ascii_letters+string.digits+" \\n\\tΩ漢字'\\\";--"

@@ -278,8 +278,29 @@ class Ollama:
         payload = json.dumps(arguments).encode()
         req = Request(self.base + '/api/generate', data=payload,
                       headers={'Content-Type': 'application/json'})
-        with urlopen(req, timeout=180) as response:
-            bounded = response.read(MAX_OLLAMA_RESPONSE_BYTES + 1)
+        # A socket timeout alone is not an end-to-end deadline: a server can
+        # drip bytes forever. Bound the whole response by monotonic time and
+        # read small chunks, without retaining unbounded response data.
+        deadline = time.monotonic() + 180
+        chunks = []
+        total = 0
+        with urlopen(req, timeout=30) as response:
+            while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Local AI response exceeded 180s total deadline")
+                # read1 returns currently available data rather than waiting
+                # for an entire requested block (important for slow streams).
+                chunk = response.read1(min(8192, MAX_OLLAMA_RESPONSE_BYTES + 1 - total))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_OLLAMA_RESPONSE_BYTES:
+                    raise RuntimeError(
+                        'Local AI response exceeded safe memory limit; try smaller edits')
+                chunks.append(chunk)
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Local AI response exceeded 180s total deadline")
+        bounded = b"".join(chunks)
         if len(bounded) > MAX_OLLAMA_RESPONSE_BYTES:
             raise RuntimeError(
                 'Local AI response exceeded safe memory limit; try smaller edits')
