@@ -364,18 +364,18 @@ def launch(db_path, *, acceptance: bool = False):
             messagebox.showerror("Cannot create task", str(exc))
 
     def browse_hub_models():
-        """Opt-in read-only GGUF browser; never blocks the Tk event loop."""
+        """Opt-in GGUF browser and verified downloader without Tk thread blocking."""
         from .huggingface_catalog import search_gguf, list_gguf_files
 
         popup = tk.Toplevel(root)
-        popup.title("ForgeOS | Hugging Face GGUF discovery")
-        popup.geometry("790x540")
+        popup.title("ForgeOS | Hugging Face GGUF catalog and downloads")
+        popup.geometry("790x590")
         popup.minsize(610, 390)
         frame = ttk.Frame(popup, padding=14)
         frame.pack(fill="both", expand=True)
         ttk.Label(
-            frame, text="Browse public GGUF models — discovery only. "
-                        "Downloads and installation are not yet implemented."
+            frame, text="Browse public GGUF models and download verified weights. "
+                        "Running downloaded models requires a local inference runtime."
         ).pack(anchor="w", pady=(0, 8))
         query = tk.StringVar(value="Qwen coder GGUF")
         search_row = ttk.Frame(frame)
@@ -389,10 +389,18 @@ def launch(db_path, *, acceptance: bool = False):
             results.heading(key, text=key.title())
             results.column(key, width=width, stretch=key == "repository")
         results.pack(fill="both", expand=True)
+        choose_row = ttk.Frame(frame)
+        choose_row.pack(fill="x", pady=(8, 0))
+        ttk.Label(choose_row, text="GGUF file").pack(side="left")
+        file_choice = tk.StringVar()
+        file_picker = ttk.Combobox(
+            choose_row, textvariable=file_choice, values=(),
+            state="readonly", width=60)
+        file_picker.pack(side="left", fill="x", expand=True, padx=6)
         info = tk.Text(frame, height=7, wrap="word", state="disabled")
         info.pack(fill="x", pady=(8, 0))
         hub_events = Queue(maxsize=2)
-        state = {"busy": False, "catalog": []}
+        state = {"busy": False, "catalog": [], "inspected_repo": None}
 
         def begin(action):
             if state["busy"]:
@@ -404,16 +412,44 @@ def launch(db_path, *, acceptance: bool = False):
                                         parent=popup)
                     return
                 term = state["catalog"][int(selected[0])]["repo"]
+            elif action == "download":
+                if not state["inspected_repo"] or not file_choice.get():
+                    messagebox.showinfo(
+                        "Choose a GGUF file",
+                        "Inspect a repository, then select a file with SHA-256 metadata.",
+                        parent=popup)
+                    return
+                if not messagebox.askyesno(
+                        "Download GGUF to this computer",
+                        "Download the selected file to the ForgeOS model folder? "
+                        "Check its license and disk requirements first. "
+                        "The download will not load or execute the model.",
+                        parent=popup):
+                    return
+                term = (state["inspected_repo"], file_choice.get())
             else:
                 term = query.get().strip()
             state["busy"] = True
             search_btn.configure(state="disabled")
             files_btn.configure(state="disabled")
+            download_btn.configure(state="disabled")
+            info.configure(state="normal")
+            info.delete("1.0", "end")
+            info.insert("end",
+                        "Downloading and verifying GGUF weights... "
+                        "Close the window only if an interrupted download is acceptable."
+                        if action == "download" else "Looking up public model metadata...")
+            info.configure(state="disabled")
 
             def run_lookup():
                 try:
-                    data = (search_gguf(term) if action == "search"
-                            else list_gguf_files(term))
+                    if action == "search":
+                        data = search_gguf(term)
+                    elif action == "files":
+                        data = list_gguf_files(term)
+                    else:
+                        from .gguf_download import download_gguf
+                        data = download_gguf(term[0], term[1])
                     hub_events.put((action, data, None))
                 except Exception as exc:
                     hub_events.put((action, None, f"{type(exc).__name__}: {exc}"))
@@ -425,6 +461,10 @@ def launch(db_path, *, acceptance: bool = False):
         files_btn = ttk.Button(
             search_row, text="Inspect GGUF sizes", command=lambda: begin("files"))
         files_btn.pack(side="left")
+        download_btn = ttk.Button(
+            choose_row, text="Download and verify", state="disabled",
+            command=lambda: begin("download"))
+        download_btn.pack(side="left", padx=5)
 
         def poll_hub():
             try:
@@ -435,12 +475,19 @@ def launch(db_path, *, acceptance: bool = False):
                 state["busy"] = False
                 search_btn.configure(state="normal")
                 files_btn.configure(state="normal")
+                download_btn.configure(
+                    state="normal" if state["inspected_repo"]
+                    and file_choice.get() else "disabled")
                 info.configure(state="normal")
                 info.delete("1.0", "end")
                 if error:
                     info.insert("end", error)
                 elif action == "search":
                     state["catalog"] = data
+                    state["inspected_repo"] = None
+                    file_choice.set("")
+                    file_picker.configure(values=())
+                    download_btn.configure(state="disabled")
                     results.delete(*results.get_children())
                     for index, item in enumerate(data):
                         results.insert("", "end", iid=str(index), values=(
@@ -449,13 +496,29 @@ def launch(db_path, *, acceptance: bool = False):
                         "end", f"Found {len(data)} candidate repositories. "
                         "A repository listing is not a license or compatibility "
                         "verification. Select one and inspect its GGUF files.")
-                else:
+                elif action == "files":
+                    selected = results.selection()
+                    state["inspected_repo"] = (
+                        state["catalog"][int(selected[0])]["repo"]
+                        if selected else None)
+                    choices = [item["path"] for item in data if item["sha256"]]
+                    file_picker.configure(values=choices)
+                    file_choice.set(choices[0] if choices else "")
+                    download_btn.configure(state="normal" if choices else "disabled")
                     for item in data[:30]:
                         size = item["bytes"] / (1024 ** 3)
                         verified = "LFS SHA-256 provided" if item["sha256"] else "Hash unavailable"
-                        info.insert("end", f'{item["path"]}: {size:.2f} GiB; {verified}\\n')
+                        info.insert("end", f'{item["path"]}: {size:.2f} GiB; {verified}\n')
                     if not data:
                         info.insert("end", "No GGUF files found in the returned listing.")
+                    elif not choices:
+                        info.insert("end",
+                                    "No downloadable files with trusted checksum metadata.")
+                else:
+                    info.insert(
+                        "end", f"Model file {data['status']}: {data['path']}\n"
+                               "Weight SHA-256 checked. A separate local inference "
+                               "runtime is required to run this GGUF file.")
                 info.configure(state="disabled")
             if popup.winfo_exists():
                 popup.after(200, poll_hub)
