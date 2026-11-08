@@ -558,3 +558,9 @@ When the active verified local GGUF has completed final qualification for the
 ForgeOS checks the same final evidence, exact model/runtime hashes and current
 memory budget before sending the planning request. If planning evidence is not
 qualified, ForgeOS stops instead of silently using another model.
+
+
+Qualified-auto also requires the active local session to be authenticated by
+ForgeOS. Model/runtime hashes by themselves are not sufficient. If the managed
+session credential is missing, ForgeOS blocks planning or autonomous execution
+before it reads qualification evidence or sends project content.

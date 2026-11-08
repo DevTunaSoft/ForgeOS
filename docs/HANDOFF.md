@@ -1634,3 +1634,13 @@ qualified planning and the no-evidence fail-closed path.
 ### GUI contract repair after dynamic task roles
 
 The first validation of the shared task-role selector found two stale source-contract assertions, not runtime defects. One still required the removed hardcoded role="implementation" path; it now requires role=chosen_role. The final-qualification GUI test also expected dialog-local wording removed by the poll-scope repair; it now asserts the persisted Activity warning that cancelled evidence leaves routing disabled.
+
+
+## 2026-11-08 authenticated qualified-auto hardening
+
+Review of the shared resolver found that exact model/runtime hashes were checked
+but the adapter's authenticated-session state was not explicitly required at that
+entry point. The resolver now requires `authenticated is True` before evidence
+lookup, memory routing or prompting. Engine and planning fixtures represent the
+real managed adapter, and a negative planning test proves an unauthenticated
+hash-bearing model is blocked before evidence loading or model invocation.
