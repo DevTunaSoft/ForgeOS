@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock
 from forgeos.gui import (
     PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
+    _retirement_allowed,
 )
 
 
@@ -160,6 +161,32 @@ class DashboardContractTests(unittest.TestCase):
         # Downloading cannot happen on ordinary dashboard initialization.
         self.assertNotIn("install_pinned_cpu_runtime()",
                          source.split("    def manage_local_gguf():")[0])
+
+    def test_retire_gui_interlock_blocks_active_ai_and_model(self):
+        for task_busy, op_busy, model_present in (
+                (True, False, False), (False, True, False),
+                (False, False, True), (True, True, True)):
+            with self.subTest(state=(task_busy, op_busy, model_present)):
+                self.assertFalse(_retirement_allowed(
+                    task_busy=task_busy, operation_busy=op_busy,
+                    model_present=model_present))
+        self.assertTrue(_retirement_allowed(
+            task_busy=False, operation_busy=False, model_present=False))
+
+    def test_retire_gui_uses_existing_picker_worker_and_bounded_queue(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn("Retire selected GGUF (recoverable)", source)
+        self.assertIn("from .model_retirement import retire_download", source)
+        self.assertIn("retirement_events = Queue(maxsize=1)", source)
+        self.assertIn('managed["busy"] = True', source)
+        self.assertIn('managed["busy"] = False', source)
+        self.assertIn("chooser.after(200, poll_retirement)", source)
+        self.assertIn("chooser.protocol(\"WM_DELETE_WINDOW\", close_chooser)", source)
+        self.assertIn('if retirement["busy"]:', source)
+        self.assertIn("this DOES NOT free storage space", source)
+        self.assertIn('gguf_path.set("")', source)
 
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))

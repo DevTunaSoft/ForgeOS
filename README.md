@@ -260,3 +260,6 @@ The experimental managed GGUF server additionally caps manually requested contex
 ### Recoverable local GGUF model retirement (experimental)
 
 The CLI can now retire one locally SHA-verified GGUF without deleting its bytes, and later restore it from an ID. Use the existing model folder: run python -m forgeos models-local, then python -m forgeos model-retire-local "ABSOLUTE_PATH.gguf" --confirm. Run python -m forgeos models-retired to list recovery IDs; run python -m forgeos model-restore-local "RETIREMENT_ID" to recover. Pass --directory PATH for alternate local model storage. All model moves use the existing download lock and pinned SHA-256 manifest. A durable journal supports crash-interrupted file moves. **Retirement retains the weight bytes on disk and does not free space.** Stop any actively running model first. Physical Windows process-in-use and abrupt power-failure testing remain unverified.
+
+
+The same recoverable retirement action is available in the existing desktop Manage local GGUF > Choose from ForgeOS downloads picker. It is disabled while ForgeOS is performing a task or owns a managed model process; a worker thread performs the full SHA-256 recheck, and the recovery ID is shown on completion.

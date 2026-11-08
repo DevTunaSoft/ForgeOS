@@ -25,6 +25,12 @@ STATUS_LABELS = {
 }
 
 
+def _retirement_allowed(*, task_busy: bool, operation_busy: bool,
+                        model_present: bool) -> bool:
+    """Only allow an opt-in model move when the owned model is inactive."""
+    return not (task_busy or operation_busy or model_present)
+
+
 def _format_task(task: dict) -> tuple:
     return (task["id"], STATUS_LABELS.get(task["status"], task["status"]),
             task["description"][:140])
@@ -548,8 +554,113 @@ def launch(db_path, *, acceptance: bool = False):
                     messagebox.showinfo(
                         "Select local model", "Choose a downloaded GGUF file.",
                         parent=chooser)
-            ttk.Button(body, text="Use selected GGUF",
-                       command=select_local).pack(anchor="e", pady=(8, 0))
+            controls = ttk.Frame(body)
+            controls.pack(fill="x", pady=(8, 0))
+            use_btn = ttk.Button(controls, text="Use selected GGUF",
+                                 command=select_local)
+            use_btn.pack(side="right")
+            retirement_events = Queue(maxsize=1)
+            retirement = {"busy": False}
+            retirement_status = tk.StringVar(value="")
+            ttk.Label(body, textvariable=retirement_status,
+                      wraplength=750).pack(anchor="w", pady=(7, 0))
+
+            def retire_selected():
+                if retirement["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo("Select local model",
+                                        "Choose one GGUF file.", parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Cannot retire model",
+                        "Finish the current task and stop the managed local "
+                        "inference server before retiring any GGUF.",
+                        parent=chooser)
+                    return
+                index = selection[0]
+                entry = records[int(index)]
+                if not messagebox.askyesno(
+                        "Retire verified model",
+                        "Move this GGUF and its SHA-256 manifest to recoverable "
+                        "local storage? The bytes are retained on disk, and "
+                        "this DOES NOT free storage space. Stop any separate "
+                        "llama.cpp server using this file first. The entire "
+                        "GGUF will be rehashed before the move.",
+                        parent=chooser):
+                    return
+                retirement["busy"] = True
+                managed["busy"] = True
+                use_btn.configure(state="disabled")
+                retire_btn.configure(state="disabled")
+                retirement_status.set(
+                    "Verifying model bytes and writing a recoverable "
+                    "retirement journal...")
+                status.set("Retiring local GGUF after full SHA-256 verification...")
+
+                def worker():
+                    try:
+                        from .model_retirement import retire_download
+                        outcome = retire_download(entry["path"])
+                        retirement_events.put((index, outcome, None))
+                    except Exception as exc:
+                        retirement_events.put((
+                            index, None, f"{type(exc).__name__}: {exc}"))
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(200, poll_retirement)
+
+            def poll_retirement():
+                try:
+                    index, outcome, error = retirement_events.get_nowait()
+                except Empty:
+                    if chooser.winfo_exists():
+                        chooser.after(200, poll_retirement)
+                    return
+                finally:
+                    # This callback alone owns Tk state updates.
+                    pass
+                retirement["busy"] = False
+                managed["busy"] = False
+                use_btn.configure(state="normal")
+                retire_btn.configure(state="normal")
+                if error is not None:
+                    retirement_status.set("Retirement failed; existing "
+                                          "files or recovery journal retained.")
+                    status.set("Model retirement failed")
+                    messagebox.showerror(
+                        "Could not retire local model", error, parent=chooser)
+                    return
+                retirement_status.set(
+                    "Model retired safely; recovery ID: " + outcome["id"])
+                status.set("Local GGUF retired (recovery available)")
+                if gguf_path.get() == records[int(index)]["path"]:
+                    gguf_path.set("")
+                listing.delete(index)
+                messagebox.showinfo(
+                    "Model moved to recoverable local storage",
+                    "Recovery ID: " + outcome["id"] + "\n"
+                    "Use models-retired and model-restore-local to restore. "
+                    "The model still occupies disk space.",
+                    parent=chooser)
+
+            def close_chooser():
+                if retirement["busy"]:
+                    retirement_status.set(
+                        "Model verification is active. The window remains "
+                        "open so the recovery result cannot be lost.")
+                    return
+                chooser.destroy()
+
+            chooser.protocol("WM_DELETE_WINDOW", close_chooser)
+            retire_btn = ttk.Button(
+                controls, text="Retire selected GGUF (recoverable)",
+                command=retire_selected)
+            retire_btn.pack(side="right", padx=8)
 
         ttk.Button(
             panel, text="Choose from ForgeOS downloads",

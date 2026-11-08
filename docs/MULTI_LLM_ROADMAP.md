@@ -324,3 +324,12 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 - [x] Add offline regression tests for corruption, incomplete downloads, malformed journals/IDs, symlinks, collisions and fault-injected interruptions.
 - [ ] Verify latest Linux/Windows Python 3.10 and 3.12 CI, documentation integrity and frozen Windows EXE/AppContainer.
 - [ ] Real Windows 11 trial with a large GGUF, native inference stopped/running, reboot or power-loss, reparse points/hardlinks and actual disk usage. GUI retirement and strong active-model interlocks are future work. A move to retired storage does not reclaim disk space.
+
+
+### Local-model picker retirement control (2026-11-08)
+
+- [x] Add a recoverable retirement command within the existing single-GUI GGUF selection dialog (no second app or model manager).
+- [x] Refuse when an AI task or ForgeOS-managed llama.cpp session is active; use the same busy gate to prevent concurrent operations.
+- [x] Hash and retire only on a worker thread, keep event queue bounded to one result and poll via existing Tk event loop, and retain the chooser while model retirement is in progress.
+- [x] Return a model recovery ID, clear any selected retired model, and add GUI contract regression tests.
+- [ ] Physically test model retirement and restore with real weights and native Windows file locks. Externally launched inference processes are not yet automatically detectable.
