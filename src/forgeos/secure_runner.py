@@ -53,11 +53,13 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
             f"Secure Windows runner does not yet support preset: {preset}")
     executable = Path(sys.executable).resolve(strict=True)
     output_file = runtime.path / RUNTIME_DIR / "test-output.txt"
+    # Reject unsafe owned paths before reading bootstrap host environment or
+    # creating any Windows child/AppContainer grants.
+    from .output_capture import validate_secure_output_path
+    monitored = validate_secure_output_path(runtime.path, output_file)
     env = _bootstrap_environment(runtime)
     env["FORGEOS_TEST_OUTPUT_FILE"] = str(output_file)
     argv = [str(executable), "--sandbox-unittest"]
-    from .output_capture import validate_secure_output_path
-    monitored = validate_secure_output_path(runtime.path, output_file)
     result = run_secure_appcontainer(
         argv, runtime.path, env,
         executable=executable, timeout=timeout, watched_output=monitored)
