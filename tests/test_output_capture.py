@@ -147,6 +147,94 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
                 wait_timeout=258,
                 wait_object_0=0), 0)
 
+    def test_secondary_test_output_overflow_kills_job_and_preserves_host(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        class FakeKernel:
+            terminated = False
+            def WaitForSingleObject(self, process, delay):
+                return 0 if self.terminated else 258
+            def TerminateJobObject(self, job, exit_code):
+                self.terminated = True
+                return 1
+        file = self.root / "test-output.txt"
+        file.write_bytes(b"small")
+        class SyntheticStream:
+            def fileno(self): return self._file.fileno()
+            def __init__(self, file): self._file = file
+        kernel = FakeKernel()
+        with tempfile.TemporaryFile(mode="w+b") as stdout:
+            file.write_bytes(b"0" * (MAX_RAW_BYTES + 1))
+            with self.assertRaisesRegex(OSError, "Child-generated test output"):
+                wait_native_output_bounded(
+                    1, 2, stdout, 2, kernel32=kernel, wait_timeout=258,
+                    wait_object_0=0, watched_files=(file,))
+        self.assertTrue(kernel.terminated)
+        self.assertEqual(file.stat().st_size, MAX_RAW_BYTES + 1)
+
+    def test_watched_output_symlink_replacement_fails_closed(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        outside = self.root / "outside-secret.txt"
+        outside.write_text("do not read")
+        folder = self.root / "owned"
+        folder.mkdir()
+        watched = folder / "test-output.txt"
+        try:
+            watched.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Cannot create symbolic links")
+        class FakeKernel:
+            killed = False
+            def WaitForSingleObject(self, process, delay):
+                return 0 if self.killed else 258
+            def TerminateJobObject(self, job, code):
+                self.killed = True
+                return 1
+        kernel = FakeKernel()
+        with tempfile.TemporaryFile(mode="w+b") as stdout:
+            with self.assertRaisesRegex(OSError, "unsafe path"):
+                wait_native_output_bounded(
+                    1, 2, stdout, 2, kernel32=kernel, wait_timeout=258,
+                    wait_object_0=0, watched_files=(watched,))
+        self.assertTrue(kernel.killed)
+        self.assertEqual(outside.read_text(), "do not read")
+
+    def test_secure_monitor_rejects_outside_file_and_directory_link(self):
+        from forgeos.output_capture import validate_secure_output_path
+        from forgeos.test_runtime import RUNTIME_DIR
+        folder = self.root / RUNTIME_DIR
+        folder.mkdir(exist_ok=True)
+        expected = folder / "test-output.txt"
+        self.assertEqual(validate_secure_output_path(self.root, expected), expected)
+        with self.assertRaises(ValueError):
+            validate_secure_output_path(self.root, self.root / "other.txt")
+        outside = self.root / "outside"
+        outside.mkdir()
+        folder.rmdir()
+        try:
+            folder.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Cannot create directory symbolic links")
+        with self.assertRaises(ValueError):
+            validate_secure_output_path(self.root, expected)
+
+    def test_watch_checks_final_size_even_if_process_already_exited(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        class Completed:
+            killed = False
+            def WaitForSingleObject(self, process, delay): return 0
+            def TerminateJobObject(self, job, code):
+                self.killed = True
+                return 1
+        kernel = Completed()
+        file = self.root / "test-output.txt"
+        with tempfile.TemporaryFile(mode="w+b") as stdout:
+            file.write_bytes(b"z" * (MAX_RAW_BYTES + 1))
+            with self.assertRaisesRegex(OSError, "Child-generated test output"):
+                wait_native_output_bounded(
+                    1, 2, stdout, 2, kernel32=kernel, wait_timeout=258,
+                    wait_object_0=0, watched_files=(file,))
+        self.assertTrue(kernel.killed)
+
     def test_timeout_terminates_process(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             run_streamed_process(

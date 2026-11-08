@@ -73,3 +73,4 @@ class SecureRunnerContractTests(unittest.TestCase):
         self.assertEqual(
             args[2]["FORGEOS_BOOTSTRAP_LOCALAPPDATA"], "1")
         self.assertEqual(kwargs["timeout"], 17)
+        self.assertEqual(kwargs["watched_output"], output)

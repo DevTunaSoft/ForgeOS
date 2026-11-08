@@ -56,9 +56,11 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
     env = _bootstrap_environment(runtime)
     env["FORGEOS_TEST_OUTPUT_FILE"] = str(output_file)
     argv = [str(executable), "--sandbox-unittest"]
+    from .output_capture import validate_secure_output_path
+    monitored = validate_secure_output_path(runtime.path, output_file)
     result = run_secure_appcontainer(
         argv, runtime.path, env,
-        executable=executable, timeout=timeout)
+        executable=executable, timeout=timeout, watched_output=monitored)
     try:
         if output_file.is_file() and not output_file.is_symlink():
             from .output_capture import summarize_output_file
