@@ -138,7 +138,7 @@ The Hugging Face browser can search public GGUF repositories, inspect file
 sizes and hashes, and **download and verify** selected GGUF weights on
 demand. Downloads are pinned to an immutable revision, hashed with SHA-256,
 resumable after interruption and published atomically if verification passes.
-The feature branch includes a **pinned official Windows x64 CPU llama.cpp
+The feature branch implements single-server unexpected-exit detection and fail-closed credential cleanup without extra background timers, as well as a **pinned official Windows x64 CPU llama.cpp
 runtime installer**, now available from the existing **Run verified local GGUF**
 dialog via **Install verified official Windows CPU runtime (opt-in)**. It downloads
 only on explicit confirmation, verifies the pinned ZIP and all bundled binaries

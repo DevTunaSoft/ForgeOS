@@ -143,9 +143,16 @@ not been independently accepted; use a disposable repository first.
 integrity control, not a publisher signature. Native DLL loading can still
 be subject to same-user file races; Windows process creation currently has
 a short job-attachment window. One local managed model runs at a time.
-Session credentials are not persisted for automatic post-crash recovery;
-real model quality, startup/stop behavior, memory and Windows 11 acceptance
-remain unverified. No paid API is needed for this route.
+Session credentials are not persisted for automatic post-crash recovery.
+If the local model process exits unexpectedly, ForgeOS detects this in its
+existing GUI event loop **after active tasks complete**, attempts to clean
+up the terminated process and ephemeral secret, then restores Ollama as
+the safe default. The user must intentionally start a verified local GGUF
+again; ForgeOS never silently reloads changed weights. A failed cleanup
+attempt is logged and latched to avoid an endless retry loop; use
+**Stop local model** to retry manually. This is fail-closed state handling,
+not automatic restart after system reboot. Real model quality, startup/stop
+behavior, memory and Windows 11 acceptance remain unverified. No paid API is needed for this route.
 See [model compatibility and risks](MODEL_COMPATIBILITY.md).
 
 Examples for advanced users:
