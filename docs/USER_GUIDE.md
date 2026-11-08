@@ -578,3 +578,8 @@ From PowerShell, `py -m forgeos acceptance` captures the host/source or frozen-e
 ### Windows GUI task buttons and mouse editing
 
 The **Add task**, **Build / test / repair**, **Generate plan**, **Run tests only**, and **Refresh** actions appear immediately above the expanding development queue, including on smaller Windows displays. Right-click editable text fields to access **Cut**, **Copy**, **Paste**, and **Select All**; read-only fields do not permit cutting or pasting. These changes are pending physical Windows validation. Keep **Allow tests to run on this computer** unchecked until you deliberately approve executing generated code on the host.
+
+
+### Slow local AI responses (pending CI verification)
+
+ForgeOS applies a 180-second monotonic response deadline to its built-in Ollama generator and retains an 8 MiB response-size ceiling. If a local model streams too slowly, the request fails with a deadline or socket timeout instead of waiting indefinitely. Socket reads may overshoot the exact wall-clock deadline by up to the configured per-read timeout; the lease guard still prevents stale task results from being published. This does not impose a deadline on other model backends.
