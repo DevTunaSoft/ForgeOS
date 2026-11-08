@@ -970,3 +970,40 @@ public GGUF catalog passed in the earlier Linux run. **The corrected build
 still requires a new full CI run; the failure is not claimed fixed until
 that run finishes.** GitHub's newer `task_actions` lease safety and
 updated main documentation are retained.
+
+
+### Follow-up — backend-aware checkpoint recovery on review branch
+
+Files added/updated:
+
+- `src/forgeos/recovery.py`: extend execution-contract validation to
+  accept **only** original three-key Ollama contracts or strict five-key
+  non-Ollama contracts with `backend` and `endpoint`.
+  Only the known loopback-compatible providers are permitted; saved URLs
+  must be normalized, credential-free, HTTP literal loopback and unchanged.
+  The saved provider is reconstructed with `create_model()` before the
+  existing `execute_task(..., resume=True)` lease and workspace/hash checks.
+  Any bad checkpoint is **skipped** before a model factory or test executes.
+- `tests/test_local_resume.py`: verify legacy compatibility, provider/model
+  reconstruction, disallow remote/invalid backend or altered port, fail
+  closed on unavailable models, and avoid executing invalid checkpoints.
+- `docs/MODEL_COMPATIBILITY.md`, `docs/USER_GUIDE.md`,
+  `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`: document this experimental
+  safety improvement, not a claim of production Windows acceptance.
+
+Important: model identity means **saved model name and server address**,
+not a cryptographic hash of loaded model weights. A server process may be
+restarted with different files under the same model identifier. Before
+fully unattended resume, add pinned model file digest, server binary hash
+and model revision to the checkpoint; fail closed when identity cannot be
+verified. Windows process-tree RAM and actual backend crash/restart tests
+remain outstanding. Legacy resume tests and the new provider tests require
+another complete green CI matrix after this edit. Do not merge PR #51
+based on earlier CI for obsolete commits.
+
+**Next execution commands**: check PR #51 checks on its *latest SHA*,
+obtain failing job logs if needed, repair and rerun Linux/Windows Python
+tests, docs gate and Windows packaged EXE smoke. Then test a real
+llama-server on the i7-1370P with one small GGUF at a time, record memory
+snapshots and exact model hash. Follow with resumable HF downloads and
+managed llama.cpp CPU binaries, maintaining a single GUI and no Docker.
