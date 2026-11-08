@@ -45,6 +45,10 @@ benchmarks. Cross-agent automatic routing, OOM failover and task-specialized
 capability scoring are **planned**, not complete. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
+## GitHub tracking for the next multi-LLM milestones
+
+The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issues-on-github) now links actual GitHub work items: [managed llama.cpp #53](https://github.com/DevTunaSoft/ForgeOS/issues/53), [verified model inventory and lifecycle #54](https://github.com/DevTunaSoft/ForgeOS/issues/54), [memory governance and role routing #55](https://github.com/DevTunaSoft/ForgeOS/issues/55), and [real-Windows acceptance #56](https://github.com/DevTunaSoft/ForgeOS/issues/56). The current [experimental multi-LLM PR #51](https://github.com/DevTunaSoft/ForgeOS/pull/51) is separate from these unfinished milestones. No issue is counted as implemented until its required tests and source exist and have been verified.
+
 ## Near-term engineering priorities
 
 1. **Secure broader test execution without Docker.** With hosted pytest + unittest AppContainer smoke now passing, extend the same fail-closed guarantees to other selected frameworks and real user Windows machines.

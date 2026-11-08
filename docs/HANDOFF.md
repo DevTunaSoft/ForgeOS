@@ -1117,3 +1117,7 @@ The last roadmap source update before this entry was commit
 cross-link/handoff commit `b352a68f978118120e71715a43a25265625a5c59`.
 Review latest GitHub Actions for this newest source/doc revision; do not
 attribute older green runs to the new test automatically.
+
+### Roadmap-to-GitHub engineering issue verification
+
+Confirmed by reading GitHub issue records after creation: [#53](https://github.com/DevTunaSoft/ForgeOS/issues/53) tracks managed Windows llama.cpp CPU runtime; [#54](https://github.com/DevTunaSoft/ForgeOS/issues/54) tracks model install/import/update/remove plus SHA-256 checkpoint identities; [#55](https://github.com/DevTunaSoft/ForgeOS/issues/55) tracks RAM budgets, small-model benchmarks and intelligent task roles; and [#56](https://github.com/DevTunaSoft/ForgeOS/issues/56) tracks real Windows, fuzz/security/GUI/packaging release acceptance. All four issues were verified open in `DevTunaSoft/ForgeOS`. The feature remains in draft [PR #51](https://github.com/DevTunaSoft/ForgeOS/pull/51). New roadmap links are documentation changes and **not yet green at their new commit**. Next action: verify latest check suite and continue source implementation toward #53.

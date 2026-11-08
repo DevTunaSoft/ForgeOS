@@ -192,6 +192,18 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 
 **Exit:** source, user experience, model/runtime behavior and all visible documentation agree and all material changes have repeatable evidence.
 
+## Active implementation issues on GitHub
+
+Each workstream below is filed as a concrete GitHub issue, with acceptance checklists rather than vague promises. **Creating an issue is planning, not implementation or acceptance.** Link code and test evidence to the issue when work is completed.
+
+| Workstream | Tracking issue | Roadmap and required outcome |
+| --- | --- | --- |
+| P1 managed CPU inference | [#53 — integrated llama.cpp runtime](https://github.com/DevTunaSoft/ForgeOS/issues/53) | Work packages A/B: trusted CPU binary lifecycle, real model, no extra GUI/Docker |
+| P1 managed verified GGUF weights | [#54 — model lifecycle and pinned identity](https://github.com/DevTunaSoft/ForgeOS/issues/54) | C/G/H: live HF transfer, inventory, install/import, safe update/remove and recovery |
+| P2 small-model optimization | [#55 — RAM governor, coding-model benchmarks and role routing](https://github.com/DevTunaSoft/ForgeOS/issues/55) | D/E/F: measurable performance, admission limits, idle unloading and automatic role selection |
+| P2–P3 independent acceptance | [#56 — Windows QA and release gates](https://github.com/DevTunaSoft/ForgeOS/issues/56) | G/H/I/J: real Windows workflows, fuzz/recovery, beginner GUI and honest shipping evidence |
+| Baseline experimental implementation | [PR #51 — multi-LLM adapters and HF GGUF downloads](https://github.com/DevTunaSoft/ForgeOS/pull/51) | Existing draft branch implementation; hosted tests passed, not merged into main |
+
 ## Prioritized execution and dependencies
 
 | Priority | Phase | Work items | Objective merge/acceptance gate |
