@@ -453,7 +453,7 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         from .output_capture import wait_native_output_bounded
         status = wait_native_output_bounded(
             process, job, output, timeout, kernel32=kernel32,
-            wait_timeout=WAIT_TIMEOUT, wait_failed=WAIT_FAILED,
+            wait_timeout=WAIT_TIMEOUT,
             wait_object_0=WAIT_OBJECT_0)
         if status == WAIT_TIMEOUT:
             if not kernel32.TerminateJobObject(job, 124):

@@ -103,6 +103,20 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         self.assertTrue(result["output_preview_only"])
         self.assertLess(peak, 32 * 1024 * 1024)
 
+    def test_long_overflow_stream_keeps_only_bounded_tail_chunks(self):
+        capture = BoundedSpool(cap=2048)
+        try:
+            for index in range(2500):
+                capture.feed(b"INFO repeated filler\n" * 20)
+            capture.feed(b"LAST_FAILURE")
+            result = capture.finish(store=self.store)
+            self.assertFalse(result["capture_complete"])
+            self.assertIn("LAST_FAILURE", result["output"])
+            self.assertLessEqual(capture._tail_size, TAIL_BYTES)
+            self.assertLessEqual(capture._written, capture.cap)
+        finally:
+            capture.close()
+
     def test_native_disk_output_watchdog_kills_oversize_job(self):
         from forgeos.output_capture import wait_native_output_bounded
         class FakeWindowsKernel:
@@ -118,7 +132,7 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "disk limit"):
                 wait_native_output_bounded(
                     10, 20, native, 15, kernel32=kernel,
-                    wait_timeout=258, wait_failed=4294967295, wait_object_0=0)
+                    wait_timeout=258, wait_object_0=0)
         self.assertTrue(kernel.killed)
 
     def test_native_output_watchdog_passes_success_without_termination(self):
@@ -130,7 +144,7 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         with tempfile.TemporaryFile(mode="w+b") as native:
             self.assertEqual(wait_native_output_bounded(
                 10, 20, native, 5, kernel32=FinishedKernel(),
-                wait_timeout=258, wait_failed=4294967295,
+                wait_timeout=258,
                 wait_object_0=0), 0)
 
     def test_timeout_terminates_process(self):

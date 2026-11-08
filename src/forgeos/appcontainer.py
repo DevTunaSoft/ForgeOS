@@ -747,7 +747,7 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
         from .output_capture import wait_native_output_bounded
         status = wait_native_output_bounded(
             process, job, output, timeout, kernel32=wc.kernel32,
-            wait_timeout=wc.WAIT_TIMEOUT, wait_failed=wc.WAIT_FAILED,
+            wait_timeout=wc.WAIT_TIMEOUT,
             wait_object_0=wc.WAIT_OBJECT_0)
         if status == wc.WAIT_TIMEOUT:
             if not wc.kernel32.TerminateJobObject(job, 124):

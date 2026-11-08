@@ -7,6 +7,7 @@ No command, exit code or containment permission is changed here.
 """
 from __future__ import annotations
 
+from collections import deque
 import locale
 import os
 from pathlib import Path
@@ -25,7 +26,7 @@ CHUNK_BYTES = 64 * 1024
 
 def wait_native_output_bounded(process, job, stream, timeout: int, *,
                                kernel32, wait_timeout: int,
-                               wait_failed: int, wait_object_0: int) -> int:
+                               wait_object_0: int) -> int:
     """Low-frequency native Windows wait with temporary output disk guard.
 
     Does not change execution token, handle allowlist, Job Object limits or
@@ -118,7 +119,8 @@ class BoundedSpool:
         self.cap = cap
         self.total = 0
         self._written = 0
-        self._tail = bytearray()
+        self._tail_chunks = deque()
+        self._tail_size = 0
         self.file = tempfile.TemporaryFile(mode="w+b")
 
     def feed(self, chunk: bytes) -> None:
@@ -131,9 +133,20 @@ class BoundedSpool:
             self.file.write(part)
             self._written += len(part)
         if self.total > self.cap:
-            self._tail.extend(chunk)
-            if len(self._tail) > TAIL_BYTES:
-                del self._tail[:-TAIL_BYTES]
+            # Keep only a tiny deque of recent byte chunks. Removing old
+            # blocks is O(1), unlike shifting a large bytearray per write.
+            newest = chunk[-TAIL_BYTES:]
+            self._tail_chunks.append(newest)
+            self._tail_size += len(newest)
+            while self._tail_size > TAIL_BYTES:
+                first = self._tail_chunks[0]
+                excess = self._tail_size - TAIL_BYTES
+                if len(first) <= excess:
+                    self._tail_chunks.popleft()
+                    self._tail_size -= len(first)
+                else:
+                    self._tail_chunks[0] = first[excess:]
+                    self._tail_size -= excess
 
     def finish(self, *, encoding: str = "utf-8", store=None) -> dict:
         self.file.flush()
@@ -142,8 +155,8 @@ class BoundedSpool:
         self.file.seek(0)
         head = self.file.read(min(HEAD_BYTES, self._written)).decode(
             encoding, errors="replace")
-        tail = bytes(self._tail).decode(encoding, errors="replace")
-        omitted = max(0, self.total - min(HEAD_BYTES, self._written) - len(self._tail))
+        tail = b"".join(self._tail_chunks).decode(encoding, errors="replace")
+        omitted = max(0, self.total - min(HEAD_BYTES, self._written) - self._tail_size)
         return {
             "output": (head + f"\n[ForgeOS warning: {omitted} original output bytes omitted;"
                        " exceeded bounded disk capture; full evidence unavailable]\n" + tail),
