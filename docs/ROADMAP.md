@@ -11,7 +11,7 @@
 | Single GUI and persistent task queue | **Implemented prototype:** Tkinter UI, SQLite tasks/leases, paginated history, activity views | Beginner usability, accessibility and real machine soak |
 | Local AI planning/editing | **Implemented prototype:** local Ollama planning, JSON file replacements, bounded source metadata | Deeper planning and whole-app creation, robust real-model acceptance |
 | Safe Git workspaces | **Implemented prototype:** per-task worktrees, path/budget validation, transactional edits | Broader recovery fault injection, demonstrated end-to-end rollback on Windows |
-| Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints and `resume-safe` | Resume additional phases safely, long-run crash/restart acceptance |
+| Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints, `resume-safe`, lease-fenced engine state publication | Resume additional phases safely, long-run crash/restart and concurrent worker acceptance |
 | Execution isolation | **Implemented prototype:** packaged Windows `unittest` AppContainer path; fail closed on unsupported presets | Secure coverage for additional frameworks, adversarial Windows acceptance |
 | Python `pytest` packaged isolation | **Implemented experimental (PR #43):** rebased successor to [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29), avoids Windows NUL logging denial | Hosted frozen Windows pytest AppContainer smoke and regression suite passed; still needs actual end-user Windows acceptance |
 | Diagnostics and repair learning | **Implemented experimental:** SHA-256 evidence, bounded summaries, aggregate learning | Encrypted retention, broader structured parsers, verified learning decisions |

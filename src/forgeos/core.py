@@ -26,6 +26,11 @@ MAX_CHECKPOINT_BYTES = 64 * 1024
 CHECKPOINT_PAGE_SIZE = 16
 
 
+class LeaseLostError(RuntimeError):
+    """An expired, reclaimed, or concurrently changed task cannot be published."""
+
+
+
 class Store:
     def __init__(self, path: str | Path):
         self.path = Path(path).expanduser().resolve()
@@ -158,17 +163,21 @@ class Store:
                 (not isinstance(lease_owner, str) or not lease_owner or len(lease_owner) > 128)):
             raise ValueError('Invalid lease owner')
         placeholders = ','.join('?' for _ in expected)
+        now = time.time()
         sql = "UPDATE tasks SET status=?,updated=?,last_error=?,attempts=attempts+?"
-        params = [status, time.time(), error, int(increment)]
+        params = [status, now, error, int(increment)]
         if result is not None:
             sql += ",result=?"
             params.append(result)
         sql += f" WHERE id=? AND status IN ({placeholders})"
         params.extend((task_id, *expected))
         if lease_owner is not None:
+            # Identity alone is insufficient: an expired lease must never
+            # authorize a result write, even before recovery reclaims it.
             sql += (" AND EXISTS (SELECT 1 FROM task_leases l"
-                    " WHERE l.task_id=tasks.id AND l.owner=?)")
-            params.append(lease_owner)
+                    " WHERE l.task_id=tasks.id AND l.owner=?"
+                    " AND l.heartbeat>=? AND l.heartbeat<=?)")
+            params.extend((lease_owner, now - DEFAULT_LEASE_SECONDS, now + 60))
         with self.db:
             cur = self.db.execute(sql, params)
         return cur.rowcount == 1
@@ -196,11 +205,13 @@ class Store:
         return True
 
     def heartbeat_lease(self, task_id: int, owner: str) -> bool:
+        """Refresh only an owned *live* lease; never resurrect expiry."""
         now = time.time()
         with self.db:
             cur = self.db.execute(
-                'UPDATE task_leases SET heartbeat=? WHERE task_id=? AND owner=?',
-                (now, task_id, owner))
+                'UPDATE task_leases SET heartbeat=? WHERE task_id=? AND owner=? '
+                'AND heartbeat>=? AND heartbeat<=?',
+                (now, task_id, owner, now - DEFAULT_LEASE_SECONDS, now + 60))
         return cur.rowcount == 1
 
     def release_lease(self, task_id: int, owner: str) -> bool:

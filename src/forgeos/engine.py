@@ -13,7 +13,7 @@ import re
 import uuid
 from typing import Callable
 
-from .core import Ollama, Store, run_test
+from .core import LeaseLostError, Ollama, Store, run_test
 from .workspace import Workspace, create_workspace
 from .transactions import apply_transaction, recover_edits
 
@@ -164,11 +164,17 @@ def _execute_task(
     last_output = ""
     def heartbeat():
         if not store.heartbeat_lease(task_id, lease_owner):
-            raise RuntimeError("Task execution lease was lost")
+            raise LeaseLostError("Task execution lease was lost or expired")
+
+    def publish(expected, status, **changes):
+        # Reuse the canonical atomic status+result transition. A stale worker
+        # cannot overwrite a newer checkpoint, error, or test result.
+        if not store.transition(task_id, expected, status,
+                                lease_owner=lease_owner, **changes):
+            raise LeaseLostError("Task lease lost or status changed before publication")
 
     try:
-        if not store.transition(task_id, eligible_statuses, "editing", increment=not resume):
-            raise ValueError("Task status changed before execution")
+        publish(eligible_statuses, "editing", increment=not resume)
         heartbeat()
         if resume:
             from .workspace import _git, _repository_root
@@ -251,7 +257,8 @@ def _execute_task(
                 manifest = generate(model, prompt)
                 heartbeat()
                 paths = apply_edits(ws.path, manifest)
-            store.update(task_id, "testing", result=json.dumps({
+                heartbeat()
+            publish({"editing"}, "testing", result=json.dumps({
                 "workspace": str(ws.path), "branch": ws.branch,
                 "edited": paths, "attempt": attempt + 1, "phase": "test_pending",
                 "contract": contract,
@@ -283,7 +290,7 @@ def _execute_task(
                           "branch": ws.branch, "edited": paths,
                           "iterations": attempt + 1, "test": outcome,
                           "learning": learned, "model": model_name}
-                store.update(task_id, "passed", result=json.dumps(result))
+                publish({"testing"}, "passed", result=json.dumps(result))
                 return result
             if attempt > 0 and previous_failure:
                 try:
@@ -304,8 +311,8 @@ def _execute_task(
                 f"Repository file inventory:\n{_context(ws.path, task['description'])}"
             )
             if attempt < max_repairs:
-                store.update(task_id, "editing", error=last_output[-4000:],
-                             result=json.dumps({
+                publish({"testing"}, "editing", error=last_output[-4000:],
+                        result=json.dumps({
                                  "workspace": str(ws.path), "branch": ws.branch,
                                  "edited": paths, "attempt": attempt + 2,
                                  "phase": "repair_pending",
@@ -320,7 +327,7 @@ def _execute_task(
                   "branch": ws.branch, "model": model_name,
                   "iterations": max_repairs + 1,
                   "error": last_output[-4000:]}
-        store.update(task_id, "failed", error=result["error"], result=json.dumps(result))
+        publish({"testing"}, "failed", error=result["error"], result=json.dumps(result))
         return result
     except Exception as exc:
         details = {"workspace": str(ws.path) if ws else None,
@@ -332,7 +339,13 @@ def _execute_task(
                 details = saved
         except (ValueError, TypeError):
             pass
-        store.update(task_id, "blocked", error=str(exc), result=json.dumps(details))
+        try:
+            publish({"editing", "testing"}, "blocked",
+                    error=str(exc), result=json.dumps(details))
+        except LeaseLostError:
+            # The old worker no longer owns this task. Preserve whatever the
+            # replacement worker wrote; never mask the triggering exception.
+            pass
         raise
 
 
