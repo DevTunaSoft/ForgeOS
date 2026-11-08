@@ -1525,3 +1525,10 @@ threading Event checked between prompts. Window close during an active
 screening requests cancellation instead of discarding the result, and the
 runner persists partial evidence before clearing the interlock. No raw model
 response or project source is stored.
+
+
+## 2026-11-08 CI trigger root-cause correction
+
+A full Actions audit of draft PR #51 found two distinct causes of repeated validation. Historical Foundation runs contained genuine same-SHA duplication because the feature branch triggered both push and pull_request; that was corrected earlier in the branch. The remaining dominant cost was commit cadence: PR #51 reached 102 commits in about 15 hours, including 25 documentation commits, with 78 of 101 successive commit gaps under five minutes.
+
+The PR gate is now checkpoint-driven. Normal branch synchronization is not a full-CI trigger. Engineering PRs remain Draft while code, tests, and docs are batched, and ready_for_review launches the complete latest-head validation set. If a gate fails, return the PR to Draft, batch corrections, and mark Ready once. Heavy workflows ignore documentation-only PRs, Documentation integrity now has concurrency cancellation, and tests/test_ci_policy.py prevents the old trigger pattern from returning.

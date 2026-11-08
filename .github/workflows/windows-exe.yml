@@ -4,16 +4,19 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, reopened, ready_for_review]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 concurrency:
-  # Cancel superseded branch builds rather than consuming RAM and CI minutes
-  # testing old commits. Pull-request and push events share this group.
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   package-windows:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
