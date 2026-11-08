@@ -5,6 +5,18 @@
 > [!WARNING]
 > **Start with a disposable test repository.** Source/development-mode test execution can run generated repository code on your Windows computer. Never check the host-test permission box for code you do not trust. Windows frozen executable isolation supports only designated presets; unsupported presets fail closed.
 
+## How to open this guide inside ForgeOS
+
+Once ForgeOS is open, select **Activity & diagnostics**, then choose
+**How to use ForgeOS**. The exact same guide opens in a scrollable,
+**offline** window. It is displayed as plain Markdown text, avoiding
+a heavyweight renderer, web browser or network connection. The Windows
+EXE bundles this canonical file at build time. In editable source checkouts
+the guide is read from the `docs` directory.
+
+This guide is updated **in the same pull request** as user-facing features.
+See the [documentation maintenance policy](DOCUMENTATION_POLICY.md).
+
 ## 1. What to prepare
 
 ### Option 1: Windows EXE prototype
@@ -71,6 +83,7 @@ The one-window desktop prototype has **two tabs**:
 | **Development** | Development queue | Tasks, status, and Older/Newer pagination (150 rows per page) |
 | **Development** | Add task / Generate plan / Run tests only / Build / test / repair | Main workflow actions |
 | **Activity & diagnostics** | Task results, original-versus-summary comparisons, repair-learning statistics, one-shot RAM snapshot | Evidence inspection and operational visibility |
+| **Activity & diagnostics** | **How to use ForgeOS** | Opens this guide offline, without loading it into memory at startup |
 
 Not every error can be fixed automatically. A failed model operation, a failed or unsupported test, a missing dependency or an unsafe edit can stop a task with a blocked/failed status.
 

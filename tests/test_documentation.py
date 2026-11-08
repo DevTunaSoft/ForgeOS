@@ -33,6 +33,17 @@ class DocumentationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             docs.changed_paths("main;echo", "HEAD")
 
+    def test_built_in_help_uses_canonical_guide_and_packaging(self):
+        gui = (docs.ROOT / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        build = (docs.ROOT / ".github" / "workflows" / "windows-exe.yml").read_text(
+            encoding="utf-8")
+        guide = (docs.ROOT / "docs" / "USER_GUIDE.md").read_text(encoding="utf-8")
+        self.assertIn('text="How to use ForgeOS"', gui)
+        self.assertIn("docs/USER_GUIDE.md;forgeos", build)
+        self.assertIn("offline_user_guide_available", build)
+        self.assertIn("How to use ForgeOS", guide)
+        self.assertIn("AppContainer", guide)
+
     def test_relative_links_in_repository(self):
         self.assertEqual(docs.check_links(), [])
 
