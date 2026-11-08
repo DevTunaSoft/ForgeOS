@@ -144,6 +144,37 @@ class ManagedLlamaTests(unittest.TestCase):
                 "PATH": "C:/bin", "SYSTEMROOT": "C:/Windows",
                 "LOCALAPPDATA": "C:/Users/u/AppData/Local"})
 
+    def test_installed_cpu_rechecks_official_archive_and_every_dll(self):
+        controller = ManagedLlamaServer()
+        verified = {
+            "path": str(self.exe), "sha256": self.exe_sha,
+            "tag": "fixture-release", "status": "verified_official_cpu",
+        }
+        with (patch("forgeos.runtime_installer.verify_installed_cpu_runtime",
+                    return_value=verified) as check,
+              patch.object(controller, "start",
+                           return_value={"model": ALIAS}) as start):
+            result = controller.start_installed_cpu(
+                model_path=self.model, directory=self.root,
+                timeout=18, threads=2, context=1024)
+        self.assertEqual(result, {"model": ALIAS})
+        check.assert_called_once_with(self.root)
+        start.assert_called_once_with(
+            executable=str(self.exe), executable_sha256=self.exe_sha,
+            model_path=self.model, timeout=18, threads=2, context=1024)
+
+    def test_tampered_installed_runtime_never_spawns_server(self):
+        controller = ManagedLlamaServer()
+        with (patch("forgeos.runtime_installer.verify_installed_cpu_runtime",
+                    side_effect=RuntimeError("DLL differs from pinned archive"))
+              as check,
+              patch.object(controller, "start") as start):
+            with self.assertRaisesRegex(RuntimeError, "pinned archive"):
+                controller.start_installed_cpu(model_path=self.model)
+            check.assert_called_once_with(None)
+            start.assert_not_called()
+        self.assertFalse(controller.running())
+
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):
         from forgeos.managed_llama import _verified_model, _verified_runtime
         proc = Mock()

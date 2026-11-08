@@ -201,6 +201,25 @@ class ManagedLlamaServer:
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
+    def start_installed_cpu(self, *, model_path: str | Path,
+                            directory: str | Path | None = None,
+                            timeout: int = DEFAULT_TIMEOUT,
+                            threads: int | None = None,
+                            context: int | None = None) -> dict:
+        """Start the existing pinned CPU runtime after complete bundle verification.
+
+        Reverify the original official release ZIP and every adjacent DLL,
+        not merely the executable hash. This never performs network access:
+        installation is a separate explicit user action. The small gap
+        between verifying DLLs and native loading remains a Windows risk.
+        """
+        from .runtime_installer import verify_installed_cpu_runtime
+        verified = verify_installed_cpu_runtime(directory)
+        return self.start(executable=verified["path"],
+                          executable_sha256=verified["sha256"],
+                          model_path=model_path, timeout=timeout,
+                          threads=threads, context=context)
+
     def start(self, *, executable: str | Path, executable_sha256: str,
               model_path: str | Path, timeout: int = DEFAULT_TIMEOUT,
               threads: int | None = None, context: int | None = None) -> dict:
