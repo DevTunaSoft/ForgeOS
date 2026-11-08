@@ -1051,3 +1051,45 @@ without a separate local llama.cpp or similar inference backend.
 rerun all suites and backend/hardware acceptance, then implement model
 manager removal/update, managed llama.cpp runtime and smart low-RAM
 task routing without duplicating the canonical routing or task store.
+
+
+### Full CI and packaged Windows evidence — commit \`55b9cd11846ca9123756e328600183f9b347dc82\`
+
+A complete check cycle finished **successfully** at this exact SHA:
+- \`unit-tests (ubuntu-latest, 3.10)\`: PASS.
+- \`unit-tests (ubuntu-latest, 3.12)\`: PASS, 303 tests, 16 platform skips.
+- \`unit-tests (windows-latest, 3.10)\`: PASS.
+- \`unit-tests (windows-latest, 3.12)\`: PASS, 303 tests, 1 skip.
+- \`documentation\`: PASS (local links/headings and documentation-sync contract).
+- \`package-windows\`: PASS. Built \`ForgeOS.exe\` **18,485,145 bytes**,
+  passed headless smoke, real frozen Tkinter startup/cleanup/paginated
+  history/offline user manual acceptance and secure AppContainer smoke.
+  Reported frozen GUI history paging RSS growth: **57,344 bytes** under
+  the 64-MiB acceptance ceiling. Hosted Windows runner is not the user's
+  production computer.
+
+Sources for this evidence:
+- https://github.com/DevTunaSoft/ForgeOS/actions/runs/42446882761
+- https://github.com/DevTunaSoft/ForgeOS/actions/runs/42446882707
+- https://github.com/DevTunaSoft/ForgeOS/actions/runs/42446882729
+
+This evidence proves the current **mocked adapter tests, transactional
+workflow regressions, packaged Windows lifecycle and sandbox smoke**, not
+that actual llama.cpp/LM Studio servers or Hugging Face multi-GiB downloads
+have been tested successfully. In particular, model token rate, compilation
+quality, runtime RSS/peak committed RAM, loaded-model idle behavior,
+CPU thread tuning, server crash/OOM recovery and Windows on-device install
+remain **UNVERIFIED**. Do not mark those done. No full-feature GUI native
+LLM installation or automatic multi-agent routing is claimed.
+
+Research candidate added: Qwen3.5-4B Q4_K_M GGUF (~2.7 GB published
+weight size) as a newer small general-purpose coding/reasoning trial
+beside Qwen2.5-Coder-3B and 7B; performance and tool-call compatibility
+have not been measured. Sources:
+https://huggingface.co/blog/transformers-llama-cpp-quants
+https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF
+
+**Repository state:** PR #51 remains a **draft review PR**; do not
+confuse green hosted checks with user hardware acceptance or a release.
+This README/handoff/model shortlist documentation update is later than the
+tested SHA and requires a documentation integrity check on its own head.

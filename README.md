@@ -131,7 +131,7 @@ dependency-free **loopback OpenAI-compatible adapters** for llama.cpp, LM Studio
 and configurable local servers, while preserving Ollama and the existing
 RAM-aware selector. The same ForgeOS GUI now offers a backend selector, local
 endpoint field and **experimental Hugging Face GGUF catalog and verified weight downloader**. This is
-a **prototype awaiting CI and real-runtime acceptance**, not a verified
+an **experimental implementation with hosted CI passing, but real-runtime acceptance pending**, not a verified
 local model installer or unified native inference engine.
 
 The Hugging Face browser can search public GGUF repositories, inspect file

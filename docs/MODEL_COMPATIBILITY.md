@@ -107,6 +107,7 @@ KV cache, long context, the OS, ForgeOS, compilers and integrated graphics.
 | [Qwen2.5-Coder-1.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF) | Q4_K_M about 1.12 GB | Good first experiment for 8/16 GB and quick tasks; output quality needs benchmarking |
 | [Qwen2.5-Coder-3B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF) | Q4_K_M about 2.1 GB | Initial trial for a 16–32 GB CPU-first workstation |
 | [Qwen2.5-Coder-7B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF) | Q4_K_M about 4.68 GB | Trial for difficult code tasks on 32 GB, subject to measured latency and RAM |
+| [Qwen3.5-4B GGUF](https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF) | Q4_K_M about 2.7 GB; [Hugging Face quantization reference](https://huggingface.co/blog/transformers-llama-cpp-quants) | Newer general-purpose compact candidate with code and reasoning potential, but role-specific accuracy and exact llama.cpp template support on this hardware are unverified |
 | [Qwen3-Coder-Next-GGUF](https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF) | Q4_K_M about 48 GB | **Not suitable** for the 32 GB target in normal RAM-limited operation |
 
 These are **research candidates**, not benchmark winners. Evaluate model cards,
@@ -115,8 +116,9 @@ quality, and compatibility with the actual runtime before enabling automatic
 routing. Qwen3-Coder-Next has low active parameter count, but total model
 weight size still exceeds the target RAM budget.
 
-For the i7-1370P, 32 GB RAM and integrated GPU target, begin with the 3B Q4
-model and short contexts, then test the 7B Q4 alternative sequentially.
+For the i7-1370P, 32 GB RAM and integrated GPU target, begin with the
+Qwen2.5-Coder-3B Q4 model and short contexts, then test the newer Qwen3.5-4B
+Q4 and Qwen2.5-Coder-7B Q4 alternatives sequentially.
 Do not keep both loaded simultaneously unless actual measurement justifies it.
 Do not claim a minimum supported RAM amount until full process-tree memory
 and Windows end-to-end acceptance evidence is recorded.
