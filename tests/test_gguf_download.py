@@ -84,9 +84,12 @@ class GGUFDownloadTests(unittest.TestCase):
     def test_pause_during_transfer_saves_partial_then_resumes_exact_range(self):
         paused = Event()
         sizes = []
+        paused_once = False
         def progress(stage, count, total):
+            nonlocal paused_once
             sizes.append((stage, count, total))
-            if stage == "download" and count == 12:
+            if stage == "download" and count == 12 and not paused_once:
+                paused_once = True
                 paused.set()
         with patch("forgeos.gguf_download._open_weight",
                    return_value=Response(BODY[:12], headers={
