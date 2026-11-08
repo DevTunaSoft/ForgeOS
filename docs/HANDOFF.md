@@ -1532,3 +1532,8 @@ response or project source is stored.
 A full Actions audit of draft PR #51 found two distinct causes of repeated validation. Historical Foundation runs contained genuine same-SHA duplication because the feature branch triggered both push and pull_request; that was corrected earlier in the branch. The remaining dominant cost was commit cadence: PR #51 reached 102 commits in about 15 hours, including 25 documentation commits, with 78 of 101 successive commit gaps under five minutes.
 
 The PR gate is now checkpoint-driven. Normal branch synchronization is not a full-CI trigger. Engineering PRs remain Draft while code, tests, and docs are batched, and ready_for_review launches the complete latest-head validation set. If a gate fails, return the PR to Draft, batch corrections, and mark Ready once. Heavy workflows ignore documentation-only PRs, Documentation integrity now has concurrency cancellation, and tests/test_ci_policy.py prevents the old trigger pattern from returning.
+
+
+## #55 qualification/routing checkpoint
+
+Added a fail-closed final qualification layer separate from the existing five-task screening harness. Final evidence requires at least 20 tasks per role, >=95% structured-output success, >=80% objective success, exact model/runtime SHA-256 identity, measured model size/peak memory/latency, and a digest of the normalized evidence. Routing chooses only the smallest measured-qualified model that fits the current memory budget and refuses execution when none qualifies. Screening-only evidence cannot enable routing. Real candidate models still need to run the larger final corpus before production automatic routing is enabled.

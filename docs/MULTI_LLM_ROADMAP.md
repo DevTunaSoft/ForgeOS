@@ -378,3 +378,13 @@ single managed runtime and existing Tk event queue, preserves partial evidence
 when cancelled, and keeps normal model/task operations interlocked. It remains
 a screening-only workflow; automatic role routing and final model
 qualification remain disabled.
+
+
+### #55 final qualification gate and fail-closed role selection
+
+- [x] Add a separate final qualification contract; five-task screening evidence cannot be promoted into routing evidence.
+- [x] Require at least 20 objective tasks per role and the fixed final thresholds: >=95% structured-contract success and >=80% objective success.
+- [x] Bind every qualifying result to exact model and runtime SHA-256 identities and hash the normalized evidence itself.
+- [x] Route only among qualified records that fit the measured memory budget, selecting the smallest model first with deterministic memory/latency/identity tie-breakers.
+- [x] Fail closed when no measured-qualified candidate fits; never fall back to an unqualified model.
+- [ ] Build and execute the larger final per-role corpus against real candidate models. Until those records exist, automatic production role routing remains intentionally unavailable.
