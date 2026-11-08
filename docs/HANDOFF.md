@@ -817,3 +817,20 @@ asserts the exact canonical project path persisted in the task instead
 of assuming the unnormalized temporary-directory spelling. No production
 path transformation or security restriction was weakened. Rerun the
 entire Windows/Linux suite and frozen EXE acceptance before merge.
+
+## README safety/instruction synchronization — 2026-11-07 (review branch)
+
+- Starting main commit: `0877a12c5240b5f960b572af86bcf952644bd034`
+  (merged PR #50).
+- Branch: `docs/readme-manual-test-safety-sync`.
+- Corrected the public README's out-of-date standalone `test` example to
+  require `--allow-host-tests`, described GUI checkbox behavior for both
+  manual tests and autonomous builds, and clarified the original-repository
+  vs generated-worktree distinction.
+- Clarified the implemented experimental packaged pytest AppContainer
+  support, removed stale "is adding" text and reconciled the Windows
+  test-isolation warning with source and user guide.
+- Kept the same canonical user manual; no duplicate guide was introduced.
+  No code change or new runtime features in this branch. Documentation and
+  regression CI are required before merging; real Windows acceptance is
+  still pending.
