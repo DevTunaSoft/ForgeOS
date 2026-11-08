@@ -51,6 +51,31 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(len({row["id"] for row in first + middle + last}), 360)
         self.assertEqual(self.store.counts()["total"], 510)
 
+    def test_blocked_checkpoint_scan_bounded_by_bytes_and_uses_multiple_pages(self):
+        import json
+        blocked = []
+        for index in range(45):
+            task = self.store.add(str(self.repo), f"checkpoint {index}")
+            self.store.update(task, "blocked", result=json.dumps({"n": index}))
+            blocked.append(task)
+            noise = self.store.add(str(self.repo), f"completed {index}")
+            self.store.update(noise, "passed", result="Y" * 90000,
+                              error="Z" * 90000)
+        huge = self.store.add(str(self.repo), "damaged huge checkpoint")
+        payload = "🛠" * 17000
+        self.store.update(huge, "blocked", result=payload)
+        records = list(self.store.iter_blocked_checkpoints())
+        self.assertEqual([r["id"] for r in records],
+                         [huge] + list(reversed(blocked)))
+        self.assertEqual(set(records[0]),
+                         {"id", "status", "result", "checkpoint_bytes"})
+        self.assertIsNone(records[0]["result"])
+        self.assertEqual(records[0]["checkpoint_bytes"],
+                         len(payload.encode("utf-8")))
+        self.assertTrue(all(r["checkpoint_bytes"] <= 64 * 1024
+                            for r in records[1:]))
+        self.assertTrue(all(r["status"] == "blocked" for r in records))
+
     def test_streaming_task_export_preserves_order_and_full_content(self):
         ids = []
         for index in range(200):

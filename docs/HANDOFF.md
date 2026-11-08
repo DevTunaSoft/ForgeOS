@@ -659,3 +659,26 @@ about the experimental pytest feature (PR #43 is already merged; original
 PR #29 remains open/unmerged). This PR changes no runtime code or security
 behavior. The existing documentation link checker and Linux/Windows CI must
 pass before merge; no real Windows/Ollama hardware acceptance was performed.
+
+## Bounded checkpoint recovery scan — 2026-11-07 (review branch)
+
+- Starting main commit: `f5809c7e6c1484fb1a1f31efa02690fc2738868f`.
+- Branch: `perf/bounded-resume-checkpoints`.
+- Changed `Store.iter_blocked_checkpoints()` to keyset-paginate only blocked
+  checkpoint metadata (16 rows/page, 64 KiB body maximum each). SQLite excludes
+  oversized payloads *before* they reach Python; completed-task diagnostics
+  are not selected. Existing leases, saved execution contracts, workspace
+  identity/hash validation and manual host-test opt-in remain intact.
+- `resume_safe()` now skips oversized checkpoints with an explicit reason
+  instead of loading or truncating them. No new resume phase or persistence
+  format is introduced; existing small checkpoint JSON remains compatible.
+- Tests added for >2 pages with large completed-task blobs, Unicode byte-size
+  enforcement, skipped oversize checkpoint without model/runner invocation,
+  and execution of 41 eligible stored checkpoints.
+- Documentation updated: architecture, memory budget, user recovery guide,
+  handoff. **At commit creation, tests/Windows acceptance remain unverified.**
+- Next: observe PR Python 3.10/3.12 Linux/Windows CI, repair failures,
+  confirm documentation checks and Windows frozen packaging remain green.
+  Run physical Windows crash/restart recovery and 4/8 GiB usage tests before
+  claiming hardware acceptance. Future memory hardening: stream or cap massive
+  aggregated `resume-safe` reports without obscuring skipped-task reasons.

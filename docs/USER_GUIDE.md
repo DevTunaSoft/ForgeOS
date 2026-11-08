@@ -187,6 +187,8 @@ py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --preset pyt
 py -m forgeos resume-safe --workspace-parent C:\forgeos-work --allow-host-tests
 ```
 
+**Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.
+
 **Use resume commands only for trusted workspaces.** Recovery checks are strict; the CLI should reject ineligible or changed checkpoints rather than overwrite unverified edits. Actual supported resume phases are `test_pending` and `repair_pending`; not every interruption can be resumed. Supplying `auto` for resumption is subject to the engine's saved model/contract checks. If an exact resume fails, inspect the recorded checkpoint and avoid deleting any data.
 
 ## 7. Commands at a glance
