@@ -232,7 +232,8 @@ Record: PR/commit SHA, changed files, requirement IDs, OS/CPU/RAM/GPU, inference
 
 - [x] Tighten `managed_llama.py` child-process environment to a **strict OS allowlist** (rather than an extensible blacklist), preventing inherited provider tokens, native-library injection overrides, unknown GGML/llama environment switches and proxy settings. Regression tests cover both cloud credentials and mixed-case Windows keys. **Committed on PR #51**, not yet accepted on a real Windows model runtime.
 - [ ] Verify this change on the latest GitHub CI head, then on physical Windows 11 with a pinned official CPU llama.cpp release and an actual verified GGUF. Preserve any required Windows OS variables only after testing.
-- [ ] Continue the existing `runtime_installer.py`, `managed_llama.py` and `model_inventory.py` implementations, not duplicate replacements. The experimental GUI already has a managed GGUF control; close gaps through real-world acceptance and fault injection.
+- [x] Extend the existing `runtime_installer.py`, `managed_llama.py` and `gui.py` without duplicating the application: **explicitly opt-in pinned Windows x64 CPU installer** integrated into the managed GGUF dialog, verified installed-bundle start, preserved manual runtime fallback, and mock/failure tests. No runtime/model download on ordinary GUI startup. **Still experimental pending hosted CI + physical Windows real GGUF acceptance.**
+- [ ] Complete real Windows 11 installation, llama.cpp boot, authenticated inference and measured RAM/latency plus process/DLL mutation and recovery fault injection. Do not treat hosted mock success as real native runtime acceptance.
 
 ## Security and supply-chain risks to resolve before a managed runtime release
 

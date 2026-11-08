@@ -97,36 +97,54 @@ whether Git LFS SHA-256 metadata is present. To download, choose a GGUF file wit
 pins a Hugging Face revision, resumes interrupted partial files and verifies
 the SHA-256 before saving under `~/.forgeos/models`. Downloaded weights are
 not automatically loaded. **Experimental managed local GGUF launch** is
-now available from this same GUI, using a user-provided official
-`llama-server.exe` and its independently verified SHA-256. Full binary
-installation, model updates/removal and running-model acceptance tests
-remain planned. Browsing requires
+available in the same GUI with two options: an explicit opt-in
+pinned official Windows x64 CPU runtime installer, or a user-provided
+`llama-server.exe` with independently verified SHA-256. Automatic
+background downloads are forbidden. Model updates/removal and real
+Windows model acceptance tests are still planned. Browsing requires
 internet, but ForgeOS does not use Hugging Face hosted inference.
 
-### Optional: run your downloaded GGUF from inside ForgeOS (experimental)
+### Optional: run your downloaded GGUF from inside ForgeOS (experimental PR #51)
 
-1. Obtain a trusted CPU `llama-server.exe` and its required companion DLLs
-   from the official llama.cpp project. Independently verify the release
-   source and SHA-256; **ForgeOS does not download, sign or attest binaries**.
-2. Click **Run verified local GGUF** under **Execution settings**.
-3. Browse to the trusted `llama-server.exe`, paste its lowercase
-   64-character SHA-256 and browse to the exact `.gguf` downloaded with
-   **Browse Hugging Face → Download and verify**.
-4. Click **Start local model**. Hashing and startup run in the background.
-   If ForgeOS reports insufficient free RAM, choose a smaller GGUF.
-5. When ready, ForgeOS selects `llama.cpp`, `forgeos-managed` and the
-   private local endpoint. Try **Generate plan** before code edits.
-6. To unload the server, reopen **Run verified local GGUF** and click
-   **Stop local model**, or finish the task and close ForgeOS.
+This is an optional feature on the multi-LLM feature branch, **not yet
+released on main**. A real Windows 11 llama.cpp session with a GGUF has
+not been independently accepted; use a disposable repository first.
 
-This prototype starts only one managed CPU server, uses a temporary API
-key not saved in task checkpoints, and stops the server when the GUI
-closes. It does **not** provide binary installation, updates, guaranteed
-subprocess-tree isolation, background idle-unload or validated native
-GGUF inference on actual Windows hardware. A SHA-256 match does not
-establish that third-party code or adjacent DLLs are safe. Prefer a
-disposable project until actual model/runtime behavior is verified.
-Read [model compatibility and risks](MODEL_COMPATIBILITY.md).
+1. Under **Execution settings** select **Browse Hugging Face**, review a
+   model's license, choose a compatible GGUF, then **Download and verify**.
+   This optional internet request is separate from all local inference.
+2. Open **Run verified local GGUF**. On **Windows x64**, click **Install
+   verified official Windows CPU runtime (opt-in)** and **confirm** the
+   one-time pinned official llama.cpp release download. ForgeOS validates
+   the archive SHA-256 and checks every extracted executable and DLL. This
+   step does not install a system service, use Docker, or download weights.
+   Existing installations are reverified without another download.
+3. Choose the downloaded GGUF with **Choose from ForgeOS downloads**, then
+   click **Start installed CPU runtime**. The local runtime archive, DLLs,
+   executable and GGUF are verified again in a worker thread before launch.
+   ForgeOS binds localhost, uses an ephemeral API key and CPU-only settings.
+   If the model is too large for conservative available RAM, choose a
+   smaller quantized GGUF.
+4. **Manual alternative:** obtain a trusted `llama-server.exe` and its
+   dependencies yourself, independently confirm the executable's
+   64-character lowercase SHA-256, select your GGUF and click
+   **Start manual runtime**. This route verifies the EXE and GGUF, but
+   cannot independently attest all manually supplied DLLs.
+5. Once started, ForgeOS selects backend `llama.cpp`, model
+   `forgeos-managed` and the private local endpoint. Try **Generate plan**
+   with a small task before enabling file-edit/test workflows.
+6. Click **Stop local model**, close ForgeOS after tasks complete, or
+   allow its five-minute idle unload to release model RAM. The idle
+   timeout does not interrupt a currently active task.
+
+**Security and remaining limits:** the official archive checksum is an
+integrity control, not a publisher signature. Native DLL loading can still
+be subject to same-user file races; Windows process creation currently has
+a short job-attachment window. One local managed model runs at a time.
+Session credentials are not persisted for automatic post-crash recovery;
+real model quality, startup/stop behavior, memory and Windows 11 acceptance
+remain unverified. No paid API is needed for this route.
+See [model compatibility and risks](MODEL_COMPATIBILITY.md).
 
 Examples for advanced users:
 

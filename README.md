@@ -138,17 +138,20 @@ The Hugging Face browser can search public GGUF repositories, inspect file
 sizes and hashes, and **download and verify** selected GGUF weights on
 demand. Downloads are pinned to an immutable revision, hashed with SHA-256,
 resumable after interruption and published atomically if verification passes.
-ForgeOS now has an **experimental opt-in managed llama.cpp launch/stop
-controller on the feature branch**: choose a user-provided CPU llama-server
-binary, enter its independently sourced SHA-256, and choose a ForgeOS-verified
-downloaded GGUF. The controller rehashes both, checks conservative RAM
-headroom, starts the server bound to 127.0.0.1 with a private session API
-key, and connects the existing editor/planner to that model from the same
-GUI. The frozen EXE does **not** ship with llama-server, its third-party
-DLLs, or model weights; official binary acquisition, license/provenance
-validation, full model update/removal and runtime installation remain
-unfinished. No Docker or paid API is required. This path has mocked
-lifecycle tests, not yet physical Windows/real-model acceptance.
+The feature branch includes a **pinned official Windows x64 CPU llama.cpp
+runtime installer**, now available from the existing **Run verified local GGUF**
+dialog via **Install verified official Windows CPU runtime (opt-in)**. It downloads
+only on explicit confirmation, verifies the pinned ZIP and all bundled binaries
+and DLLs against that archive, and never silently executes an installer script,
+runs Docker, or downloads weights. Select a ForgeOS SHA-verified GGUF and click
+**Start installed CPU runtime**: the entire installed runtime bundle is verified
+again immediately before the existing authenticated, localhost-only server
+starts. **Start manual runtime** remains available for independently trusted,
+SHA-pinned user-provided binaries. The frozen EXE does **not** bundle
+llama-server, DLLs, or models; this experimental path has regression/hosted CI
+evidence, **not yet real Windows/GGUF end-to-end acceptance**. Native DLL
+load-time mutation and port/process-ownership races remain open release risks.
+
 External llama.cpp, LM Studio or other compatible servers may still be
 used through the existing local endpoint adapters.
 
