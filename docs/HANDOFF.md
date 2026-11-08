@@ -528,3 +528,36 @@ verify the fixture is complete, bogus GUI pagination is rejected, and a
 runaway working-set result cannot be accepted. Next: verify all 4 OS/Python
 jobs and frozen Windows real Tk EXE test, repair any failures, and merge.
 Hardware acceptance and Ollama end-to-end validation remain unverified.
+
+## GitHub documentation overhaul — 2026-11-07
+
+**Branch:** `docs/forgeos-project-guide-20261107` (base `main`). **Scope:** project presentation, comprehensive beginner guide, accurate engineering architecture, maintenance policy and automated documentation guard; no product runtime semantics intentionally changed.
+
+### Files updated / added
+
+- `README.md`: replaces sprawling chronological patch notes with public landing page, GitHub Actions badges, Mermaid workflow, current capability/limitation matrix, beginner start, security, local model/memory notes and link hub.
+- `docs/USER_GUIDE.md`: detailed click-by-click Windows usage, practice repository, tasks, model, host tests, diagnostics, recovery, CLI commands and troubleshooting.
+- `docs/ARCHITECTURE.md`: canonical modules, data flow, checkpoint process, execution trust boundaries and data-handling implications.
+- `docs/ROADMAP.md`: feature maturity and verification gates instead of unqualified milestones.
+- `docs/WINDOWS_BUILD.md`: actual hosted CI GUI lifecycle, 520-task paging check, secure AppContainer scope and unfinished physical acceptance.
+- `docs/DOCUMENTATION_POLICY.md`: source-of-truth mapping, per-change update triggers and precise status labels.
+- `CONTRIBUTING.md` and `.github/pull_request_template.md`: contributor instructions and a documentation/verification checklist.
+- `tools/check_documentation.py`: offline local Markdown link/anchor check and PR source-change/documentation coverage rules.
+- `tests/test_documentation.py`: unit tests for checker parsing, policy conditions and repository-local links.
+- `.github/workflows/docs-sync.yml`: new PR-triggered document integrity / change coverage workflow.
+
+### Evidence and limitations
+
+The live GitHub repository and source tree were inspected before authoring, including README, CLI/GUI/engine and production runner, memory model and Windows workflow. The source-backed assessment identified existing AppContainer `unittest` support, real hosted Tkinter packaging acceptance and `pytest` support still open as PR #29. No new feature is claimed to be production accepted.
+
+An independent review of Markdown links across the documentation branch found **two mismatched numbered-heading anchors**, which were corrected in the README and user guide. **GitHub CI, the complete source regression suite and the final packaged Windows validation for this documentation PR must still be checked before merge.** Do not describe those tests as passing until confirmed by their workflow runs. The proposed documentation workflow checks linked paths and anchors as well as whether core product edits are accompanied by documentation. It cannot prove textual accuracy or update the README automatically.
+
+### Follow-up expectations
+
+1. Open and review the documentation PR; verify GitHub Actions documentation check, Python tests and Windows build checks.
+2. Correct any confirmed CI failure and rerun affected and full checks before merging.
+3. Continue making doc updates **in the same PR as new features**; update GUIDE/ARCHITECTURE/WINDOWS_BUILD/MEMORY_BUDGET/ROADMAP/HANDOFF as affected.
+4. Review the public repository's separate **About** description/topics; the linked GitHub connector currently exposes no repository-metadata write action.
+5. Do not add an actual GUI screenshot until a current branch build is launched and captured; label mockups as mockups.
+6. Preserve this handoff and the documentation gate during later feature work. Real physical Windows, Ollama and full task-run acceptance remain product blockers independent of documentation.
+
