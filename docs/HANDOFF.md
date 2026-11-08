@@ -1608,3 +1608,8 @@ replay, malformed evidence rejection and symlink-root rejection. This supersedes
 the earlier handoff sentence claiming managed GGUF recovery was not implemented:
 authenticated same-runtime re-attestation is now implemented, while physical
 Windows restart/relaunch acceptance remains pending.
+
+
+### Final qualification GUI completion scope repair
+
+A static GUI review found that the outer launch-level event poller referenced the dialog-local qualification_status StringVar after the worker completed. That variable is out of lexical scope in poll() and would raise NameError on a real completion event even though source-contract tests passed. Completion now updates the existing global status/activity diagnostics only; the dialog-local variable remains worker-start/cancel guidance. A regression test inspects the poll handler and forbids future dialog-local access there.

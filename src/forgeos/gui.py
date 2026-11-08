@@ -1675,10 +1675,6 @@ def launch(db_path, *, acceptance: bool = False):
                             status.set("Final qualification cancelled; partial evidence saved")
                         else:
                             status.set("Final qualification complete: " + record["role"].replace("_", " "))
-                        qualification_status.set(
-                            ("Qualified for routing." if record.get("qualified") else "Not qualified for routing.")
-                            if not record["cancelled"] else
-                            "Cancelled; partial evidence is not routeable.")
                         log(
                             "Final qualification evidence: " + outcome["path"]
                             + "\nRole: " + record["role"]

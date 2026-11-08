@@ -321,6 +321,17 @@ class DashboardContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 
+    def test_qualification_completion_does_not_touch_dialog_local_from_outer_poll(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        poll = source[source.index("    def poll():"):]
+        qualification = poll[poll.index('elif action == "qualification":'):
+                             poll.index('elif action == "baseline":')]
+        self.assertNotIn("qualification_status.set(", qualification)
+        self.assertIn('status.set("Final qualification', qualification)
+        self.assertIn('"Final qualification evidence: "', qualification)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)
