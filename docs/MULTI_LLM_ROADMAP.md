@@ -312,3 +312,15 @@ currently implemented. Free consumer chat plans are not free API entitlements.
 ### Hosted CI gate for pause/resume and managed model RAM preflight (2026-11-08)
 
 On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks after the `b40536b` test-fixture correction: Python 3.10/3.12 on Ubuntu and Windows, documentation, and packaged Windows EXE. Packaging ran **365 tests**, verified frozen GUI and AppContainer smoke, and produced an 18,531,029-byte executable. The release gate for physical Windows 11 with real model inference, large network downloads, native Job process isolation and measured RAM remains **open**; keep #53–#56 in progress.
+
+
+### GGUF retirement and recovery — issue #54 (2026-11-08)
+
+- [x] Extend the existing download/inventory lifecycle with explicit, reversible CLI model retirement and restoration; no second model database.
+- [x] Require --confirm, rehash the complete pinned GGUF under the existing model download lock, and reject unfinished download journals.
+- [x] Keep a versioned, bounded same-volume retirement journal and one unique random recovery ID. Rename only the selected model and matching manifest; leave sibling files untouched.
+- [x] Support restoring from interrupted retirement or interrupted restoration without overwriting any existing model/manifest; fully rehash before and after restoration.
+- [x] Exclude retired material from active inventory and add a bounded, metadata-only retired listing.
+- [x] Add offline regression tests for corruption, incomplete downloads, malformed journals/IDs, symlinks, collisions and fault-injected interruptions.
+- [ ] Verify latest Linux/Windows Python 3.10 and 3.12 CI, documentation integrity and frozen Windows EXE/AppContainer.
+- [ ] Real Windows 11 trial with a large GGUF, native inference stopped/running, reboot or power-loss, reparse points/hardlinks and actual disk usage. GUI retirement and strong active-model interlocks are future work. A move to retired storage does not reclaim disk space.
