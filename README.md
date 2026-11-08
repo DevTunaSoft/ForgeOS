@@ -11,9 +11,11 @@
 > [!IMPORTANT]
 > **ForgeOS is under active development, not a production-ready autonomous application builder.** Its desktop application, local AI integration, Git workspaces, guarded code editing, diagnostics, and selected testing/recovery paths are real prototypes. Full hands-off delivery of arbitrary Windows EXEs, Android APKs and websites is a goal—not a current guarantee. Read the [feature status](#current-capabilities-and-limitations) and [security notes](#security-and-responsible-use) before using it on important projects.
 
-**[Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
+**[What ForgeOS will and will not do](docs/PRODUCT_VISION.md) · [Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
 
 ## The vision
+
+For a comprehensive, plain-English account of the **intended finished product, what exists today, limitations, and explicit non-goals**, read **[What ForgeOS Will Do — and What It Will Not Do](docs/PRODUCT_VISION.md)**. This is a product-scope explanation; the [user manual](docs/USER_GUIDE.md) remains the single source of step-by-step operating instructions.
 
 Most AI coding tools still expect users to manage repositories, choose models, run commands, interpret failing tests, and manually resume interrupted work. ForgeOS aims to combine those steps in **one beginner-friendly desktop application**, prioritizing free local AI, explainable progress, recoverable edits, security controls, and efficient RAM usage.
 
@@ -47,7 +49,7 @@ The diagram describes the **implemented prototype path**, not an unattended prod
 | Git workspace safety | Per-task worktrees, edit validation, transactional edit journals | Generated edits stay available for manual inspection; no automatic publication |
 | Test/repair cycle | Bounded retries, selected test presets, failure feedback | Not a universal build/test tool; security varies by runtime |
 | Persistence and recovery | SQLite tasks, execution leases, edit recovery, checkpoint-aware resumption | Only eligible checkpoint phases can be resumed; never assume arbitrary crash recovery |
-| Windows test isolation | Packaged EXE uses a fail-closed AppContainer runner for Python `unittest` | Other presets may be unavailable in the packaged secure runtime; see [Windows guide](docs/WINDOWS_BUILD.md) |
+| Windows test isolation | Packaged EXE uses a fail-closed AppContainer runner for Python `unittest` and experimental bundled `pytest` | Other presets remain unsupported in the packaged secure runtime; hosted smoke does not prove real-PC security; see [Windows guide](docs/WINDOWS_BUILD.md) |
 | Diagnostics | Raw evidence archives, SHA-256 checks, compact AI summaries, failure categories | Raw logs can include secrets; archive capacity and retention are bounded |
 | Repair learning | Test-verified failure signatures, aggregated outcome statistics | Does **not** silently replay previous fixes |
 | Model selection | Manual model choice and optional RAM-aware selection from installed Ollama models | No auto-download, paid API routing, or guaranteed minimum RAM |
@@ -57,7 +59,7 @@ The diagram describes the **implemented prototype path**, not an unattended prod
 | Android APK / general web app builders | — | Planned, not implemented |
 | Complete app export, encrypted backups, signed installer | — | Planned, not production-tested |
 
-**Pull requests are not features on `main`.** For example, the secure packaged `pytest` extension is [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29) and should be considered unmerged until GitHub shows otherwise. Track the 52 proposed RTK-inspired outcomes in [RTK_ENHANCEMENTS.md](docs/RTK_ENHANCEMENTS.md) and the overlap audit in [ENHANCEMENT_DEDUP_AUDIT.md](docs/ENHANCEMENT_DEDUP_AUDIT.md).
+**Pull requests are not features on `main`.** The experimental packaged `python-pytest` AppContainer path has since been merged via PR #43 and passed hosted Windows smoke; the older PR #29 remains a separate unmerged proposal and must not be mistaken for another shipped feature. Physical Windows acceptance is still pending. Track the 52 proposed RTK-inspired outcomes in [RTK_ENHANCEMENTS.md](docs/RTK_ENHANCEMENTS.md) and the overlap audit in [ENHANCEMENT_DEDUP_AUDIT.md](docs/ENHANCEMENT_DEDUP_AUDIT.md).
 
 ## Quick start
 
