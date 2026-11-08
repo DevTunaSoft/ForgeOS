@@ -641,3 +641,21 @@ The package itself still excludes Git, Ollama models and external build
 chains. Real device Ollama build/test/repair and low-RAM hardware acceptance
 remain unverified. PR #29 must be closed rather than merged to avoid
 reintroducing its older unguarded implementation.
+
+
+## Product scope explanation added (documentation-only PR; 2026-11-07)
+
+Branch `docs/forgeos-capabilities-and-non-goals` from `main`
+`f5809c7e6c1484fb1a1f31efa02690fc2738868f`.
+
+Added `docs/PRODUCT_VISION.md`: an extensive, public GitHub-facing explanation of
+what ForgeOS is intended to become, what is actually implemented in the active
+prototype, capabilities not yet delivered, explicit non-goals, user examples,
+memory targets and objective release gates. Its status matrix is deliberately
+separate from the canonical step-by-step `docs/USER_GUIDE.md`. Linked from the
+README and roadmap; documentation policy now explicitly includes product
+scope under its change triggers. The README also corrects a stale statement
+about the experimental pytest feature (PR #43 is already merged; original
+PR #29 remains open/unmerged). This PR changes no runtime code or security
+behavior. The existing documentation link checker and Linux/Windows CI must
+pass before merge; no real Windows/Ollama hardware acceptance was performed.

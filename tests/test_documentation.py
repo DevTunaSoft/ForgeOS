@@ -45,6 +45,27 @@ class DocumentationTests(unittest.TestCase):
         self.assertTrue("AppContainer" in guide,
                         "User guide must explain the Windows AppContainer boundary")
 
+    def test_public_product_scope_is_discoverable_and_honest(self):
+        vision = (docs.ROOT / "docs" / "PRODUCT_VISION.md").read_text(encoding="utf-8")
+        homepage = (docs.ROOT / "README.md").read_text(encoding="utf-8")
+        policy = (docs.ROOT / "docs" / "DOCUMENTATION_POLICY.md").read_text(
+            encoding="utf-8")
+        for section in ("## The target experience", "## Capabilities: implemented versus planned",
+                        "## What ForgeOS can actually do today",
+                        "## What ForgeOS cannot do yet",
+                        "## What ForgeOS is deliberately designed",
+                        "## What must be proven before release"):
+            with self.subTest(section=section):
+                self.assertIn(section, vision)
+        for warning in ("not yet verified", "not encrypted", "real Windows",
+                        "not a general Windows app builder", "Android",
+                        "Ollama", "AppContainer"):
+            with self.subTest(warning=warning):
+                self.assertIn(warning.lower(), vision.lower())
+        self.assertIn("docs/PRODUCT_VISION.md", homepage)
+        self.assertIn("PRODUCT_VISION.md", policy)
+        self.assertIn("[step-by-step user manual](USER_GUIDE.md)", vision)
+
     def test_relative_links_in_repository(self):
         self.assertEqual(docs.check_links(), [])
 

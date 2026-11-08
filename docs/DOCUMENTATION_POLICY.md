@@ -8,6 +8,7 @@ ForgeOS documentation is part of the product, not a one-time marketing exercise.
 
 1. **Code and verified tests/CI** determine what is implemented and what was actually checked.
 2. **README.md** is the public-facing entry point: mission, primary features, installation, current limitations, live links.
+   **docs/PRODUCT_VISION.md** explains the intended finished experience, current prototype boundaries and explicit non-goals; it is **not** a second how-to manual.
 3. **docs/USER_GUIDE.md** is the click-by-click, jargon-light operational manual, including warnings and recovery steps.
 4. **docs/ARCHITECTURE.md** explains canonical modules, data flow, security boundaries and nonduplication decisions.
 5. **docs/ROADMAP.md** separates completed prototypes, work in progress, next priorities and future plans.
@@ -26,7 +27,7 @@ If two files contradict each other, **correct the outdated document** rather tha
 | User-visible behavior, GUI, labels, workflow | README and/or USER_GUIDE, screenshots only from verified running UI |
 | CLI options or commands | USER_GUIDE command reference; README examples if prominently featured |
 | New, removed or changed subsystem | ARCHITECTURE; README feature matrix when users are affected |
-| New feature, milestone or resolved blocker | ROADMAP, relevant capability tracker, README feature status |
+| New feature, milestone or resolved blocker | ROADMAP, relevant capability tracker, README feature status; update PRODUCT_VISION when it changes what ForgeOS can/cannot do |
 | Security, trust, sandbox, diagnostics or persistence | ARCHITECTURE, warning text, relevant guide; security regression evidence |
 | Runtime/build/packaging or GitHub Actions | WINDOWS_BUILD, README install notes, measured CI evidence |
 | Memory, model size, output capture, performance | MEMORY_BUDGET and relevant README limitation; explain measurement scope |
