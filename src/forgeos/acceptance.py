@@ -152,16 +152,21 @@ def _managed_snapshot(controller) -> dict | None:
     }
 
 
-def collect_acceptance_snapshot(controller=None) -> dict:
+def collect_acceptance_snapshot(controller=None, *, physical_target: bool = False) -> dict:
     """Collect one explicit local snapshot; no project files or secrets."""
+    if type(physical_target) is not bool:
+        raise ValueError("physical_target must be boolean")
     frozen = _frozen_identity()
     managed = _managed_snapshot(controller)
     windows = platform.system() == "Windows"
+    if physical_target and not windows:
+        raise ValueError("Physical target acceptance can only be asserted on Windows")
     return {
         "schema": SCHEMA_VERSION,
         "kind": "forgeos-local-acceptance-snapshot",
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
-        "physical_windows_evidence": windows,
+        "windows_host_evidence": windows,
+        "physical_windows_target_asserted": windows and physical_target,
         "source_commit": _source_commit(),
         "artifact": frozen,
         "host": _host_snapshot(),
@@ -182,7 +187,8 @@ def collect_acceptance_snapshot(controller=None) -> dict:
     }
 
 
-def write_acceptance_snapshot(controller=None, directory: str | Path | None = None) -> dict:
+def write_acceptance_snapshot(controller=None, directory: str | Path | None = None,
+                              *, physical_target: bool = False) -> dict:
     """Atomically write one bounded acceptance record and return path + record."""
     root = (Path(directory).expanduser() if directory is not None
             else Path.home() / ".forgeos" / "acceptance")
@@ -191,7 +197,8 @@ def write_acceptance_snapshot(controller=None, directory: str | Path | None = No
         raise OSError("Acceptance evidence directory is unsafe")
     if os.name != "nt":
         root.chmod(0o700)
-    record = collect_acceptance_snapshot(controller)
+    record = collect_acceptance_snapshot(
+        controller, physical_target=physical_target)
     payload = json.dumps(record, indent=2, sort_keys=True) + "\n"
     encoded = payload.encode("utf-8")
     if len(encoded) > MAX_RECORD_BYTES:

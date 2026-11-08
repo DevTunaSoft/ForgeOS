@@ -346,6 +346,11 @@ def launch(db_path, *, acceptance: bool = False):
                 "Acceptance snapshot busy",
                 "Finish the current task or managed-model operation first.")
             return
+        physical_target = messagebox.askyesno(
+            "Physical Windows target?",
+            "Is this the actual physical Windows machine you are using for "
+            "ForgeOS release acceptance?\n\nChoose No for CI, a VM, or a "
+            "general development computer.")
         controller = managed["controller"]
         active = controller if controller is not None and controller.running() else None
         if active is not None:
@@ -356,7 +361,8 @@ def launch(db_path, *, acceptance: bool = False):
         def worker():
             try:
                 from .acceptance import write_acceptance_snapshot
-                result = write_acceptance_snapshot(active)
+                result = write_acceptance_snapshot(
+                    active, physical_target=physical_target)
                 acceptance_events.put((result, None, active is not None))
             except Exception as exc:
                 acceptance_events.put((
@@ -1634,10 +1640,14 @@ def launch(db_path, *, acceptance: bool = False):
                     status.set("Local acceptance snapshot saved")
                     log(
                         "Local acceptance snapshot: " + acceptance_result["path"]
-                        + "\nPhysical Windows evidence: "
-                        + str(record["physical_windows_evidence"])
+                        + "\nWindows host evidence: "
+                        + str(record["windows_host_evidence"])
+                        + "\nPhysical target asserted: "
+                        + str(record["physical_windows_target_asserted"])
                         + "\nSource commit: "
                         + str(record["source_commit"])
+                        + "\nEmbedded build source commit: "
+                        + str(record["artifact"]["build_source_commit"])
                         + "\nFrozen EXE SHA-256: "
                         + str(record["artifact"]["executable_sha256"])
                         + "\nManaged model evidence: "

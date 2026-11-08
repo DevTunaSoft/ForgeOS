@@ -1654,3 +1654,8 @@ The first #56 checkpoint showed three source-contract failures caused only by ov
 ### Frozen acceptance identity independent verification
 
 The packaged-executable gate now exercises the acceptance recorder inside the real frozen `ForgeOS.exe`, not only in unit tests. A hidden launcher mode writes a local snapshot, then PowerShell independently checks the embedded source commit against `github.sha` and compares the recorder's EXE SHA-256 with `Get-FileHash`. Any mismatch or missing Windows/frozen identity fails packaging before upload. This closes the evidence-chain gap between source, packaged artifact and later physical Windows acceptance.
+
+
+### Physical-target assertion is explicit, never inferred from Windows
+
+A hosted Windows CI runner is not physical target acceptance. The recorder now separates `windows_host_evidence` from `physical_windows_target_asserted`. GUI collection asks the operator whether this is the actual physical release-acceptance machine; CLI/default and hidden frozen CI checks leave that assertion false. A physical-target assertion is rejected entirely on non-Windows platforms. The Activity log also shows the embedded build source commit alongside the EXE SHA-256.

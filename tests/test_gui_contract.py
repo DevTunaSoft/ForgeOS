@@ -356,10 +356,13 @@ class DashboardContractTests(unittest.TestCase):
                 'acceptance_events = Queue(maxsize=1)',
                 'text="Run local acceptance snapshot"',
                 'from .acceptance import write_acceptance_snapshot',
-                'write_acceptance_snapshot(active)',
+                'physical_target = messagebox.askyesno(',
+                'physical_target=physical_target',
                 'managed["busy"] = True',
                 'acceptance_events.get_nowait()',
-                'Physical Windows evidence: ',
+                'Windows host evidence: ',
+                'Physical target asserted: ',
+                'Embedded build source commit: ',
                 'Frozen EXE SHA-256: ',
                 'Managed model evidence: '):
             with self.subTest(fragment=fragment):

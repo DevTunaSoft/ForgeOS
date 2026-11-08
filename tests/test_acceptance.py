@@ -20,8 +20,9 @@ class AcceptanceSnapshotTests(unittest.TestCase):
                                  "build_source_commit": "a" * 40}), \
              patch("forgeos.model_routing.memory_report",
                    return_value={"total_system_ram_bytes": 32 * 1024**3}):
-            record = collect_acceptance_snapshot()
-        self.assertTrue(record["physical_windows_evidence"])
+            record = collect_acceptance_snapshot(physical_target=True)
+        self.assertTrue(record["windows_host_evidence"])
+        self.assertTrue(record["physical_windows_target_asserted"])
         self.assertEqual(record["source_commit"], "a" * 40)
         self.assertIsNone(record["managed_model"])
         self.assertFalse(record["scope"]["project_source_collected"])
@@ -61,6 +62,17 @@ class AcceptanceSnapshotTests(unittest.TestCase):
             with patch("forgeos.acceptance.sys._MEIPASS",
                        str(Path(temp)), create=True):
                 self.assertIsNone(_embedded_build_commit())
+
+    def test_physical_target_cannot_be_claimed_on_non_windows(self):
+        with patch("forgeos.acceptance.platform.system", return_value="Linux"), \
+             patch("forgeos.acceptance._frozen_identity",
+                   return_value={"frozen_executable": False,
+                                 "executable_sha256": None,
+                                 "executable_bytes": None,
+                                 "build_source_commit": None}), \
+             patch("forgeos.model_routing.memory_report", return_value={}):
+            with self.assertRaisesRegex(ValueError, "only be asserted on Windows"):
+                collect_acceptance_snapshot(physical_target=True)
 
     def test_managed_snapshot_uses_allowlisted_identity_and_self_test(self):
         controller = Mock()

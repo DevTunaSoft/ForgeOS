@@ -562,7 +562,7 @@ qualified, ForgeOS stops instead of silently using another model.
 
 ### Capture a local acceptance snapshot
 
-Open **Activity & diagnostics** and choose **Run local acceptance snapshot**. ForgeOS writes one bounded JSON evidence file under `~/.forgeos/acceptance`. The report records the current operating system, physical RAM snapshot, ForgeOS process memory, source Git commit when available, and the SHA-256 of the running frozen ForgeOS executable when applicable.
+Open **Activity & diagnostics** and choose **Run local acceptance snapshot**. ForgeOS asks whether this is the actual physical Windows release-acceptance machine; answer **No** for CI, a VM, or an ordinary development computer. ForgeOS writes one bounded JSON evidence file under `~/.forgeos/acceptance`. The report separately records Windows-host evidence and the operator's physical-target assertion, plus the current operating system, physical RAM snapshot, ForgeOS process memory, source Git commit when available, embedded packaged-build commit when present, and the SHA-256 of the running frozen ForgeOS executable when applicable.
 
 If a verified managed GGUF is already running, the same button also performs the existing local-model self-test and records its exact model/runtime hashes, startup/self-test latency and managed peak-memory reading. It does **not** store the temporary API credential, project source, or raw model response.
 
