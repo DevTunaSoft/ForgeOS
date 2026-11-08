@@ -430,3 +430,12 @@ ForgeOS can cryptographically attest their runtime identity; no weak fallback is
 - [x] Tighten final qualification to >=95% structured success, >=80% objective success, <=5% runtime failures and zero safety violations.
 - [x] Cancellation produces partial, non-routeable evidence. A complete run without measured managed peak memory fails closed.
 - [ ] Expose final qualification in the existing managed-model GUI and execute it against real candidate GGUFs on target Windows hardware.
+
+
+### #55 GUI final qualification workflow
+
+- [x] Expose the 20-task final qualification runner in the existing Managed local GGUF dialog using the existing role selector.
+- [x] Keep qualification off the Tk thread, reuse the bounded managed-event queue, show per-task progress and support cooperative cancellation.
+- [x] Preserve partial cancelled evidence as explicitly non-routeable; only complete evidence satisfying every final gate can feed qualified-auto.
+- [x] Show structured/objective counts, runtime failures, safety violations and routing qualification in the existing Activity diagnostics.
+- [ ] Run final qualification against real candidate GGUFs on target Windows hardware and record the first genuine routeable model/role evidence.

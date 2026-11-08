@@ -133,7 +133,7 @@ def launch(db_path, *, acceptance: bool = False):
     recovery_events = Queue(maxsize=1)
     managed = {"controller": None, "busy": False, "last_used": None,
                "unexpected_exit": False, "stop_failed": False,
-               "screening_cancel": None}
+               "screening_cancel": None, "qualification_cancel": None}
     busy = {"value": False}
     closing = {"value": False}
 
@@ -520,6 +520,9 @@ def launch(db_path, *, acceptance: bool = False):
         screening_role = tk.StringVar(value=SCREENING_ROLES[0])
         screening_status = tk.StringVar(
             value="Role screening runs five synthetic prompts; no project source is sent.")
+        qualification_status = tk.StringVar(
+            value="Final qualification runs 20 synthetic prompts for one role "
+                  "and records measured routing evidence.")
         for title, variable, selector in (
                 ("llama-server binary", exe_path,
                  lambda: filedialog.askopenfilename(
@@ -1102,13 +1105,78 @@ def launch(db_path, *, acceptance: bool = False):
                 "finish before partial evidence is saved.")
             status.set("Role screening cancellation requested")
 
+        def run_role_qualification():
+            if busy["value"] or managed["busy"]:
+                messagebox.showerror(
+                    "Model in use",
+                    "Complete the current task/model operation before qualification.",
+                    parent=popup)
+                return
+            controller = managed["controller"]
+            if controller is None or not controller.running():
+                messagebox.showinfo(
+                    "Final qualification",
+                    "Start a verified managed local model first.", parent=popup)
+                return
+            role = screening_role.get()
+            if role not in SCREENING_ROLES:
+                messagebox.showerror(
+                    "Final qualification", "Choose a valid role.", parent=popup)
+                return
+            cancel_event = threading.Event()
+            managed["qualification_cancel"] = cancel_event
+            managed["busy"] = True
+            managed["last_used"] = time.monotonic()
+            qualification_status.set(
+                "Running 0/20 final qualification tasks for "
+                + role.replace("_", " ") + "...")
+            status.set("Final model qualification: " + role)
+            def worker():
+                try:
+                    from .model_benchmark import write_qualification
+                    def report_progress(done, total, result):
+                        managed_events.put((
+                            "qualification-progress", controller,
+                            {"done": done, "total": total,
+                             "task_id": result["task_id"], "role": role},
+                            None))
+                    outcome = write_qualification(
+                        controller, role=role, cancel_event=cancel_event,
+                        progress_callback=report_progress)
+                    managed_events.put(("qualification", controller, outcome, None))
+                except Exception as exc:
+                    managed_events.put((
+                        "qualification", controller, None,
+                        f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+
+        def cancel_role_qualification():
+            cancel_event = managed["qualification_cancel"]
+            if cancel_event is None:
+                messagebox.showinfo(
+                    "Final qualification", "No final qualification is active.",
+                    parent=popup)
+                return
+            cancel_event.set()
+            qualification_status.set(
+                "Cancellation requested. The active response may finish "
+                "before partial non-routeable evidence is saved.")
+            status.set("Final qualification cancellation requested")
+
         def close_managed_dialog():
             cancel_event = managed["screening_cancel"]
+            qualification_event = managed["qualification_cancel"]
             if cancel_event is not None:
                 cancel_event.set()
                 screening_status.set(
                     "Cancellation requested. Keep this window open until "
                     "partial screening evidence is saved.")
+                return
+            if qualification_event is not None:
+                qualification_event.set()
+                qualification_status.set(
+                    "Cancellation requested. Keep this window open until "
+                    "partial qualification evidence is saved.")
                 return
             popup.destroy()
 
@@ -1164,6 +1232,17 @@ def launch(db_path, *, acceptance: bool = False):
             command=cancel_role_screening).pack(side="left", padx=8)
         ttk.Label(
             panel, textvariable=screening_status, wraplength=930,
+            foreground="#52647b").pack(anchor="w", pady=(6, 0))
+        qualification_row = ttk.Frame(panel)
+        qualification_row.pack(fill="x", pady=(10, 0))
+        ttk.Button(
+            qualification_row, text="Run 20-task final qualification",
+            command=run_role_qualification).pack(side="left")
+        ttk.Button(
+            qualification_row, text="Cancel qualification",
+            command=cancel_role_qualification).pack(side="left", padx=8)
+        ttk.Label(
+            panel, textvariable=qualification_status, wraplength=930,
             foreground="#52647b").pack(anchor="w", pady=(6, 0))
         popup.protocol("WM_DELETE_WINDOW", close_managed_dialog)
 
@@ -1532,14 +1611,24 @@ def launch(db_path, *, acceptance: bool = False):
                             + str(outcome["done"]) + "/"
                             + str(outcome["total"]) + " complete")
                         continue
+                    if action == "qualification-progress":
+                        status.set(
+                            "Final qualification " + outcome["role"] + ": "
+                            + str(outcome["done"]) + "/"
+                            + str(outcome["total"]) + " complete")
+                        continue
                     managed["busy"] = False
                     if action == "screening":
                         managed["screening_cancel"] = None
+                    if action == "qualification":
+                        managed["qualification_cancel"] = None
                     if error:
                         if action == "stop":
                             managed["stop_failed"] = True
                         if action == "screening":
                             managed["screening_cancel"] = None
+                        if action == "qualification":
+                            managed["qualification_cancel"] = None
                         if action == "install" and controller[0].winfo_exists():
                             controller[1].set("CPU runtime installation failed: " + error)
                         status.set("Managed llama.cpp operation failed")
@@ -1578,6 +1667,27 @@ def launch(db_path, *, acceptance: bool = False):
                             + ("\nCancelled: partial results retained."
                                if record["cancelled"] else "")
                             + "\nScreening is not final model qualification.")
+                        tabs.select(activity)
+                    elif action == "qualification":
+                        managed["last_used"] = time.monotonic()
+                        record = outcome["record"]
+                        if record["cancelled"]:
+                            status.set("Final qualification cancelled; partial evidence saved")
+                        else:
+                            status.set("Final qualification complete: " + record["role"].replace("_", " "))
+                        qualification_status.set(
+                            ("Qualified for routing." if record.get("qualified") else "Not qualified for routing.")
+                            if not record["cancelled"] else
+                            "Cancelled; partial evidence is not routeable.")
+                        log(
+                            "Final qualification evidence: " + outcome["path"]
+                            + "\nRole: " + record["role"]
+                            + "\nStructured successes: " + str(record["json_successes"]) + "/" + str(record["tasks"])
+                            + "\nObjective successes: " + str(record["objective_successes"]) + "/" + str(record["tasks"])
+                            + "\nRuntime failures: " + str(record["runtime_failures"])
+                            + "\nSafety violations: " + str(record["safety_violations"])
+                            + "\nQualified: " + str(record.get("qualified", False))
+                            + ("\nCancelled: partial evidence retained; routing remains disabled." if record["cancelled"] else ""))
                         tabs.select(activity)
                     elif action == "baseline":
                         managed["last_used"] = time.monotonic()

@@ -302,6 +302,25 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('chosen_model not in (manager.model_name, "qualified-auto")', source)
         self.assertIn('role="implementation"', source)
 
+    def test_final_qualification_gui_reuses_managed_benchmark_worker(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Run 20-task final qualification"',
+                'text="Cancel qualification"',
+                'from .model_benchmark import write_qualification',
+                'managed["qualification_cancel"] = cancel_event',
+                '"qualification-progress", controller',
+                'if action == "qualification-progress":',
+                'elif action == "qualification":',
+                'record["runtime_failures"]',
+                'record["safety_violations"]',
+                'record.get("qualified", False)',
+                'partial evidence is not routeable'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)
