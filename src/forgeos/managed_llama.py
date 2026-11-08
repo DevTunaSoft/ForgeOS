@@ -447,7 +447,6 @@ class ManagedLlamaServer:
                             threads=threads, context=context,
                             memory_limit_bytes=memory_limit_bytes)
         self.runtime_release_tag = verified["tag"]
-        result["runtime_release_tag"] = verified["tag"]
         return result
 
     def start(self, *, executable: str | Path, executable_sha256: str,

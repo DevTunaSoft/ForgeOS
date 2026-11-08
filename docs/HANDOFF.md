@@ -1476,3 +1476,14 @@ and one-shot managed peak memory. Records are bounded JSON under
 `~/.forgeos/benchmarks`; there is no new database, monitor, model runner or
 background sampler. Records explicitly remain `baseline_only_not_qualified`.
 License and quantization source verification remain #54 gaps.
+
+
+### Baseline checkpoint CI correction
+
+The first full matrix on the reconciled branch exposed two compatibility-test
+failures. The GUI source-contract test selected an earlier nested stop-worker
+instead of the task worker; it now scopes its inspection to `start(operation)`.
+The installed-runtime wrapper also briefly added `runtime_release_tag` to its
+public return dictionary, breaking the established return-shape contract.
+Runtime release identity remains available on the controller for benchmark
+evidence, while the existing start return shape is preserved.

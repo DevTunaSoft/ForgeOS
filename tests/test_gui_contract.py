@@ -234,7 +234,8 @@ class DashboardContractTests(unittest.TestCase):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1] /
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
-        worker = source.split("        def worker():", 1)[1].split(
+        task_start = source.split("    def start(operation):", 1)[1]
+        worker = task_start.split("        def worker():", 1)[1].split(
             "        threading.Thread(target=worker", 1)[0]
         self.assertIn("finally:", worker)
         self.assertIn("events.put((task_id, operation, value))", worker)
