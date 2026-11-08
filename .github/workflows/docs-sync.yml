@@ -2,7 +2,7 @@ name: Documentation integrity
 run-name: Documentation • ${{ github.event_name }} • ${{ github.head_ref || github.ref_name }}
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review]
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
