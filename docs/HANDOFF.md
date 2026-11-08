@@ -1487,3 +1487,15 @@ The installed-runtime wrapper also briefly added `runtime_release_tag` to its
 public return dictionary, breaking the established return-shape contract.
 Runtime release identity remains available on the controller for benchmark
 evidence, while the existing start return shape is preserved.
+
+
+## 2026-11-08 fixed #55 screening corpus and deterministic scorer
+
+The benchmark module now owns one fixed 40-task screening corpus: five tasks
+for each of eight issue #55 roles. Non-code roles use an exact JSON-items
+contract; code/refactor/debug/test-generation roles reuse
+`engine.parse_edits()` so the same path and edit-manifest validation applies.
+Screening never executes generated code and never uses an LLM-as-judge.
+Per-role screening requires 4/5 contract successes and 3/5 deterministic
+objective successes. The final 95%/80% qualification thresholds remain
+separate and the automatic router is still disabled.

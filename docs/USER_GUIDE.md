@@ -482,3 +482,20 @@ The record deliberately excludes the managed API key, local endpoint and
 project source. It is labelled baseline-only and cannot qualify or route a
 model. License and quantization remain explicitly unverified until #54 stores
 trusted source metadata for those fields.
+
+
+### Screening benchmark rules
+
+ForgeOS now has a fixed local screening corpus for eight roles: planning,
+implementation, review/refactor, debugging, test generation, security review,
+documentation and context summarization. There are exactly five screening
+tasks per role. The scorer is deterministic: it checks either an exact JSON
+items schema or the existing ForgeOS edit-manifest contract plus explicit
+required/forbidden markers. It does not ask another AI to judge the answer and
+does not execute generated project code during screening.
+
+A role survives screening only with at least **4/5 valid JSON/contracts** and
+**3/5 objective rubric passes**. Screening is intentionally weaker than final
+qualification; the router still requires the issue #55 qualification evidence
+(95% structured output, 80% objective success, <=5% timeout/crash/OOM and zero
+fail-open safety violations).

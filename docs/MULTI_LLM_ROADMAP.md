@@ -347,3 +347,14 @@ self-test latency, configured managed-memory ceiling and available one-shot
 Windows Job Object peak accounting. This is evidence collection only. The
 fixed role corpus, deterministic scorers, qualification tables and role router
 remain open and must not be enabled without real qualifying model data.
+
+
+### #55 screening corpus status
+
+A reproducible screening corpus now defines exactly five fixed tasks for each
+of the eight routing roles. Deterministic scoring separates structured-output
+success from objective rubric success and reuses ForgeOS's canonical edit
+manifest parser for edit-producing roles. A role advances from screening only
+at 4/5 structured contracts and 3/5 objective passes. This does **not** satisfy
+the final 95% structured / 80% objective qualification gate and does not enable
+automatic routing.

@@ -4,7 +4,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from forgeos.model_benchmark import capture_baseline, ram_tier, write_baseline
+from forgeos.model_benchmark import (
+    SCREENING_ROLES, capture_baseline, ram_tier, score_screening_response,
+    screening_summary, screening_tasks, write_baseline,
+)
 from forgeos.model_routing import GIB, MemorySnapshot
 
 
@@ -42,6 +45,57 @@ class FakeController:
 
 
 class ModelBenchmarkTests(unittest.TestCase):
+    def test_screening_corpus_is_fixed_five_tasks_per_role(self):
+        tasks = screening_tasks()
+        self.assertEqual(len(tasks), 40)
+        self.assertEqual(len({task.id for task in tasks}), 40)
+        for role in SCREENING_ROLES:
+            with self.subTest(role=role):
+                self.assertEqual(len(screening_tasks(role)), 5)
+        with self.assertRaises(ValueError):
+            screening_tasks("unknown-role")
+
+    def test_item_screening_separates_json_contract_from_objective(self):
+        task = screening_tasks("planning")[0]
+        passed = score_screening_response(
+            task, '{"items":["checkpoint","edit","test","publish"]}')
+        self.assertTrue(passed["json_contract"])
+        self.assertTrue(passed["objective_pass"])
+        wrong = score_screening_response(task, '{"items":["edit","test"]}')
+        self.assertTrue(wrong["json_contract"])
+        self.assertFalse(wrong["objective_pass"])
+        bad = score_screening_response(task, "not json")
+        self.assertFalse(bad["json_contract"])
+        self.assertFalse(bad["objective_pass"])
+
+    def test_edit_screening_reuses_forgeos_edit_contract(self):
+        task = screening_tasks("implementation")[0]
+        passed = score_screening_response(
+            task, '{"files":[{"path":"solution.py",'
+                  '"content":"def add(a, b):\\n    return a + b\\n"}]}')
+        self.assertTrue(passed["json_contract"])
+        self.assertTrue(passed["objective_pass"])
+        traversal = score_screening_response(
+            task, '{"files":[{"path":"../solution.py","content":"x"}]}')
+        self.assertFalse(traversal["json_contract"])
+
+    def test_screening_gate_is_four_json_and_three_objective_of_five(self):
+        tasks = screening_tasks("planning")
+        results = []
+        for index, task in enumerate(tasks):
+            results.append({
+                "task_id": task.id, "role": task.role,
+                "json_contract": index < 4,
+                "objective_pass": index < 3,
+            })
+        summary = screening_summary(results)
+        self.assertTrue(summary["roles"]["planning"]["screening_pass"])
+        results[3]["json_contract"] = False
+        self.assertFalse(
+            screening_summary(results)["roles"]["planning"]["screening_pass"])
+        with self.assertRaises(ValueError):
+            screening_summary(results + [results[0]])
+
     def test_fixed_ram_tiers(self):
         self.assertEqual(ram_tier(4 * GIB), "4-gib-gui-investigation")
         self.assertEqual(ram_tier(8 * GIB), "8-gib")
