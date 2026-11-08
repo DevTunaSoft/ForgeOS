@@ -140,17 +140,37 @@ class Store:
                 (status, time.time(), error, result, int(increment), task_id))
 
     def transition(self, task_id: int, expected, status: str, *,
-                   increment: bool = False) -> bool:
-        """Atomically change status while preserving checkpoint/result data."""
+                   increment: bool = False, result: str | None = None,
+                   error: str = '', lease_owner: str | None = None) -> bool:
+        """Atomic state/result update, optionally guarded by task lease owner.
+
+        The default preserves prior behavior and checkpoint content. When a
+        lease owner is provided, stale workers cannot publish results after
+        another process has reclaimed their task lease.
+        """
         expected = tuple(expected)
-        if status not in STATUSES or not expected or any(item not in STATUSES for item in expected):
+        if (status not in STATUSES or not expected
+                or any(item not in STATUSES for item in expected)):
             raise ValueError('Invalid status transition')
+        if not isinstance(error, str) or (result is not None and not isinstance(result, str)):
+            raise ValueError('Invalid transition result or error')
+        if (lease_owner is not None and
+                (not isinstance(lease_owner, str) or not lease_owner or len(lease_owner) > 128)):
+            raise ValueError('Invalid lease owner')
         placeholders = ','.join('?' for _ in expected)
+        sql = "UPDATE tasks SET status=?,updated=?,last_error=?,attempts=attempts+?"
+        params = [status, time.time(), error, int(increment)]
+        if result is not None:
+            sql += ",result=?"
+            params.append(result)
+        sql += f" WHERE id=? AND status IN ({placeholders})"
+        params.extend((task_id, *expected))
+        if lease_owner is not None:
+            sql += (" AND EXISTS (SELECT 1 FROM task_leases l"
+                    " WHERE l.task_id=tasks.id AND l.owner=?)")
+            params.append(lease_owner)
         with self.db:
-            cur = self.db.execute(
-                f"UPDATE tasks SET status=?,updated=?,last_error='',attempts=attempts+? "
-                f"WHERE id=? AND status IN ({placeholders})",
-                (status, time.time(), int(increment), task_id, *expected))
+            cur = self.db.execute(sql, params)
         return cur.rowcount == 1
 
     def acquire_lease(self, task_id: int, owner: str,
@@ -207,7 +227,8 @@ class Store:
                 (now, 'Interrupted execution: inspect workspace and recover edit journal before retrying'))
             changed = cur.rowcount
             cur = self.db.execute(
-                "UPDATE tasks SET status='queued',updated=? WHERE status='planning'",
+                "UPDATE tasks SET status='queued',updated=? WHERE status='planning' "
+                "AND NOT EXISTS (SELECT 1 FROM task_leases l WHERE l.task_id=tasks.id)",
                 (now,))
             changed += cur.rowcount
         return changed

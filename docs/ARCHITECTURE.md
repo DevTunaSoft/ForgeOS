@@ -49,7 +49,7 @@ flowchart TB
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository.
-2. ForgeOS persists it in SQLite; leases protect concurrent task ownership.
+2. ForgeOS persists it in SQLite; leases protect concurrent task ownership, including CLI planning. Lease-owned compare-and-set updates prevent stale planners from overwriting the result of another worker.
 3. A local installed Ollama model provides a plan or a bounded, JSON-defined file-edit manifest.
 4. ForgeOS validates file paths, extensions and total edit budget before writing; a transaction journal supports recovery.
 5. Changes are written to a **separate Git worktree**, not automatically merged into the user's original branch.

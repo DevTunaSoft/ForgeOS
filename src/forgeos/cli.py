@@ -93,15 +93,32 @@ def main(argv=None):
             changed = recover_edits(Path(args.workspace))
             print('Recovered edit journal' if changed else 'No pending edit journal')
         elif args.action=='plan':
-            task=store.get(args.id)
-            store.update(args.id,'planning',increment=True)
+            from uuid import uuid4
+            task = store.get(args.id)
+            if task["status"] not in {"queued", "planned"}:
+                raise ValueError("Task is not eligible for planning")
+            owner = uuid4().hex
+            if not store.acquire_lease(args.id, owner):
+                raise ValueError("Task already has an active execution lease")
             try:
-                output=Ollama(model=args.model).plan(task['description'])
-                store.update(args.id,'planned',result=output)
+                if not store.transition(args.id, {"queued", "planned"}, "planning",
+                                        increment=True, lease_owner=owner):
+                    raise ValueError("Task status changed before planning")
+                try:
+                    output = Ollama(model=args.model).plan(task["description"])
+                    if not store.heartbeat_lease(args.id, owner):
+                        raise RuntimeError("Task planning lease was lost")
+                    if not store.transition(args.id, {"planning"}, "planned",
+                                            result=output, lease_owner=owner):
+                        raise RuntimeError("Task changed during planning")
+                except Exception as exc:
+                    # A reclaimed lease cannot overwrite another worker.
+                    store.transition(args.id, {"planning"}, "blocked",
+                                     error=str(exc), result="", lease_owner=owner)
+                    raise
                 print(output)
-            except Exception as exc:
-                store.update(args.id,'blocked',error=str(exc))
-                raise
+            finally:
+                store.release_lease(args.id, owner)
         elif args.action=='resume-safe':
             from .recovery import resume_safe
             sink = (lambda event: print(json.dumps(event, ensure_ascii=False), flush=True)
