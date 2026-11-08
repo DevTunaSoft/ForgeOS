@@ -241,6 +241,28 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         self.assertIsNone(controller.api_key)
         self.assertIsNone(controller.endpoint)
 
+        # Exercise genuine unexpected process death as well as ordinary
+        # shutdown: no silent restart, no lingering credential after stop.
+        crashed = ManagedLlamaServer()
+        try:
+            with patch("forgeos.managed_llama.safe_model_file_budget",
+                       return_value=1024):
+                crashed.start(
+                    executable=self.exe, executable_sha256=binary_sha,
+                    model_path=self.model, timeout=12, context=512, threads=1)
+            self.assertTrue(crashed.running())
+            crashed.process.kill()
+            crashed.process.wait(timeout=4)
+            from forgeos.gui import _managed_session_event
+            self.assertEqual(_managed_session_event(
+                crashed, now=1000, last_used=999, task_busy=False,
+                operation_busy=False), "crashed")
+        finally:
+            crashed.stop()
+        self.assertIsNone(crashed.api_key)
+        self.assertIsNone(crashed.endpoint)
+        self.assertFalse(crashed.running())
+
     def test_installed_cpu_rechecks_official_archive_and_every_dll(self):
         controller = ManagedLlamaServer()
         verified = {
