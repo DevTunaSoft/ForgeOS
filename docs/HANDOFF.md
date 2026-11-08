@@ -1618,3 +1618,14 @@ A static GUI review found that the outer launch-level event poller referenced th
 ## Shared model roles and GUI task-role routing
 
 Removed the GUI hardcoded implementation role. A new lightweight model_roles.py owns the eight stable role identifiers without importing the heavier benchmark stack. The dashboard now exposes a read-only Task role selector and passes the selected role into execute_task. The managed-model screening/final-qualification selector uses the same shared tuple, eliminating drift between benchmark evidence and autonomous routing. qualified-auto therefore resolves evidence for the exact user-selected role rather than always using implementation.
+
+
+## 2026-11-08 shared qualified resolver and planning gate
+
+Qualification resolution was factored into one fail-closed helper shared by the
+autonomous edit/test/repair engine and planning action. This removes duplicated
+identity/memory/evidence checks. `qualified-auto` planning now requires final
+`planning` role evidence for the exact authenticated managed GGUF/runtime and
+current memory budget before the model receives a prompt. Existing plan output
+remains plain text so task/CLI compatibility is preserved. Tests cover successful
+qualified planning and the no-evidence fail-closed path.

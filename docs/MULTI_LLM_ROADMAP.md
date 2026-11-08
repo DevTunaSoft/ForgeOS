@@ -449,3 +449,15 @@ authenticated running GGUF/runtime identity, switches the recovered request back
 through the qualified-auto gate, and requires the exact same evidence digest before
 resuming. A different newer qualification record cannot silently replace the saved
 one. Symlinked evidence roots are rejected before path resolution.
+
+
+### #55 qualified planning integration
+
+The same final-evidence resolver now gates both autonomous implementation and
+planning. Selecting `qualified-auto` with an authenticated ForgeOS-managed
+llama.cpp session resolves the `planning` role against the existing bounded
+qualification records, exact GGUF/runtime SHA-256 identities and current safe
+memory ceiling before a planning prompt is sent. Missing, stale, over-budget or
+unqualified evidence blocks the plan. The existing plain-text plan result
+contract is preserved for compatibility; no second router or evidence format
+was introduced.

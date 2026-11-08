@@ -200,36 +200,11 @@ def _execute_task(
         model_name = getattr(model, "model", None)
         qualification = None
         if model_name == "qualified-auto":
-            from .model_qualification import (
-                load_qualification_records, route_qualified_role,
-            )
-            from .model_routing import (
-                managed_runtime_memory_ceiling, system_memory,
-            )
-            backend_name = getattr(model, "backend", "ollama")
-            model_hash = getattr(model, "managed_model_sha256", None)
-            runtime_hash = getattr(model, "managed_runtime_sha256", None)
-            if (backend_name != "llama.cpp"
-                    or not isinstance(model_hash, str)
-                    or not isinstance(runtime_hash, str)
-                    or not re.fullmatch(r"[a-f0-9]{64}", model_hash)
-                    or not re.fullmatch(r"[a-f0-9]{64}", runtime_hash)):
-                raise ValueError(
-                    "qualified-auto currently requires an active ForgeOS-managed "
-                    "llama.cpp model with pinned model/runtime SHA-256 identities")
-            memory_budget = managed_runtime_memory_ceiling(system_memory())
-            if not isinstance(memory_budget, int) or memory_budget <= 0:
-                raise RuntimeError("No safe memory budget is available for qualified routing")
-            qualification = route_qualified_role(
-                role, load_qualification_records(qualification_directory),
-                memory_budget_bytes=memory_budget, backend="llama.cpp",
-                model_sha256=model_hash, runtime_sha256=runtime_hash,
+            from .model_qualification import resolve_qualified_managed_model
+            qualification = resolve_qualified_managed_model(
+                model, role=role, directory=qualification_directory,
                 evidence_sha256=qualification_evidence_sha256)
-            if qualification["model_name"] != "forgeos-managed":
-                raise RuntimeError(
-                    "Qualified evidence does not identify the active ForgeOS-managed model")
             model_name = qualification["model_name"]
-            model.model = model_name
         elif qualification_evidence_sha256 is not None:
             raise ValueError(
                 "Pinned qualification evidence requires qualified-auto model selection")

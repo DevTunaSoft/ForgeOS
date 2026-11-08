@@ -41,7 +41,8 @@ def _heartbeat(store: Store, task_id: int, owner: str):
 
 
 def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
-              model_factory=None) -> str:
+              model_factory=None,
+              qualification_directory: str | Path | None = None) -> str:
     """Plan only eligible tasks; construct an AI model after lease acquisition."""
     if model is not None and model_factory is not None:
         raise ValueError("Specify a model or model factory, not both")
@@ -56,6 +57,11 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
             chosen_model = (model if model is not None else
                             model_factory() if model_factory is not None else
                             Ollama())
+            if getattr(chosen_model, "model", None) == "qualified-auto":
+                from .model_qualification import resolve_qualified_managed_model
+                resolve_qualified_managed_model(
+                    chosen_model, role="planning",
+                    directory=qualification_directory)
             output = chosen_model.plan(task["description"])
             _heartbeat(store, task_id, owner)
             _publish(store, task_id, owner, {"planning"}, "planned",

@@ -204,3 +204,44 @@ def route_qualified_role(role: str, records: list[dict], *,
         "selection_policy": "smallest-measured-qualified-model",
         "rejected_invalid_records": len(rejected),
     }
+
+
+def resolve_qualified_managed_model(model, *, role: str,
+                                    directory: str | Path | None = None,
+                                    evidence_sha256: str | None = None) -> dict:
+    """Resolve qualified-auto against an attested managed llama.cpp runtime.
+
+    This is the single qualification entry point used by planning and the
+    autonomous edit/test/repair engine. It never falls back to an unqualified
+    or merely installed model.
+    """
+    if getattr(model, "model", None) != "qualified-auto":
+        raise ValueError("Qualified model resolver requires qualified-auto")
+    if not isinstance(role, str) or not role.strip() or len(role) > 80:
+        raise ValueError("Qualified model role is required")
+    backend = getattr(model, "backend", None)
+    model_sha = getattr(model, "managed_model_sha256", None)
+    runtime_sha = getattr(model, "managed_runtime_sha256", None)
+    if backend != "llama.cpp":
+        raise ValueError(
+            "qualified-auto currently requires ForgeOS-managed llama.cpp")
+    model_sha = _sha(model_sha, "managed model SHA-256")
+    runtime_sha = _sha(runtime_sha, "managed runtime SHA-256")
+    from .model_routing import (
+        managed_runtime_memory_ceiling, system_memory,
+    )
+    memory_budget = managed_runtime_memory_ceiling(system_memory())
+    if not isinstance(memory_budget, int) or memory_budget <= 0:
+        raise RuntimeError(
+            "No safe memory budget is available for qualified routing")
+    selection = route_qualified_role(
+        role, load_qualification_records(directory),
+        memory_budget_bytes=memory_budget, backend="llama.cpp",
+        model_sha256=model_sha, runtime_sha256=runtime_sha,
+        evidence_sha256=evidence_sha256)
+    if selection["model_name"] != "forgeos-managed":
+        raise RuntimeError(
+            "Qualified evidence does not identify the active "
+            "ForgeOS-managed model")
+    model.model = selection["model_name"]
+    return selection

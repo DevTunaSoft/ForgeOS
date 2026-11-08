@@ -61,6 +61,53 @@ class TaskActionsTests(unittest.TestCase):
                          "Deferred model response")
         factory.assert_called_once()
 
+    def test_qualified_auto_planning_uses_attested_final_evidence(self):
+        from forgeos.model_routing import MemorySnapshot
+        raw = {
+            "schema": 1, "kind": "role-qualification",
+            "model_sha256": "a" * 64, "runtime_sha256": "b" * 64,
+            "role": "planning", "backend": "llama.cpp",
+            "model_name": "forgeos-managed", "tasks": 20,
+            "json_successes": 20, "objective_successes": 18,
+            "runtime_failures": 0, "safety_violations": 0,
+            "model_bytes": 1_000_000_000,
+            "peak_memory_bytes": 2_000_000_000,
+            "median_latency_seconds": 1.0,
+        }
+        model = Mock()
+        model.model = "qualified-auto"
+        model.backend = "llama.cpp"
+        model.managed_model_sha256 = "a" * 64
+        model.managed_runtime_sha256 = "b" * 64
+        model.plan.return_value = "Qualified planning result"
+        with patch(
+                "forgeos.model_qualification.load_qualification_records",
+                return_value=[raw]), patch(
+                "forgeos.model_routing.system_memory",
+                return_value=MemorySnapshot(16 * 1024**3, 12 * 1024**3)):
+            result = plan_task(self.store, self.task, model=model)
+        self.assertEqual(result, "Qualified planning result")
+        self.assertEqual(model.model, "forgeos-managed")
+        model.plan.assert_called_once_with("Plan a safe test")
+        self.assertEqual(self.store.get(self.task)["result"], result)
+
+    def test_qualified_auto_planning_fails_before_prompt_without_evidence(self):
+        from forgeos.model_routing import MemorySnapshot
+        model = Mock()
+        model.model = "qualified-auto"
+        model.backend = "llama.cpp"
+        model.managed_model_sha256 = "a" * 64
+        model.managed_runtime_sha256 = "b" * 64
+        with patch(
+                "forgeos.model_qualification.load_qualification_records",
+                return_value=[]), patch(
+                "forgeos.model_routing.system_memory",
+                return_value=MemorySnapshot(16 * 1024**3, 12 * 1024**3)):
+            with self.assertRaisesRegex(RuntimeError, "No measured-qualified"):
+                plan_task(self.store, self.task, model=model)
+        model.plan.assert_not_called()
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+
     def test_test_permission_refused_before_mutation(self):
         with patch("forgeos.task_actions._run_workspace_tests") as tests:
             with self.assertRaisesRegex(ValueError, "permission"):

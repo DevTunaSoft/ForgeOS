@@ -549,3 +549,12 @@ safe memory budget, recovery stops rather than choosing another model automatica
 ### Choose the task role
 
 Execution settings now include **Task role**. The default is **implementation**. Choose planning, review/refactor, debugging, test generation, security review, documentation, or context summarization when that better describes the work. When **qualified-auto** is selected, ForgeOS requires final qualification evidence for the exact chosen role and exact active managed model/runtime identity; it does not silently substitute evidence from another role.
+
+
+#### Qualified planning
+
+When the active verified local GGUF has completed final qualification for the
+`planning` role, selecting `qualified-auto` also protects **Generate plan**.
+ForgeOS checks the same final evidence, exact model/runtime hashes and current
+memory budget before sending the planning request. If planning evidence is not
+qualified, ForgeOS stops instead of silently using another model.
