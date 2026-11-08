@@ -397,8 +397,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value=[{"name": ALIAS}]),
               patch("forgeos.managed_llama.subprocess.Popen",
                     return_value=proc) as launch,
-              patch("forgeos.managed_llama._attach_windows_job",
-                    return_value=1234) as attached,
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)) as native_launch,
               patch("forgeos.managed_llama._release_windows_job") as released,
               patch("forgeos.managed_llama._terminate_posix_group") as grouped):
             info = server.start(
@@ -410,7 +410,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(info["sha256"], self.model_sha)
             self.assertEqual(info["runtime_sha256"], self.exe_sha)
             self.assertTrue(server.running())
-            command = launch.call_args.args[0]
+            command = (native_launch.call_args.args[0]
+                       if os.name == "nt" else launch.call_args.args[0])
             self.assertEqual(command[0], str(self.exe))
             self.assertIn("--n-gpu-layers", command)
             self.assertEqual(command[command.index("--n-gpu-layers") + 1], "0")
@@ -418,7 +419,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(command[command.index("--port") + 1], "17089")
             self.assertEqual(command[command.index("--model") + 1], str(self.model))
             self.assertEqual(command[command.index("--parallel") + 1], "1")
-            self.assertTrue(launch.call_args.kwargs["shell"] is False)
+            if os.name != "nt":
+                self.assertTrue(launch.call_args.kwargs["shell"] is False)
             self.assertEqual(len(open_calls), 1)
             self.assertEqual(
                 open_calls[0].full_url,
@@ -435,11 +437,12 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertIsNone(server.api_key)
             self.assertIsNone(server.process)
             if __import__("os").name == "nt":
-                attached.assert_called_once_with(proc)
+                native_launch.assert_called_once()
+                launch.assert_not_called()
                 released.assert_called_once_with(1234)
                 proc.terminate.assert_not_called()
             else:
-                attached.assert_not_called()
+                native_launch.assert_not_called()
                 grouped.assert_called_once()
                 proc.terminate.assert_called_once()
 
@@ -476,8 +479,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value=17090),
               patch("forgeos.managed_llama.subprocess.Popen",
                     return_value=proc),
-              patch("forgeos.managed_llama._attach_windows_job",
-                    return_value=1234),
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)),
               patch("forgeos.managed_llama._release_windows_job")):
             with self.assertRaisesRegex(RuntimeError, "exited"):
                 instance.start(executable=self.exe, executable_sha256=self.exe_sha,
@@ -496,13 +499,15 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value=self.exe),
               patch("forgeos.managed_llama.subprocess.Popen",
                     return_value=proc),
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)),
               patch("forgeos.managed_llama._open",
                     side_effect=URLError("server unavailable")),
               patch("forgeos.managed_llama.time.monotonic",
                     side_effect=[0.0, 2.0]),
               patch("forgeos.managed_llama.time.sleep") as sleep,
-              patch("forgeos.managed_llama._attach_windows_job",
-                    return_value=1234),
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)),
               patch("forgeos.managed_llama._release_windows_job"),
               patch("forgeos.managed_llama._terminate_posix_group")):
             with self.assertRaisesRegex(RuntimeError, "timed out"):
@@ -518,16 +523,16 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
     def test_real_windows_job_kills_server_process(self):
         import subprocess
         import sys
-        from forgeos.managed_llama import _attach_windows_job, _release_windows_job
-        proc = subprocess.Popen(
-            [sys.executable, "-c", "import time; time.sleep(30)"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL)
+        from forgeos.managed_llama import (
+            _launch_windows_suspended_job, _release_windows_job)
+        proc = None
         job = None
         try:
-            job = _attach_windows_job(proc)
+            proc, job = _launch_windows_suspended_job(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                Path.cwd(), {})
             self.assertIsNotNone(job)
+            self.assertIsNone(proc.poll())
             _release_windows_job(job)
             job = None
             proc.wait(timeout=5)
@@ -535,9 +540,11 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         finally:
             if job is not None:
                 _release_windows_job(job)
-            if proc.poll() is None:
+            if proc is not None and proc.poll() is None:
                 proc.kill()
                 proc.wait(timeout=5)
+            if proc is not None:
+                proc.close()
 
     def test_managed_checkpoint_fails_closed_without_pinned_session_identity(self):
         from forgeos.recovery import _checkpoint_contract

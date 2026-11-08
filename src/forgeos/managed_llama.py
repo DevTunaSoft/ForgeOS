@@ -150,20 +150,85 @@ def _unused_loopback_port() -> int:
         return int(listening.getsockname()[1])
 
 
-def _attach_windows_job(process: subprocess.Popen):
-    """Reuse ForgeOS native Job Object structs; fail closed on setup errors.
+class _WindowsNativeProcess:
+    """Minimal Popen-compatible wrapper for a suspended native Windows child."""
 
-    This establishes kill-on-close for the controlled process tree after
-    Popen returns. The brief pre-attachment race remains an acceptance gap;
-    suspended startup will be required for strict child-escape guarantees.
+    def __init__(self, handle, pid: int):
+        self._handle = handle
+        self.pid = int(pid)
+        self.returncode = None
+
+    def poll(self):
+        if self.returncode is not None:
+            return self.returncode
+        from ctypes import wintypes
+        from . import windows_containment as win
+        status = win.kernel32.WaitForSingleObject(self._handle, 0)
+        if status == win.WAIT_TIMEOUT:
+            return None
+        if status != win.WAIT_OBJECT_0:
+            raise OSError("Could not poll managed llama-server")
+        code = wintypes.DWORD()
+        if not win.kernel32.GetExitCodeProcess(self._handle, __import__("ctypes").byref(code)):
+            raise OSError("Could not read managed llama-server exit code")
+        self.returncode = int(code.value)
+        return self.returncode
+
+    def wait(self, timeout=None):
+        from ctypes import wintypes
+        from . import windows_containment as win
+        milliseconds = win.INFINITE if timeout is None else max(0, int(timeout * 1000))
+        status = win.kernel32.WaitForSingleObject(self._handle, milliseconds)
+        if status == win.WAIT_TIMEOUT:
+            raise subprocess.TimeoutExpired(["llama-server"], timeout)
+        if status != win.WAIT_OBJECT_0:
+            raise OSError("Could not wait for managed llama-server")
+        code = wintypes.DWORD()
+        if not win.kernel32.GetExitCodeProcess(self._handle, __import__("ctypes").byref(code)):
+            raise OSError("Could not read managed llama-server exit code")
+        self.returncode = int(code.value)
+        return self.returncode
+
+    def terminate(self):
+        from . import windows_containment as win
+        if not win.kernel32.TerminateProcess(self._handle, 1):
+            raise OSError("Could not terminate managed llama-server")
+
+    kill = terminate
+
+    def close(self):
+        if self._handle:
+            from . import windows_containment as win
+            win.kernel32.CloseHandle(self._handle)
+            self._handle = None
+
+
+def _launch_windows_suspended_job(argv: list[str], cwd: Path,
+                                  env: dict[str, str]):
+    """Create llama-server suspended, attach Job Object, then resume it.
+
+    No child instruction can execute before Job Object assignment, eliminating
+    the Popen-to-Job escape window present in the earlier implementation.
     """
     import ctypes
-    from ctypes import wintypes
     from . import windows_containment as win
+
+    command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline(argv))
+    environment = win._environment_block(env)
+    environment_pointer = (ctypes.cast(environment, ctypes.c_void_p)
+                           if environment is not None else None)
+    startup = win.STARTUPINFOW()
+    startup.cb = ctypes.sizeof(win.STARTUPINFOW)
+    info = win.PROCESS_INFORMATION()
+    flags = win.CREATE_SUSPENDED | win.CREATE_NO_WINDOW
+    if environment is not None:
+        flags |= win.CREATE_UNICODE_ENVIRONMENT
 
     job = win.kernel32.CreateJobObjectW(None, None)
     if not job:
         raise OSError("Could not create a Windows model process Job Object")
+    process_handle = None
+    thread_handle = None
     try:
         limits = win.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         limits.BasicLimitInformation.LimitFlags = (
@@ -174,13 +239,29 @@ def _attach_windows_job(process: subprocess.Popen):
                 job, win.JobObjectExtendedLimitInformation,
                 ctypes.byref(limits), ctypes.sizeof(limits)):
             raise OSError("Could not configure Windows model process Job Object")
-        if not win.kernel32.AssignProcessToJobObject(
-                job, wintypes.HANDLE(process._handle)):
-            raise OSError("Could not attach managed llama-server to Windows Job Object")
+        if not win.kernel32.CreateProcessW(
+                None, command_line, None, None, False, flags,
+                environment_pointer, str(cwd), ctypes.byref(startup),
+                ctypes.byref(info)):
+            raise OSError("Could not create suspended managed llama-server")
+        process_handle, thread_handle = info.hProcess, info.hThread
+        if not win.kernel32.AssignProcessToJobObject(job, process_handle):
+            raise OSError("Could not attach suspended llama-server to Windows Job Object")
+        if win.kernel32.ResumeThread(thread_handle) == 0xFFFFFFFF:
+            raise OSError("Could not resume managed llama-server")
+        win.kernel32.CloseHandle(thread_handle)
+        thread_handle = None
+        return _WindowsNativeProcess(process_handle, info.dwProcessId), job
     except BaseException:
+        if process_handle:
+            win.kernel32.TerminateProcess(process_handle, 125)
+            win.kernel32.WaitForSingleObject(process_handle, 5000)
+        if thread_handle:
+            win.kernel32.CloseHandle(thread_handle)
+        if process_handle:
+            win.kernel32.CloseHandle(process_handle)
         win.kernel32.CloseHandle(job)
         raise
-    return job
 
 
 def _release_windows_job(job) -> None:
@@ -289,17 +370,15 @@ class ManagedLlamaServer:
                     "--ctx-size", str(context), "--threads", str(threads),
                     "--n-gpu-layers", "0", "--parallel", "1",
                     "--no-webui"]
-            flags = (subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
-            self.process = subprocess.Popen(
-                argv, shell=False, cwd=str(binary.parent),
-                env=_child_environment(), stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                creationflags=flags, start_new_session=(os.name != "nt"))
-            # Bind the entire Windows process tree to an owned
-            # kill-on-close Job Object, rather than only terminating its
-            # parent PID. Existing test isolation is a SEPARATE sandbox.
             if os.name == "nt":
-                self._windows_job = _attach_windows_job(self.process)
+                self.process, self._windows_job = _launch_windows_suspended_job(
+                    argv, binary.parent, _child_environment())
+            else:
+                self.process = subprocess.Popen(
+                    argv, shell=False, cwd=str(binary.parent),
+                    env=_child_environment(), stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True)
             self.api_key = key
             self.endpoint = f"http://127.0.0.1:{port}/v1"
             self.model_name = ALIAS
@@ -362,6 +441,8 @@ class ManagedLlamaServer:
                         _terminate_posix_group(process.pid, signal.SIGKILL)
                     process.kill()
                     process.wait(timeout=4)
+            if hasattr(process, "close"):
+                process.close()
             if job_error is not None:
                 raise job_error
         finally:

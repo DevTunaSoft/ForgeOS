@@ -1383,3 +1383,8 @@ The prior recovery-race commit `d4daaef` passed six of six hosted CI checks. A f
 ## 2026-11-08 managed inference file-identity hardening
 
 Commit `67c2e749` passed all six hosted gates, including both Windows test jobs and frozen Windows packaging. The next hardening pass rejects hard-linked GGUF weights, GGUF manifests, and llama-server binaries before managed inference; it also snapshots size/mtime/inode around SHA-256 reads and rejects files that change during verification. Regression coverage exercises all three hard-link cases plus deterministic mutation during a model hash. This narrows file-substitution risk without adding a second model subsystem. The remaining Windows-specific gap is reparse/junction identity and the Popen-to-Job attachment race; real llama.cpp/GGUF execution on target hardware is still required.
+
+
+## 2026-11-08 Windows managed-server suspended startup containment
+
+The previous managed-file-identity commit `9efc9eb` is undergoing hosted validation. This change removes the managed llama-server Popen-to-Job assignment race on Windows: ForgeOS now creates the process with `CREATE_SUSPENDED`, configures and assigns the kill-on-close Job Object before the primary thread can execute, then resumes the thread. A minimal native-process wrapper preserves the lifecycle interface used by the existing controller. The real Windows integration test now exercises this suspended-launch path directly. POSIX continues to use a new process session. Remaining acceptance gaps: real llama.cpp/GGUF inference on target hardware, Windows reparse-point identity, and measured process-tree memory ceilings.
