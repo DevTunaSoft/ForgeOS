@@ -156,3 +156,18 @@ Activity tab also includes an on-demand **Show local memory snapshot** button,
 sharing the same process-RAM reporting code used by `python -m forgeos memory`.
 It does not run a monitor in the background, and it cannot measure Ollama or
 other build subprocesses; physical Windows 4/8 GiB acceptance remains required.
+
+## Frozen Windows GUI lifecycle acceptance
+
+The packaged EXE is now tested beyond import-only startup: hosted Windows CI
+creates the actual Tkinter dashboard widgets, verifies the Development
+and Activity tabs and task queue, processes the Tk event loop, measures
+the current ForgeOS process working set, then closes its SQLite database
+and Tk root. Run locally from PowerShell:
+
+    .\ForgeOS.exe --gui-acceptance-report C:\Temp\forgeos-gui-report.json
+
+The report stays local. The acceptance mode uses an empty temporary database
+and does not start a model or run generated code. It is not yet proof of
+actual end-user Windows installation behavior, 4/8GiB hardware acceptance,
+or complete autonomous coding workflows.
