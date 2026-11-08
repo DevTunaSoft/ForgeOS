@@ -185,10 +185,10 @@ class ForgeOSTests(unittest.TestCase):
                 return super().read(1)
 
         ticks = iter([0, 1, 100, 179, 180, 181])
-        with patch("forgeos.model_routing.system_memory",
-                   return_value=MemorySnapshot(4*1024**3, 3*1024**3)), \\
-             patch("forgeos.core.urlopen", return_value=Trickle(b"abcdef")), \\
-             patch("forgeos.core.time.monotonic", side_effect=lambda: next(ticks)):
+        with (patch("forgeos.model_routing.system_memory",
+                    return_value=MemorySnapshot(4*1024**3, 3*1024**3)),
+              patch("forgeos.core.urlopen", return_value=Trickle(b"abcdef")),
+              patch("forgeos.core.time.monotonic", side_effect=lambda: next(ticks))):
             with self.assertRaisesRegex(TimeoutError, "total deadline"):
                 Ollama().plan("slow model")
 
