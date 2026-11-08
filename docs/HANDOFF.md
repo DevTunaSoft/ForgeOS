@@ -1644,3 +1644,33 @@ entry point. The resolver now requires `authenticated is True` before evidence
 lookup, memory routing or prompting. Engine and planning fixtures represent the
 real managed adapter, and a negative planning test proves an unauthenticated
 hash-bearing model is blocked before evidence loading or model invocation.
+
+
+## #56 local acceptance evidence recorder
+
+Started the post-PR-51 physical acceptance phase from verified main `7c582f8`. The new acceptance module captures one bounded local JSON snapshot rather than adding another monitoring service. It records host/runtime memory, OS/Python/machine identity, source Git SHA when discoverable, and a chunked SHA-256 of the frozen executable when applicable. With a running managed GGUF it reuses the existing exact benchmark identity, self-test and one-shot managed memory report. Only allowlisted model/runtime/settings/self-test fields are serialized, so endpoint credentials, temporary API keys, raw model replies and project source are excluded. The GUI runs collection off the Tk thread and keeps the managed model busy for the duration. A CLI host-only snapshot is also available.
+
+
+### Frozen artifact source-identity binding
+
+The #56 recorder initially could hash a downloaded frozen EXE but could not prove which source SHA produced it once outside a Git checkout. The Windows packaging workflow now writes a validated `forgeos_build/build_info.json` from GitHub's exact workflow SHA before PyInstaller and bundles it beside the offline guide. The recorder reads only a valid 40-hex embedded SHA and records it as `artifact.build_source_commit` together with the EXE SHA-256. Source-mode local builds can create the same metadata with `forgeos_build/write_build_info.py`. Invalid embedded metadata is ignored rather than trusted.
+
+
+### Acceptance GUI contract assertion repair
+
+The first #56 checkpoint showed three source-contract failures caused only by over-specific quote matching around multi-line string fragments in the Activity log. The runtime logging code already emitted the intended Physical Windows, frozen EXE SHA-256 and managed-model evidence fields. The contract test now asserts the actual stable text fragments rather than Python source quoting.
+
+
+### Frozen acceptance identity independent verification
+
+The packaged-executable gate now exercises the acceptance recorder inside the real frozen `ForgeOS.exe`, not only in unit tests. A hidden launcher mode writes a local snapshot, then PowerShell independently checks the embedded source commit against `github.sha` and compares the recorder's EXE SHA-256 with `Get-FileHash`. Any mismatch or missing Windows/frozen identity fails packaging before upload. This closes the evidence-chain gap between source, packaged artifact and later physical Windows acceptance.
+
+
+### Physical-target assertion is explicit, never inferred from Windows
+
+A hosted Windows CI runner is not physical target acceptance. The recorder now separates `windows_host_evidence` from `physical_windows_target_asserted`. GUI collection asks the operator whether this is the actual physical release-acceptance machine; CLI/default and hidden frozen CI checks leave that assertion false. A physical-target assertion is rejected entirely on non-Windows platforms. The Activity log also shows the embedded build source commit alongside the EXE SHA-256.
+
+
+### Hosted frozen acceptance contract follows explicit-target semantics
+
+The frozen launcher and PowerShell packaging gate were updated with the new acceptance semantics before the next validation run: CI requires Windows host evidence but explicitly requires `physical_windows_target_asserted == false`. This prevents a hosted runner from ever satisfying the physical-machine gate by accident.

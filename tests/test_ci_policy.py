@@ -8,12 +8,11 @@ class CIWorkflowPolicyTests(unittest.TestCase):
     def read(self, name):
         return (WORKFLOWS / name).read_text(encoding='utf-8')
 
-    def test_pr_validation_runs_only_at_review_checkpoints(self):
+    def test_pr_validation_runs_on_new_and_updated_pull_requests(self):
         for name in ('ci.yml', 'docs-sync.yml', 'windows-exe.yml'):
             body = self.read(name)
             with self.subTest(workflow=name):
-                self.assertIn('types: [opened, reopened, ready_for_review]', body)
-                self.assertNotIn('synchronize', body)
+                self.assertIn('types: [opened, reopened, synchronize, ready_for_review]', body)
                 self.assertIn('cancel-in-progress: true', body)
                 self.assertIn('pull_request.number || github.ref_name', body)
 
@@ -22,13 +21,11 @@ class CIWorkflowPolicyTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn('github.event.pull_request.draft == false', self.read(name))
 
-    def test_heavy_workflows_ignore_documentation_only_prs(self):
+    def test_required_workflows_cover_documentation_only_prs(self):
         for name in ('ci.yml', 'windows-exe.yml'):
             body = self.read(name)
             with self.subTest(workflow=name):
-                self.assertIn('paths-ignore:', body)
-                self.assertIn("'docs/**'", body)
-                self.assertIn("'**/*.md'", body)
+                self.assertNotIn('paths-ignore:', body)
 
     def test_feature_branch_pushes_do_not_start_heavy_workflows(self):
         for name in ('ci.yml', 'windows-exe.yml'):

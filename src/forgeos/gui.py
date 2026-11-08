@@ -133,6 +133,7 @@ def launch(db_path, *, acceptance: bool = False):
     events = Queue()
     managed_events = Queue(maxsize=2)
     recovery_events = Queue(maxsize=1)
+    acceptance_events = Queue(maxsize=1)
     managed = {"controller": None, "busy": False, "last_used": None,
                "unexpected_exit": False, "stop_failed": False,
                "screening_cancel": None, "qualification_cancel": None}
@@ -338,6 +339,39 @@ def launch(db_path, *, acceptance: bool = False):
 
     ttk.Button(activity, text="Show local memory snapshot",
                command=show_memory).pack(anchor="w", pady=(0, 8))
+
+    def run_acceptance_snapshot():
+        if busy["value"] or managed["busy"]:
+            messagebox.showerror(
+                "Acceptance snapshot busy",
+                "Finish the current task or managed-model operation first.")
+            return
+        physical_target = messagebox.askyesno(
+            "Physical Windows target?",
+            "Is this the actual physical Windows machine you are using for "
+            "ForgeOS release acceptance?\n\nChoose No for CI, a VM, or a "
+            "general development computer.")
+        controller = managed["controller"]
+        active = controller if controller is not None and controller.running() else None
+        if active is not None:
+            managed["busy"] = True
+            managed["last_used"] = time.monotonic()
+        status.set("Collecting local acceptance evidence...")
+
+        def worker():
+            try:
+                from .acceptance import write_acceptance_snapshot
+                result = write_acceptance_snapshot(
+                    active, physical_target=physical_target)
+                acceptance_events.put((result, None, active is not None))
+            except Exception as exc:
+                acceptance_events.put((
+                    None, f"{type(exc).__name__}: {exc}", active is not None))
+        threading.Thread(target=worker, daemon=True).start()
+
+    ttk.Button(
+        activity, text="Run local acceptance snapshot",
+        command=run_acceptance_snapshot).pack(anchor="w", pady=(0, 8))
 
     def resume_blocked_tasks():
         if busy["value"] or managed["busy"]:
@@ -1589,6 +1623,35 @@ def launch(db_path, *, acceptance: bool = False):
                     refresh()
                     status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
                     log(f"Task #{task_id} / {operation}\n{value}")
+                    tabs.select(activity)
+            except Empty:
+                pass
+            try:
+                acceptance_result, acceptance_error, used_managed = (
+                    acceptance_events.get_nowait())
+                if used_managed:
+                    managed["busy"] = False
+                    managed["last_used"] = time.monotonic()
+                if acceptance_error is not None:
+                    status.set("Acceptance snapshot failed")
+                    log("Acceptance snapshot failed\n" + acceptance_error)
+                else:
+                    record = acceptance_result["record"]
+                    status.set("Local acceptance snapshot saved")
+                    log(
+                        "Local acceptance snapshot: " + acceptance_result["path"]
+                        + "\nWindows host evidence: "
+                        + str(record["windows_host_evidence"])
+                        + "\nPhysical target asserted: "
+                        + str(record["physical_windows_target_asserted"])
+                        + "\nSource commit: "
+                        + str(record["source_commit"])
+                        + "\nEmbedded build source commit: "
+                        + str(record["artifact"]["build_source_commit"])
+                        + "\nFrozen EXE SHA-256: "
+                        + str(record["artifact"]["executable_sha256"])
+                        + "\nManaged model evidence: "
+                        + str(record["managed_model"] is not None))
                     tabs.select(activity)
             except Empty:
                 pass

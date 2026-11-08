@@ -22,6 +22,7 @@ def main(argv=None):
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
+    sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
     models=sub.add_parser('models',help='List models reported by one local runtime')
     models.add_argument('--backend',choices=BACKENDS,default='ollama')
     models.add_argument('--endpoint',default='')
@@ -148,6 +149,10 @@ def main(argv=None):
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))
+        return 0
+    if args.action == 'acceptance':
+        from .acceptance import write_acceptance_snapshot
+        print(json.dumps(write_acceptance_snapshot(), indent=2))
         return 0
     if args.action == 'diagnostics':
         if args.operation == 'show':

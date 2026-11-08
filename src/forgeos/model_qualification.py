@@ -225,9 +225,6 @@ def resolve_qualified_managed_model(model, *, role: str,
     if backend != "llama.cpp":
         raise ValueError(
             "qualified-auto currently requires ForgeOS-managed llama.cpp")
-    if getattr(model, "authenticated", False) is not True:
-        raise ValueError(
-            "qualified-auto requires an authenticated ForgeOS-managed runtime")
     model_sha = _sha(model_sha, "managed model SHA-256")
     runtime_sha = _sha(runtime_sha, "managed runtime SHA-256")
     from .model_routing import (
