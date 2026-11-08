@@ -179,14 +179,14 @@ that forwards complete evidence to the existing diagnostics archive; it
 is not a replacement test runner or evidence DB. Dynamic context allocation
 and streaming capture are prototype-level improvements.
 
-- [x] Adaptive context budgets (RAM-aware context metadata cap)
-- [x] Dynamic model context sizing (1024–8192 according to free memory)
-- [x] Bounded streaming test output, original SHA evidence <=32 MiB
-- [x] Tk log retention cap, lightweight task list, bounded archive preview
-- [ ] 4 GiB physical or constrained-Windows GUI and full workflow acceptance
-- [ ] 8 GiB on-device model loading, benchmark and regression acceptance
-- [ ] Native Windows in-process temporary disk growth guard
-- [ ] Long-running model/process memory leak benchmarks
+- Implemented prototype: RAM-aware context metadata cap (outcome #6).
+- Implemented prototype: dynamic local-model context sizing, 1024–8192 tokens (outcome #22).
+- Implemented prototype: bounded streamed test output with original SHA evidence at or under 32 MiB (outcome #26).
+- Implemented prototype: capped Tk log retention, lightweight task list, and bounded evidence preview (outcome #41).
+- Outstanding acceptance gate: 4 GiB Windows GUI and basic workflow runtime test (outcome #49).
+- Outstanding acceptance gate: 8 GiB installed local-model and regression test (outcomes #23, #45, #49).
+- Remaining edge case: child-generated separate Windows unittest output file lacks an in-flight disk-growth guard (outcome #47).
+- Outstanding acceptance gate: extended process-tree RAM and leak measurements (outcomes #45, #49).
 
 See MEMORY_BUDGET.md. This extension does not add new numbered enhancement
 goals and does not assert full 52-item completion.
