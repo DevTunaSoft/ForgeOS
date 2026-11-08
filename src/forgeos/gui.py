@@ -92,6 +92,8 @@ def launch(db_path, *, acceptance: bool = False):
     page = {"offset": 0}
     page_size = 150
     events = Queue()
+    managed_events = Queue(maxsize=2)
+    managed = {"controller": None, "busy": False}
     busy = {"value": False}
     closing = {"value": False}
 
@@ -144,6 +146,15 @@ def launch(db_path, *, acceptance: bool = False):
     ttk.Entry(provider_row, textvariable=endpoint, width=37).pack(side="left", padx=6)
     ttk.Button(provider_row, text="Browse Hugging Face",
                command=lambda: browse_hub_models()).pack(side="left", padx=6)
+    managed_row = ttk.Frame(options)
+    managed_row.pack(fill="x", pady=(6, 0))
+    ttk.Button(managed_row, text="Run verified local GGUF",
+               command=lambda: manage_local_gguf()).pack(side="left")
+    ttk.Label(
+        managed_row,
+        text="Experimental CPU llama.cpp: user-provided trusted executable + "
+             "SHA-256, downloaded verified GGUF; no Docker",
+        foreground="#52647b").pack(side="left", padx=(9, 0))
     second = ttk.Frame(options)
     second.pack(fill="x", pady=(8, 0))
     ttk.Label(second, text="Workspace folder").pack(side="left")
@@ -363,6 +374,124 @@ def launch(db_path, *, acceptance: bool = False):
         except Exception as exc:
             messagebox.showerror("Cannot create task", str(exc))
 
+    def manage_local_gguf():
+        """One-window, opt-in private llama-server lifecycle controller."""
+        if managed["busy"]:
+            messagebox.showinfo("Local model", "A local model operation is in progress.")
+            return
+        popup = tk.Toplevel(root)
+        popup.title("ForgeOS | Managed local GGUF (experimental)")
+        popup.geometry("875x375")
+        popup.minsize(750, 330)
+        panel = ttk.Frame(popup, padding=15)
+        panel.pack(fill="both", expand=True)
+        ttk.Label(
+            panel, wraplength=820,
+            text="Select an official CPU llama-server binary you obtained and "
+                 "verified independently. Enter its trusted SHA-256 exactly. "
+                 "Select a GGUF previously downloaded and verified by ForgeOS. "
+                 "ForgeOS checks both hashes before launching a local-only "
+                 "CPU inference process. No online download or installation "
+                 "happens on Start.").pack(anchor="w", pady=(0, 12))
+        exe_path = tk.StringVar()
+        expected_hash = tk.StringVar()
+        gguf_path = tk.StringVar()
+        for title, variable, selector in (
+                ("llama-server binary", exe_path,
+                 lambda: filedialog.askopenfilename(
+                     parent=popup, title="Select llama-server executable")),
+                ("Verified .gguf weights", gguf_path,
+                 lambda: filedialog.askopenfilename(
+                     parent=popup, title="Select verified downloaded GGUF",
+                     filetypes=[("GGUF model", "*.gguf")]))):
+            line = ttk.Frame(panel)
+            line.pack(fill="x", pady=(0, 7))
+            ttk.Label(line, text=title, width=23).pack(side="left")
+            ttk.Entry(line, textvariable=variable).pack(
+                side="left", fill="x", expand=True, padx=(0, 6))
+            ttk.Button(line, text="Browse", command=lambda v=variable, f=selector:
+                       v.set(f() or v.get())).pack(side="left")
+        hash_line = ttk.Frame(panel)
+        hash_line.pack(fill="x", pady=(0, 9))
+        ttk.Label(hash_line, text="Trusted binary SHA-256", width=23).pack(side="left")
+        ttk.Entry(hash_line, textvariable=expected_hash).pack(
+            side="left", fill="x", expand=True)
+        ttk.Label(
+            panel, wraplength=820,
+            text="Do not use checksums taken solely from the same untrusted file. "
+                 "A binary checksum is not a publisher signature, and adjacent DLL "
+                 "dependencies remain outside this experimental verifier."
+        ).pack(anchor="w", pady=(0, 12))
+        buttons_row = ttk.Frame(panel)
+        buttons_row.pack(fill="x")
+
+        def do_start():
+            if busy["value"] or managed["busy"] or managed["controller"] is not None:
+                messagebox.showerror(
+                    "Cannot start model", "Complete or stop the previous task/model.",
+                    parent=popup)
+                return
+            values = (exe_path.get().strip(), expected_hash.get().strip(),
+                      gguf_path.get().strip())
+            if not all(values):
+                messagebox.showerror(
+                    "Missing model information",
+                    "Choose the executable, enter its trusted SHA-256, and "
+                    "choose a verified GGUF file.", parent=popup)
+                return
+            managed["busy"] = True
+            status.set("Verifying and starting local llama.cpp...")
+            # This could hash several GB and wait for CPU model startup;
+            # both run strictly off Tk's GUI event thread.
+            def worker():
+                from .managed_llama import ManagedLlamaServer
+                controller = ManagedLlamaServer()
+                try:
+                    outcome = controller.start(
+                        executable=values[0],
+                        executable_sha256=values[1], model_path=values[2])
+                    managed_events.put(("start", controller, outcome, None))
+                except Exception as exc:
+                    controller.stop()
+                    managed_events.put(
+                        ("start", None, None, f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+            popup.destroy()
+
+        def do_stop():
+            if busy["value"] or managed["busy"]:
+                messagebox.showerror(
+                    "Model in use", "Complete the current task before stopping "
+                    "the managed server.", parent=popup)
+                return
+            controller = managed["controller"]
+            if controller is None:
+                messagebox.showinfo("Local model", "No managed model is active.",
+                                    parent=popup)
+                return
+            managed["busy"] = True
+            status.set("Stopping managed local model...")
+            def worker():
+                try:
+                    controller.stop()
+                    managed_events.put(("stop", controller, None, None))
+                except Exception as exc:
+                    managed_events.put((
+                        "stop", controller, None,
+                        f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+            popup.destroy()
+
+        ttk.Button(buttons_row, text="Start local model", command=do_start).pack(
+            side="left")
+        ttk.Button(buttons_row, text="Stop local model", command=do_stop).pack(
+            side="left", padx=10)
+        ttk.Label(
+            buttons_row,
+            text=("A model is running" if managed["controller"] is not None
+                  and managed["controller"].running() else "No managed model active")
+        ).pack(side="left", padx=12)
+
     def browse_hub_models():
         """Opt-in GGUF browser and verified downloader without Tk thread blocking."""
         from .huggingface_catalog import search_gguf, list_gguf_files
@@ -532,6 +661,18 @@ def launch(db_path, *, acceptance: bool = False):
             chosen_model = model.get().strip()
             chosen_backend = backend.get()
             chosen_endpoint = endpoint.get().strip()
+            manager = managed["controller"]
+            if managed["busy"]:
+                raise ValueError("Managed model is starting or stopping")
+            managed_key = None
+            if manager is not None and chosen_endpoint == manager.endpoint:
+                if (not manager.running() or chosen_backend != "llama.cpp"
+                        or chosen_model != manager.model_name):
+                    raise ValueError("Active managed model settings do not match")
+                managed_key = manager.api_key
+            elif chosen_model == "forgeos-managed":
+                raise ValueError("Start the verified managed GGUF runtime before "
+                                 "using the forgeos-managed model")
             chosen_preset = preset.get()
             chosen_workspace = Path(workspaces.get()).expanduser()
             chosen_retries = repair_count.get()
@@ -555,13 +696,15 @@ def launch(db_path, *, acceptance: bool = False):
                 if operation == "plan":
                     value = plan_task(
                         worker_store, task_id,
-                        model_factory=lambda: create_model(backend=chosen_backend, model=chosen_model,
-                                           endpoint=chosen_endpoint))
+                        model_factory=lambda: create_model(
+                            backend=chosen_backend, model=chosen_model,
+                            endpoint=chosen_endpoint, api_key=managed_key))
                 elif operation == "run":
                     result = execute_task(
                         worker_store, task_id, chosen_workspace,
-                        preset=chosen_preset, model=create_model(backend=chosen_backend, model=chosen_model,
-                                           endpoint=chosen_endpoint),
+                        preset=chosen_preset, model=create_model(
+                            backend=chosen_backend, model=chosen_model,
+                            endpoint=chosen_endpoint, api_key=managed_key),
                         max_repairs=chosen_retries,
                         allow_host_tests=chosen_host_permission,
                     )
@@ -599,14 +742,57 @@ def launch(db_path, *, acceptance: bool = False):
                 tabs.select(activity)
         except Empty:
             pass
+        try:
+            while True:
+                action, controller, outcome, error = managed_events.get_nowait()
+                managed["busy"] = False
+                if error:
+                    status.set("Managed llama.cpp operation failed")
+                    log("Managed local model: " + error)
+                    tabs.select(activity)
+                elif action == "start":
+                    managed["controller"] = controller
+                    backend.set("llama.cpp")
+                    model.set(outcome["model"])
+                    endpoint.set(outcome["endpoint"])
+                    status.set("Verified local llama.cpp model running")
+                    log("Managed model ready: localhost endpoint " +
+                        outcome["endpoint"] + ", model SHA-256 " +
+                        outcome["sha256"] + "; process " + str(outcome["pid"]))
+                else:
+                    if managed["controller"] is controller:
+                        managed["controller"] = None
+                        if model.get() == "forgeos-managed":
+                            backend.set("ollama")
+                            model.set("auto")
+                            endpoint.set("")
+                    status.set("Managed local model stopped")
+                    log("Managed local llama.cpp server stopped and credentials cleared.")
+        except Empty:
+            pass
         if not closing["value"]:
             root.after(150, poll)
 
     def close():
+        if managed["busy"]:
+            messagebox.showinfo(
+                "Local model operation", "The model startup or shutdown "
+                "must finish before exiting.")
+            return
         if busy["value"]:
             messagebox.showinfo("Task running", "Wait for the current task to finish before closing.")
             return
         closing["value"] = True
+        controller = managed["controller"]
+        if controller is not None:
+            try:
+                controller.stop()
+            except Exception as exc:
+                closing["value"] = False
+                messagebox.showerror(
+                    "Managed server did not stop", str(exc))
+                return
+            managed["controller"] = None
         store.close()
         root.destroy()
 
