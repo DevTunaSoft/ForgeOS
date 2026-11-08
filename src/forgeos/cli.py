@@ -35,6 +35,15 @@ def main(argv=None):
         'model-verify-local',help='Explicit SHA-256 recheck of one downloaded GGUF')
     local_verify.add_argument('filename')
     local_verify.add_argument('--directory',default='')
+    retired=sub.add_parser('models-retired',help='List retired GGUF models')
+    retired.add_argument('--directory',default='')
+    retire=sub.add_parser('model-retire-local',help='Retire verified GGUF without erasing it')
+    retire.add_argument('filename')
+    retire.add_argument('--directory',default='')
+    retire.add_argument('--confirm',action='store_true')
+    restore=sub.add_parser('model-restore-local',help='Restore retired GGUF by ID')
+    restore.add_argument('identifier')
+    restore.add_argument('--directory',default='')
     download=sub.add_parser('model-download',
                             help='Explicitly download one GGUF with pinned SHA-256')
     download.add_argument('repository',help='Public Hugging Face owner/model')
@@ -99,6 +108,22 @@ def main(argv=None):
         from .model_inventory import verify_download
         result = verify_download(args.filename, directory=args.directory or None)
         print(json.dumps(result, indent=2))
+        return 0
+    if args.action == 'models-retired':
+        from .model_retirement import list_retired
+        print(json.dumps(list_retired(directory=args.directory or None), indent=2))
+        return 0
+    if args.action == 'model-retire-local':
+        from .model_retirement import retire_download
+        if not args.confirm:
+            raise ValueError('Explicit --confirm required to retire GGUF')
+        print(json.dumps(retire_download(
+            args.filename, directory=args.directory or None), indent=2))
+        return 0
+    if args.action == 'model-restore-local':
+        from .model_retirement import restore_download
+        print(json.dumps(restore_download(
+            args.identifier, directory=args.directory or None), indent=2))
         return 0
     if args.action == 'model-download':
         from .gguf_download import download_gguf

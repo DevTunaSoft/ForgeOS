@@ -70,6 +70,9 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
                     raise RuntimeError("GGUF inventory exceeds bounded scan limit")
                 if item.is_symlink():
                     continue
+                if folder == root and item.name == ".forgeos-retired":
+                    # Retired weights have their own bounded inventory.
+                    continue
                 if item.is_dir(follow_symlinks=False):
                     pending.append((Path(item.path), depth + 1))
                     continue
