@@ -361,7 +361,7 @@ class DashboardContractTests(unittest.TestCase):
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         for fragment in (
                 "from .model_roles import MODEL_ROLES",
-                'task_role = tk.StringVar(value="implementation")',
+                'task_role = tk.StringVar(value=setting("task_role", "implementation"))',
                 'text="Task role"',
                 "values=MODEL_ROLES",
                 "chosen_role = task_role.get()",
