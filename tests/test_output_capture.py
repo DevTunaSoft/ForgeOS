@@ -68,7 +68,7 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         self.assertIn("ERROR", result["output"])
 
     def test_spawn_preserves_failure_exit_code_and_tail(self):
-        script = ("import sys; sys.stdout.write('INFO hello\\n' * 60000); "
+        script = ("import sys; sys.stdout.write('INFO hello\\n' * 260000); "
                   "sys.stdout.flush(); sys.stderr.write('AssertionError final\\n'); "
                   "sys.exit(29)")
         result = run_streamed_process([sys.executable, "-c", script], self.root, timeout=30)
