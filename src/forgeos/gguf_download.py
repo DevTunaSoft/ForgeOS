@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+from threading import Event
 import shutil
 import uuid
 from urllib.parse import quote, urlsplit
@@ -130,11 +131,37 @@ def _open_weight(request: Request, *, timeout: int):
         request, timeout=timeout)
 
 
-def _digest(path: Path) -> str:
+class DownloadCancelled(RuntimeError):
+    """User-requested pause; retain all existing verified and partial bytes."""
+
+
+def _check_cancelled(cancel_event: Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise DownloadCancelled(
+            "GGUF download paused; partial bytes retained for resumption")
+
+
+def _emit_progress(callback, stage: str, count: int, total: int) -> None:
+    if callback is not None:
+        callback(stage, count, total)
+
+
+def _digest(path: Path, *, cancel_event: Event | None = None,
+            progress_callback=None) -> str:
+    """Stream SHA-256 in bounded chunks, with optional cooperative pause."""
     checksum = hashlib.sha256()
+    verified = 0
+    total = path.stat().st_size if progress_callback is not None else 0
     with path.open("rb") as source:
-        for block in iter(lambda: source.read(CHUNK_BYTES), b""):
+        while True:
+            _check_cancelled(cancel_event)
+            block = source.read(CHUNK_BYTES)
+            _check_cancelled(cancel_event)
+            if not block:
+                break
             checksum.update(block)
+            verified += len(block)
+            _emit_progress(progress_callback, "verify", verified, total)
     return checksum.hexdigest()
 
 
@@ -157,11 +184,15 @@ def _write_json_atomic(destination: Path, value: dict):
 
 
 def download_gguf(repo: str, filename: str, *, directory: Path | str | None = None,
-                  max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60) -> dict:
+                  max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60,
+                  cancel_event: Event | None = None,
+                  progress_callback=None) -> dict:
     """Fetch one explicitly chosen GGUF with revision and SHA-256 verification.
 
     A failure never publishes an incomplete file. Interrupted partial bytes
     may be resumed only against exactly the same pinned revision/digest.
+    A user-supplied Event pauses at I/O chunk boundaries (not mid-socket
+    read); progress callbacks run on this worker thread, never Tk.
     """
     if not isinstance(repo, str) or not REPO_ID.fullmatch(repo):
         raise ValueError("Invalid Hugging Face repository identifier")
@@ -169,11 +200,18 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
     if (type(max_bytes) is not int or not 1 <= max_bytes <= MAX_MODEL_BYTES
             or type(timeout) is not int or not 1 <= timeout <= 180):
         raise ValueError("Invalid model download size or timeout")
+    if cancel_event is not None and not isinstance(cancel_event, Event):
+        raise TypeError("cancel_event must be a threading.Event")
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable")
+    _check_cancelled(cancel_event)
     revision = model_revision(repo)
+    _check_cancelled(cancel_event)
     matches = [record for record in list_gguf_files(repo, revision=revision)
                if record["path"] == filename]
     if len(matches) != 1:
         raise ValueError("Selected GGUF file not found in pinned repository")
+    _check_cancelled(cancel_event)
     info = matches[0]
     size, checksum = info["bytes"], info["sha256"]
     if (size > max_bytes or not isinstance(checksum, str)
@@ -193,9 +231,12 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
     expected = {"repo": repo, "revision": revision, "file": filename,
                 "bytes": size, "sha256": checksum}
     with _exclusive_download_lock(lock):
+        _check_cancelled(cancel_event)
         if destination.exists():
             if (not destination.is_file() or destination.stat().st_size != size
-                    or _digest(destination) != checksum):
+                    or _digest(
+                        destination, cancel_event=cancel_event,
+                        progress_callback=progress_callback) != checksum):
                 raise RuntimeError("Existing GGUF does not match the pinned checksum")
             if not _gguf_header(destination):
                 raise RuntimeError("Existing GGUF is missing the GGUF header")
@@ -221,6 +262,7 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
                     raise RuntimeError("Published GGUF journal identifies different weights")
             if partial.exists():
                 raise RuntimeError("Published GGUF has unresolved partial download")
+            _check_cancelled(cancel_event)
             if not manifest.exists():
                 _write_json_atomic(manifest, expected)
             if metadata.exists():
@@ -248,6 +290,8 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
             with partial.open("xb"):
                 pass
             position = 0
+        _check_cancelled(cancel_event)
+        _emit_progress(progress_callback, "download", position, size)
         remaining = size - position
         if remaining and shutil.disk_usage(root).free < remaining + RESERVED_DISK_BYTES:
             raise RuntimeError("Insufficient disk space for model and safety reserve")
@@ -277,22 +321,33 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
                          or int(content_length) != remaining)):
                     raise RuntimeError("Model download content length mismatch")
                 with partial.open("ab") as output:
-                    while position < size:
-                        block = response.read(min(CHUNK_BYTES, size - position + 1))
-                        if not block:
-                            break
-                        position += len(block)
-                        if position > size:
-                            raise RuntimeError("Download exceeded declared model file size")
-                        output.write(block)
-                    if response.read(1):
-                        raise RuntimeError("Unexpected additional model bytes")
-                    output.flush()
-                    os.fsync(output.fileno())
+                    try:
+                        while position < size:
+                            _check_cancelled(cancel_event)
+                            block = response.read(min(CHUNK_BYTES, size - position + 1))
+                            _check_cancelled(cancel_event)
+                            if not block:
+                                break
+                            position += len(block)
+                            if position > size:
+                                raise RuntimeError("Download exceeded declared model file size")
+                            output.write(block)
+                            _emit_progress(progress_callback, "download", position, size)
+                        _check_cancelled(cancel_event)
+                        if response.read(1):
+                            raise RuntimeError("Unexpected additional model bytes")
+                    finally:
+                        # Durable partial on pause, network failure, or
+                        # progress callback exception; never publish it.
+                        output.flush()
+                        os.fsync(output.fileno())
+        _check_cancelled(cancel_event)
         if position != size:
             raise RuntimeError("Model download interrupted; partial bytes retained for resumption")
         error = None
-        if _digest(partial) != checksum:
+        if _digest(
+                partial, cancel_event=cancel_event,
+                progress_callback=progress_callback) != checksum:
             error = "Downloaded GGUF failed SHA-256; corrupt file quarantined"
         elif not _gguf_header(partial):
             error = "Downloaded model lacks GGUF header; file quarantined"
@@ -301,6 +356,7 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
             os.replace(partial, quarantined)
             metadata.unlink(missing_ok=True)
             raise RuntimeError(error)
+        _check_cancelled(cancel_event)
         os.replace(partial, destination)
         _write_json_atomic(manifest, expected)
         metadata.unlink(missing_ok=True)

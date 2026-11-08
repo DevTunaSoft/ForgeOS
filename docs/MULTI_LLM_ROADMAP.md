@@ -291,3 +291,11 @@ currently implemented. Free consumer chat plans are not free API entitlements.
 - [x] Preserve ambiguous partials and mismatched manifests rather than overwriting them. Reject Windows COM1–9, LPT1–9 and trailing-dot path segments.
 - [x] Add injected interruption, forged metadata, orphan partial, invalid-content and Windows filename regression cases. No duplicate database or new model application.
 - [ ] Confirm latest Linux/Windows CI and EXE packaging; test actual large Hugging Face weights, native Windows crash/restart and inference before closing #54.
+
+
+### Cooperative download pause and bounded progress reporting (2026-11-08)
+
+- [x] Extend the *existing* Hugging Face GGUF transfer path with optional threading.Event cancellation, bounded streamed SHA-256 verification, durable partial flush, explicit DownloadCancelled status, and download/verify progress callbacks. No new downloader or resident model process.
+- [x] Add **Pause download** and a non-blocking transfer/verification progress label to the existing GUI. Background workers never access Tk widgets; a one-message queue replaces stale progress data, and closing the dialog during a download requests pause before closing.
+- [x] Add offline regression coverage for pre-cancellation, interrupted chunks, exact-range resumption, post-transfer pre-commit pause, cached-model hash pause and invalid cancellation options.
+- [ ] Verify the latest six CI checks, then validate actual socket timeout behavior, real multi-GiB weights, Windows 11 window shutdown and restart on physical hardware before claiming full #54 acceptance.

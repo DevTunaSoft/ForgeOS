@@ -5,7 +5,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -670,7 +670,43 @@ def launch(db_path, *, acceptance: bool = False):
         info = tk.Text(frame, height=7, wrap="word", state="disabled")
         info.pack(fill="x", pady=(8, 0))
         hub_events = Queue(maxsize=2)
-        state = {"busy": False, "catalog": [], "inspected_repo": None}
+        progress_events = Queue(maxsize=1)
+        transfer_status = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=transfer_status, wraplength=740).pack(
+            anchor="w", pady=(6, 0))
+        state = {"busy": False, "catalog": [], "inspected_repo": None,
+                 "action": None, "cancel": None, "close_after": False}
+
+        def report_transfer(stage, current, total):
+            # Worker threads never touch Tk. Drop stale progress events
+            # instead of keeping a memory-growing GUI message backlog.
+            try:
+                progress_events.put_nowait((stage, current, total))
+            except Full:
+                try:
+                    progress_events.get_nowait()
+                except Empty:
+                    pass
+                try:
+                    progress_events.put_nowait((stage, current, total))
+                except Full:
+                    pass
+
+        def request_pause():
+            if state["busy"] and state["action"] == "download":
+                state["cancel"].set()
+                pause_btn.configure(state="disabled")
+                transfer_status.set(
+                    "Pause requested; current network read may finish "
+                    "before partial data is safely saved.")
+
+        def close_hub():
+            if state["busy"] and state["action"] == "download":
+                state["close_after"] = True
+                request_pause()
+                return
+            popup.destroy()
+        popup.protocol("WM_DELETE_WINDOW", close_hub)
 
         def begin(action):
             if state["busy"]:
@@ -700,6 +736,15 @@ def launch(db_path, *, acceptance: bool = False):
             else:
                 term = query.get().strip()
             state["busy"] = True
+            state["action"] = action
+            state["cancel"] = threading.Event() if action == "download" else None
+            transfer_status.set("")
+            while not progress_events.empty():
+                try:
+                    progress_events.get_nowait()
+                except Empty:
+                    break
+            pause_btn.configure(state="normal" if action == "download" else "disabled")
             search_btn.configure(state="disabled")
             files_btn.configure(state="disabled")
             download_btn.configure(state="disabled")
@@ -707,7 +752,7 @@ def launch(db_path, *, acceptance: bool = False):
             info.delete("1.0", "end")
             info.insert("end",
                         "Downloading and verifying GGUF weights... "
-                        "Close the window only if an interrupted download is acceptable."
+                        "Use Pause download to retain resumable partial bytes."
                         if action == "download" else "Looking up public model metadata...")
             info.configure(state="disabled")
 
@@ -719,7 +764,9 @@ def launch(db_path, *, acceptance: bool = False):
                         data = list_gguf_files(term)
                     else:
                         from .gguf_download import download_gguf
-                        data = download_gguf(term[0], term[1])
+                        data = download_gguf(
+                            term[0], term[1], cancel_event=state["cancel"],
+                            progress_callback=report_transfer)
                     hub_events.put((action, data, None))
                 except Exception as exc:
                     hub_events.put((action, None, f"{type(exc).__name__}: {exc}"))
@@ -735,14 +782,36 @@ def launch(db_path, *, acceptance: bool = False):
             choose_row, text="Download and verify", state="disabled",
             command=lambda: begin("download"))
         download_btn.pack(side="left", padx=5)
+        pause_btn = ttk.Button(
+            choose_row, text="Pause download", state="disabled",
+            command=request_pause)
+        pause_btn.pack(side="left", padx=5)
 
         def poll_hub():
+            latest = None
+            while True:
+                try:
+                    latest = progress_events.get_nowait()
+                except Empty:
+                    break
+            if latest is not None and state["busy"] and state["action"] == "download":
+                stage, current, total = latest
+                percent = current * 100 // total if total else 0
+                transfer_status.set(
+                    f"{stage.capitalize()} GGUF: {current / (1024**2):.1f} / "
+                    f"{total / (1024**2):.1f} MiB ({percent}%)")
             try:
                 action, data, error = hub_events.get_nowait()
             except Empty:
                 pass
             else:
                 state["busy"] = False
+                state["action"] = None
+                state["cancel"] = None
+                pause_btn.configure(state="disabled")
+                if state["close_after"]:
+                    popup.destroy()
+                    return
                 search_btn.configure(state="normal")
                 files_btn.configure(state="normal")
                 download_btn.configure(

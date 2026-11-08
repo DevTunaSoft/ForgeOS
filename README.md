@@ -244,3 +244,8 @@ On 2026-11-08, feature commit `c541041926c6c726e7fa034f6591318188bd2a17` passed 
 ### GGUF download interruption recovery (experimental branch)
 
 Cached GGUF weights now need a matching pinned identity manifest before success is reported. Interrupted model publication can safely recreate a missing manifest after a full SHA-256 and GGUF header check without a second weight download. Conflicting manifests, journals and stray partial files are preserved and rejected. Windows reserved device filenames are rejected. See the recovery guidance in docs/USER_GUIDE.md. Real Windows and multi-gigabyte acceptance remain pending.
+
+
+### Pausing and resuming a large GGUF download (experimental PR #51)
+
+In the existing Hugging Face browser, the **Pause download** button cooperatively stops a transfer and retains the checked revision's partial bytes and journal. A later request for the same repository/weight revision resumes via an exact HTTP range and rechecks the final SHA-256. Download progress and the separate final SHA-256 verification phase are shown without keeping giant data or event queues in RAM. Closing the model browser while a transfer is active requests pause and closes only after the worker acknowledges. A network read can remain blocked for up to its configured timeout, so pause is not instantaneous. No background downloader, Docker, cloud inference, or new desktop app was added.

@@ -4,12 +4,13 @@ import io
 import json
 from types import SimpleNamespace
 from pathlib import Path
+from threading import Event
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
 from forgeos.gguf_download import (
-    _allowed_download_url, _safe_name, download_gguf,
+    DownloadCancelled, _allowed_download_url, _safe_name, download_gguf,
 )
 
 REPO = "Qwen/Coder-GGUF"
@@ -68,6 +69,87 @@ class GGUFDownloadTests(unittest.TestCase):
             cached = self.download()
             self.assertEqual(cached["status"], "already_verified")
             no_network.assert_not_called()
+
+    def test_pre_cancelled_request_stops_before_metadata_or_disk(self):
+        paused = Event()
+        paused.set()
+        with patch("forgeos.gguf_download.model_revision") as revision, \
+             patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaises(DownloadCancelled):
+                self.download(cancel_event=paused)
+            revision.assert_not_called()
+            network.assert_not_called()
+        self.assertEqual(list(self.root.rglob("*.part")), [])
+
+    def test_pause_during_transfer_saves_partial_then_resumes_exact_range(self):
+        paused = Event()
+        sizes = []
+        def progress(stage, count, total):
+            sizes.append((stage, count, total))
+            if stage == "download" and count == 12:
+                paused.set()
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY[:12], headers={
+                       "Content-Length": str(len(BODY))})):
+            with self.assertRaisesRegex(DownloadCancelled, "paused"):
+                self.download(cancel_event=paused, progress_callback=progress)
+        partial = next(self.root.rglob("*.part"))
+        self.assertEqual(partial.read_bytes(), BODY[:12])
+        self.assertEqual(sizes[0], ("download", 0, len(BODY)))
+        self.assertIn(("download", 12, len(BODY)), sizes)
+        self.assertEqual(list(self.root.rglob("*.gguf")), [])
+        paused.clear()
+        remaining = BODY[12:]
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(remaining, status=206, headers={
+                       "Content-Length": str(len(remaining)),
+                       "Content-Range": f"bytes 12-{len(BODY)-1}/{len(BODY)}"})) as opened:
+            result = self.download(cancel_event=paused, progress_callback=progress)
+        self.assertEqual(opened.call_args.args[0].get_header("Range"), "bytes=12-")
+        self.assertEqual(Path(result["path"]).read_bytes(), BODY)
+        self.assertIn(("verify", len(BODY), len(BODY)), sizes)
+
+    def test_pause_after_transfer_before_promotion_resumes_without_network(self):
+        paused = Event()
+        def pause_on_complete(stage, count, total):
+            if stage == "download" and count == total:
+                paused.set()
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            with self.assertRaises(DownloadCancelled):
+                self.download(cancel_event=paused,
+                              progress_callback=pause_on_complete)
+        self.assertEqual(next(self.root.rglob("*.part")).read_bytes(), BODY)
+        self.assertEqual(list(self.root.rglob("*.gguf")), [])
+        paused.clear()
+        with patch("forgeos.gguf_download._open_weight") as network:
+            result = self.download(cancel_event=paused)
+            network.assert_not_called()
+        self.assertEqual(result["status"], "verified")
+
+    def test_invalid_pause_control_rejected_before_metadata(self):
+        with patch("forgeos.gguf_download.model_revision") as revision:
+            with self.assertRaisesRegex(TypeError, "cancel_event"):
+                self.download(cancel_event=True)
+            with self.assertRaisesRegex(TypeError, "progress_callback"):
+                self.download(progress_callback="not callable")
+            revision.assert_not_called()
+
+    def test_pause_during_cache_hash_retains_published_model(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        paused = Event()
+        def stop_on_verification(stage, count, total):
+            if stage == "verify" and count == total:
+                paused.set()
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaises(DownloadCancelled):
+                self.download(cancel_event=paused,
+                              progress_callback=stop_on_verification)
+            network.assert_not_called()
+        self.assertEqual(model.read_bytes(), BODY)
+        self.assertTrue(model.with_name(FILE + ".forgeos.json").is_file())
 
     def test_crash_after_weight_promotion_recovers_manifest_offline(self):
         from forgeos import gguf_download as gd

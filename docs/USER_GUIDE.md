@@ -391,3 +391,14 @@ ForgeOS AI task completes.
 Choose Browse Hugging Face and select the same repository and GGUF file. ForgeOS uses the immutable revision and SHA-256 to resume partial downloads. If the fully verified model was published but a crash prevented saving its manifest, repeating that selection checks the entire weight file and restores the missing manifest without transferring weights again.
 
 If ForgeOS reports a conflicting manifest, an inconsistent download journal or a stray partial file, do not delete anything blindly: preserve the model directory for inspection. Correctly hashed files that are not actually GGUF are quarantined. This is experimental until tested using real multi-gigabyte files on Windows.
+
+
+### Pause or resume a large GGUF download
+
+1. In **Browse Hugging Face**, search, inspect the desired GGUF file, and choose **Download and verify**. Check license and free disk space first.
+2. Watch the progress message for the **Download** phase, followed by a separate **Verify** phase. Model weights are read and hashed incrementally rather than loaded entirely into RAM.
+3. Select **Pause download** to stop after the current network read and preserve the partial file and download journal. Closing the browser during a download also requests pause and waits for the worker before the dialog closes.
+4. Resume by selecting the *same* public repository and GGUF file later. ForgeOS pins the concrete revision/hash from Hugging Face, requests only missing bytes when the revision is unchanged, and validates the entire result before publishing the model.
+5. If the upstream revision changed, the old partial is **not** silently combined with new model weights; inspect the old directory and decide whether to keep it. Avoid manually deleting interrupted files unless you have verified they are no longer needed.
+
+Pausing is cooperative, not instantaneous while a network socket read is blocked (up to the configured timeout). Closing the entire ForgeOS process forcibly is not equivalent to using Pause. Verification itself may also be paused before final publication. This feature has simulated transfer tests; real multi-gigabyte Windows download, pause, resume and power-loss testing remain pending.
