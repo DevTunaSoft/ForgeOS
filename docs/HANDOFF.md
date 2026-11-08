@@ -1636,6 +1636,16 @@ qualified planning and the no-evidence fail-closed path.
 The first validation of the shared task-role selector found two stale source-contract assertions, not runtime defects. One still required the removed hardcoded role="implementation" path; it now requires role=chosen_role. The final-qualification GUI test also expected dialog-local wording removed by the poll-scope repair; it now asserts the persisted Activity warning that cancelled evidence leaves routing disabled.
 
 
+## 2026-11-08 authenticated qualified-auto hardening
+
+Review of the shared resolver found that exact model/runtime hashes were checked
+but the adapter's authenticated-session state was not explicitly required at that
+entry point. The resolver now requires `authenticated is True` before evidence
+lookup, memory routing or prompting. Engine and planning fixtures represent the
+real managed adapter, and a negative planning test proves an unauthenticated
+hash-bearing model is blocked before evidence loading or model invocation.
+
+
 ## #56 local acceptance evidence recorder
 
 Started the post-PR-51 physical acceptance phase from verified main `7c582f8`. The new acceptance module captures one bounded local JSON snapshot rather than adding another monitoring service. It records host/runtime memory, OS/Python/machine identity, source Git SHA when discoverable, and a chunked SHA-256 of the frozen executable when applicable. With a running managed GGUF it reuses the existing exact benchmark identity, self-test and one-shot managed memory report. Only allowlisted model/runtime/settings/self-test fields are serialized, so endpoint credentials, temporary API keys, raw model replies and project source are excluded. The GUI runs collection off the Tk thread and keeps the managed model busy for the duration. A CLI host-only snapshot is also available.

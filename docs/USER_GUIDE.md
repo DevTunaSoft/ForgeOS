@@ -560,6 +560,12 @@ memory budget before sending the planning request. If planning evidence is not
 qualified, ForgeOS stops instead of silently using another model.
 
 
+Qualified-auto also requires the active local session to be authenticated by
+ForgeOS. Model/runtime hashes by themselves are not sufficient. If the managed
+session credential is missing, ForgeOS blocks planning or autonomous execution
+before it reads qualification evidence or sends project content.
+
+
 ### Capture a local acceptance snapshot
 
 Open **Activity & diagnostics** and choose **Run local acceptance snapshot**. ForgeOS asks whether this is the actual physical Windows release-acceptance machine; answer **No** for CI, a VM, or an ordinary development computer. ForgeOS writes one bounded JSON evidence file under `~/.forgeos/acceptance`. The report separately records Windows-host evidence and the operator's physical-target assertion, plus the current operating system, physical RAM snapshot, ForgeOS process memory, source Git commit when available, embedded packaged-build commit when present, and the SHA-256 of the running frozen ForgeOS executable when applicable.

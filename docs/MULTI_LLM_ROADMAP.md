@@ -463,6 +463,15 @@ contract is preserved for compatibility; no second router or evidence format
 was introduced.
 
 
+### #55 authenticated qualified-auto admission
+
+The shared qualified-model resolver now requires the model adapter to report an
+authenticated ForgeOS-managed localhost session in addition to matching GGUF and
+runtime SHA-256 identities. Possessing or spoofing the two hashes alone is not enough
+to enter qualified-auto routing. The check occurs before qualification files are
+loaded and before any model prompt is sent.
+
+
 ### #56 local physical-acceptance evidence recorder
 
 - [x] Add an explicit bounded local acceptance snapshot using only standard-library/native probes already owned by ForgeOS.
