@@ -214,6 +214,16 @@ def launch(db_path, *, acceptance: bool = False):
         variable=allow_host_tests,
     ).pack(anchor="w", pady=(8, 0))
 
+    # Keep the primary actions above the expanding queue so they stay visible
+    # at minimum window height and at high Windows display scaling.
+    actions = ttk.Frame(dashboard)
+    actions.pack(fill="x", pady=(0, 10))
+    buttons = {}
+    def add_button(key, text, callback):
+        button = ttk.Button(actions, text=text, command=callback)
+        button.pack(side="left", padx=(0, 8))
+        buttons[key] = button
+
     tasks_frame = ttk.LabelFrame(dashboard, text="Development queue", padding=10)
     tasks_frame.pack(fill="both", expand=True, pady=(0, 10))
     ttk.Label(tasks_frame, textvariable=counts).pack(anchor="w")
@@ -238,13 +248,6 @@ def launch(db_path, *, acceptance: bool = False):
         pages, text="Newer tasks", command=lambda: change_page(-page_size))
     newer_button.pack(side="right")
 
-    actions = ttk.Frame(dashboard)
-    actions.pack(fill="x")
-    buttons = {}
-    def add_button(key, text, callback):
-        button = ttk.Button(actions, text=text, command=callback)
-        button.pack(side="left", padx=(0, 8))
-        buttons[key] = button
 
     diagnostics = tk.Text(activity, wrap="word", state="disabled")
     diagnostics.pack(fill="both", expand=True)
@@ -1855,6 +1858,39 @@ def launch(db_path, *, acceptance: bool = False):
         store.close()
         root.destroy()
 
+    # Tk does not provide a native Windows right-click editing menu for
+    # classic Text/ttk Entry widgets. Bind one shared menu, not one per field.
+    edit_menu = tk.Menu(root, tearoff=False)
+    edit_target = {"widget": None}
+    for label, sequence in (("Cut", "<<Cut>>"), ("Copy", "<<Copy>>"),
+                            ("Paste", "<<Paste>>"), ("Select All", "<<SelectAll>>")):
+        edit_menu.add_command(label=label, command=lambda seq=sequence:
+                              edit_target["widget"].event_generate(seq)
+                              if edit_target["widget"] is not None else None)
+
+    def show_edit_menu(event):
+        widget = event.widget
+        if not isinstance(widget, (tk.Text, tk.Entry, ttk.Entry, ttk.Spinbox,
+                                   ttk.Combobox)):
+            return
+        edit_target["widget"] = widget
+        widget.focus_set()
+        readonly = str(widget.cget("state")) in ("readonly", "disabled") if "state" in widget.keys() else False
+        for index in (0, 2):  # Cut and Paste must not edit read-only fields.
+            edit_menu.entryconfigure(index, state="disabled" if readonly else "normal")
+        try:
+            edit_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            edit_menu.grab_release()
+
+    def bind_edit_menus(parent):
+        for child in parent.winfo_children():
+            if isinstance(child, (tk.Text, tk.Entry, ttk.Entry, ttk.Spinbox,
+                                  ttk.Combobox)):
+                child.bind("<Button-3>", show_edit_menu, add="+")
+            bind_edit_menus(child)
+
+    bind_edit_menus(root)
     root.protocol("WM_DELETE_WINDOW", close)
     refresh()
     if recovered:
