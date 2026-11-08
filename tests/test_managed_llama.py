@@ -141,7 +141,11 @@ class ManagedLlamaTests(unittest.TestCase):
               patch("forgeos.managed_llama.LocalChatModel.installed",
                     return_value=[{"name": ALIAS}]),
               patch("forgeos.managed_llama.subprocess.Popen",
-                    return_value=proc) as launch):
+                    return_value=proc) as launch,
+              patch("forgeos.managed_llama._attach_windows_job",
+                    return_value=1234) as attached,
+              patch("forgeos.managed_llama._release_windows_job") as released,
+              patch("forgeos.managed_llama._terminate_posix_group") as grouped):
             info = server.start(
                 executable=self.exe, executable_sha256=self.exe_sha,
                 model_path=self.model, context=1024, threads=2,
@@ -172,7 +176,14 @@ class ManagedLlamaTests(unittest.TestCase):
             self.assertFalse(key_file.exists())
             self.assertIsNone(server.api_key)
             self.assertIsNone(server.process)
-            proc.terminate.assert_called_once()
+            if __import__("os").name == "nt":
+                attached.assert_called_once_with(proc)
+                released.assert_called_once_with(1234)
+                proc.terminate.assert_not_called()
+            else:
+                attached.assert_not_called()
+                grouped.assert_called_once()
+                proc.terminate.assert_called_once()
 
     def test_failed_server_start_does_not_leave_process_or_secret(self):
         proc = Mock()
@@ -186,7 +197,10 @@ class ManagedLlamaTests(unittest.TestCase):
               patch("forgeos.managed_llama._unused_loopback_port",
                     return_value=17090),
               patch("forgeos.managed_llama.subprocess.Popen",
-                    return_value=proc)):
+                    return_value=proc),
+              patch("forgeos.managed_llama._attach_windows_job",
+                    return_value=1234),
+              patch("forgeos.managed_llama._release_windows_job")):
             with self.assertRaisesRegex(RuntimeError, "exited"):
                 instance.start(executable=self.exe, executable_sha256=self.exe_sha,
                                model_path=self.model, timeout=1)
@@ -208,13 +222,44 @@ class ManagedLlamaTests(unittest.TestCase):
                     side_effect=URLError("server unavailable")),
               patch("forgeos.managed_llama.time.monotonic",
                     side_effect=[0.0, 2.0]),
-              patch("forgeos.managed_llama.time.sleep") as sleep):
+              patch("forgeos.managed_llama.time.sleep") as sleep,
+              patch("forgeos.managed_llama._attach_windows_job",
+                    return_value=1234),
+              patch("forgeos.managed_llama._release_windows_job"),
+              patch("forgeos.managed_llama._terminate_posix_group")):
             with self.assertRaisesRegex(RuntimeError, "timed out"):
                 controller.start(executable=self.exe, executable_sha256=self.exe_sha,
                                  model_path=self.model, timeout=1)
             sleep.assert_not_called()
-        proc.terminate.assert_called_once()
+        if __import__("os").name != "nt":
+            proc.terminate.assert_called_once()
         self.assertIsNone(controller.process)
+
+    @unittest.skipUnless(__import__("os").name == "nt",
+                         "Windows Job Object integration")
+    def test_real_windows_job_kills_server_process(self):
+        import subprocess
+        import sys
+        from forgeos.managed_llama import _attach_windows_job, _release_windows_job
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        job = None
+        try:
+            job = _attach_windows_job(proc)
+            self.assertIsNotNone(job)
+            _release_windows_job(job)
+            job = None
+            proc.wait(timeout=5)
+            self.assertIsNotNone(proc.returncode)
+        finally:
+            if job is not None:
+                _release_windows_job(job)
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
 
     def test_managed_checkpoint_fails_closed_without_pinned_session_identity(self):
         from forgeos.recovery import _checkpoint_contract
