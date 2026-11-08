@@ -235,6 +235,14 @@ Record: PR/commit SHA, changed files, requirement IDs, OS/CPU/RAM/GPU, inference
 - [x] Extend the existing `runtime_installer.py`, `managed_llama.py` and `gui.py` without duplicating the application: **explicitly opt-in pinned Windows x64 CPU installer** integrated into the managed GGUF dialog, verified installed-bundle start, preserved manual runtime fallback, and mock/failure tests. No runtime/model download on ordinary GUI startup. **Still experimental pending hosted CI + physical Windows real GGUF acceptance.**
 - [ ] Complete real Windows 11 installation, llama.cpp boot, authenticated inference and measured RAM/latency plus process/DLL mutation and recovery fault injection. Do not treat hosted mock success as real native runtime acceptance.
 
+### Verified hosted evidence for unified Windows CPU installer (2026-11-08)
+
+- [x] Existing pinned `runtime_installer.py` is now opt-in via the single GUI, confirmation-gated, in a background worker with in-dialog status feedback; no implicit network calls, no second app.
+- [x] Existing `managed_llama.py` delegates `start_installed_cpu` through a full official archive/DLL verification pass before model launch, with a preserved manual binary option.
+- [x] New offline **real POSIX process** harness exercises actual spawned process, private localhost bearer token, `/health`, `/v1/models`, `/v1/chat/completions`, unauthorized rejection and process-group teardown; this lightweight HTTP stub is **not llama.cpp**.
+- [x] Commit `c541041926c6c726e7fa034f6591318188bd2a17`: **6/6 hosted check jobs passed**, including 349-test Windows/Linux test suites and 18,524,708-byte Windows EXE packaging with frozen GUI and secure AppContainer smoke. Hosted test passes are not physical-device acceptance.
+- [ ] **Blocker:** install the pinned real release on actual Windows 11, load a truly compatible GGUF, test planning/JSON edits, measure RAM and latency, stress start/stop and failure recovery, validate DLL loading and port ownership. Do not merge PR #51 or close #53 based on the stub.
+
 ## Security and supply-chain risks to resolve before a managed runtime release
 
 1. Authenticate the spawned local process and protect its loopback port; a literal loopback URL alone does not establish server identity.

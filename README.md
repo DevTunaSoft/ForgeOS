@@ -234,3 +234,8 @@ The short interval between process creation and Windows Job assignment,
 listener/process authentication, direct GGUF execution on real hardware
 and clean cancellation of all native child processes remain unaccepted.
 The generated project-test AppContainer is a separate trust boundary.
+
+
+### Latest multi-LLM GUI integration verification (experimental branch)
+
+On 2026-11-08, feature commit `c541041926c6c726e7fa034f6591318188bd2a17` passed all six required hosted checks: four Linux/Windows Python 3.10/3.12 test jobs, documentation integrity, and Windows EXE packaging (18,524,708 bytes), including frozen GUI and secure AppContainer smoke. The suite executed **349 tests per platform run** (with OS-specific skips). An **offline real POSIX subprocess/loopback integration test** now verifies process startup, authenticated model-style HTTP, request output, and cleanup using a tiny local fake server, **not a real llama.cpp runtime or GGUF inference**. Production/real-Windows acceptance remains open; PR #51 is draft and unmerged.

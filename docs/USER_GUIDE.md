@@ -119,7 +119,9 @@ not been independently accepted; use a disposable repository first.
    the archive SHA-256 and checks every extracted executable and DLL. This
    step does not install a system service, use Docker, or download weights.
    Existing installations are reverified without another download.
-3. Choose the downloaded GGUF with **Choose from ForgeOS downloads**, then
+3. The installer shows **downloading/verification progress, success or errors**
+   directly in this same GGUF dialog. Once complete, choose the downloaded
+   GGUF with **Choose from ForgeOS downloads**, then
    click **Start installed CPU runtime**. The local runtime archive, DLLs,
    executable and GGUF are verified again in a worker thread before launch.
    ForgeOS binds localhost, uses an ephemeral API key and CPU-only settings.
