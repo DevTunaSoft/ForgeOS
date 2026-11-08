@@ -105,9 +105,9 @@ class CPUInstallerTests(unittest.TestCase):
         record["files"]["bin/ggml-base.dll"] = hashlib.sha256(
             dll.read_bytes()).hexdigest()
         manifest.write_text(json.dumps(record))
-        with self.assertRaisesRegex(RuntimeError, "source archive"):
+        with self.assertRaisesRegex(RuntimeError, "differs from pinned archive"):
             ri.verify_installed_cpu_runtime(self.directory)
-        with self.assertRaisesRegex(RuntimeError, "source archive"):
+        with self.assertRaisesRegex(RuntimeError, "differs from pinned archive"):
             ri.install_pinned_cpu_runtime(self.directory)
 
     def test_tampered_zip_cannot_authenticate_new_binary(self):
