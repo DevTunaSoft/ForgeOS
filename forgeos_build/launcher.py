@@ -69,6 +69,7 @@ def main(argv=None):
                      and result.get("queue_initialized")
                      and result.get("closed_cleanly")
                      and result.get("paginated_history_ok")
+                     and result.get("offline_manual_available")
                      and result.get("tasks_verified") == ACCEPTANCE_TASKS
                      and result.get("page_sizes") == [150, 150, 150, 70]
                      and isinstance(result.get("ram_after_gui_startup_bytes"), int)
