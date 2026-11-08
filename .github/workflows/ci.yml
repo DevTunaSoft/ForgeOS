@@ -1,10 +1,14 @@
 name: ForgeOS foundation tests
 on:
+  # Feature branches are already validated by pull_request. Restrict push
+  # validation to main so one feature commit does not launch the same matrix
+  # twice (push + pull_request).
   push:
+    branches: [main]
   pull_request:
 concurrency:
-  # Cancel superseded branch builds rather than consuming RAM and CI minutes
-  # testing old commits. Pull-request and push events share this group.
+  # Cancel superseded builds rather than consuming RAM and CI minutes.
+  # Feature branches have one PR-triggered matrix; main has one push matrix.
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 permissions:

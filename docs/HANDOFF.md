@@ -1388,3 +1388,8 @@ Commit `67c2e749` passed all six hosted gates, including both Windows test jobs 
 ## 2026-11-08 Windows managed-server suspended startup containment
 
 The previous managed-file-identity commit `9efc9eb` is undergoing hosted validation. This change removes the managed llama-server Popen-to-Job assignment race on Windows: ForgeOS now creates the process with `CREATE_SUSPENDED`, configures and assigns the kill-on-close Job Object before the primary thread can execute, then resumes the thread. A minimal native-process wrapper preserves the lifecycle interface used by the existing controller. The real Windows integration test now exercises this suspended-launch path directly. POSIX continues to use a new process session. Remaining acceptance gaps: real llama.cpp/GGUF inference on target hardware, Windows reparse-point identity, and measured process-tree memory ceilings.
+
+
+## 2026-11-08 duplicate-work and CI re-audit
+
+A branch/roadmap/issues audit was performed after repeated-looking GitHub activity was reported. The source commits were distinct, but `.github/workflows/ci.yml` was launching the same four-job foundation matrix on both `push` and `pull_request` for feature-branch commits. The workflow now runs feature-branch validation only through the PR event and reserves push-triggered foundation validation for `main`. This removes the duplicate matrix without reducing PR coverage. The enhancement deduplication audit was also refreshed for PR #51 and now explicitly lists the existing multi-LLM owners and the genuinely new acceptance gaps. Future implementation must pass that anti-duplication gate before adding a subsystem or repeating a hardening pass.
