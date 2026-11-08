@@ -161,3 +161,14 @@ journal manifest limit. Missing, malformed, oversized, or duplicate journal
 records are preserved for review. Legacy journals containing backups larger
 than 8 MiB require manual handling; ForgeOS must not silently discard them.
 These code-level resource bounds are not 4/8 GiB physical Windows proof.
+
+## Constant-size recovery report option
+
+The earlier 16-row/64-KiB checkpoint scan limits database materialization,
+but the default aggregate report still grows with the number of tasks.
+`resume-safe --stream-report` now emits one JSON line per task as it
+completes, without retaining a list of outcomes. A final summary includes
+interrupted, resumed, skipped and failed counts. This mode has no new
+dependencies or model loads. The default complete JSON report is preserved
+for compatibility. External consumers may collect streamed output
+themselves, so downstream applications must also manage retention.

@@ -94,3 +94,13 @@ Before a release claim: run end-to-end with real local model(s), edit/test/repai
 ## Intended evolution
 
 Future capabilities include beginner-friendly project creation, broad runtime/build adapters, GitHub PR workflows inside ForgeOS, multi-model agent roles, richer fuzz and fault injection, hardware acceptance and full source/handoff export. These must integrate with the canonical modules above rather than duplicate them, and must stay visibly labeled **planned/in progress** until evidence supports implementation.
+
+## Large recovery reports
+
+The CLI offers `resume-safe --stream-report` as an optional JSON Lines
+stream. This reuses the canonical checkpoint validator/orchestrator and
+avoids collecting an unbounded per-task outcome list in Python memory.
+Default `resume-safe` output remains a complete backward-compatible JSON
+report. Each streamed task is followed by one final count summary, and
+failure exit status is retained. An interrupted process may have emitted
+partial lines without a summary; never treat such output as success.

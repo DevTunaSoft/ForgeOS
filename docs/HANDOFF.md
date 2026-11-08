@@ -704,3 +704,21 @@ pass before merge; no real Windows/Ollama hardware acceptance was performed.
   Linux/Windows, docs, packaged Windows acceptance; resolve failures before
   merging. Follow with randomized size-boundary and interrupted-copy
   fault-injection and physical crash/restart tests.
+
+## Streamed recovery reporting — 2026-11-07 (review branch)
+
+- Starting main: `e977d507c2495715a69f76fdfa0dda72bb1c696d`.
+- Branch: `perf/streamed-resume-report`.
+- Extended the existing `resume_safe()` with validated opt-in event callbacks
+  and `collect_results=False`; defaults preserve the complete report API.
+  Stream errors propagate instead of being reclassified as failed model tests.
+- Added `resume-safe --stream-report` to CLI, emitting one JSON event per
+  recovered/skipped/failed task and one final summary. Failed tasks retain
+  the nonzero exit code. The CLI no longer needs an unbounded outcome list
+  in this optional mode; the checkpoint SQL scan remains bounded as before.
+- Added 60-task mixed-event verification, failure/sink error tests,
+  invalid-option preflight and CLI JSON-lines contract tests.
+- Updated architecture, user guide and memory-budget notes.
+- CI and physical Windows hardware acceptance remain unverified at this
+  commit. Next: Linux/Windows Python 3.10/3.12, docs, frozen EXE acceptance,
+  any root-cause fixes, then merge only on verified green checks.

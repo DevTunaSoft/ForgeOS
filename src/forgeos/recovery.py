@@ -34,9 +34,18 @@ def _checkpoint_contract(checkpoint):
 
 def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 allow_host_tests=False, execute=execute_task,
-                model_factory=Ollama):
+                model_factory=Ollama, on_event=None, collect_results=True):
+    """Guarded resumption with optional constant-memory event reporting.
+
+    The default report shape is unchanged. Streaming callers may disable
+    outcome-list collection and receive one event per processed checkpoint.
+    """
     if not allow_host_tests:
         raise ValueError("Recovery cannot execute tests without explicit host-test permission")
+    if type(collect_results) is not bool:
+        raise ValueError("collect_results must be boolean")
+    if on_event is not None and not callable(on_event):
+        raise ValueError("on_event must be callable")
     if preset is not None and preset not in PRESETS:
         raise ValueError("Invalid test preset override")
     if max_repairs is not None and (
@@ -48,11 +57,24 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         raise ValueError("Workspace parent must be a directory")
     interrupted = store.recover()
     report = {"interrupted": interrupted, "resumed": [], "skipped": [], "failed": []}
+    counts = {"resumed": 0, "skipped": 0, "failed": 0}
+
+    def record(kind, value):
+        counts[kind] += 1
+        if collect_results:
+            report[kind].append(value)
+        if on_event is not None:
+            event = {"event": kind, "id": value if kind == "resumed" else value["id"]}
+            if kind != "resumed":
+                event["reason"] = value["reason"]
+            # Never swallow output sink failures as model/test failures.
+            on_event(event)
+
     for task in store.iter_blocked_checkpoints():
         if task["status"] != "blocked":
             continue
         if task["checkpoint_bytes"] > MAX_CHECKPOINT_BYTES:
-            report["skipped"].append({
+            record("skipped", {
                 "id": task["id"],
                 "reason": f"Checkpoint exceeds {MAX_CHECKPOINT_BYTES}-byte safety limit",
             })
@@ -60,27 +82,27 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         try:
             checkpoint = json.loads(task["result"])
         except (ValueError, TypeError):
-            report["skipped"].append({"id": task["id"], "reason": "No structured checkpoint"})
+            record("skipped", {"id": task["id"], "reason": "No structured checkpoint"})
             continue
         if (not isinstance(checkpoint, dict)
                 or checkpoint.get("phase") not in {"test_pending", "repair_pending"}):
-            report["skipped"].append({"id": task["id"], "reason": "No resumable checkpoint"})
+            record("skipped", {"id": task["id"], "reason": "No resumable checkpoint"})
             continue
         if (not isinstance(checkpoint.get("workspace"), str) or
                 Path(checkpoint["workspace"]).resolve() !=
                 (parent / f"task-{task['id']}").resolve()):
-            report["skipped"].append({"id": task["id"], "reason": "Workspace location mismatch"})
+            record("skipped", {"id": task["id"], "reason": "Workspace location mismatch"})
             continue
         try:
             contract = _checkpoint_contract(checkpoint)
         except ValueError as exc:
-            report["skipped"].append({"id": task["id"], "reason": str(exc)})
+            record("skipped", {"id": task["id"], "reason": str(exc)})
             continue
         if preset is not None and preset != contract["preset"]:
-            report["skipped"].append({"id": task["id"], "reason": "Test preset override mismatch"})
+            record("skipped", {"id": task["id"], "reason": "Test preset override mismatch"})
             continue
         if max_repairs is not None and max_repairs != contract["max_repairs"]:
-            report["skipped"].append({"id": task["id"], "reason": "Repair budget override mismatch"})
+            record("skipped", {"id": task["id"], "reason": "Repair budget override mismatch"})
             continue
         try:
             model = model_factory(model=contract["model"])
@@ -90,9 +112,13 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 allow_host_tests=True, resume=True,
             )
             if result["passed"]:
-                report["resumed"].append(task["id"])
+                kind, value = "resumed", task["id"]
             else:
-                report["failed"].append({"id": task["id"], "reason": "Tests failed"})
+                kind, value = "failed", {"id": task["id"], "reason": "Tests failed"}
         except Exception as exc:
-            report["failed"].append({"id": task["id"], "reason": str(exc)})
+            kind, value = "failed", {"id": task["id"], "reason": str(exc)}
+        record(kind, value)
+
+    if not collect_results:
+        report["counts"] = counts
     return report
