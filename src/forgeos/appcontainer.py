@@ -805,7 +805,8 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
 def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                             executable: str | Path,
                             timeout: int = 180,
-                            watched_output: Path | None = None) -> dict:
+                            watched_output: Path | None = None,
+                            watched_extra_outputs: tuple[Path, ...] = ()) -> dict:
     """Run autonomous code with zero capabilities and no weaker fallback.
 
     Only the disposable execution snapshot and the ForgeOS-owned executable are
@@ -826,10 +827,23 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
         raise ValueError("Secure execution paths are invalid")
     if not isinstance(env, dict):
         raise ValueError("Secure execution environment must be a dictionary")
+    if (not isinstance(watched_extra_outputs, tuple)
+            or len(watched_extra_outputs) > 1):
+        raise ValueError("At most one extra owned output file may be monitored")
     watched = ()
-    if watched_output is not None:
+    if watched_output is not None or watched_extra_outputs:
         from .output_capture import validate_secure_output_path
-        watched = (validate_secure_output_path(root, watched_output),)
+        if watched_output is None:
+            raise ValueError("Extra output watch requires the main output")
+        primary = validate_secure_output_path(root, watched_output)
+        if primary.name != "test-output.txt":
+            raise ValueError("Main output watch must be the owned test-output.txt")
+        watched = (primary,)
+        for secondary in watched_extra_outputs:
+            extra = validate_secure_output_path(root, secondary)
+            if extra.name != "pytest-log.txt":
+                raise ValueError("Only the owned pytest log is an extra watch")
+            watched += (extra,)
 
     result = None
     with _temporary_probe_profile() as (_profile_name, sid):

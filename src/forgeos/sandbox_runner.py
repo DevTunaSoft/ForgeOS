@@ -1,6 +1,7 @@
 """Minimal test entry point used only inside ForgeOS secure execution."""
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
 import os
 from pathlib import Path
 import sys
@@ -61,6 +62,55 @@ def run_unittest() -> int:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(
                     "ForgeOS secure test runner failed: "
+                    + type(exc).__name__ + ": " + str(exc),
+                    encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+        return 92
+    finally:
+        sys.path[:] = original_path
+
+
+def run_pytest() -> int:
+    """Run bundled pytest inside zero-capability execution snapshot.
+
+    Keep its built-in logging plugin, including caplog, but force the log
+    sink away from Windows NUL to a fixed snapshot-owned file watched by
+    the parent. No arbitrary pytest config can redirect this CLI override.
+    """
+    if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
+        return 90
+    root = Path.cwd().resolve()
+    if not root.is_dir():
+        return 91
+    original_path = list(sys.path)
+    try:
+        _scrub_bootstrap_environment(root)
+        from .test_runtime import RUNTIME_DIR
+        logfile = root / RUNTIME_DIR / "pytest-log.txt"
+        if (os.environ.get("FORGEOS_TEST_LOG_FILE") != str(logfile)
+                or logfile.is_symlink() or not logfile.parent.is_dir()):
+            raise RuntimeError("Secure pytest log path is invalid")
+        sys.path.insert(0, str(root))
+        # Import only in hidden frozen child, not on GUI startup.
+        import pytest
+        with _output_stream(root) as stream, \
+                redirect_stdout(stream), redirect_stderr(stream):
+            code = pytest.main([
+                "-q", "--capture=no", "--color=no", "--disable-warnings",
+                "-p", "no:cacheprovider", "--log-file=" + str(logfile),
+                "--log-file-mode=w", str(root),
+            ])
+            stream.flush()
+        return int(code)
+    except BaseException as exc:
+        try:
+            raw = os.environ.get("FORGEOS_TEST_OUTPUT_FILE", "")
+            target = Path(raw).resolve() if raw else None
+            if target is not None and target.is_relative_to(root):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(
+                    "ForgeOS secure pytest failed: "
                     + type(exc).__name__ + ": " + str(exc),
                     encoding="utf-8", errors="replace")
         except Exception:
