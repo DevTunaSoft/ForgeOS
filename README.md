@@ -205,3 +205,20 @@ Detailed sources: [Product requirements](docs/REQUIREMENTS.md) · [Project roadm
 Development happens openly at [DevTunaSoft/ForgeOS](https://github.com/DevTunaSoft/ForgeOS). Before proposing a change, read [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and reproducible test failures can be reported through [GitHub Issues](https://github.com/DevTunaSoft/ForgeOS/issues); include non-sensitive reproduction steps and your OS/runtime, **not** passwords or raw logs with private data.
 
 *License: no repository license is currently published. Do not assume the code is open-source-licensed merely because it is publicly readable.*
+
+
+### Further model-management work
+
+The draft branch now includes a **bounded offline inventory** of existing
+Hugging Face GGUF downloads, available from **Run verified local GGUF →
+Choose from ForgeOS downloads** and through `forgeos models-local`.
+`forgeos model-verify-local <path>` streams an explicit SHA-256 recheck
+without loading the model. Listing metadata is not equivalent to
+reverification; the managed runtime rehashes before launching.
+Full native binary/model installation, imported GGUF management, update,
+uninstall and intelligent model switching remain open roadmap milestones.
+
+**Optional cloud models are on the roadmap, not yet integrated**:
+OpenAI/ChatGPT, Anthropic/Claude and other approved endpoints will require
+explicit consent and spending/privacy controls. ForgeOS does not assume
+free ChatGPT or Claude consumer accounts provide free API access.

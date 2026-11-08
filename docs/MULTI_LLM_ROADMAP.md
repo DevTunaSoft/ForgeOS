@@ -239,3 +239,30 @@ Record: PR/commit SHA, changed files, requirement IDs, OS/CPU/RAM/GPU, inference
 ## Status reconciliation rules
 
 A green PR #51 means **hosted tests passed for source committed to that PR**. It does not mean the feature is on `main`, that the user has a working llama.cpp runtime on their laptop, or that the application meets every requirement above. Update the roadmap when verified changes land; always link a precise commit and test evidence. Keep this document synchronized with `ROADMAP.md` and `HANDOFF.md`.
+
+
+## Experimental progress reconciliation (next coding cycle)
+
+The following **source prototypes** are now present on draft PR #51:
+`managed_llama.py` (CPU-first user-selected binary lifecycle),
+`model_inventory.py` (bounded metadata-only local inventory plus explicit
+streamed SHA-256 verification), the existing Tk GUI's opt-in managed
+GGUF/installed-download chooser, and tests
+`test_managed_llama.py`, `test_model_inventory.py`. Startup session
+credentials are temporary and **automatic resume is refused for
+`forgeos-managed` until model/runtime hashes are part of the task
+contract**. Real llama.cpp inference, multi-GiB HF download, Python
+and Windows acceptance on the **latest** head, process-tree protection,
+upstream binary installation, model import/update/removal, role router
+and memory governor are **not yet accepted**. Follow issues #53–#56.
+
+### Optional external providers are strictly non-default
+
+A future optional extension to work package A must support user-authorized
+OpenAI/ChatGPT and Anthropic/Claude APIs and other compatible providers,
+without changing the local-first default or requiring a subscription.
+Before sending code or metadata off-device, obtain explicit project/provider
+consent and show potentially transmitted context, apply safe credential
+storage, exact domain allowlists, token/spend budgets, audit traces, rate-limit
+and fail-closed handling. No such provider or automatic cloud fallback is
+currently implemented. Free consumer chat plans are not free API entitlements.

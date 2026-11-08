@@ -95,3 +95,19 @@ Record OS/hardware/Python/EXE version, actual results, diagnostics and fixes for
 8. Verify safe artifact distribution, dependency instructions and release lifecycle on a clean computer.
 
 Until the above is actually verified, ForgeOS remains **experimental** and should be used on disposable/trusted projects rather than mission-critical sources.
+
+
+## Experimental managed CPU GGUF acceptance remaining
+
+A development EXE may expose **Run verified local GGUF**, but it does not
+include `llama-server.exe`, associated DLLs, or GGUF weight files.
+Official binary provenance/verification is currently the user's
+responsibility. The GUI offers a bounded local download inventory and
+requires a full SHA-256 recheck before server startup.
+
+Before release, physically verify on Windows 11: official CPU binary and
+DLL source/hash, a real downloaded coder GGUF, startup with the private
+API-key file and loopback port, JSON edit response, shutdown and whole
+process tree, model/endpoint spoofing, active-task exit, memory pressure,
+reboot and blocked managed-session resume. Hosted smoke alone does not
+establish these guarantees.

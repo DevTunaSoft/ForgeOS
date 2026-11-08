@@ -1178,3 +1178,33 @@ model revisions and backend+model+runtime hash checkpoint identity;
 (6) real Windows i7-1370P/32-GiB model load, plan/edit/test, crash,
 cleanup and memory measurements; (7) progress issue #54 model manager,
 #55 measured resource governor and role routing, #56 release evidence.
+
+
+## GGUF inventory and managed session recovery fail-closed increment
+
+Follow-on code: `src/forgeos/model_inventory.py` derives installed GGUF
+records directly from the existing Hugging Face `.forgeos.json` manifests,
+with a 4096-entry scan budget, 200-model display budget and no
+gigabyte hashes during listing. Explicit `verify_download` streams a
+SHA-256 and checks file size/magic and concurrent modification metadata.
+`src/forgeos/cli.py` adds `models-local` and `model-verify-local`.
+The existing managed GUI popup adds `Choose from ForgeOS downloads`;
+no extra GUI app or database was added. `tests/test_model_inventory.py`
+covers integrity failures, malicious manifest, bounded scanning, symlink
+files, and offline/nonexecuting operations.
+
+Security correction: `recovery._checkpoint_contract` now rejects
+`forgeos-managed` until a full pinned model/runtime identity plus
+authenticated startup can be reconstructed. This prevents `resume-safe`
+from treating an ephemeral port and anonymous connection as the original
+private GGUF process. A positive test covers the fail-closed behavior;
+legacy Ollama and manual compatible loopback contracts remain unchanged.
+
+New roadmap request: optional explicit user-authorized OpenAI/ChatGPT,
+Anthropic/Claude and similar provider APIs with encryption, privacy
+consent and cost caps; **none are built now**. Free local AI stays default;
+free consumer chat subscriptions are not guarantees of API access.
+Continuity: verify current GitHub head, rerun Windows/Linux test matrix
+and EXE acceptance, correct failures, then develop native process-tree/
+port ownership protections and model install/update/uninstall.
+

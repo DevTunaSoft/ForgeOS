@@ -328,3 +328,19 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 - [Memory engineering limits](MEMORY_BUDGET.md)
 - [Engineering handoff](HANDOFF.md)
 - [Report a defect](https://github.com/DevTunaSoft/ForgeOS/issues)
+
+
+## Experimental local model inventory and re-verification
+
+The **Run verified local GGUF** window now offers **Choose from ForgeOS
+downloads**, which lists existing GGUF files that still have a matching
+pinned download manifest. The list is metadata-only and does **not**
+rehash multi-gigabyte models; a full rehash is performed when the managed
+server is started.
+
+Advanced users can run `forgeos models-local` to list model weights and
+`forgeos model-verify-local "C:\\Users\\You\\.forgeos\\models\\...\\model.gguf"`
+to recheck one SHA-256 explicitly, without downloading or running anything.
+Do not treat a model shown in the list as independently compatible,
+licensed, executable or memory-safe. Missing/changed weights may be
+displayed as unavailable and cannot be used by the managed process.

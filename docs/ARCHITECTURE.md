@@ -134,3 +134,28 @@ Default `resume-safe` output remains a complete backward-compatible JSON
 report. Each streamed task is followed by one final count summary, and
 failure exit status is retained. An interrupted process may have emitted
 partial lines without a summary; never treat such output as success.
+
+
+## Experimental managed GGUF and offline inventory boundaries (PR #51)
+
+- `local_models.py` remains the common local OpenAI-compatible client,
+  with an optional in-memory bearer token for a trusted local server;
+  `core.Ollama` remains the canonical Ollama client.
+- `managed_llama.py` is one GUI-session-owned CPU-only subprocess
+  lifecycle controller; user-provided trusted executable SHA-256 and
+  previously downloaded GGUF SHA-256 are checked before process launch.
+  Startup/large hashing run on a background worker, with readiness
+  and authenticated catalog responses crossing through the GUI event queue.
+- `model_inventory.py` reads `gguf_download.py`'s existing
+  pinned-revision manifests with bounded `os.scandir`. Inventory
+  metadata does **not** reread full weights; explicit re-verification
+  streams SHA-256 on demand and does no inference/network IO.
+- `recovery.py` fails closed on the ephemeral `forgeos-managed`
+  alias because a random port and transient token are not adequate
+  cross-reboot model identities. Pinned binary/model contract plus
+  authenticated process recreation are required for unattended resume.
+
+**Unaccepted safety boundaries:** Windows child Job Object/OS listener-PID
+verification, native DLL publisher trust, actual CPU GGUF execution,
+real RAM/KV-cache budgeting and model lifecycle update/remove. They
+are tracked in the detailed [multi-LLM roadmap](MULTI_LLM_ROADMAP.md).

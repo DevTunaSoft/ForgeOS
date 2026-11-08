@@ -26,3 +26,14 @@ SQLite task store, recovery, Tkinter GUI, CLI, local-only Ollama planning, manua
 
 ## Not yet implemented
 GitHub integration inside ForgeOS, APK/web builders, broad supported AppContainer runtimes, signed installers, secure secrets vault, actual Windows GUI/Ollama acceptance, and production-tested backup/restore. Since version 0.1.0, working prototypes of worktree code editing, bounded repair and Windows frozen unittest AppContainer isolation have been added; they are not yet a finished product.
+
+
+## Optional external AI providers, never required
+
+A future integration may support OpenAI/ChatGPT, Anthropic/Claude and
+other compatible models **only when the user separately authorizes that
+provider, its project-data transmission and any costs**. Free local LLMs
+must continue to work without accounts or internet. No background
+pay-per-token fallback, hidden credential extraction or mandatory paid API
+may be introduced. Free chat-product access must not be described as free
+API service. See [MULTI_LLM_ROADMAP.md](MULTI_LLM_ROADMAP.md).

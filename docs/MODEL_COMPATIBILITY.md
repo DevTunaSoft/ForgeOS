@@ -224,3 +224,37 @@ model management. Do not mark these verified without corresponding evidence.
    scoring and OOM fallback without silent task re-execution.
 6. Measure user-visible latency, code quality, task completion, RAM and CPU
    on 8/16/32 GB Windows systems, including restart and crash injection.
+
+
+## Offline local GGUF inventory (experimental)
+
+The existing ForgeOS model download location now supports metadata-only
+listing using the **same downloader manifest**; no duplicate database,
+background scanner, internet call or full multi-GB rehash during browsing.
+
+- In **Run verified local GGUF**, choose **Choose from ForgeOS downloads**
+  to select existing local model weights. This list displays published
+  weight sizes and repository IDs; `present_not_reverified` is deliberately
+  **not** a proof of current model file integrity.
+- Use `forgeos models-local` for an advanced text inventory. It scans
+  at most 4096 filesystem entries and returns at most 200 candidate GGUFs.
+- Use `forgeos model-verify-local "<exact path to model.gguf>"` for an
+  explicit full streaming SHA-256 check. Verification is read-only and
+  rechecks file identity and GGUF magic. The managed server performs its
+  own full verification before starting.
+- Missing weights, changed file sizes and corrupt manifests are rejected
+  or classified rather than silently used. Model import from arbitrary
+  external folders, license validation, updates and safe deletion remain
+  future work.
+
+## Optional API/cloud model providers (planned; not implemented)
+
+A later phase will add explicit opt-in adapter support for OpenAI/ChatGPT,
+Anthropic/Claude and other user-authorized compatible endpoints, while
+keeping **free local inference the default**. External providers must
+never receive project files, logs or secrets without informed per-project
+consent, credentials must not be written into checkpoints, and spend/token
+limits and emergency disable controls must be enforced. **Free ChatGPT
+or Claude chat access does not imply free API usage.** No cloud connector
+exists in this experimental implementation, and there is no hidden
+cloud fallback.
