@@ -622,3 +622,22 @@ this is development branch functionality, not shipped. If it passes, merge
 and close old stale PR #29 without duplicate/unsafe merge. Remaining:
 other framework isolation, genuine Windows/Ollama end-to-end workflow,
 crash-injection, process-tree memory benchmarks and 4/8 GiB acceptance.
+
+
+### PR #43 completion evidence and remaining acceptance
+
+The corrected branch head `f496189117188b19a458fa5aa44c7a4dc4a39c1d`
+passed foundation tests for Windows/Linux Python 3.10 and 3.12,
+documentation integrity, frozen Windows EXE packaging, frozen Tk GUI
+startup/paging/offline manual, and the actual hosted Windows secure
+AppContainer smoke for BOTH unittest and pytest (run 42437425300).
+Two Windows defects were fixed before passing: environment path aliases
+(Windows canonical temp paths) and an unnecessary attempt to re-open
+`.forgeos-runtime` with `Path.resolve(strict=True)` inside a zero-capability
+child. The parent validates paths before launch and its job watchdog detects
+unsafe substitution and size violations; the child now uses the pair of
+parent-provided lexical paths without forbidden directory operations.
+The package itself still excludes Git, Ollama models and external build
+chains. Real device Ollama build/test/repair and low-RAM hardware acceptance
+remain unverified. PR #29 must be closed rather than merged to avoid
+reintroducing its older unguarded implementation.

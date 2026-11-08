@@ -48,7 +48,7 @@ These are genuine hosted CI checks, **not** a substitute for a person launching 
 - The **frozen Windows** workflow uses a restricted AppContainer + Job Object + disposable snapshot for `python-unittest` and experimental **bundled `python-pytest`**. The pytest module, including normal logging/caplog behavior, is loaded only inside the hidden test child; its logging file stays in the owned snapshot and is disk-limited by the native watchdog.
 - **Unsupported frozen presets fail closed**; the program must not fall back to unrestricted host commands to make testing appear successful.
 - The **source/development** workflow may run generated project tests on the host with explicit opt-in; do not test untrusted repositories there.
-- The original [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29) hit a Windows AppContainer failure when pytest opened the protected `NUL` device. Its feature has been reimplemented with snapshot-owned, watched logging in this successor development PR. Do not call it shipped on `main` before this PR passes CI and merges.
+- The original [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29) hit a Windows AppContainer failure when pytest opened the protected `NUL` device. The rewritten [PR #43](https://github.com/DevTunaSoft/ForgeOS/pull/43) uses snapshot-owned, watched logging. Its Windows frozen secure smoke now passes for both unittest and pytest; physical end-user acceptance remains outstanding.
 - Docker is not part of the required ForgeOS architecture.
 
 See [architecture and security boundaries](ARCHITECTURE.md) and [user guide](USER_GUIDE.md).

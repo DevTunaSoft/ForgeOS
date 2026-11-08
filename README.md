@@ -126,7 +126,7 @@ ForgeOS currently targets **Ollama at 127.0.0.1:11434**; it does not require a p
 
 The project includes disk-backed output capture, bounded UI previews, SHA-256 evidence references, a 150-task GUI page size and an on-demand working-set report. Process RAM telemetry does **not** include external Ollama, compilers or GPU allocations. The 4 GiB lightweight-interface and 8 GiB small-model scenarios are **engineering targets, not verified minimum system requirements**. See [Memory budget](docs/MEMORY_BUDGET.md).
 
-## Experimental packaged pytest test isolation (successor to PR #29)
+## Experimental packaged pytest test isolation (PR #43)
 
 ForgeOS is adding support for `python-pytest` using the **same restricted
 Windows AppContainer** as `python-unittest`, with no host execution fallback.
@@ -134,7 +134,9 @@ The Windows EXE build installs pytest as an **optional packaging extra**,
 not a mandatory dependency for the lightweight core. The frozen child writes
 pytest's log file into a monitored disposable snapshot, avoiding its default
 Windows NUL device behavior (blocked in the original PR #29 smoke).
-The feature is still subject to full Windows CI verification and merge;
+The secure pytest feature has passed the hosted Windows frozen-executable
+unittest/pytest AppContainer smoke, four Python matrix checks and GUI package
+acceptance in PR #43. That does not verify every physical Windows machine;
 other frozen test presets remain fail-closed.
 
 ## Security and responsible use

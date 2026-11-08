@@ -112,7 +112,7 @@ that ordinary paging requires 64 MiB, and is not a 4/8 GiB hardware test.
 No user repositories, Ollama weights, or private files are used.
 
 
-## Experimental secure pytest runtime (successor to PR #29; pending CI)
+## Experimental secure pytest runtime (PR #43; hosted Windows CI passed)
 
 The frozen Windows bundled pytest runner uses a fixed, snapshot-owned
 `.forgeos-runtime/pytest-log.txt` instead of the Windows NUL device,
@@ -123,5 +123,6 @@ plus Windows link/junction substitution checks. The optional
 `secure-pytest` packaging extra avoids installing pytest on source-only
 systems that don't use the frozen pytest runtime. The logging plugin and
 `caplog` behavior remain enabled; external plugin autoload is disabled.
-This guard is per-file, **not** a complete filesystem quota. Physical 4/8 GiB
-Ollama and cross-process RAM acceptance remain outstanding.
+This guard is per-file, **not** a complete filesystem quota. Hosted Windows
+CI passed the packaged pytest+unittest smoke, but physical 4/8 GiB Ollama,
+long-run process-tree memory and real Windows user acceptance remain open.
