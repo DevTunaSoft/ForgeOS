@@ -144,3 +144,20 @@ streamed-report mode.
 Regression tests cover multi-page scans, large historical diagnostics and
 oversized multibyte checkpoint bodies. Windows 4/8 GiB physical hardware,
 real crash/restart and process-tree measurements remain unverified.
+
+## Streamed edit transaction backups (review branch)
+
+The canonical transaction journal now copies and hashes original source files
+in 64 KiB chunks. Existing files larger than 8 MiB are refused **before**
+the journal is created; this avoids reading an arbitrarily large existing
+file into Python RAM or exhausting the backup directory with unbounded
+copies. At most eight files can be edited in one model manifest, so the
+bounded backup content is at most 64 MiB on disk (excluding metadata and
+replacement files), not 64 MiB allocated in one Python buffer.
+
+Recovery verifies backups and current targets using streamed SHA-256 reads,
+performs restoration through a streamed temporary file, and checks a 32 KiB
+journal manifest limit. Missing, malformed, oversized, or duplicate journal
+records are preserved for review. Legacy journals containing backups larger
+than 8 MiB require manual handling; ForgeOS must not silently discard them.
+These code-level resource bounds are not 4/8 GiB physical Windows proof.
