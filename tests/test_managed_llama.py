@@ -294,6 +294,46 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             start.assert_not_called()
         self.assertFalse(controller.running())
 
+    def test_explicit_context_cannot_bypass_low_ram_profile(self):
+        controller = ManagedLlamaServer()
+        with (patch("forgeos.managed_llama._verified_model",
+                    return_value=(self.model, {"sha256": self.model_sha})),
+              patch("forgeos.managed_llama._verified_runtime",
+                    return_value=self.exe),
+              patch("forgeos.managed_llama.local_memory_settings",
+                    return_value={"num_ctx": 1024}),
+              patch("forgeos.managed_llama.subprocess.Popen") as spawn):
+            with self.assertRaisesRegex(ValueError, "current RAM profile"):
+                controller.start(executable=self.exe,
+                                 executable_sha256=self.exe_sha,
+                                 model_path=self.model,
+                                 context=4096, threads=1)
+            spawn.assert_not_called()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+
+    def test_ram_pressure_between_sha_check_and_launch_fails_closed(self):
+        controller = ManagedLlamaServer()
+        with (patch("forgeos.managed_llama._verified_model",
+                    return_value=(self.model, {"sha256": self.model_sha})),
+              patch("forgeos.managed_llama._verified_runtime",
+                    return_value=self.exe),
+              patch("forgeos.managed_llama.local_memory_settings",
+                    return_value={"num_ctx": 8192}),
+              patch("forgeos.managed_llama.safe_model_file_budget",
+                    return_value=8) as budget,
+              patch("forgeos.managed_llama.system_memory"),
+              patch("forgeos.managed_llama.subprocess.Popen") as spawn):
+            with self.assertRaisesRegex(RuntimeError, "Free RAM fell"):
+                controller.start(executable=self.exe,
+                                 executable_sha256=self.exe_sha,
+                                 model_path=self.model,
+                                 context=1024, threads=1)
+            budget.assert_called_once()
+            spawn.assert_not_called()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):
         from forgeos.managed_llama import _verified_model, _verified_runtime
         proc = Mock()

@@ -402,3 +402,8 @@ If ForgeOS reports a conflicting manifest, an inconsistent download journal or a
 5. If the upstream revision changed, the old partial is **not** silently combined with new model weights; inspect the old directory and decide whether to keep it. Avoid manually deleting interrupted files unless you have verified they are no longer needed.
 
 Pausing is cooperative, not instantaneous while a network socket read is blocked (up to the configured timeout). Closing the entire ForgeOS process forcibly is not equivalent to using Pause. Verification itself may also be paused before final publication. This feature has simulated transfer tests; real multi-gigabyte Windows download, pause, resume and power-loss testing remain pending.
+
+
+### Memory warning when starting a local GGUF model
+
+ForgeOS chooses a conservative default context based on available system RAM. If a manually entered context exceeds the current RAM profile, startup is refused rather than risking a large llama.cpp KV-cache allocation. The app also checks available RAM again just before launching the local server, because memory may have changed while verifying the model's large SHA-256. Close competing applications, select a smaller GGUF, or use a smaller context within the suggested memory profile, then retry. A passed check cannot promise there will never be a later out-of-memory failure.

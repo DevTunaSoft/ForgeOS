@@ -189,3 +189,10 @@ interrupted, resumed, skipped and failed counts. This mode has no new
 dependencies or model loads. The default complete JSON report is preserved
 for compatibility. External consumers may collect streamed output
 themselves, so downstream applications must also manage retention.
+
+
+## Managed GGUF second-stage RAM admission (draft PR #51)
+
+The managed local llama.cpp startup now refuses explicit context sizes above the **current** adaptive `local_memory_settings().num_ctx` limit. A caller can select a smaller context; it cannot force an oversized KV-cache request simply by overriding the default on a low-RAM host. After SHA-256 verification of the GGUF and runtime binary, ForgeOS again samples available RAM immediately before launching the native server and rejects the model if its file size no longer fits the canonical conservative budget. No additional background watcher, resident memory cache, or polling daemon was added.
+
+These are **preflight heuristics, not guaranteed peak-RAM quotas**. llama.cpp still allocates architecture-specific KV cache, compute buffers and memory mappings; another process can change free RAM between the final check and allocation. Real Windows 8/16/32 GiB runtime acceptance and process-tree telemetry remain open.

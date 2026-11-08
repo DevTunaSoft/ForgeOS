@@ -1323,3 +1323,10 @@ Commit `6ea85955d958962c34567da3bb49092a81837515` tightens the existing `gguf_do
 The single Tk browser has a Pause download control, bounded single-item progress queue, 200ms existing GUI polling, and window-close cancellation that waits for the worker. No additional periodic background monitor or Tk worker-thread calls. Regression fixtures cover pre-cancel, partial transfer pause, 206 resume, final-byte pause, cached rehash pause and option validation.
 
 **Verification gate:** obtain all six latest head checks (both Linux Python 3.10/3.12, Windows Python 3.10/3.12, docs, frozen Windows EXE). Physical Windows download of a real GGUF, socket timeout responsiveness, power interruption, performance and real llama.cpp inference are *not* established by mocks. Continue #54 then #55 without duplicating existing functionality.
+
+
+## 2026-11-08 managed GGUF context and last-moment RAM preflight
+
+**Issue #55, incremental hardening, not a complete governor.** The existing managed_llama.ManagedLlamaServer.start() now rejects manual context tokens greater than the existing adaptive local_memory_settings().num_ctx. This prevents bypassing low-RAM context defaults with an unsafe manual override. After verifying the GGUF and runtime binary, a new one-shot recheck of the canonical safe_model_file_budget(system_memory()) blocks startup when background memory pressure made the chosen weight file too large for the current conservative available-RAM budget. It performs no additional periodic polling and does not spawn when the guard fails.
+
+Two deterministic regression tests assert both failures are fail-closed with no Popen process/API secret. No Docker, second app, heavy model cache or extra dependency. These are advisory model file/ctx preflights; actual peak memory includes KV cache/native buffers and is not proven until physical Windows testing. The prior GGUF pause/resume milestone passed all six CI checks at b40536bfadcf8288ad025ca152c8abb9fc91fc2a (363 hosted Windows regression tests, 18,529,579-byte packaged EXE and AppContainer smoke). Await latest CI for this increment.

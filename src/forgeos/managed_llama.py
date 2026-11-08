@@ -234,10 +234,24 @@ class ManagedLlamaServer:
             context = min(4096, settings["num_ctx"])
         if type(context) is not int or not 512 <= context <= 8192:
             raise ValueError("Model context must be between 512 and 8192 tokens")
+        # Explicit overrides must not bypass the canonical local RAM
+        # profile. A larger context can exhaust KV cache on small hosts.
+        if context > settings["num_ctx"]:
+            raise ValueError(
+                "Model context exceeds the current RAM profile; choose "
+                "a smaller context or free system memory")
         if threads is None:
             threads = min(8, max(1, (os.cpu_count() or 2) // 2))
         if type(threads) is not int or not 1 <= threads <= 32:
             raise ValueError("CPU thread count must be between 1 and 32")
+        # Recheck available physical memory after verifying large model
+        # and binary bytes, immediately before starting the native server.
+        # A competing app may have consumed RAM during the slow SHA-256 pass.
+        if model_file.stat().st_size > safe_model_file_budget(system_memory()):
+            raise RuntimeError(
+                "Free RAM fell below the conservative model budget "
+                "before native inference startup; close other apps "
+                "or choose a smaller verified GGUF")
 
         try:
             self._secrets = tempfile.TemporaryDirectory(prefix="forgeos-llama-")

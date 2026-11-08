@@ -249,3 +249,6 @@ Cached GGUF weights now need a matching pinned identity manifest before success 
 ### Pausing and resuming a large GGUF download (experimental PR #51)
 
 In the existing Hugging Face browser, the **Pause download** button cooperatively stops a transfer and retains the checked revision's partial bytes and journal. A later request for the same repository/weight revision resumes via an exact HTTP range and rechecks the final SHA-256. Download progress and the separate final SHA-256 verification phase are shown without keeping giant data or event queues in RAM. Closing the model browser while a transfer is active requests pause and closes only after the worker acknowledges. A network read can remain blocked for up to its configured timeout, so pause is not instantaneous. No background downloader, Docker, cloud inference, or new desktop app was added.
+
+
+The experimental managed GGUF server additionally caps manually requested context to the current system RAM profile and performs a second memory-budget check immediately before native inference startup, after hashing the GGUF and runtime. These safeguards reject some memory pressure but do not replace native process RAM monitoring or proven low-memory Windows benchmarks.

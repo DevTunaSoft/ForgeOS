@@ -299,3 +299,11 @@ currently implemented. Free consumer chat plans are not free API entitlements.
 - [x] Add **Pause download** and a non-blocking transfer/verification progress label to the existing GUI. Background workers never access Tk widgets; a one-message queue replaces stale progress data, and closing the dialog during a download requests pause before closing.
 - [x] Add offline regression coverage for pre-cancellation, interrupted chunks, exact-range resumption, post-transfer pre-commit pause, cached-model hash pause and invalid cancellation options.
 - [ ] Verify the latest six CI checks, then validate actual socket timeout behavior, real multi-GiB weights, Windows 11 window shutdown and restart on physical hardware before claiming full #54 acceptance.
+
+
+### Managed llama.cpp second-stage RAM admission (2026-11-08)
+
+- [x] Reject explicitly requested context windows larger than the canonical current adaptive RAM profile (minimum 512 / maximum 8192 still apply).
+- [x] Re-sample available physical RAM after the model/runtime SHA-256 passes and before native process startup. Block on budget failure without leaving a model process or secrets.
+- [x] Add deterministic mocked regression tests for excessive manual context and a RAM drop during verification.
+- [ ] Reproduce with real inference and measured peak process-tree RSS on Windows, low-RAM targets, and concurrent background memory pressure. Preflight alone is **not** a hard memory governor or finished issue #55.
