@@ -16,16 +16,62 @@
 | Other loopback OpenAI-compatible servers | New experimental adapter | Backend-specific compatibility unverified |
 | Hugging Face public GGUF search and file-size/hash metadata | New experimental metadata catalog | Live Hugging Face GUI workflow unverified |
 | Hugging Face GGUF download and SHA-256 resume verification | **New experimental implementation** with pinned revision, partial journal, disk budget and atomic publish | Real multi-GiB Windows/network acceptance unverified |
-| Integrated GGUF execution, update and uninstall | **Not implemented** | Runtime and full model manager remain planned |
-| Native GGUF loading, managed llama.cpp binaries, automatic process lifecycle | **Not implemented** | — |
+| Integrated GGUF execution via user-provided llama-server | **Experimental PR #51 managed start/stop and authenticated local adapter**; no native inference code, installation/update/remove | Real CPU GGUF and Windows lifecycle unverified |
+| Managed llama.cpp binaries, automatic process lifecycle | **Partial prototype:** SHA-pinned user-supplied executable, verified GGUF, CPU-only argv, local-only authenticated server, start/stop/timeout | No binary auto-installer; DLL signatures, port/process ownership, child-tree termination, idle unload and real-model Windows acceptance unfinished |
 | Automatic cross-backend intelligent task/agent router | **Not implemented** | — |
 | Advanced model memory monitoring, idle unload and OOM recovery | **Not implemented** | — |
 
 ForgeOS has one GUI and no extra Python dependencies for these adapters.
-The added adapters communicate with an inference server already running on
-**the same machine**. They do not install LM Studio, start llama.cpp, or use
-Hugging Face as a hosted inference provider. No Docker or paid API is needed
-for these code paths.
+The external endpoint adapters talk only to a server on **the same machine**.
+The **optional experimental managed GGUF control** in the existing GUI now
+starts/stops a user-supplied, SHA-pinned llama-server executable with a
+ForgeOS-verified GGUF and a temporary bearer API key. ForgeOS does **not**
+automatically install/download llama-server, verify its adjacent DLLs, or
+install LM Studio. No Docker or paid API is needed for these code paths.
+
+## Run a verified GGUF with a managed CPU llama-server (experimental PR #51)
+
+1. Obtain a **Windows x64 CPU llama-server binary from the official
+   [ggml-org llama.cpp project](https://github.com/ggml-org/llama.cpp)**.
+   Independently verify release origin, executable SHA-256, license and
+   **all accompanying DLLs**. ForgeOS does not download executables, does
+   not attest the publisher and does not bundle binary dependencies.
+2. In ForgeOS **Browse Hugging Face**, select a suitable public GGUF and
+   choose **Download and verify** (or reuse a previously verified ForgeOS
+   GGUF). A separate `.forgeos.json` manifest contains pinned repository
+   revision, size and expected SHA-256.
+3. In **Execution settings**, click **Run verified local GGUF**. Select
+   the `llama-server.exe`, paste the independent **lowercase SHA-256 of the
+   executable**, and select the downloaded `.gguf` file. Click **Start
+   local model**.
+4. ForgeOS verifies the model bytes and the executable before executing
+   anything, rejects a model too large for its conservative available-memory
+   budget, selects a random local port and launches the CPU-only binary
+   with a private temporary API-key file. Startup/verification is performed
+   off the GUI thread; the API key is not placed on the command line.
+5. After readiness, the GUI sets backend `llama.cpp`, model
+   `forgeos-managed`, and its private loopback endpoint. Choose a task
+   and **Generate plan**. Generated edits are still untrusted and continue
+   through existing guarded worktree/test handling.
+6. To release model RAM, click **Run verified local GGUF** again and
+   **Stop local model**, or close ForgeOS after the current task ends.
+
+**Current limitations:** only one GUI-owned managed server per ForgeOS
+session, no automatic official binary installation, no model update/remove,
+no idle unload, no persistent session authentication across app restarts,
+no verified child-process-tree termination, and no process-owner proof on
+randomly allocated loopback ports. A same-host port takeover remains a
+possible confidentiality risk. A malicious binary or DLL can execute on the
+host; **a matching hash is not proof of publisher trust**. Use only a
+trusted executable from an independently verified upstream source. Managed
+model session secrets are transient and not saved in the checkpoint. Thus
+`resume-safe` cannot autonomously restart a private managed session
+until pinned identity and credentials are reconstructed safely. Live
+llama.cpp model output and physical Windows acceptance remain unverified.
+
+Official llama.cpp server options used here include `--api-key-file`,
+`--host`, `--port`, `--model`, `--alias`, and `--n-gpu-layers 0`.
+See the [upstream documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
 
 ## How to use the new local-model controls
 
@@ -96,8 +142,11 @@ pins a revision, reserves disk space, writes to a resumable `.part` file,
 and verifies the final bytes before atomic publication under
 `~/.forgeos/models`. A missing hash, insufficient disk, untrusted redirect,
 corrupted journal, unexpected byte count or mismatched SHA-256 fails closed.
-The downloaded GGUF is **not automatically loaded** by an inference server.
-Do not mistake metadata/LFS hash verification for model code/license security.
+The downloaded GGUF is **not automatically loaded**. In the experimental
+branch it can be explicitly launched with **Run verified local GGUF** and a
+trusted user-provided llama-server binary. Model update/remove and real
+CPU inference acceptance are unfinished. Do not mistake SHA-256 metadata
+verification for model license or executable supply-chain security.
 
 ## Conservative model shortlist for CPU-first Windows machines
 

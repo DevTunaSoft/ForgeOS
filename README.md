@@ -138,11 +138,19 @@ The Hugging Face browser can search public GGUF repositories, inspect file
 sizes and hashes, and **download and verify** selected GGUF weights on
 demand. Downloads are pinned to an immutable revision, hashed with SHA-256,
 resumable after interruption and published atomically if verification passes.
-ForgeOS **cannot yet run the downloaded GGUF directly, manage llama.cpp
-binaries, update or remove model weights through a complete model manager**.
-An external inference server must already be running locally for non-Ollama
-inference. No Docker, paid API or cloud inference is required for this
-connector. An endpoint is restricted to literal loopback addresses.
+ForgeOS now has an **experimental opt-in managed llama.cpp launch/stop
+controller on the feature branch**: choose a user-provided CPU llama-server
+binary, enter its independently sourced SHA-256, and choose a ForgeOS-verified
+downloaded GGUF. The controller rehashes both, checks conservative RAM
+headroom, starts the server bound to 127.0.0.1 with a private session API
+key, and connects the existing editor/planner to that model from the same
+GUI. The frozen EXE does **not** ship with llama-server, its third-party
+DLLs, or model weights; official binary acquisition, license/provenance
+validation, full model update/removal and runtime installation remain
+unfinished. No Docker or paid API is required. This path has mocked
+lifecycle tests, not yet physical Windows/real-model acceptance.
+External llama.cpp, LM Studio or other compatible servers may still be
+used through the existing local endpoint adapters.
 
 Read the [model compatibility and setup guide](docs/MODEL_COMPATIBILITY.md)
 for clear statuses, CLI examples and security boundaries. The

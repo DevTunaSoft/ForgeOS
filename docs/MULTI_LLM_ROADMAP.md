@@ -35,7 +35,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 | Explicit pinned GGUF download, SHA-256, resume | `src/forgeos/gguf_download.py` | PR #51 + hosted CI | Multi-GiB real download, interrupted resume, disk limits, Windows paths |
 | User GUI backend/endpoint selection and HF browser/download | `src/forgeos/gui.py` | PR #51 + hosted CI | Manual accessible GUI exercise with real backend/HF model |
 | Backend-aware checkpoint recreation | `src/forgeos/recovery.py`, `engine.py` | PR #51 + hosted CI | Crash/reboot, file/model identity and lease safety |
-| Native managed llama.cpp CPU runtime | Extend `local_models.py` with **one** runtime lifecycle owner | Planned | Verified versioned binary, launch/connect/unload/restart without extra GUI |
+| Native managed llama.cpp CPU runtime | `src/forgeos/managed_llama.py` plus one existing GUI control | **Partial experimental PR #51:** SHA-pinned manual binary, GGUF verified, private CPU-only single server and GUI start/stop; automatic installer, complete child cleanup and live inference remain planned | Verified versioned binary, install/connect/unload/restart without extra GUI |
 | Installed GGUF lifecycle and profiles | New bounded model inventory, reusing existing routing | Planned | Install/import/update/remove/repair, pinned hashes and atomic storage |
 | Role-aware multi-model routing | Extend `model_routing.py` and engine orchestration | Planned | Repeatable task-level quality/performance benefit |
 | RAM/process-tree budget and resource governor | Extend `model_routing.py` + managed runtime | Planned | Actual process-tree RSS/commit sampling and OOM failover |
@@ -63,10 +63,13 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 
 - [ ] Select a version-pinned CPU-compatible llama.cpp Windows binary distribution; record exact license, transitive licenses, binary hashes, source and update policy.
 - [ ] Download a signed/checksummed runtime from trusted upstream release metadata with explicit consent; use safe binary origin validation and fail closed when authenticity cannot be established.
-- [ ] Launch `llama-server` with argument-array subprocess execution, explicit binary/model paths, random available local port, no shell and **localhost-only** bind.
+- [x] **Experimental source path:** launch a user-provided `llama-server` with argument-array subprocess execution, explicit binary/model paths, random available local port, no shell and **localhost-only** bind.
+- [ ] Prove port ownership and harden child process-tree cleanup on Windows; the current launch/readiness code does **not** establish exclusive process ownership.
 - [ ] Verify that the listener is the expected child process and version before passing project prompts; protect against port takeover/rebinding.
-- [ ] Single runtime lifecycle controller: cold start, readiness, health, controlled stop, crash exit, process-tree cleanup, application shutdown and restart.
-- [ ] Permit GGUF files to run directly through the ForgeOS GUI without installing or launching LM Studio separately. Keep LM Studio as an **optional** adapter for users who already use it.
+- [x] **Experimental source path:** one GUI-owned runtime lifecycle controller, authenticated readiness request, timeout, controlled stop and application shutdown.
+- [ ] Complete externally verified Windows child-tree cleanup, process ownership, model reload and reboot/lease-safe restart.
+- [x] **Experimental source path:** allow manually selecting a SHA-verified GGUF and user-provided llama-server binary from the existing GUI without launching LM Studio.
+- [ ] Make the binary and model installation fully turnkey, with official binary provenance and actual Windows CPU inference verified.
 - [ ] Separate GPU/CPU capability detection from model selection; CPU-only must always remain usable even without a compatible GPU.
 - [ ] No silent fallback to host-executed project tests, cloud inference or untrusted binaries.
 

@@ -1121,3 +1121,60 @@ attribute older green runs to the new test automatically.
 ### Roadmap-to-GitHub engineering issue verification
 
 Confirmed by reading GitHub issue records after creation: [#53](https://github.com/DevTunaSoft/ForgeOS/issues/53) tracks managed Windows llama.cpp CPU runtime; [#54](https://github.com/DevTunaSoft/ForgeOS/issues/54) tracks model install/import/update/remove plus SHA-256 checkpoint identities; [#55](https://github.com/DevTunaSoft/ForgeOS/issues/55) tracks RAM budgets, small-model benchmarks and intelligent task roles; and [#56](https://github.com/DevTunaSoft/ForgeOS/issues/56) tracks real Windows, fuzz/security/GUI/packaging release acceptance. All four issues were verified open in `DevTunaSoft/ForgeOS`. The feature remains in draft [PR #51](https://github.com/DevTunaSoft/ForgeOS/pull/51). New roadmap links are documentation changes and **not yet green at their new commit**. Next action: verify latest check suite and continue source implementation toward #53.
+
+
+## Managed CPU-first llama.cpp implementation — experimental work in PR #51
+
+New incremental source files: `src/forgeos/managed_llama.py` and
+`tests/test_managed_llama.py`. Modified `src/forgeos/local_models.py`
+and `src/forgeos/gui.py`. Existing Ollama model factory, SQLite state,
+`engine.py`, `model_routing.py`, transaction and AppContainer test
+security remain the canonical owners. No Docker, second GUI or added
+Python package dependency.
+
+**Work delivered in source (not yet real runtime accepted):**
+user-triggered **Run verified local GGUF** opens a popup in the existing
+Development tab; caller selects a user-supplied CPU `llama-server.exe`,
+an independently obtained lowercase SHA-256, and a downloaded ForgeOS
+GGUF. A background worker validates binary hash, model manifest, GGUF
+magic, file-size and conservative free RAM headroom; starts exactly one
+llama-server bound to 127.0.0.1, CPU-only (GPU layers 0),
+context/threads bounded, web UI disabled, one request slot, private
+temporary `--api-key-file`, and zero proxy/cloud/llama override
+environment variables; it checks model health and authenticated
+`/v1/models`, then updates the normal backend/model/endpoint GUI
+fields. The existing `LocalChatModel` now carries a secret bearer
+header without persisting it in the checkpoint or logging it.
+A Stop action and normal GUI shutdown terminate the owned process,
+clean up key files and clear endpoint selection when applicable.
+All hashing/server startup occur off Tk main thread.
+
+**Security/acceptance exclusions:** This path checks the selected binary
+against a **user-provided** hash but does not attest publisher or
+recursive DLL dependencies; executable auto-install/update is not
+implemented; proof of OS-level listener/PID ownership and Windows
+process-tree kill is missing; external process isolation differs from
+the protected AppContainer project-test sandbox; app restart cannot
+automatically restore the transient API key; model SHA is not yet a
+checkpoint contract identity; model idle-unload and real model
+benchmarks are missing. Port takeover is a remaining local privacy
+risk. User-selected weights must include `.forgeos.json` manifest
+from the existing SHA-verified downloader, and they are rehashed
+before every start. The startup adapter merely attempts live
+inference; **we have not tested real GGUF/Windows operation**.
+
+Tests in `tests/test_managed_llama.py` use mocked subprocess and
+HTTP to verify SHA rejection, metadata/format, symlink rejection,
+RAM preflight, safe argv, API-key header, child environment
+filter, startup failure cleanup and timeout. They do **not** constitute
+live llama-server acceptance.
+
+**Next actions:** (1) verify the current feature head's Linux/Windows
+matrix, documentation and frozen Windows AppContainer/GUI acceptance;
+(2) fix any confirmed regressions; (3) harden Windows process tree and
+port identity / executable DLL provenance; (4) add official upstream
+runtime distribution with pinned checksum and user consent; (5) safe
+model revisions and backend+model+runtime hash checkpoint identity;
+(6) real Windows i7-1370P/32-GiB model load, plan/edit/test, crash,
+cleanup and memory measurements; (7) progress issue #54 model manager,
+#55 measured resource governor and role routing, #56 release evidence.

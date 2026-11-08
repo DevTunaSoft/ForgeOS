@@ -82,9 +82,10 @@ backend**: Ollama, llama.cpp, LM Studio, or another local OpenAI-compatible
 server. Leave **Local endpoint** empty for the standard port, or specify
 a literal loopback URL such as `http://127.0.0.1:8080/v1`.
 
-The model server must already be running on your computer. Type its **exact
-advertised model ID** into **Local model**. For non-Ollama servers, `auto`
-only works if the server reports model sizes; otherwise select a name manually.
+For manually selected external local endpoints, the model server must
+already be running on your computer. Type its **exact advertised model ID**
+into **Local model**. For non-Ollama servers, `auto` only works if the
+server reports model sizes; otherwise select a name manually.
 Use **Generate plan** first to verify that the local server responds before
 trying to generate source edits. A model/server failure should block the task,
 not overwrite existing project work.
@@ -95,10 +96,37 @@ whether Git LFS SHA-256 metadata is present. To download, choose a GGUF file wit
 **Download and verify**. ForgeOS confirms the request, checks disk space,
 pins a Hugging Face revision, resumes interrupted partial files and verifies
 the SHA-256 before saving under `~/.forgeos/models`. Downloaded weights are
-not yet installed into a managed inference runtime; they must be opened in
-a compatible local server. Model updates, removal and full running-model
-compatibility tests are still planned. Browsing requires
+not automatically loaded. **Experimental managed local GGUF launch** is
+now available from this same GUI, using a user-provided official
+`llama-server.exe` and its independently verified SHA-256. Full binary
+installation, model updates/removal and running-model acceptance tests
+remain planned. Browsing requires
 internet, but ForgeOS does not use Hugging Face hosted inference.
+
+### Optional: run your downloaded GGUF from inside ForgeOS (experimental)
+
+1. Obtain a trusted CPU `llama-server.exe` and its required companion DLLs
+   from the official llama.cpp project. Independently verify the release
+   source and SHA-256; **ForgeOS does not download, sign or attest binaries**.
+2. Click **Run verified local GGUF** under **Execution settings**.
+3. Browse to the trusted `llama-server.exe`, paste its lowercase
+   64-character SHA-256 and browse to the exact `.gguf` downloaded with
+   **Browse Hugging Face → Download and verify**.
+4. Click **Start local model**. Hashing and startup run in the background.
+   If ForgeOS reports insufficient free RAM, choose a smaller GGUF.
+5. When ready, ForgeOS selects `llama.cpp`, `forgeos-managed` and the
+   private local endpoint. Try **Generate plan** before code edits.
+6. To unload the server, reopen **Run verified local GGUF** and click
+   **Stop local model**, or finish the task and close ForgeOS.
+
+This prototype starts only one managed CPU server, uses a temporary API
+key not saved in task checkpoints, and stops the server when the GUI
+closes. It does **not** provide binary installation, updates, guaranteed
+subprocess-tree isolation, background idle-unload or validated native
+GGUF inference on actual Windows hardware. A SHA-256 match does not
+establish that third-party code or adjacent DLLs are safe. Prefer a
+disposable project until actual model/runtime behavior is verified.
+Read [model compatibility and risks](MODEL_COMPATIBILITY.md).
 
 Examples for advanced users:
 
@@ -128,7 +156,8 @@ The one-window desktop prototype has **two tabs**:
 | --- | --- | --- |
 | **Development** | Project repository and **Browse** | Points ForgeOS to a local Git repository |
 | **Development** | **Tell ForgeOS what to build** | Plain-English development task description |
-| **Development** | Local model | Explicit Ollama model or `auto` selection from installed models |
+| **Development** | Local model | Ollama or explicit local compatible model; `auto` requires available model-size metadata |
+| **Development** | Run verified local GGUF | Experimental one-GUI managed CPU llama.cpp start/stop with SHA-pinned user-provided executable and downloaded verified GGUF |
 | **Development** | Test suite | Framework preset (availability depends on runtime) |
 | **Development** | Repair retries | Limits how many correction attempts are allowed |
 | **Development** | Workspace folder | Separate destination for temporary Git worktrees |

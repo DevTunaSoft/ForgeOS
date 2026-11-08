@@ -21,10 +21,18 @@ The guide is read only when requested and needs no browser or internet access.
 The EXE packages the Python/Tkinter ForgeOS application. It does **not** package:
 
 - Git or an existing local project repository;
-- Ollama, model weights or a cloud AI service;
+- Ollama, llama-server binaries, their dependent DLLs, GGUF model weights or a cloud AI service;
 - Android SDK, web build toolchains, or other arbitrary project dependencies.
 
-Git is needed for worktree operations. For AI features, Ollama must be installed and serving a suitable local model. The local endpoint is `127.0.0.1:11434`. The initial program can open without a model, but model-powered planning/editing cannot.
+Git is needed for worktree operations. For AI features, Ollama can be
+installed and serve a local model at `127.0.0.1:11434`. On the experimental
+multi-LLM feature branch, users may alternatively connect their own compatible
+localhost endpoint or start a **user-supplied, independently verified CPU
+llama-server.exe** with a previously SHA-verified GGUF using the same GUI.
+ForgeOS currently does not ship, download or digitally attest llama-server
+or its associated DLLs. The initial GUI opens without any model, but
+model-powered planning/editing requires a working runtime. Hosted packaging
+does not prove real llama.cpp inference or Windows memory performance.
 
 ## What current Windows CI verifies
 

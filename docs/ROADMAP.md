@@ -20,6 +20,7 @@ Do not introduce second copies of `model_routing.py`, `Store`, `engine.py`, outp
 | Local AI planning/editing | **Implemented prototype:** local Ollama planning, JSON file replacements, bounded source metadata | Deeper planning and whole-app creation, robust real-model acceptance |
 | Experimental local multi-backend adapters | **Feature-branch candidate:** loopback chat adapters for llama.cpp, LM Studio and custom local endpoints; GUI selector | CI, real servers, packaged EXE, real Windows restart validation |
 | Hugging Face GGUF catalog and verified downloads | **Feature-branch candidate:** opt-in metadata browser plus pinned, SHA-256 checked resumable GGUF weight downloads | Real downloads, runtime install/update/delete and end-to-end Windows acceptance |
+| Experimental CPU llama.cpp session controller | **Feature-branch partial:** user-supplied SHA-pinned binary + verified GGUF, one local API-key-protected server, GUI start/stop | Latest CI, real model, server ownership/child cleanup, binary installation and hardware memory acceptance |
 | Safe Git workspaces | **Implemented prototype:** per-task worktrees, path/budget validation, transactional edits | Broader recovery fault injection, demonstrated end-to-end rollback on Windows |
 | Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints, `resume-safe`, lease-fenced engine state publication | Resume additional phases safely, long-run crash/restart and concurrent worker acceptance |
 | Execution isolation | **Implemented prototype:** packaged Windows `unittest` AppContainer path; fail closed on unsupported presets | Secure coverage for additional frameworks, adversarial Windows acceptance |
@@ -39,9 +40,10 @@ Do not introduce second copies of `model_routing.py`, `Store`, `engine.py`, outp
 The proposed model branch must pass Python CI, Windows frozen packaging,
 real llama.cpp/LM Studio local endpoint acceptance, and clean recovery tests
 before its status advances beyond experimental. The next required increments
-are managed CPU llama.cpp runtime, real Windows HF download tests, canonical
-model profiles, measured backend recovery and 16/32 GB Windows memory
-benchmarks. Cross-agent automatic routing, OOM failover and task-specialized
+are managed CPU llama.cpp **installer and full lifecycle** (experimental
+SHA-pinned manual-binary launch/stop is now coded on the feature branch),
+real Windows HF download tests, canonical model profiles, measured backend
+recovery and 16/32 GB Windows memory benchmarks. Cross-agent automatic routing, OOM failover and task-specialized
 capability scoring are **planned**, not complete. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
