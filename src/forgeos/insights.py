@@ -51,7 +51,9 @@ def get_comparison(record: dict, *, evidence_store: Any | None = None,
         if not valid_reference:
             full = "No recoverable original diagnostic was archived for this task."
         else:
-            full = evidence_store.get(reference)
+            full = (evidence_store.preview(reference, max_chars=preview_limit)
+                    if hasattr(evidence_store, "preview")
+                    else evidence_store.get(reference))
     return {
         "task_id": record.get("id"),
         "status": record.get("status", "unknown"),

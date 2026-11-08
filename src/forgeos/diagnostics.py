@@ -3,6 +3,7 @@
 Full output is archived first. If archiving fails, no output is shortened.
 """
 from __future__ import annotations
+import codecs
 import gzip
 import hashlib
 import os
@@ -85,6 +86,53 @@ class EvidenceStore:
         finally:
             if temporary.exists():
                 temporary.unlink()
+
+    def preview(self, reference: str, *, max_chars: int = 240_000) -> str:
+        """SHA-verified small GUI excerpt, without decoding entire archive."""
+        if type(max_chars) is not int or not 2000 <= max_chars <= 240_000:
+            raise ValueError("GUI evidence preview budget is invalid")
+        location = self._path(reference)
+        if location.is_symlink() or not location.is_file():
+            raise ValueError("Diagnostic evidence unavailable or unsafe")
+        allowance = max_chars - 128
+        prefix_limit = allowance * 3 // 4
+        suffix_limit = allowance - prefix_limit
+        digest = hashlib.sha256()
+        decoder = codecs.getincrementaldecoder("utf-8")("strict")
+        byte_count = 0
+        chars = 0
+        complete = []
+        prefix, suffix = "", ""
+
+        def collect(part):
+            nonlocal chars, complete, prefix, suffix
+            chars += len(part)
+            if complete is not None:
+                complete.append(part)
+                if chars > max_chars:
+                    complete = None
+            if len(prefix) < prefix_limit:
+                prefix += part[:prefix_limit - len(prefix)]
+            suffix = (suffix + part)[-suffix_limit:]
+
+        with gzip.open(location, "rb") as stream:
+            while True:
+                block = stream.read(64 * 1024)
+                if not block:
+                    break
+                byte_count += len(block)
+                if byte_count > MAX_ARCHIVE_BYTES:
+                    raise ValueError("Diagnostic archive exceeds size limit")
+                digest.update(block)
+                collect(decoder.decode(block))
+            collect(decoder.decode(b"", final=True))
+        if digest.hexdigest() != reference:
+            raise ValueError("Diagnostic integrity check failed")
+        if complete is not None:
+            return "".join(complete)
+        omitted = max(0, chars - len(prefix) - len(suffix))
+        return (prefix + f"\n[... {omitted} characters omitted from GUI;"
+                " full original available with diagnostics show ...]\n" + suffix)
 
     def get(self, reference: str) -> str:
         path = self._path(reference)
