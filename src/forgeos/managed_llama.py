@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import socket
 import subprocess
 import tempfile
@@ -114,6 +115,57 @@ def _unused_loopback_port() -> int:
         return int(listening.getsockname()[1])
 
 
+def _attach_windows_job(process: subprocess.Popen):
+    """Reuse ForgeOS native Job Object structs; fail closed on setup errors.
+
+    This establishes kill-on-close for the controlled process tree after
+    Popen returns. The brief pre-attachment race remains an acceptance gap;
+    suspended startup will be required for strict child-escape guarantees.
+    """
+    import ctypes
+    from ctypes import wintypes
+    from . import windows_containment as win
+
+    job = win.kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise OSError("Could not create a Windows model process Job Object")
+    try:
+        limits = win.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        limits.BasicLimitInformation.LimitFlags = (
+            win.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | win.JOB_OBJECT_LIMIT_ACTIVE_PROCESS)
+        limits.BasicLimitInformation.ActiveProcessLimit = 8
+        if not win.kernel32.SetInformationJobObject(
+                job, win.JobObjectExtendedLimitInformation,
+                ctypes.byref(limits), ctypes.sizeof(limits)):
+            raise OSError("Could not configure Windows model process Job Object")
+        if not win.kernel32.AssignProcessToJobObject(
+                job, wintypes.HANDLE(process._handle)):
+            raise OSError("Could not attach managed llama-server to Windows Job Object")
+    except BaseException:
+        win.kernel32.CloseHandle(job)
+        raise
+    return job
+
+
+def _release_windows_job(job) -> None:
+    """Close the kill-on-close job even if its members already exited."""
+    from . import windows_containment as win
+    win.kernel32.TerminateJobObject(job, 1)
+    if not win.kernel32.CloseHandle(job):
+        raise OSError("Could not release the Windows model process Job Object")
+
+
+def _terminate_posix_group(pid: int, signal_number: int) -> None:
+    """Kill the owned process session (not just the llama-server parent)."""
+    if type(pid) is not int or pid <= 1:
+        raise ValueError("Missing managed process-group identity")
+    try:
+        os.killpg(pid, signal_number)
+    except ProcessLookupError:
+        pass
+
+
 class ManagedLlamaServer:
     """Bounded, explicit lifecycle for one independently verified GGUF model.
 
@@ -123,6 +175,7 @@ class ManagedLlamaServer:
 
     def __init__(self):
         self.process: subprocess.Popen | None = None
+        self._windows_job = None
         self._secrets: tempfile.TemporaryDirectory | None = None
         self.api_key: str | None = None
         self.endpoint: str | None = None
@@ -174,6 +227,11 @@ class ManagedLlamaServer:
                 env=_child_environment(), stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=flags, start_new_session=(os.name != "nt"))
+            # Bind the entire Windows process tree to an owned
+            # kill-on-close Job Object, rather than only terminating its
+            # parent PID. Existing test isolation is a SEPARATE sandbox.
+            if os.name == "nt":
+                self._windows_job = _attach_windows_job(self.process)
             self.api_key = key
             self.endpoint = f"http://127.0.0.1:{port}/v1"
             self.model_name = ALIAS
@@ -213,13 +271,22 @@ class ManagedLlamaServer:
     def stop(self) -> None:
         process = self.process
         self.process = None
+        job = self._windows_job
+        self._windows_job = None
         try:
+            if job is not None:
+                # All child processes are terminated when the job closes.
+                _release_windows_job(job)
             if process is not None:
-                if process.poll() is None:
+                if process.poll() is None and job is None:
+                    if os.name != "nt":
+                        _terminate_posix_group(process.pid, signal.SIGTERM)
                     process.terminate()
                 try:
                     process.wait(timeout=4)
                 except subprocess.TimeoutExpired:
+                    if os.name != "nt" and job is None:
+                        _terminate_posix_group(process.pid, signal.SIGKILL)
                     process.kill()
                     process.wait(timeout=4)
         finally:
