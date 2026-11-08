@@ -35,6 +35,40 @@ class ForgeOSTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.list(brief=1)
 
+    def test_paged_brief_tasks_are_bounded_and_ordered(self):
+        ids = [self.store.add(str(self.repo), "x" * 10000 + str(i))
+               for i in range(510)]
+        first = self.store.list(brief=True, limit=150)
+        middle = self.store.list(brief=True, limit=150, offset=150)
+        last = self.store.list(brief=True, limit=150, offset=450)
+        self.assertEqual(len(first), 150)
+        self.assertEqual(len(middle), 150)
+        self.assertEqual(len(last), 60)
+        self.assertEqual(first[0]["id"], ids[-1])
+        self.assertEqual(middle[0]["id"], ids[-151])
+        self.assertEqual(last[-1]["id"], ids[0])
+        self.assertLessEqual(len(first[0]["description"]), 140)
+        self.assertEqual(len({row["id"] for row in first + middle + last}), 360)
+        self.assertEqual(self.store.counts()["total"], 510)
+
+    def test_paged_task_counts_and_invalid_inputs(self):
+        task = self.store.add(str(self.repo), "first")
+        self.store.update(task, "passed")
+        second = self.store.add(str(self.repo), "second")
+        self.store.update(second, "blocked")
+        third = self.store.add(str(self.repo), "third")
+        self.store.update(third, "failed")
+        totals = self.store.counts()
+        self.assertEqual(totals, {"total": 3, "passed": 1, "failed": 1,
+                                  "blocked": 1})
+        self.assertEqual(self.store.list(brief=True, limit=2, offset=3), [])
+        self.assertEqual(len(self.store.list()), 3)
+        for kwargs in ({"limit": 0}, {"limit": 501}, {"limit": True},
+                       {"limit": "8"}, {"limit": 1, "offset": -1},
+                       {"limit": 2, "offset": 1.5}, {"limit": None, "offset": 1}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                self.store.list(**kwargs)
+
     def test_empty_and_non_repo_rejected(self):
         with self.assertRaises(ValueError): self.store.add(str(self.repo),'  ')
         with self.assertRaises(ValueError): self.store.add(str(self.root),'something')

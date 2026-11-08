@@ -136,3 +136,12 @@ Run a reproducible, synthetic, local-only benchmark after installation:
 See docs/MEMORY_BUDGET.md for implementation limits, tests, and the real
 Windows physical/VM acceptance that still must be completed. This benchmark
 reports traced Python allocations, NOT total process-tree RAM or Ollama VRAM.
+
+
+## Memory-bounded task history
+
+The desktop queue is now paged in blocks of 150 tasks with **Older tasks** and
+**Newer tasks** controls. Refresh retrieves only a short task summary and
+SQL-level aggregate counts instead of loading and rendering every old result
+or full description. This is a memory optimization, not a deletion or
+retention limit: the CLI and SQLite archive still preserve prior tasks.

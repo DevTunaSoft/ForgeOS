@@ -48,13 +48,39 @@ class Store:
                 (str(project_path), description.strip(), now, now))
         return int(cur.lastrowid)
 
-    def list(self, *, brief: bool = False):
-        """Brief rows avoid materializing large result/diagnostic blobs for GUI."""
+    def list(self, *, brief: bool = False, limit: int | None = None,
+             offset: int = 0):
+        """Read a bounded task page, without materializing diagnostic blobs.
+
+        The historical CLI may request the complete list with no limit.
+        The desktop GUI MUST pass an explicit limit to avoid Tk/SQLite
+        allocations proportional to the number of historical tasks.
+        """
         if type(brief) is not bool:
             raise ValueError("brief must be boolean")
-        fields = "id,status,description" if brief else "*"
-        return [dict(row) for row in self.db.execute(
-            f"SELECT {fields} FROM tasks ORDER BY id DESC")]
+        if limit is not None and (type(limit) is not int or not 1 <= limit <= 500):
+            raise ValueError("Page limit must be 1..500")
+        if type(offset) is not int or offset < 0 or (offset and limit is None):
+            raise ValueError("Page offset requires a bounded page limit")
+        fields = ("id,status,substr(description,1,140) AS description"
+                  if brief else "*")
+        sql = f"SELECT {fields} FROM tasks ORDER BY id DESC"
+        args = ()
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            args = (limit, offset)
+        return [dict(row) for row in self.db.execute(sql, args)]
+
+    def counts(self) -> dict[str, int]:
+        """SQL aggregate, not a full scan into Python task objects."""
+        result = {"total": 0, "passed": 0, "failed": 0, "blocked": 0}
+        for row in self.db.execute(
+                "SELECT status,COUNT(*) AS n FROM tasks GROUP BY status"):
+            count = int(row["n"])
+            result["total"] += count
+            if row["status"] in result:
+                result[row["status"]] += count
+        return result
 
     def get(self, task_id: int):
         row = self.db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
