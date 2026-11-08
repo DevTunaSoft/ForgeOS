@@ -61,6 +61,16 @@ class DashboardContractTests(unittest.TestCase):
         self.assertEqual(path.name, "USER_GUIDE.md")
         self.assertIn("ForgeOS", path.read_text(encoding="utf-8"))
 
+    def test_gui_uses_canonical_lease_safe_plan_and_test_actions(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn("from .task_actions import plan_task, test_task", source)
+        self.assertIn("plan_task(", source)
+        self.assertIn("test_task(", source)
+        self.assertNotIn("worker_store.update(", source)
+        self.assertIn('operation in {"run", "test"}', source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

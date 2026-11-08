@@ -87,7 +87,7 @@ The one-window desktop prototype has **two tabs**:
 | **Development** | Test suite | Framework preset (availability depends on runtime) |
 | **Development** | Repair retries | Limits how many correction attempts are allowed |
 | **Development** | Workspace folder | Separate destination for temporary Git worktrees |
-| **Development** | Host test execution checkbox | Explicitly permits execution in source/development mode; use only with trusted repositories |
+| **Development** | Host test execution checkbox | Required for **Run tests only** and **Build / test / repair**; enables trusted source/development-mode execution while packaged Windows uses its designated isolated test runtime |
 | **Development** | Development queue | Tasks, status, and Older/Newer pagination (150 rows per page) |
 | **Development** | Add task / Generate plan / Run tests only / Build / test / repair | Main workflow actions |
 | **Activity & diagnostics** | Task results, original-versus-summary comparisons, repair-learning statistics, one-shot RAM snapshot | Evidence inspection and operational visibility |
@@ -106,7 +106,7 @@ Not every error can be fixed automatically. A failed model operation, a failed o
 7. Set **Test suite** to `python-unittest` for this example.
 8. Under **Workspace folder**, choose a directory that can hold new task worktrees. The directory is separate from the source repo.
 9. Select **Generate plan** if you want to see a local model's proposed approach. This may update the task's status to Planned but does not build a finished application.
-10. To try **Build / test / repair** in source mode, first read the warning and enable host test execution **only if the repository is trusted**. ForgeOS may execute generated test code.
+10. To try **Build / test / repair** or **Run tests only**, first read the warning and enable host test execution **only if the repository is trusted**. Both actions execute project test code; the frozen Windows build uses its designated sandbox path and fails closed for unsupported presets.
 11. Open **Activity & diagnostics** to see success, failure, model and test details.
 12. Inspect the task's generated worktree and test evidence before copying or merging any changes into your main project.
 
@@ -209,7 +209,7 @@ a workspace before recovery.
 | `py -m forgeos add PATH "request"` | Add task for an existing local repo |
 | `py -m forgeos list` | Stream task history as JSON |
 | `py -m forgeos plan ID --model auto` | Ask local model to plan a queued/planned task (exclusive lease; completed tasks cannot be overwritten) |
-| `py -m forgeos test ID --preset python-unittest` | Run selected tests |
+| `py -m forgeos test ID --preset python-unittest --allow-host-tests` | Run tests from the original trusted repository through the selected runtime. Queued/planned/failed tasks only, never overwrite passed/blocked tasks |
 | `py -m forgeos run ID --workspace-parent PATH --allow-host-tests` | Prototype edit/test/repair cycle on trusted source |
 | `py -m forgeos recover` | Mark interrupted states for safe inspection |
 | `py -m forgeos recover-edits WORKSPACE` | Recover pending edit transaction |
@@ -229,10 +229,10 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 | “Project must be an existing local Git repository” | Select the folder containing the `.git` entry; initialize/commit the practice repository first |
 | Ollama connection failure | Install/start Ollama and confirm the local server; `ollama list` should show a model |
 | Auto model selection fails | No installed model fits the preflight heuristic, or the local model list is unavailable; use a smaller installed model |
-| Host execution permission prompt | Only grant permission for code you trust; otherwise stop |
+| Host execution permission prompt | The checkbox is required for both manual tests and autonomous builds; CLI direct tests need `--allow-host-tests`. Only grant permission for code you trust |
 | Unsupported preset in packaged Windows | Packaged secure runner supports `python-unittest` and experimental bundled `python-pytest`; npm/Go/Cargo/.NET presets remain unsupported in frozen mode. Never bypass the fail-closed restriction |
 | Task is Blocked after restart | Run `recover`, inspect workspace/journal/checkpoint, then use eligible guarded recovery |
-| Task is already being planned or completed | Wait for the active planner or inspect task history. ForgeOS will not start a second concurrent plan or re-plan a passed/failed task |
+| Task is already being planned or completed | Wait for the active planner or inspect task history. GUI and CLI now share lease-fenced plan/test actions; passed/blocked work is not silently retested or overwritten |
 | Diagnostic evidence cannot be opened | Archive may be missing, truncated, over size limit or fail integrity validation; do not treat an incomplete report as successful acceptance |
 | App feels slow or low on memory | Choose a smaller local model, reduce context, review `memory`; telemetry covers ForgeOS only, not Ollama or compilers |
 

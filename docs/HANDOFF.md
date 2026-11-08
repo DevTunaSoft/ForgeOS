@@ -766,3 +766,54 @@ pass before merge; no real Windows/Ollama hardware acceptance was performed.
 - At authoring: CI/Windows packaging are not yet verified. Run Linux and
   Windows 3.10/3.12 tests, documentation integrity and frozen EXE/GUI/
   AppContainer smoke before merging; inspect failures and re-run.
+
+## Unified GUI and CLI planning/testing safeguards — 2026-11-07 (review branch)
+
+- Starting main: `d28f224a5438972167a84e5ec0f7bf1fe0260154`.
+- Branch: `hardening/unified-gui-cli-task-actions`.
+- Defects: desktop planning/testing still used unconditional task updates
+  without lease protection, and a packaged GUI's standalone test button
+  called the direct test runner instead of the engine's AppContainer path.
+  CLI `test` likewise lacked explicit host-test permission.
+- Added one canonical `src/forgeos/task_actions.py` for both frontends,
+  reusing the existing SQLite lease/transition and engine runtime. Planning
+  is eligible only from queued/planned; direct manual testing is eligible
+  from queued/planned/failed. Completed and checkpoint-blocked tasks cannot
+  be overwritten by a manual test action.
+- Standalone tests now require an explicit trust opt-in from GUI checkbox or
+  CLI `--allow-host-tests`; they route through `engine._run_workspace_tests`
+  so frozen Windows only uses permitted AppContainer presets and fail-closed
+  behavior. Incomplete output cannot approve a task.
+- Removed unowned GUI exception-state write that could clobber another
+  worker's task. GUI worker thread continues to use a dedicated Store.
+- Added tests for GUI source contract, shared planning lease behavior,
+  opt-in preflight, result persistence, failed/incomplete evidence,
+  protected completed tasks, live lease replacement and CLI flag routing.
+- User guide, roadmap and architecture updated alongside implementation.
+- CI acceptance, Windows real-machine behavior and local Ollama testing
+  were **not verified** at authoring; require Linux+Windows 3.10/3.12,
+  docs integrity and frozen Windows GUI/AppContainer smoke before merge.
+
+### PR #50 CI correction (in review)
+
+The first Linux Python 3.10/3.12 CI run exposed one regression in
+`tests/test_cli_plan_lease.py`: the CLI eagerly constructed an Ollama
+object for a completed/ineligible task before `plan_task()` refused it.
+The intended behavior is to avoid unnecessary model construction, reduce
+resource overhead and leave completed work untouched. The shared helper
+now accepts a lazy model factory; CLI and GUI instantiate only *after*
+eligibility checks and successful exclusive lease acquisition. Additional
+tests confirm no invocation for completed tasks and exactly one model
+construction under a live planning lease. The initial failure is recorded
+here; full rerun/Windows packaged acceptance still required.
+
+### PR #50 Windows CI correction (in review)
+
+Linux tests passed after the lazy-model change, but Windows 3.12 exposed
+an independent test-fixture path comparison: the temporary directory
+appeared as both a Windows 8.3 short alias and its canonical long path.
+`Store.add()` intentionally stores `Path.resolve()` output. The test now
+asserts the exact canonical project path persisted in the task instead
+of assuming the unnormalized temporary-directory spelling. No production
+path transformation or security restriction was weakened. Rerun the
+entire Windows/Linux suite and frozen EXE acceptance before merge.
