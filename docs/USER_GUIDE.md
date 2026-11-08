@@ -1,6 +1,6 @@
 # ForgeOS — User manual
 
-**Audience:** first-time users, testers, and developers evaluating the current ForgeOS prototype. **Current scope:** existing local Git repositories, local Ollama AI, selected code editing/testing, diagnostics and recovery. ForgeOS does not yet provide a one-click production app builder.
+**Audience:** first-time users, testers, and developers evaluating the current ForgeOS prototype. **Current scope:** existing local Git repositories, local Ollama AI and experimental loopback model adapters on the feature branch, selected code editing/testing, diagnostics and recovery. ForgeOS does not yet provide a one-click production app builder.
 
 > [!WARNING]
 > **Start with a disposable test repository.** Source/development-mode test execution can run generated repository code on your Windows computer. Never check the host-test permission box for code you do not trust. Windows frozen executable isolation supports only designated presets; unsupported presets fail closed.
@@ -74,6 +74,42 @@ git commit -m "Initial practice project"
 ```
 
 If `git commit` asks for identity details, configure your own Git author name and email. A preexisting Git repository is required; ForgeOS does not currently create and configure arbitrary application projects for you.
+
+## New: using more than one local AI runtime (experimental feature branch)
+
+In **Development → Execution settings**, you can now select **Inference
+backend**: Ollama, llama.cpp, LM Studio, or another local OpenAI-compatible
+server. Leave **Local endpoint** empty for the standard port, or specify
+a literal loopback URL such as `http://127.0.0.1:8080/v1`.
+
+The model server must already be running on your computer. Type its **exact
+advertised model ID** into **Local model**. For non-Ollama servers, `auto`
+only works if the server reports model sizes; otherwise select a name manually.
+Use **Generate plan** first to verify that the local server responds before
+trying to generate source edits. A model/server failure should block the task,
+not overwrite existing project work.
+
+Click **Browse Hugging Face** to search public GGUF repositories. Select a
+result and click **Inspect GGUF sizes** to see published weight sizes and
+whether Git LFS SHA-256 metadata is present. This is **discovery only**:
+downloads, installation, updating, model removal and actual model
+compatibility checks are not yet available inside ForgeOS. Browsing requires
+internet, but ForgeOS does not use Hugging Face hosted inference.
+
+Examples for advanced users:
+
+```powershell
+forgeos models --backend llama.cpp
+forgeos model-catalog search "Qwen2.5-Coder"
+forgeos model-catalog files Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+forgeos plan 1 --backend lm-studio --model your-exact-local-model-id
+```
+
+The Ollama default remains unchanged. Keep only one model loaded if RAM is
+tight. A model switch is not an authorization to restart an interrupted
+workflow with different weights. Read the
+[full model compatibility guide](MODEL_COMPATIBILITY.md) for limitations,
+troubleshooting and a RAM-conscious model shortlist.
 
 ## 2. Understand the screen
 

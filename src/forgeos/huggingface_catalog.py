@@ -1,0 +1,94 @@
+"""Opt-in bounded read-only discovery of public Hugging Face GGUF catalogs.
+
+No models are executed or downloaded here; Hub metadata is untrusted.
+The Hub is contacted only after an explicit user action.
+"""
+from __future__ import annotations
+
+import json
+import re
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
+
+MAX_HUB_JSON_BYTES = 2 * 1024 * 1024
+REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
+SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
+
+
+def _hub_json(url: str) -> object:
+    # All URLs are constructed from a fixed HTTPS origin; no user URLs accepted.
+    # Catalog requests are metadata-only. Never send authentication headers.
+    req = Request(url, headers={"Accept": "application/json",
+                                "User-Agent": "ForgeOS-model-catalog/0.1"})
+    with urlopen(req, timeout=15) as response:
+        content = response.read(MAX_HUB_JSON_BYTES + 1)
+    if len(content) > MAX_HUB_JSON_BYTES:
+        raise RuntimeError("Hugging Face catalog exceeded the bounded metadata limit")
+    try:
+        return json.loads(content)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise RuntimeError("Hugging Face catalog contained invalid JSON") from exc
+
+
+def search_gguf(query: str, *, limit: int = 15) -> list[dict]:
+    """List public candidate GGUF repositories, not verified running models."""
+    if (not isinstance(query, str) or not 2 <= len(query.strip()) <= 64
+            or any(ord(c) < 32 for c in query)):
+        raise ValueError("Enter a search phrase of 2–64 characters")
+    if type(limit) is not int or not 1 <= limit <= 30:
+        raise ValueError("Catalog result limit must be 1–30")
+    params = urlencode({"search": query.strip(), "limit": limit,
+                        "sort": "downloads", "direction": "-1"})
+    payload = _hub_json("https://huggingface.co/api/models?" + params)
+    if not isinstance(payload, list) or len(payload) > limit:
+        raise RuntimeError("Unexpected Hugging Face search results")
+    result = []
+    for entry in payload:
+        if not isinstance(entry, dict) or entry.get("private") or entry.get("gated"):
+            continue
+        name = entry.get("id")
+        tags = entry.get("tags") or []
+        if (not isinstance(name, str) or not REPO_ID.fullmatch(name)
+                or not isinstance(tags, list)):
+            continue
+        if not ("gguf" in name.lower() or
+                any(isinstance(t, str) and "gguf" in t.lower() for t in tags)):
+            continue
+        license_tags = [t.split(":", 1)[1] for t in tags
+                        if isinstance(t, str) and t.startswith("license:")]
+        result.append({
+            "repo": name, "downloads": entry.get("downloads", 0)
+            if type(entry.get("downloads")) is int else 0,
+            "license_tag": license_tags[0] if license_tags else "unverified",
+            "verified_compatible": False,
+        })
+    return result
+
+
+def list_gguf_files(repo: str) -> list[dict]:
+    """Inspect one repository's GGUF weights and trusted LFS hashes if exposed."""
+    if not isinstance(repo, str) or not REPO_ID.fullmatch(repo):
+        raise ValueError("Invalid Hugging Face repository identifier")
+    url = ("https://huggingface.co/api/models/" +
+           "/".join(quote(part, safe="") for part in repo.split("/")) +
+           "/tree/main?recursive=true")
+    payload = _hub_json(url)
+    if not isinstance(payload, list) or len(payload) > 2000:
+        raise RuntimeError("Unexpected or oversized Hugging Face file listing")
+    output = []
+    for item in payload:
+        if not isinstance(item, dict) or item.get("type") != "file":
+            continue
+        name = item.get("path")
+        size = item.get("size")
+        if (not isinstance(name, str) or not name.lower().endswith(".gguf")
+                or type(size) is not int or size <= 0
+                or ".." in name.split("/") or name.startswith("/")):
+            continue
+        lfs = item.get("lfs")
+        oid = lfs.get("oid") if isinstance(lfs, dict) else None
+        output.append({
+            "path": name, "bytes": size,
+            "sha256": oid.lower() if isinstance(oid, str) and SHA256.fullmatch(oid) else None,
+        })
+    return output

@@ -834,3 +834,139 @@ entire Windows/Linux suite and frozen EXE acceptance before merge.
   No code change or new runtime features in this branch. Documentation and
   regression CI are required before merging; real Windows acceptance is
   still pending.
+
+## Local multi-model adapters and Hugging Face GGUF discovery — 2026-11-07 (PR candidate)
+
+### Mission and decisions
+
+The ForgeOS user requires a single clean local-first Windows GUI that can use
+multiple specialized coding models without Docker or subscriptions. The
+engineering audit of `main` at `5607d869e889f0c63168dd412debde61c6212214`
+established that Ollama in `src/forgeos/core.py` was the only inference
+backend, with a useful preexisting memory heuristic and model selection in
+`src/forgeos/model_routing.py`. The GUI and CLI instantiate Ollama directly,
+and the engine records model identity and test/repair metadata in its
+checkpoint. The correct approach is therefore to **extend**, not duplicate,
+the engine, routing, SQLite store or user interface.
+
+This review branch adds a small dependency-free adapter. Important constraints:
+
+- Do **not** add Docker, a new GUI, paid inference APIs, or bundled model weights.
+- Keep `Ollama` and its legacy checkpoint contracts unchanged.
+- Only literal loopback addresses for model inference; no DNS names, LAN IPs,
+  cloud endpoints, proxy or redirects; do not send prompts to Hugging Face.
+- Hugging Face metadata discovery is an explicit user action. Catalog results
+  are untrusted, read-only and never presented as verified runnable models.
+- Never imply the adapter controls process-tree RAM. Actual model memory is
+  owned by the external runtime, and automatic choice is disabled if sizes
+  are unavailable.
+- Keep generated edits on the existing validated transactional-worktree path,
+  with current test sandbox boundaries unchanged.
+- Never switch backend/port silently during checkpoint recovery. Non-Ollama
+  checkpoint contracts add backend+endpoint; current automatic safe resume
+  still only reconstructs Ollama.
+
+### Source inventory in this branch
+
+| Path | Description |
+| --- | --- |
+| `src/forgeos/local_models.py` | Strict loopback URL validation; Ollama-preserving factory; bounded OpenAI-compatible chat adapter; local model listing and size-aware auto selection |
+| `src/forgeos/huggingface_catalog.py` | User-triggered metadata search and GGUF file listings with size and optional LFS SHA-256 |
+| `src/forgeos/cli.py` | `--backend` and `--endpoint` to plan/run; `models` and `model-catalog` commands |
+| `src/forgeos/gui.py` | Existing GUI backend/endpoint selectors and read-only Hugging Face browse popup; worker threads update Tk only through bounded queues |
+| `src/forgeos/engine.py` | Resolve explicitly selected non-Ollama models and fence checkpoint resume against backend/endpoint changes |
+| `tests/test_local_models.py` | Mocked provider and security cases |
+| `tests/test_huggingface_catalog.py` | Mocked catalog, input and response-limit cases |
+| `README.md`, `docs/USER_GUIDE.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/MEMORY_BUDGET.md` | Continuous user/architecture/roadmap/status updates |
+| `docs/MODEL_COMPATIBILITY.md` | Detailed status matrix, beginner setup, sample commands, model shortlist and measured acceptance requirements |
+
+### Test evidence at branch creation
+
+- GitHub source and existing test contracts were read prior to edits.
+- New cases authored for endpoint restrictions, model response protocol,
+  auto routing with/without size metadata, oversize outputs, malformed JSON,
+  Hub public listing filtering, GGUF metadata and input validation.
+- **No local runtime unit tests or real Windows/LLM experiments had run at
+  the point of this handoff edit.** CI outcomes must be recorded separately
+  after check runs finish. Do not infer a pass from committed test files.
+- Real llama.cpp CPU and LM Studio model calls, new GUI manual click-through,
+  memory soak, restart injection, actual Hugging Face live listing, packaging
+  and offline inference acceptance all remain **unverified** until witnessed.
+
+### Known gaps and risks
+
+1. New adapters only **connect** to pre-running local HTTP servers; ForgeOS
+   does not load GGUF files, manage server binaries, download models,
+   pin revisions, verify downloaded bytes, or uninstall files.
+2. `auto` for non-Ollama depends on the server reporting positive model
+   weight sizes. The local Ollama selector already supports installed size
+   routing. A manual model ID is required when metadata is absent.
+3. `resume-safe` still reconstructs Ollama; backend-aware resume needs
+   explicit persisted backend profiles and worker ownership verification.
+4. An arbitrary local process could impersonate a loopback inference port.
+   Bind/authenticate managed runtimes before treating prompts as private.
+5. Compatibility of `/v1/chat/completions`, max token fields, truncation and
+   tool/JSON output varies by runtime/version/model and needs test hardware.
+6. Existing memory heuristics are conservative estimates of model-file size,
+   not a model memory governor. CPU model lifecycles, OOM response, worker
+   parallelism and nonblocking downloads remain future phases.
+7. Hub metadata queries require internet; generated code and user project
+   source must never be sent to the public model catalog.
+8. ForgeOS still requires Windows-installed executable and real-model
+   end-to-end acceptance before any production-quality claim.
+
+### Exact continuation / recovery instructions
+
+1. Open the dedicated PR for
+   `feat/local-multimodel-endpoints-20261107` into `main` and inspect
+   all CI / Windows executable jobs, including Python 3.10 and 3.12.
+2. Repair any specific failing test, run the affected suite and full
+   regression matrix, recheck the packaged EXE, and keep README/manual/handoff
+   synchronized. Do not merge on failure or while another active lease-safety
+   PR is unverified.
+3. Source checkout (from a machine with network and the checked-out branch):
+
+   ```powershell
+   git clone https://github.com/DevTunaSoft/ForgeOS.git
+   cd ForgeOS
+   git switch feat/local-multimodel-endpoints-20261107
+   py -3.12 -m venv .venv
+   .venv\\Scripts\\python -m pip install -e .
+   .venv\\Scripts\\python -m compileall -q src tests
+   .venv\\Scripts\\python -m unittest discover -s tests -v
+   ```
+
+4. Run `forgeos models --backend llama.cpp` against a CPU-only local
+   llama-server, then `forgeos plan` and a disposable worktree edit/test
+   cycle using an explicitly selected tiny coding model. Repeat with LM
+   Studio. Record exact runtime build, model GGUF hash, configuration,
+   elapsed time and peak process-tree working set.
+5. Inject server stop, bad JSON, model-not-found, OOM, app restart and an
+   incompatible backend switch at an interrupted checkpoint. Confirm
+   original workspace files remain unchanged and resumption fails closed.
+6. Complete safe user-triggered HF downloads/install and backend-managed
+   CPU llama.cpp lifecycle separately, after the adapter passes baseline CI.
+7. Continue enhancing routing without duplicating `model_routing.py`,
+   `core.Ollama`, `Store`, or `engine.execute_task`.
+
+### Research shortlist
+
+Prioritize testing 1.5B/3B Q4_K_M GGUF coding models on low-memory systems
+before escalating to 7B Q4_K_M on 32 GB Windows with integrated Intel GPU.
+Published weight sizes are not real runtime memory. Qwen3-Coder-Next Q4_K_M
+is about 48 GB and is not a practical 32 GB target. See source links and
+the status matrix in [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
+
+### Hosted CI failure and immediate corrective action
+
+On commit `022976a6c511ed13045b6a1c27395f939661a47c`,
+Linux 3.10 and 3.12 ran 286 regression tests each with three errors in
+`test_cli_plan_lease.py`; existing lease-safety tests patch
+`forgeos.cli.Ollama`, which the replacement factory had removed.
+No additional Linux failure was shown. In this revision, `_cli_model()`
+retains the original Ollama constructor for default CLI calls while routing
+other providers through the shared adapter. New tests for adapters and the
+public GGUF catalog passed in the earlier Linux run. **The corrected build
+still requires a new full CI run; the failure is not claimed fixed until
+that run finishes.** GitHub's newer `task_actions` lease safety and
+updated main documentation are retained.

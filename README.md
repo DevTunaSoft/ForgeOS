@@ -5,7 +5,7 @@
 [![Python CI](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/ci.yml/badge.svg)](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/ci.yml)
 [![Windows executable](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/windows-exe.yml/badge.svg)](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/windows-exe.yml)
 ![Stage](https://img.shields.io/badge/status-active%20prototype-orange)
-![Models](https://img.shields.io/badge/AI-local%20Ollama-blue)
+![Models](https://img.shields.io/badge/AI-Ollama%20%2B%20experimental%20local%20endpoints-blue)
 ![Docker](https://img.shields.io/badge/Docker-not%20required-informational)
 
 > [!IMPORTANT]
@@ -123,6 +123,26 @@ Create the workspace parent folder before running this CLI command. The `--allow
 CLI and GUI planning/testing now use the same SQLite task lease and status-transition checks, instead of separate implementations. This reduces the risk of concurrent operations overwriting each other's results; physical Windows crash/restart acceptance remains outstanding.
 
 Supported CLI recovery commands also include `resume-safe`, `run --resume` and `recover-edits`, with strict workspace/checkpoint validation. Read the [manual](docs/USER_GUIDE.md#6-recovery-after-an-interruption) before using them.
+
+## Experimental local multi-model support (review branch)
+
+ForgeOS originally used **Ollama only**. The multi-model feature branch adds
+dependency-free **loopback OpenAI-compatible adapters** for llama.cpp, LM Studio
+and configurable local servers, while preserving Ollama and the existing
+RAM-aware selector. The same ForgeOS GUI now offers a backend selector, local
+endpoint field and **read-only Hugging Face GGUF catalog browser**. This is
+a **prototype awaiting CI and real-runtime acceptance**, not a verified
+local model installer or unified native inference engine.
+
+The Hugging Face browser can search public GGUF repositories and inspect
+published file sizes/hash metadata when explicitly requested; ForgeOS
+**cannot download, install, run, update or remove GGUF files itself** yet.
+An external inference server must already be running locally for non-Ollama
+inference. No Docker, paid API or cloud inference is required for this
+connector. An endpoint is restricted to literal loopback addresses.
+
+Read the [model compatibility and setup guide](docs/MODEL_COMPATIBILITY.md)
+for clear statuses, CLI examples, security boundaries and next steps.
 
 ## Local AI and memory efficiency
 

@@ -4,9 +4,17 @@ import json
 import sys
 from pathlib import Path
 from .core import Store, Ollama
+from .local_models import BACKENDS, create_model
 
 def default_db():
     return Path.home()/'.forgeos'/'tasks.sqlite3'
+
+def _cli_model(*, backend: str, model: str, endpoint: str):
+    """Keep the original Ollama integration patchable and backwards-compatible."""
+    if backend == "ollama" and not endpoint:
+        return Ollama(model=model)
+    return create_model(backend=backend, model=model, endpoint=endpoint)
+
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description='ForgeOS local-first development manager')
@@ -14,6 +22,12 @@ def main(argv=None):
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
+    models=sub.add_parser('models',help='List models reported by one local runtime')
+    models.add_argument('--backend',choices=BACKENDS,default='ollama')
+    models.add_argument('--endpoint',default='')
+    catalog=sub.add_parser('model-catalog',help='Opt-in Hugging Face public GGUF discovery')
+    catalog.add_argument('operation',choices=('search','files'))
+    catalog.add_argument('query',help='Search phrase or repository ID')
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
     evidence.add_argument('operation',choices=['show','stats'])
     evidence.add_argument('reference',nargs='?')
@@ -35,6 +49,11 @@ def main(argv=None):
     run.add_argument('--workspace-parent',required=True)
     run.add_argument('--preset',default='python-unittest',choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'])
     run.add_argument('--model',default='qwen2.5-coder:3b')
+    for command in (plan, run):
+        command.add_argument('--backend', choices=BACKENDS, default='ollama',
+                             help='Local inference runtime; defaults to Ollama')
+        command.add_argument('--endpoint', default='',
+                             help='Optional literal 127.0.0.1 or [::1] local API endpoint')
     run.add_argument('--max-repairs',type=int,default=2)
     run.add_argument('--allow-host-tests',action='store_true',help='Explicitly permit running repository code on this machine')
     run.add_argument('--resume',action='store_true',help='Resume an interrupted test-pending or repair-pending checkpoint')
@@ -49,6 +68,23 @@ def main(argv=None):
     if args.action=='gui':
         from .gui import launch
         return launch(args.db)
+    if args.action == 'models':
+        if args.backend == 'ollama':
+            from .model_routing import installed_models
+            if args.endpoint not in ('', 'http://127.0.0.1:11434'):
+                raise ValueError('Ollama uses its fixed local endpoint')
+            values = installed_models()
+        else:
+            values = _cli_model(backend=args.backend, model='auto',
+                                  endpoint=args.endpoint).installed()
+        print(json.dumps(values, indent=2))
+        return 0
+    if args.action == 'model-catalog':
+        from .huggingface_catalog import search_gguf, list_gguf_files
+        values = (search_gguf(args.query) if args.operation == 'search'
+                  else list_gguf_files(args.query))
+        print(json.dumps(values, indent=2))
+        return 0
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))
@@ -97,7 +133,9 @@ def main(argv=None):
         elif args.action=='plan':
             from .task_actions import plan_task
             output = plan_task(store, args.id,
-                               model_factory=lambda: Ollama(model=args.model))
+                               model_factory=lambda: _cli_model(backend=args.backend,
+                                                                 model=args.model,
+                                                                 endpoint=args.endpoint))
             print(output)
         elif args.action=='resume-safe':
             from .recovery import resume_safe
@@ -118,7 +156,8 @@ def main(argv=None):
         elif args.action=='run':
             from .engine import execute_task
             result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,
-                                model=Ollama(model=args.model),max_repairs=args.max_repairs,
+                                model=_cli_model(backend=args.backend, model=args.model,
+                                                   endpoint=args.endpoint),max_repairs=args.max_repairs,
                                 allow_host_tests=args.allow_host_tests,resume=args.resume)
             print(json.dumps(result,indent=2))
             if not result['passed']:

@@ -194,12 +194,17 @@ def _execute_task(
         model = model or Ollama()
         model_name = getattr(model, "model", None)
         if model_name == "auto":
-            from .model_routing import choose_installed_model
-            model_name = choose_installed_model(task["description"])
+            if getattr(model, "backend", "ollama") == "ollama":
+                from .model_routing import choose_installed_model
+                model_name = choose_installed_model(task["description"])
+            else:
+                model_name = model._choose_model(task["description"])
             model.model = model_name
         if not isinstance(model_name, str) or not model_name.strip():
             raise ValueError("Model must expose a stable model identifier")
         contract = {"preset": preset, "max_repairs": max_repairs, "model": model_name}
+        if getattr(model, "backend", "ollama") != "ollama":
+            contract.update(backend=model.backend, endpoint=model.base)
         prompt = (
             "Return ONLY strict JSON with exactly this schema: "
             '{"files":[{"path":"relative/file.py","content":"complete replacement text"}]}. '

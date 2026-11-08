@@ -10,7 +10,7 @@ flowchart TB
     CLI["Python CLI"] --> DB
     UI --> Engine["Task engine"]
     CLI --> Engine
-    Engine --> Models["Ollama at 127.0.0.1:11434"]
+    Engine --> Models["Ollama + experimental loopback OpenAI-compatible adapters"]
     Engine --> Context["Bounded source metadata/context"]
     Engine --> Workspace["Git worktree per task"]
     Engine --> Tx["Validated + journaled edits"]
@@ -41,11 +41,35 @@ flowchart TB
 | `src/forgeos/error_learning.py`, `optimizer_metrics.py`, `insights.py` | Test-verified repair signatures, efficiency and advisory diagnostic views |
 | `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
+| `src/forgeos/local_models.py` | Experimental loopback-only chat adapter for llama.cpp, LM Studio and configurable local OpenAI-style endpoints; bounded requests/responses, no proxy/redirects |
+| `src/forgeos/huggingface_catalog.py` | Opt-in read-only public GGUF repository metadata and file hash/size inspection |
 | `forgeos_build/launcher.py` | Frozen Windows executable launcher and CI acceptance modes |
 | `tests/` | Regression, recovery, security, GUI, diagnostics and memory tests |
 | `.github/workflows/` | Python CI and Windows packaged smoke/acceptance |
 
 **Do not fork duplicate implementations of these capabilities** without first checking existing ownership and the [deduplication audit](ENHANCEMENT_DEDUP_AUDIT.md).
+
+## Multi-backend inference boundary (feature branch)
+
+`Ollama` in `core.py` remains canonical for existing tasks. The new
+`create_model()` factory returns that same client for Ollama, or a
+`LocalChatModel` with the same `plan()` / `generate_edits()` interface
+for supported loopback chat endpoints. The engine records non-Ollama
+backend and endpoint in the task checkpoint execution contract. Legacy
+Ollama contracts stay unchanged. Automatic safe recovery still
+reconstructs Ollama only: non-Ollama recovery integration is **not complete**.
+
+All provider URLs must be literal IPv4/IPv6 loopback over HTTP with no
+credentials, redirects or HTTP proxy. This is a network restriction, **not**
+authentication of the process listening on that port. Hub metadata traffic
+is explicitly opt-in HTTPS and never executes a hosted model. A server that
+does not publish model sizes requires a manually selected model.
+
+New request, catalog and response caps bound ForgeOS's own memory usage.
+External LLM inference memory, context KV cache, thread count and model
+loading remain outside these adapters, so there is no claimed full
+resource governor or native GGUF execution. See
+[MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
 ## Workflow and state
 

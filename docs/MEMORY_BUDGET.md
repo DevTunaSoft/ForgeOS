@@ -1,5 +1,19 @@
 # ForgeOS low-memory engineering and acceptance
 
+## Multi-model adapter RAM boundary (feature branch)
+
+The added loopback-compatible local inference adapter limits outbound
+JSON payloads to 512 KiB, local API catalogs to 2 MiB, and model responses
+to 8 MiB. Hugging Face metadata responses are capped at 2 MiB and requested
+only on demand. The existing RAM-aware model file heuristic is reused when
+an OpenAI-compatible server actually reports model sizes. Otherwise
+automatic selection fails safely, requiring an explicit model name.
+
+These caps constrain **ForgeOS's own allocations only**, not the external
+llama.cpp / LM Studio server, memory-mapped weights, KV cache, integrated
+graphics, operating system or build/test processes. No claimed 8 GB, 16 GB
+or 32 GB inference throughput is proven without measurements.
+
 ## Design targets, not verified minimum requirements
 
 | System RAM | Target |

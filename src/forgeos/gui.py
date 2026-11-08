@@ -10,7 +10,8 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from .core import Store, Ollama
+from .core import Store
+from .local_models import create_model
 from .engine import execute_task
 from .task_actions import plan_task, test_task
 
@@ -80,6 +81,8 @@ def launch(db_path, *, acceptance: bool = False):
 
     project = tk.StringVar()
     model = tk.StringVar(value="auto")
+    backend = tk.StringVar(value="ollama")
+    endpoint = tk.StringVar(value="")
     preset = tk.StringVar(value="python-unittest")
     workspaces = tk.StringVar(value=str(Path.home() / ".forgeos" / "workspaces"))
     allow_host_tests = tk.BooleanVar(value=False)
@@ -131,6 +134,16 @@ def launch(db_path, *, acceptance: bool = False):
                  state="readonly", width=20).pack(side="left", padx=(6, 18))
     ttk.Label(first, text="Repair retries").pack(side="left")
     ttk.Spinbox(first, from_=0, to=5, textvariable=repair_count, width=4).pack(side="left", padx=6)
+    provider_row = ttk.Frame(options)
+    provider_row.pack(fill="x", pady=(8, 0))
+    ttk.Label(provider_row, text="Inference backend").pack(side="left")
+    ttk.Combobox(provider_row, textvariable=backend,
+                 values=("ollama", "llama.cpp", "lm-studio", "openai-local"),
+                 state="readonly", width=17).pack(side="left", padx=(6, 16))
+    ttk.Label(provider_row, text="Local endpoint (optional)").pack(side="left")
+    ttk.Entry(provider_row, textvariable=endpoint, width=37).pack(side="left", padx=6)
+    ttk.Button(provider_row, text="Browse Hugging Face",
+               command=lambda: browse_hub_models()).pack(side="left", padx=6)
     second = ttk.Frame(options)
     second.pack(fill="x", pady=(8, 0))
     ttk.Label(second, text="Workspace folder").pack(side="left")
@@ -350,12 +363,112 @@ def launch(db_path, *, acceptance: bool = False):
         except Exception as exc:
             messagebox.showerror("Cannot create task", str(exc))
 
+    def browse_hub_models():
+        """Opt-in read-only GGUF browser; never blocks the Tk event loop."""
+        from .huggingface_catalog import search_gguf, list_gguf_files
+
+        popup = tk.Toplevel(root)
+        popup.title("ForgeOS | Hugging Face GGUF discovery")
+        popup.geometry("790x540")
+        popup.minsize(610, 390)
+        frame = ttk.Frame(popup, padding=14)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(
+            frame, text="Browse public GGUF models — discovery only. "
+                        "Downloads and installation are not yet implemented."
+        ).pack(anchor="w", pady=(0, 8))
+        query = tk.StringVar(value="Qwen coder GGUF")
+        search_row = ttk.Frame(frame)
+        search_row.pack(fill="x", pady=(0, 8))
+        ttk.Entry(search_row, textvariable=query).pack(
+            side="left", fill="x", expand=True)
+        results = ttk.Treeview(
+            frame, columns=("repository", "downloads", "license"),
+            show="headings", height=11, selectmode="browse")
+        for key, width in (("repository", 430), ("downloads", 100), ("license", 150)):
+            results.heading(key, text=key.title())
+            results.column(key, width=width, stretch=key == "repository")
+        results.pack(fill="both", expand=True)
+        info = tk.Text(frame, height=7, wrap="word", state="disabled")
+        info.pack(fill="x", pady=(8, 0))
+        hub_events = Queue(maxsize=2)
+        state = {"busy": False, "catalog": []}
+
+        def begin(action):
+            if state["busy"]:
+                return
+            if action == "files":
+                selected = results.selection()
+                if not selected:
+                    messagebox.showinfo("Select model", "Select a repository first.",
+                                        parent=popup)
+                    return
+                term = state["catalog"][int(selected[0])]["repo"]
+            else:
+                term = query.get().strip()
+            state["busy"] = True
+            search_btn.configure(state="disabled")
+            files_btn.configure(state="disabled")
+
+            def run_lookup():
+                try:
+                    data = (search_gguf(term) if action == "search"
+                            else list_gguf_files(term))
+                    hub_events.put((action, data, None))
+                except Exception as exc:
+                    hub_events.put((action, None, f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=run_lookup, daemon=True).start()
+
+        search_btn = ttk.Button(
+            search_row, text="Search", command=lambda: begin("search"))
+        search_btn.pack(side="left", padx=5)
+        files_btn = ttk.Button(
+            search_row, text="Inspect GGUF sizes", command=lambda: begin("files"))
+        files_btn.pack(side="left")
+
+        def poll_hub():
+            try:
+                action, data, error = hub_events.get_nowait()
+            except Empty:
+                pass
+            else:
+                state["busy"] = False
+                search_btn.configure(state="normal")
+                files_btn.configure(state="normal")
+                info.configure(state="normal")
+                info.delete("1.0", "end")
+                if error:
+                    info.insert("end", error)
+                elif action == "search":
+                    state["catalog"] = data
+                    results.delete(*results.get_children())
+                    for index, item in enumerate(data):
+                        results.insert("", "end", iid=str(index), values=(
+                            item["repo"], item["downloads"], item["license_tag"]))
+                    info.insert(
+                        "end", f"Found {len(data)} candidate repositories. "
+                        "A repository listing is not a license or compatibility "
+                        "verification. Select one and inspect its GGUF files.")
+                else:
+                    for item in data[:30]:
+                        size = item["bytes"] / (1024 ** 3)
+                        verified = "LFS SHA-256 provided" if item["sha256"] else "Hash unavailable"
+                        info.insert("end", f'{item["path"]}: {size:.2f} GiB; {verified}\\n')
+                    if not data:
+                        info.insert("end", "No GGUF files found in the returned listing.")
+                info.configure(state="disabled")
+            if popup.winfo_exists():
+                popup.after(200, poll_hub)
+        popup.after(200, poll_hub)
+
     def start(operation):
         if busy["value"]:
             return
         try:
             task_id = selected()
             chosen_model = model.get().strip()
+            chosen_backend = backend.get()
+            chosen_endpoint = endpoint.get().strip()
             chosen_preset = preset.get()
             chosen_workspace = Path(workspaces.get()).expanduser()
             chosen_retries = repair_count.get()
@@ -379,11 +492,13 @@ def launch(db_path, *, acceptance: bool = False):
                 if operation == "plan":
                     value = plan_task(
                         worker_store, task_id,
-                        model_factory=lambda: Ollama(model=chosen_model))
+                        model_factory=lambda: create_model(backend=chosen_backend, model=chosen_model,
+                                           endpoint=chosen_endpoint))
                 elif operation == "run":
                     result = execute_task(
                         worker_store, task_id, chosen_workspace,
-                        preset=chosen_preset, model=Ollama(model=chosen_model),
+                        preset=chosen_preset, model=create_model(backend=chosen_backend, model=chosen_model,
+                                           endpoint=chosen_endpoint),
                         max_repairs=chosen_retries,
                         allow_host_tests=chosen_host_permission,
                     )
