@@ -112,3 +112,27 @@ The GUI records which installed local model handled a task and labels
 failure categories as advisory heuristics. It does not automatically apply
 learned repair candidates. Large original logs have a bounded GUI preview;
 use the diagnostics CLI to retrieve the complete retained evidence.
+
+
+## Low-memory execution (PR #32, in development)
+
+ForgeOS is being engineered for a lean single desktop GUI, with basic
+project/diagnostic workflows targeted for 4 GiB machines and conservatively
+sized local AI targeted for 8 GiB and above. These are NOT verified minimum
+hardware requirements. A small installed model may be necessary; heavyweight
+local models will not fit every machine.
+
+The application now streams test output into a capped temporary spool,
+archives complete <=32 MiB originals using the existing SHA-256 evidence
+store, and shows bounded previews. Large or unarchivable outputs cannot
+automatically pass autonomous acceptance. Tk activity logs and task lists
+avoid accumulating massive result blobs. RAM-aware Ollama auto-selection
+reduces context and can unload idle models under memory pressure.
+
+Run a reproducible, synthetic, local-only benchmark after installation:
+
+    py tools/memory_benchmark.py --mib 12 --check
+
+See docs/MEMORY_BUDGET.md for implementation limits, tests, and the real
+Windows physical/VM acceptance that still must be completed. This benchmark
+reports traced Python allocations, NOT total process-tree RAM or Ollama VRAM.

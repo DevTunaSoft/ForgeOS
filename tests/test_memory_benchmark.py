@@ -1,0 +1,39 @@
+"""Opt-in synthetic RAM benchmark wired into cross-platform regression CI."""
+from pathlib import Path
+import json
+import subprocess
+import sys
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class MemoryBenchmarkTests(unittest.TestCase):
+    def test_synthetic_three_mib_output_stays_memory_bounded(self):
+        command = [sys.executable, str(ROOT / "tools" / "memory_benchmark.py"),
+                   "--mib", "3", "--check"]
+        result = subprocess.run(
+            command, cwd=ROOT, capture_output=True,
+            text=True, timeout=90, check=False)
+        self.assertEqual(result.returncode, 0,
+                         result.stdout[-3000:] + result.stderr[-3000:])
+        values = json.loads(result.stdout)
+        self.assertTrue(values["complete"])
+        self.assertTrue(values["archive_recoverable"])
+        self.assertEqual(values["test_exit_code"], 0)
+        self.assertEqual(values["source_bytes"], 3 * 1024 * 1024)
+        self.assertLess(values["python_tracemalloc_peak_bytes"], 32 * 1024 * 1024)
+        self.assertLess(values["in_memory_preview_chars"], 900000)
+
+    def test_invalid_benchmark_size_fails_without_running(self):
+        command = [sys.executable, str(ROOT / "tools" / "memory_benchmark.py"),
+                   "--mib", "0"]
+        result = subprocess.run(
+            command, cwd=ROOT, capture_output=True,
+            text=True, timeout=15, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--mib must be 1..30", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

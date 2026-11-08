@@ -375,3 +375,49 @@ unified owner. Added tests/test_enhancement_audit.py verifies 52/52 mapped
 outcomes, real source-owner paths, shared-group alignment and no shadow
 failure_types.py module. The changes must pass full CI and the Windows
 frozen security smoke on the final PR head before merge.
+
+
+## PR #32 low-memory integration (current development, tests not yet final)
+
+Branch: feat/low-memory-streamed-execution. Parent main contains merged
+Phase 3 and the 52-feature duplication audit. New modules are shared I/O
+support (output_capture.py) and a synthetic benchmark, NOT an alternate
+test runner, model service, evidence database or user application.
+
+Code changes:
+- output_capture.py: 64-KiB streamed reader, 32-MiB disk spool, 2-MiB preview,
+  bounded head/tail and explicit overflow markers; native Windows outputs
+  are also read via this bounded helper.
+- diagnostics.py: content-addressed gzip put_stream(), SHA-verified streaming
+  preview(), complete archival retained for <=32 MiB. Partial capture never
+  gets silently described as full evidence.
+- model_routing.py: native Windows available-memory probing and Linux
+  MemAvailable/cgroup fallback; conservative file-size preflight on automatic
+  model selection. Does not promise a particular model will fit VRAM.
+- core.py: bounded Ollama API response and model catalog JSON size,
+  memory-dependent num_ctx and keep_alive=0 on low-memory machines,
+  streaming Unix process IO, brief SQLite GUI task rows.
+- context_index.py and engine.py: RAM-dependent source context budget;
+  captured output without a full original blocks autonomous completion.
+- windows_containment.py, appcontainer.py, secure_runner.py: post-execution
+  output files no longer decoded whole into Python RAM.
+- gui.py and insights.py: default model auto; bounded activity text and
+  verified original-evidence preview. The one GUI is retained.
+- tools/memory_benchmark.py: optional standalone local synthetic output
+  benchmark, reports Python traced allocation peak and time only.
+
+Tests: test_output_capture.py, test_model_routing.py, test_core.py,
+test_context_index.py, test_diagnostics.py, test_engine.py,
+test_gui_contract.py, test_insights.py, test_memory_benchmark.py.
+Known failures: an early test fixture emitted ~660 KiB, not the intended
+>2 MiB needed to force a preview. Fixed by increasing output to ~2.8 MiB.
+The early build also preceded put_stream(); subsequent commits integrated it.
+Treat the latest CI head as unverified until all four Ubuntu/Windows jobs and
+Windows executable including AppContainer security smoke succeed.
+
+Known unresolved concerns: native Windows temporary output files can still
+grow on disk during child execution before bounded reading occurs; a runtime
+file-size watchdog is needed. Real 4/8 GiB Windows GUI/inference/hardware
+acceptance, peak working-set process-tree accounting and long-running
+resource-pressure tests remain unverified. Output evidence is unencrypted;
+never include archives in release assets. No new paid APIs or Docker.

@@ -169,3 +169,24 @@ test mechanism. No Docker or paid model API is required.
 
 The 52 lines above are acceptance outcomes, not 52 independent packages.
 **Before implementing anything new**, consult the [deduplication and ownership audit](ENHANCEMENT_DEDUP_AUDIT.md). Existing baselines stay in their current modules, partly completed items are extended in place, and only genuine gaps require new code. Do not count multiple UI views of the same backend feature as separate backends.
+
+
+## Memory-efficiency extension
+
+The existing diagnostics, runtime, model router and single GUI were
+enhanced in place. New output_capture.py is a shared bounded I/O helper
+that forwards complete evidence to the existing diagnostics archive; it
+is not a replacement test runner or evidence DB. Dynamic context allocation
+and streaming capture are prototype-level improvements.
+
+- [x] Adaptive context budgets (RAM-aware context metadata cap)
+- [x] Dynamic model context sizing (1024–8192 according to free memory)
+- [x] Bounded streaming test output, original SHA evidence <=32 MiB
+- [x] Tk log retention cap, lightweight task list, bounded archive preview
+- [ ] 4 GiB physical or constrained-Windows GUI and full workflow acceptance
+- [ ] 8 GiB on-device model loading, benchmark and regression acceptance
+- [ ] Native Windows in-process temporary disk growth guard
+- [ ] Long-running model/process memory leak benchmarks
+
+See MEMORY_BUDGET.md. This extension does not add new numbered enhancement
+goals and does not assert full 52-item completion.
