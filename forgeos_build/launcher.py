@@ -8,6 +8,33 @@ import sys
 import tempfile
 
 
+ACCEPTANCE_TASKS = 520
+ACCEPTANCE_RESULT = "Synthetic diagnostic text, no project data. " * 200
+
+
+def seed_gui_acceptance_history(path):
+    """Synthetic SQLite data for exercising real frozen Tk paging only.
+
+    Avoid spawning processes, touching user projects, or requiring a Git repo.
+    All data lives under the temporary acceptance-only database directory.
+    """
+    from forgeos.core import Store
+    store = Store(path)
+    try:
+        with store.db:
+            store.db.executemany(
+                "INSERT INTO tasks(project,description,status,created,updated,result) "
+                "VALUES(?,?,?,?,?,?)",
+                ((str(path.parent), "Synthetic task " + str(i), 
+                  "passed" if i % 2 else "failed", 0.0, 0.0,
+                  ACCEPTANCE_RESULT + str(i))
+                 for i in range(ACCEPTANCE_TASKS))
+            )
+        return store.counts()["total"]
+    finally:
+        store.close()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="ForgeOS Windows desktop application")
     parser.add_argument("--smoke", action="store_true",
@@ -30,7 +57,9 @@ def main(argv=None):
         from forgeos.gui import launch
         try:
             with tempfile.TemporaryDirectory(prefix="forgeos-gui-acceptance-") as tmp:
-                result = launch(str(Path(tmp) / "tasks.sqlite3"), acceptance=True)
+                db_path = Path(tmp) / "tasks.sqlite3"
+                seed_gui_acceptance_history(db_path)
+                result = launch(str(db_path), acceptance=True)
         except BaseException as exc:
             result = {"gui_started": False, "closed_cleanly": False,
                       "error": type(exc).__name__ + ": " + str(exc)}
@@ -39,8 +68,15 @@ def main(argv=None):
         return 0 if (result.get("gui_started")
                      and result.get("queue_initialized")
                      and result.get("closed_cleanly")
+                     and result.get("paginated_history_ok")
+                     and result.get("tasks_verified") == ACCEPTANCE_TASKS
+                     and result.get("page_sizes") == [150, 150, 150, 70]
                      and isinstance(result.get("ram_after_gui_startup_bytes"), int)
-                     and result["ram_after_gui_startup_bytes"] > 0) else 12
+                     and result["ram_after_gui_startup_bytes"] > 0
+                     and isinstance(result.get("ram_after_paging_bytes"), int)
+                     and result["ram_after_paging_bytes"] > 0
+                     and result.get("rss_growth_during_paging_bytes", 64*1024*1024 + 1)
+                     <= 64 * 1024 * 1024) else 12
     if args.smoke:
         from forgeos.core import Store, Ollama
         from forgeos.engine import execute_task

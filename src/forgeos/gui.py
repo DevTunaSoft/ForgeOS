@@ -401,7 +401,34 @@ def launch(db_path, *, acceptance: bool = False):
                 memory = process_memory()
                 if memory is None or memory.rss_bytes <= 0:
                     raise RuntimeError("GUI process working-set measurement unavailable")
+                total = store.counts()["total"]
+                first_size = len(tree.get_children())
+                if first_size != min(page_size, total):
+                    raise RuntimeError("GUI initially rendered incorrect task page")
+                sizes = [first_size]
+                for index in range(1, min(4, (total + page_size - 1) // page_size)):
+                    older_button.invoke()
+                    actual = len(tree.get_children())
+                    expected = min(page_size, total - index * page_size)
+                    if actual != expected or page["offset"] != index * page_size:
+                        raise RuntimeError("Older task page failed verification")
+                    sizes.append(actual)
+                for index in range(len(sizes) - 1):
+                    newer_button.invoke()
+                if page["offset"] != 0 or len(tree.get_children()) != first_size:
+                    raise RuntimeError("Newer task paging failed verification")
+                after = process_memory()
+                if after is None or after.rss_bytes <= 0:
+                    raise RuntimeError("GUI post-paging working-set measurement missing")
+                delta = max(0, after.rss_bytes - memory.rss_bytes)
+                if delta > 64 * 1024 * 1024:
+                    raise RuntimeError("GUI paging RSS growth exceeded 64 MiB")
                 report.update({
+                    "tasks_verified": total,
+                    "page_sizes": sizes,
+                    "paginated_history_ok": True,
+                    "ram_after_paging_bytes": after.rss_bytes,
+                    "rss_growth_during_paging_bytes": delta,
                     "gui_started": True,
                     "tabs": names,
                     "queue_initialized": True,

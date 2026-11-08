@@ -100,3 +100,13 @@ outer watchdog prevents hung UI startup from stalling packaging indefinitely.
 This is a hosted Windows GUI lifecycle test, not an installed
 4/8 GiB Windows user device, local Ollama inference, or autonomous
 end-to-end acceptance. Such real-world tests remain mandatory.
+
+## Packaged GUI multi-page memory pressure check (PR #38)
+
+The frozen hosted Windows CI harness now uses an ephemeral 520-task SQLite
+fixture with >4 MiB of synthetic stored diagnostics, validates four real
+Treeview pages and both page navigation directions, and records process RSS
+before/after paged history access. Added memory is capped at 64 MiB for this
+one acceptance scenario. This is a broad defensive ceiling, **not** a claim
+that ordinary paging requires 64 MiB, and is not a 4/8 GiB hardware test.
+No user repositories, Ollama weights, or private files are used.

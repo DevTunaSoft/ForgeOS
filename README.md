@@ -171,3 +171,15 @@ The report stays local. The acceptance mode uses an empty temporary database
 and does not start a model or run generated code. It is not yet proof of
 actual end-user Windows installation behavior, 4/8GiB hardware acceptance,
 or complete autonomous coding workflows.
+
+## Packaged GUI pagination and memory acceptance
+
+The hosted Windows executable smoke now seeds a disposable SQLite database
+with **520 synthetic tasks**, each containing a sizable fake diagnostic
+result. It opens the actual Tkinter GUI, verifies the initial 150 tasks,
+navigates all four expected pages (150/150/150/70), navigates back,
+measures working-set RAM before and after paging, and closes the application.
+Paging RSS growth over 64 MiB is a failing acceptance condition.
+The test never reads or changes real user projects and never invokes Ollama.
+The measured process is the frozen desktop executable, not external AI.
+Physical Windows 4/8 GiB acceptance remains outstanding.
