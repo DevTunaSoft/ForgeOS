@@ -165,6 +165,9 @@ class ManagedLlamaTests(unittest.TestCase):
             self.assertEqual(command[command.index("--parallel") + 1], "1")
             self.assertTrue(launch.call_args.kwargs["shell"] is False)
             self.assertEqual(len(open_calls), 1)
+            self.assertEqual(
+                open_calls[0].full_url,
+                "http://127.0.0.1:17089/health")
             self.assertTrue(server.api_key)
             key_file = Path(command[command.index("--api-key-file") + 1])
             self.assertTrue(key_file.exists())

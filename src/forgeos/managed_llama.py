@@ -244,7 +244,7 @@ class ManagedLlamaServer:
                 if self.process.poll() is not None:
                     raise RuntimeError("Managed llama-server exited before becoming ready")
                 req = Request(
-                    self.endpoint + "/health",
+                    self.endpoint.removesuffix("/v1") + "/health",
                     headers={"Accept": "application/json"})
                 try:
                     with _open(req, timeout=2) as response:
