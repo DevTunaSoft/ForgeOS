@@ -332,6 +332,22 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('status.set("Final qualification', qualification)
         self.assertIn('"Final qualification evidence: "', qualification)
 
+    def test_task_role_selector_drives_autonomous_execution(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                "from .model_roles import MODEL_ROLES",
+                'task_role = tk.StringVar(value="implementation")',
+                'text="Task role"',
+                "values=MODEL_ROLES",
+                "chosen_role = task_role.get()",
+                "if chosen_role not in MODEL_ROLES",
+                "role=chosen_role"):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+        self.assertNotIn('role="implementation"', source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

@@ -1613,3 +1613,8 @@ Windows restart/relaunch acceptance remains pending.
 ### Final qualification GUI completion scope repair
 
 A static GUI review found that the outer launch-level event poller referenced the dialog-local qualification_status StringVar after the worker completed. That variable is out of lexical scope in poll() and would raise NameError on a real completion event even though source-contract tests passed. Completion now updates the existing global status/activity diagnostics only; the dialog-local variable remains worker-start/cancel guidance. A regression test inspects the poll handler and forbids future dialog-local access there.
+
+
+## Shared model roles and GUI task-role routing
+
+Removed the GUI hardcoded implementation role. A new lightweight model_roles.py owns the eight stable role identifiers without importing the heavier benchmark stack. The dashboard now exposes a read-only Task role selector and passes the selected role into execute_task. The managed-model screening/final-qualification selector uses the same shared tuple, eliminating drift between benchmark evidence and autonomous routing. qualified-auto therefore resolves evidence for the exact user-selected role rather than always using implementation.

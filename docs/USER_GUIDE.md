@@ -544,3 +544,8 @@ When Safe Resume is used with the same authenticated ForgeOS-managed runtime,
 ForgeOS rechecks the model/runtime hashes and the saved evidence digest before
 continuing. If the evidence file moved, changed, disappeared, or no longer fits the
 safe memory budget, recovery stops rather than choosing another model automatically.
+
+
+### Choose the task role
+
+Execution settings now include **Task role**. The default is **implementation**. Choose planning, review/refactor, debugging, test generation, security review, documentation, or context summarization when that better describes the work. When **qualified-auto** is selected, ForgeOS requires final qualification evidence for the exact chosen role and exact active managed model/runtime identity; it does not silently substitute evidence from another role.

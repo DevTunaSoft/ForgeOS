@@ -15,6 +15,7 @@ import uuid
 
 from .engine import EditError, parse_edits
 from .model_routing import GIB, system_memory
+from .model_roles import MODEL_ROLES
 
 SCHEMA_VERSION = 1
 QUANTIZATION = re.compile(
@@ -24,11 +25,7 @@ QUANTIZATION = re.compile(
 
 
 
-SCREENING_ROLES = (
-    "planning", "implementation", "review_refactor", "debugging",
-    "test_generation", "security_review", "documentation",
-    "context_summarization",
-)
+SCREENING_ROLES = MODEL_ROLES
 
 
 @dataclass(frozen=True)

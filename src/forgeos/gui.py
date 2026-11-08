@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .core import Store
 from .local_models import create_model
+from .model_roles import MODEL_ROLES
 from .engine import execute_task
 from .task_actions import plan_task, test_task
 
@@ -118,6 +119,7 @@ def launch(db_path, *, acceptance: bool = False):
 
     project = tk.StringVar()
     model = tk.StringVar(value="auto")
+    task_role = tk.StringVar(value="implementation")
     backend = tk.StringVar(value="ollama")
     endpoint = tk.StringVar(value="")
     preset = tk.StringVar(value="python-unittest")
@@ -176,6 +178,9 @@ def launch(db_path, *, acceptance: bool = False):
                  state="readonly", width=20).pack(side="left", padx=(6, 18))
     ttk.Label(first, text="Repair retries").pack(side="left")
     ttk.Spinbox(first, from_=0, to=5, textvariable=repair_count, width=4).pack(side="left", padx=6)
+    ttk.Label(first, text="Task role").pack(side="left", padx=(14, 0))
+    ttk.Combobox(first, textvariable=task_role, values=MODEL_ROLES,
+                 state="readonly", width=20).pack(side="left", padx=6)
     provider_row = ttk.Frame(options)
     provider_row.pack(fill="x", pady=(8, 0))
     ttk.Label(provider_row, text="Inference backend").pack(side="left")
@@ -516,8 +521,7 @@ def launch(db_path, *, acceptance: bool = False):
         expected_hash = tk.StringVar()
         gguf_path = tk.StringVar()
         memory_cap_mib = tk.StringVar()
-        from .model_benchmark import SCREENING_ROLES
-        screening_role = tk.StringVar(value=SCREENING_ROLES[0])
+        screening_role = tk.StringVar(value=MODEL_ROLES[0])
         screening_status = tk.StringVar(
             value="Role screening runs five synthetic prompts; no project source is sent.")
         qualification_status = tk.StringVar(
@@ -1060,7 +1064,7 @@ def launch(db_path, *, acceptance: bool = False):
                     "Start a verified managed local model first.", parent=popup)
                 return
             role = screening_role.get()
-            if role not in SCREENING_ROLES:
+            if role not in MODEL_ROLES:
                 messagebox.showerror(
                     "Role screening", "Choose a valid screening role.",
                     parent=popup)
@@ -1222,7 +1226,7 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Label(screening_row, text="Screening role").pack(side="left")
         ttk.Combobox(
             screening_row, textvariable=screening_role,
-            values=SCREENING_ROLES, state="readonly", width=23
+            values=MODEL_ROLES, state="readonly", width=23
         ).pack(side="left", padx=(7, 8))
         ttk.Button(
             screening_row, text="Run 5-task role screening",
@@ -1500,6 +1504,9 @@ def launch(db_path, *, acceptance: bool = False):
             chosen_preset = preset.get()
             chosen_workspace = Path(workspaces.get()).expanduser()
             chosen_retries = repair_count.get()
+            chosen_role = task_role.get()
+            if chosen_role not in MODEL_ROLES:
+                raise ValueError("Choose a valid task role")
             chosen_host_permission = allow_host_tests.get()
             if operation in {"run", "test"} and not chosen_host_permission:
                 raise ValueError("Enable the host test execution checkbox before starting.")
@@ -1539,7 +1546,7 @@ def launch(db_path, *, acceptance: bool = False):
                         preset=chosen_preset, model=selected_model(),
                         max_repairs=chosen_retries,
                         allow_host_tests=chosen_host_permission,
-                        role="implementation",
+                        role=chosen_role,
                     )
                     value = json.dumps(result, indent=2)
                 else:
