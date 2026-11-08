@@ -155,7 +155,11 @@ partial lines without a summary; never treat such output as success.
   cross-reboot model identities. Pinned binary/model contract plus
   authenticated process recreation are required for unattended resume.
 
-**Unaccepted safety boundaries:** Windows child Job Object/OS listener-PID
-verification, native DLL publisher trust, actual CPU GGUF execution,
+**Unaccepted safety boundaries:** A Windows kill-on-close Job Object and
+POSIX process-group cleanup are now implemented for the managed model's
+best-effort owned process tree; they remain unaccepted until hosted and
+physical Windows process-tree tests pass. Windows **suspended-process startup
+before Job assignment**, OS listener-PID verification, native DLL publisher
+trust and actual CPU GGUF execution,
 real RAM/KV-cache budgeting and model lifecycle update/remove. They
 are tracked in the detailed [multi-LLM roadmap](MULTI_LLM_ROADMAP.md).

@@ -344,3 +344,16 @@ to recheck one SHA-256 explicitly, without downloading or running anything.
 Do not treat a model shown in the list as independently compatible,
 licensed, executable or memory-safe. Missing/changed weights may be
 displayed as unavailable and cannot be used by the managed process.
+
+
+### Managed model shutdown and process cleanup (experimental)
+
+On Windows, ForgeOS now attempts to attach its user-provided llama-server
+process to a kill-on-close native Windows Job Object so child processes
+terminate when the managed session ends. On POSIX, it uses a dedicated
+process group. An actual Windows job lifecycle integration test is included,
+but the tiny interval between process launch and Job attachment is still
+not eliminated; physical Windows verification is pending.
+Do not confuse model process cleanup with AppContainer isolation of
+generated project tests. Close or stop a model only after the active
+ForgeOS AI task completes.

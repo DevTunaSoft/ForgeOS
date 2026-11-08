@@ -67,7 +67,8 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [ ] Prove port ownership and harden child process-tree cleanup on Windows; the current launch/readiness code does **not** establish exclusive process ownership.
 - [ ] Verify that the listener is the expected child process and version before passing project prompts; protect against port takeover/rebinding.
 - [x] **Experimental source path:** one GUI-owned runtime lifecycle controller, authenticated readiness request, timeout, controlled stop and application shutdown.
-- [ ] Complete externally verified Windows child-tree cleanup, process ownership, model reload and reboot/lease-safe restart.
+- [x] **Experimental implementation:** reuse ForgeOS's Windows Job Object structs to attach managed llama-server with kill-on-close, and use a POSIX process group for stop/timeout cleanup.
+- [ ] Eliminate the Windows Popen-to-Job assignment race via suspended process creation; verify actual child-tree termination, process ownership, model reload and reboot/lease-safe restart.
 - [x] **Experimental source path:** allow manually selecting a SHA-verified GGUF and user-provided llama-server binary from the existing GUI without launching LM Studio.
 - [ ] Make the binary and model installation fully turnkey, with official binary provenance and actual Windows CPU inference verified.
 - [ ] Separate GPU/CPU capability detection from model selection; CPU-only must always remain usable even without a compatible GPU.

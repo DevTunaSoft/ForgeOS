@@ -222,3 +222,12 @@ uninstall and intelligent model switching remain open roadmap milestones.
 OpenAI/ChatGPT, Anthropic/Claude and other approved endpoints will require
 explicit consent and spending/privacy controls. ForgeOS does not assume
 free ChatGPT or Claude consumer accounts provide free API access.
+
+
+**Experimental process containment (PR #51):** the managed CPU llama-server
+now attaches to a Windows Job Object configured to terminate the owned
+process tree when closed; Linux/POSIX uses an owned process session.
+The short interval between process creation and Windows Job assignment,
+listener/process authentication, direct GGUF execution on real hardware
+and clean cancellation of all native child processes remain unaccepted.
+The generated project-test AppContainer is a separate trust boundary.

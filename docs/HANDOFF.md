@@ -1208,3 +1208,35 @@ Continuity: verify current GitHub head, rerun Windows/Linux test matrix
 and EXE acceptance, correct failures, then develop native process-tree/
 port ownership protections and model install/update/uninstall.
 
+
+
+## Owned model process-tree hardening increment
+
+Changed `src/forgeos/managed_llama.py` to reuse
+`windows_containment.py`'s native Windows Job Object structures, with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS`
+and a maximum 8 subprocesses. The controller assigns the managed
+llama-server process to the Job Object on Windows and releases the job
+on Stop/GUI shutdown. On Linux/POSIX, the preexisting
+`start_new_session=True` is complemented by SIGTERM/SIGKILL to the
+owned session/process group; the controller still waits and escalates
+after a bounded timeout. The established Windows test AppContainer is
+not reused or weakened for inference.
+
+`tests/test_managed_llama.py` adds mocks for Windows/POSIX branches and a
+real **Windows-hosted subprocess + Job Object** test to check job closure
+actually kills the child. Exact process-tree/security acceptance has not
+been proven on physical Windows and the **pre-job-assignment spawn race**
+still exists. Do not claim process isolation or producer/port trust; a
+verified binary checksum is not a publisher signature.
+
+`tests/test_local_http_integration.py` independently exercises actual
+loopback HTTP request/response/auth headers using a deterministic fixture,
+but it is still not an actual llama.cpp model. `tests/test_engine.py`
+now contains integration coverage for pinned model/runtime hashes in a
+test-pending checkpoint, omitted transient credentials, and refusal of
+unverified managed weights. `tests/test_model_inventory.py` now tests
+CLI list/verify output. **Next:** verify latest CI on all targets and
+correct any failures, then extend Windows process-creation/port
+authentication, trustworthy binary installation and real CPU model
+performance acceptance.

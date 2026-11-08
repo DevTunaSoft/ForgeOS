@@ -59,8 +59,12 @@ install LM Studio. No Docker or paid API is needed for these code paths.
 **Current limitations:** only one GUI-owned managed server per ForgeOS
 session, no automatic official binary installation, no model update/remove,
 no idle unload, no persistent session authentication across app restarts,
-no verified child-process-tree termination, and no process-owner proof on
-randomly allocated loopback ports. A same-host port takeover remains a
+no **fully validated** child-process-tree termination (the prototype now
+attaches an existing ForgeOS Windows kill-on-close Job Object immediately
+after spawning, and uses process-group termination on POSIX), and no
+process-owner proof on randomly allocated loopback ports. The brief Windows
+process-start-before-job-attachment race remains unresolved. A same-host
+port takeover remains a
 possible confidentiality risk. A malicious binary or DLL can execute on the
 host; **a matching hash is not proof of publisher trust**. Use only a
 trusted executable from an independently verified upstream source. Managed
