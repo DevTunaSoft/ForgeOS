@@ -1537,3 +1537,8 @@ The PR gate is now checkpoint-driven. Normal branch synchronization is not a ful
 ## #55 qualification/routing checkpoint
 
 Added a fail-closed final qualification layer separate from the existing five-task screening harness. Final evidence requires at least 20 tasks per role, >=95% structured-output success, >=80% objective success, exact model/runtime SHA-256 identity, measured model size/peak memory/latency, and a digest of the normalized evidence. Routing chooses only the smallest measured-qualified model that fits the current memory budget and refuses execution when none qualifies. Screening-only evidence cannot enable routing. Real candidate models still need to run the larger final corpus before production automatic routing is enabled.
+
+
+## Managed GGUF authenticated recovery checkpoint
+
+Removed the blanket rejection of every SHA-bound managed GGUF checkpoint without weakening fail-closed recovery. `resume_safe` now has an explicit managed-runtime handoff used only when a caller can provide the currently authenticated runtime. It re-attests the exact llama.cpp backend, loopback endpoint, forgeos-managed alias, model SHA-256, runtime SHA-256 and presence of the ephemeral API credential before calling the engine. No factory means the checkpoint is skipped; identity/auth mismatch fails without executing tests or model generation. This enables safe GUI wiring next while keeping CLI/background recreation disabled.

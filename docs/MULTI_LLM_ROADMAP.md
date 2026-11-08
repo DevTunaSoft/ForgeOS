@@ -388,3 +388,12 @@ qualification remain disabled.
 - [x] Route only among qualified records that fit the measured memory budget, selecting the smallest model first with deterministic memory/latency/identity tie-breakers.
 - [x] Fail closed when no measured-qualified candidate fits; never fall back to an unqualified model.
 - [ ] Build and execute the larger final per-role corpus against real candidate models. Until those records exist, automatic production role routing remains intentionally unavailable.
+
+
+### Managed GGUF checkpoint re-attestation
+
+- [x] Persisted managed checkpoints already bind to exact GGUF and runtime SHA-256 identities.
+- [x] Recovery now accepts an already-running authenticated ForgeOS-managed runtime only when backend, loopback endpoint, model alias, model SHA-256 and runtime SHA-256 exactly match the checkpoint.
+- [x] Missing authenticated runtime remains a skip, not an unsafe reconstruction; ordinary CLI/background recovery cannot silently recreate a managed session because the API secret is ephemeral.
+- [x] Hash, endpoint and missing-auth mismatches fail before task execution.
+- [ ] Wire the existing GUI-managed controller into the recovery action and validate interruption/resume against real llama.cpp on Windows.

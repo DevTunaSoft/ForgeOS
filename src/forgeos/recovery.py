@@ -43,9 +43,6 @@ def _checkpoint_contract(checkpoint):
             raise ValueError("Invalid checkpoint local inference backend")
         if not isinstance(endpoint, str) or validate_endpoint(endpoint) != endpoint:
             raise ValueError("Invalid checkpoint local inference endpoint")
-        # Even with verified model/runtime SHA stored, the private API key
-        # is ephemeral. Until the correct process can be authenticated and
-        # restarted on the original task lease, fail closed.
         if set(contract) == managed_extended:
             hashes = (contract["managed_model_sha256"],
                       contract["managed_runtime_sha256"])
@@ -54,13 +51,13 @@ def _checkpoint_contract(checkpoint):
                            not re.fullmatch(r"[a-f0-9]{64}", v)
                            for v in hashes)):
                 raise ValueError("Invalid managed GGUF checkpoint identity")
-            raise ValueError(
-                "Managed local GGUF checkpoint requires authenticated "
-                "process recreation; automatic recovery is not yet supported")
-        if backend == "llama.cpp" and model == "forgeos-managed":
+            result.update(
+                managed_model_sha256=hashes[0],
+                managed_runtime_sha256=hashes[1])
+        elif backend == "llama.cpp" and model == "forgeos-managed":
             raise ValueError(
                 "Managed local GGUF checkpoint needs verified runtime and "
-                "model identity; automatic recovery is not yet supported")
+                "model identity; automatic recovery is not supported")
         # Reuse the exact originally persisted server identity. Never
         # substitute a port, backend, cloud endpoint, or different model.
         result.update(backend=backend, endpoint=endpoint)
@@ -69,7 +66,8 @@ def _checkpoint_contract(checkpoint):
 
 def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 allow_host_tests=False, execute=execute_task,
-                model_factory=Ollama, on_event=None, collect_results=True):
+                model_factory=Ollama, managed_model_factory=None,
+                on_event=None, collect_results=True):
     """Guarded resumption with optional constant-memory event reporting.
 
     The default report shape is unchanged. Streaming callers may disable
@@ -81,6 +79,8 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         raise ValueError("collect_results must be boolean")
     if on_event is not None and not callable(on_event):
         raise ValueError("on_event must be callable")
+    if managed_model_factory is not None and not callable(managed_model_factory):
+        raise ValueError("managed_model_factory must be callable")
     if preset is not None and preset not in PRESETS:
         raise ValueError("Invalid test preset override")
     if max_repairs is not None and (
@@ -140,7 +140,33 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
             record("skipped", {"id": task["id"], "reason": "Repair budget override mismatch"})
             continue
         try:
-            if "backend" in contract:
+            if "managed_model_sha256" in contract:
+                if managed_model_factory is None:
+                    record("skipped", {
+                        "id": task["id"],
+                        "reason": (
+                            "Managed GGUF checkpoint requires an authenticated "
+                            "currently running ForgeOS-managed runtime"),
+                    })
+                    continue
+                model = managed_model_factory(contract)
+                expected = {
+                    "backend": "llama.cpp",
+                    "model": "forgeos-managed",
+                    "base": contract["endpoint"],
+                    "managed_model_sha256": contract["managed_model_sha256"],
+                    "managed_runtime_sha256": contract["managed_runtime_sha256"],
+                }
+                actual = {name: getattr(model, name, None)
+                          for name in expected}
+                if actual != expected:
+                    raise ValueError(
+                        "Authenticated managed runtime does not match checkpoint identity")
+                api_key = getattr(model, "api_key", None)
+                if not isinstance(api_key, str) or not api_key:
+                    raise ValueError(
+                        "Managed checkpoint recovery requires authenticated runtime")
+            elif "backend" in contract:
                 model = create_model(
                     backend=contract["backend"],
                     model=contract["model"],

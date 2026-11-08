@@ -41,6 +41,97 @@ class RecoveryTests(unittest.TestCase):
                  model="qwen2.5-coder:3b"):
         return {"preset": preset, "max_repairs": max_repairs, "model": model}
 
+
+    def managed_contract(self, preset="python-unittest", max_repairs=2):
+        return {
+            "preset": preset, "max_repairs": max_repairs,
+            "model": "forgeos-managed", "backend": "llama.cpp",
+            "endpoint": "http://127.0.0.1:40123",
+            "managed_model_sha256": "a" * 64,
+            "managed_runtime_sha256": "b" * 64,
+        }
+
+    def test_managed_checkpoint_requires_authenticated_runtime_factory(self):
+        checkpoint = {
+            "phase": "test_pending",
+            "workspace": str(self.parent / "task-70"),
+            "contract": self.managed_contract(),
+        }
+        runner = Mock()
+        report = resume_safe(
+            FakeStore([self.task(70, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [])
+        self.assertIn("authenticated", report["skipped"][0]["reason"].lower())
+        runner.assert_not_called()
+
+    def test_managed_checkpoint_resumes_only_with_exact_attested_identity(self):
+        contract = self.managed_contract()
+        checkpoint = {
+            "phase": "repair_pending",
+            "workspace": str(self.parent / "task-71"),
+            "contract": contract,
+        }
+        runner = Mock(return_value={"passed": True})
+        model = type("ManagedModel", (), {
+            "backend": "llama.cpp",
+            "model": "forgeos-managed",
+            "base": contract["endpoint"],
+            "managed_model_sha256": contract["managed_model_sha256"],
+            "managed_runtime_sha256": contract["managed_runtime_sha256"],
+            "api_key": "ephemeral-secret",
+        })()
+        factory = Mock(return_value=model)
+        report = resume_safe(
+            FakeStore([self.task(71, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner,
+            managed_model_factory=factory)
+        self.assertEqual(report["resumed"], [71])
+        self.assertEqual(report["skipped"], [])
+        factory.assert_called_once_with(contract)
+        self.assertIs(runner.call_args.kwargs["model"], model)
+        self.assertTrue(runner.call_args.kwargs["resume"])
+
+    def test_managed_checkpoint_rejects_hash_endpoint_and_auth_mismatch(self):
+        for field, bad_value in (
+                ("managed_model_sha256", "c" * 64),
+                ("managed_runtime_sha256", "d" * 64),
+                ("base", "http://127.0.0.1:40124"),
+                ("api_key", "")):
+            with self.subTest(field=field):
+                contract = self.managed_contract()
+                checkpoint = {
+                    "phase": "test_pending",
+                    "workspace": str(self.parent / "task-72"),
+                    "contract": contract,
+                }
+                values = {
+                    "backend": "llama.cpp",
+                    "model": "forgeos-managed",
+                    "base": contract["endpoint"],
+                    "managed_model_sha256": contract["managed_model_sha256"],
+                    "managed_runtime_sha256": contract["managed_runtime_sha256"],
+                    "api_key": "secret",
+                }
+                values[field] = bad_value
+                model = type("ManagedModel", (), values)()
+                runner = Mock()
+                report = resume_safe(
+                    FakeStore([self.task(72, checkpoint)]), self.parent,
+                    allow_host_tests=True, execute=runner,
+                    managed_model_factory=lambda _contract: model)
+                self.assertEqual(report["resumed"], [])
+                self.assertEqual(report["failed"][0]["id"], 72)
+                runner.assert_not_called()
+
+    def test_invalid_managed_factory_rejected_before_store_mutation(self):
+        store = FakeStore([])
+        with self.assertRaisesRegex(ValueError, "managed_model_factory"):
+            resume_safe(
+                store, self.parent, allow_host_tests=True,
+                managed_model_factory="not callable")
+        self.assertEqual(store.recovery_calls, 0)
+
     def test_permission_denied_before_store_mutation(self):
         store = FakeStore([])
         with self.assertRaisesRegex(ValueError, "permission"):
