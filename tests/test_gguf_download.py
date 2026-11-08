@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+from types import SimpleNamespace
 from pathlib import Path
 import tempfile
 import unittest
@@ -177,7 +178,7 @@ class GGUFDownloadTests(unittest.TestCase):
     def test_disk_pressure_blocks_request_and_keeps_journal(self):
         # Drive measurement is injected, not the actual disk capacity.
         with patch("forgeos.gguf_download.shutil.disk_usage",
-                   return_value=(1000, 999, 1)), \
+                   return_value=SimpleNamespace(free=1)), \
              patch("forgeos.gguf_download._open_weight") as network:
             with self.assertRaisesRegex(RuntimeError, "Insufficient disk"):
                 self.download()
