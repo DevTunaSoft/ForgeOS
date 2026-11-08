@@ -53,6 +53,8 @@ def launch(db_path):
     repair_count = tk.IntVar(value=2)
     status = tk.StringVar(value="Ready")
     counts = tk.StringVar(value="")
+    page = {"offset": 0}
+    page_size = 150
     events = Queue()
     busy = {"value": False}
     closing = {"value": False}
@@ -124,6 +126,14 @@ def launch(db_path):
     tree.configure(yscrollcommand=scrollbar.set)
     tree.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
+    pages = ttk.Frame(tasks_frame)
+    pages.pack(fill="x", pady=(5, 0))
+    older_button = ttk.Button(
+        pages, text="Older tasks", command=lambda: change_page(page_size))
+    older_button.pack(side="right", padx=(8, 0))
+    newer_button = ttk.Button(
+        pages, text="Newer tasks", command=lambda: change_page(-page_size))
+    newer_button.pack(side="right")
 
     actions = ttk.Frame(dashboard)
     actions.pack(fill="x")
@@ -220,16 +230,29 @@ def launch(db_path):
     def refresh():
         selection = tree.selection()
         selected_id = selection[0] if selection else None
-        rows = store.list(brief=True)
+        totals = store.counts()
+        maximum = max(0, ((totals["total"] - 1) // page_size) * page_size)
+        page["offset"] = min(page["offset"], maximum)
+        rows = store.list(brief=True, limit=page_size, offset=page["offset"])
         tree.delete(*tree.get_children())
         for task in rows:
             tree.insert("", "end", iid=str(task["id"]), values=_format_task(task))
         if selected_id and tree.exists(selected_id):
             tree.selection_set(selected_id)
-        counts.set(f"{len(rows)} tasks  •  "
-                   f"{sum(t['status'] == 'passed' for t in rows)} passed  •  "
-                   f"{sum(t['status'] == 'failed' for t in rows)} failed  •  "
-                   f"{sum(t['status'] == 'blocked' for t in rows)} blocked")
+        start = page["offset"] + 1 if rows else 0
+        end = page["offset"] + len(rows)
+        counts.set(
+            f"Showing {start}–{end} of {totals['total']} tasks  •  "
+            f"{totals['passed']} passed  •  {totals['failed']} failed  •  "
+            f"{totals['blocked']} blocked")
+        older_button.configure(state=(
+            "normal" if end < totals["total"] else "disabled"))
+        newer_button.configure(state=(
+            "normal" if page["offset"] > 0 else "disabled"))
+
+    def change_page(delta):
+        page["offset"] = max(0, page["offset"] + delta)
+        refresh()
 
     def selected():
         items = tree.selection()
@@ -240,6 +263,7 @@ def launch(db_path):
     def add():
         try:
             task_id = store.add(project.get(), description.get("1.0", "end").strip())
+            page["offset"] = 0
             refresh()
             tree.selection_set(str(task_id))
             status.set(f"Task #{task_id} queued")

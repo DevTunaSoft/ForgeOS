@@ -19,6 +19,15 @@ class DashboardContractTests(unittest.TestCase):
             {"id": 9, "status": "testing", "description": "optimizing"}),
             (9, "Testing", "optimizing"))
 
+    def test_pagination_uses_bounded_sqlite_data_not_complete_task_blobs(self):
+        from pathlib import Path
+        source = Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py"
+        content = source.read_text(encoding="utf-8")
+        self.assertIn("store.list(brief=True, limit=page_size", content)
+        self.assertIn('page_size = 150', content)
+        self.assertNotIn("store.list(brief=True)\n", content)
+        self.assertIn('totals = store.counts()', content)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)
