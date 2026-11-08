@@ -11,7 +11,7 @@
 > [!IMPORTANT]
 > **ForgeOS is under active development, not a production-ready autonomous application builder.** Its desktop application, local AI integration, Git workspaces, guarded code editing, diagnostics, and selected testing/recovery paths are real prototypes. Full hands-off delivery of arbitrary Windows EXEs, Android APKs and websites is a goal—not a current guarantee. Read the [feature status](#current-capabilities-and-limitations) and [security notes](#security-and-responsible-use) before using it on important projects.
 
-**[What ForgeOS will and will not do](docs/PRODUCT_VISION.md) · [Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
+**[What ForgeOS will and will not do](docs/PRODUCT_VISION.md) · [Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Multi-LLM implementation roadmap](docs/MULTI_LLM_ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
 
 ## The vision
 
@@ -145,7 +145,10 @@ inference. No Docker, paid API or cloud inference is required for this
 connector. An endpoint is restricted to literal loopback addresses.
 
 Read the [model compatibility and setup guide](docs/MODEL_COMPATIBILITY.md)
-for clear statuses, CLI examples, security boundaries and next steps.
+for clear statuses, CLI examples and security boundaries. The
+[complete multi-LLM engineering roadmap](docs/MULTI_LLM_ROADMAP.md) tracks all
+required model management, memory governance, routing, recovery, QA, beginner GUI
+and documentation work as implemented, experimental, unverified or planned.
 
 ## Local AI and memory efficiency
 

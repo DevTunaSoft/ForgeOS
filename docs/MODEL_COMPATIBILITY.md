@@ -4,6 +4,8 @@
 > `feat/local-multimodel-endpoints-20261107`. It must not be interpreted as a
 > verified production feature of `main` until review and CI pass.
 
+**Implementation milestones and completion evidence:** [Full multi-LLM engineering roadmap](MULTI_LLM_ROADMAP.md) (work packages A–J, P0–P3, source owners, RAM targets, safety and release gates). This page remains the user-facing compatibility/setup guide, not a competing implementation tracker.
+
 ## Capability inventory
 
 | Feature | Source status | Independent runtime proof |

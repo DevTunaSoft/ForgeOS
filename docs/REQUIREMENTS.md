@@ -3,6 +3,12 @@
 ## Mission
 One turnkey, beginner-friendly, local-first Windows application for building Windows EXEs, Android APKs and web apps through natural-language requests, with free local AI where practical.
 
+## Detailed multi-LLM specification
+
+The end-to-end requirements for local Ollama/llama.cpp/LM Studio/OpenAI-compatible adapters, Hugging Face catalog/download/runtime integration, small coding-model benchmarks, role-aware routing, low-memory safeguards, unified model manager, backend-fenced recovery, adversarial QA and cumulative documentation are tracked in [MULTI_LLM_ROADMAP.md](MULTI_LLM_ROADMAP.md). The existing overall ForgeOS requirements below continue to apply; this is an extension, **not** a separate product or replacement for existing autonomy requirements.
+
+The multi-model system must work without mandatory Docker, a second GUI, cloud inference, subscription or paid API. Running model binaries and full lifecycle management remain planned until objectively verified on Windows 11 hardware. Source in a draft PR must not be described as present in released `main`.
+
 ## Required capabilities
 - One unified interface; users do not need programming knowledge.
 - Local Ollama inference initially, adaptable model/provider interface and CPU-only fallback.
