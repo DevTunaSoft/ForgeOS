@@ -1359,3 +1359,12 @@ The existing src/forgeos/gui.py Managed local GGUF picker now exposes **Retire s
 ### Directory-metadata crash hardening (2026-11-08)
 
 Follow-up recovery hardening adds POSIX directory fsync of the newly created retirement entry/journal parent, and of source/destination directories after every same-volume os.replace, then of final journal/directory removal. This narrows the abrupt-crash gap in which a file's bytes are flushed but the containing directory entry is not durable. The standard library has no portable equivalent for Windows directory fsync; no claim of power-loss atomicity on NTFS is made. Added regression tests of expected directory-sync points and a fault after model relocation. Cleaned up unnecessary Tk GUI finally/pass code. Full CI and Windows hardware acceptance are required.
+
+
+## 2026-11-08 existing GGUF retirement integration and hard-link hardening
+
+**Scope:** No duplicate model inventory, repository browser, or separate UI. Inspected existing `model_retirement.py` and its CLI, and added a **Restore a retired GGUF (recoverable)** action to the existing `manage_local_gguf()` dialog in `gui.py`. The chooser lists the existing bounded offline `list_retired()` inventory, only submits `restore_download()` after explicit confirmation and existing task/model interlock, and uses a one-result bounded worker-to-Tk queue. The dialog cannot be dismissed during restoration. Users can recover the last retired model even if the active GGUF list is empty.
+
+Security: retirement now checks that model and manifest each have exactly one filesystem hard link before and after full verification; restore validates the same requirement on both archived or interrupted original locations. This blocks moving user files whose bytes are shared with another hard-linked name. Added tests for model, manifest, and archived weight hard-link cases, plus source contract test for GUI wiring.
+
+**Verification:** run the latest SHA CI six-check matrix; no full GGUF physical Windows runtime, NTFS reparse/hardlink race simulation, file-handle contention test, or runtime process-tree memory measurement has yet been performed. Code remains experimental and PR #51 must stay draft until system acceptance.

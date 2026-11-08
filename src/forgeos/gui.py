@@ -662,6 +662,153 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Button(
             panel, text="Choose from ForgeOS downloads",
             command=choose_downloaded).pack(anchor="w", pady=(0, 9))
+        def restore_retired():
+            """Recover retired weights from the same journal, in this GUI."""
+            if not _retirement_allowed(
+                    task_busy=busy["value"], operation_busy=managed["busy"],
+                    model_present=managed["controller"] is not None):
+                messagebox.showerror(
+                    "Cannot restore model",
+                    "Finish the active task and stop managed inference first.",
+                    parent=popup)
+                return
+            from .model_retirement import list_retired
+            try:
+                records = list_retired()
+            except (OSError, RuntimeError, ValueError) as exc:
+                messagebox.showerror(
+                    "Cannot list retired models", str(exc), parent=popup)
+                return
+            if not records:
+                messagebox.showinfo(
+                    "No retired models",
+                    "No recoverable GGUF retirement journals were found.",
+                    parent=popup)
+                return
+            chooser = tk.Toplevel(popup)
+            chooser.title("ForgeOS | Restore retired GGUF")
+            chooser.geometry("795x380")
+            body = ttk.Frame(chooser, padding=12)
+            body.pack(fill="both", expand=True)
+            ttk.Label(
+                body, wraplength=740,
+                text="Restore one recoverably retired GGUF and its pinned "
+                     "SHA-256 manifest. Verification reads the entire model; "
+                     "no network transfer or cloud inference is used."
+            ).pack(anchor="w", pady=(0, 8))
+            listing = ttk.Treeview(
+                body, columns=("model", "status", "recovery_id"),
+                show="headings", selectmode="browse")
+            for name, width in (("model", 290), ("status", 210),
+                                ("recovery_id", 260)):
+                listing.heading(name, text=name.replace("_", " ").title())
+                listing.column(name, width=width, stretch=name == "model")
+            listing.pack(fill="both", expand=True)
+            for index, entry in enumerate(records):
+                listing.insert("", "end", iid=str(index),
+                               values=(entry.get("file", "unknown"),
+                                       entry["status"], entry["id"]))
+            restore_events = Queue(maxsize=1)
+            restore_state = {"busy": False}
+            restore_status = tk.StringVar(value="")
+            ttk.Label(body, textvariable=restore_status,
+                      wraplength=740).pack(anchor="w", pady=(8, 0))
+
+            def begin_restore():
+                if restore_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo(
+                        "Select a model", "Choose a retired model first.",
+                        parent=chooser)
+                    return
+                selected = records[int(selection[0])]
+                if selected["status"] not in (
+                        "retired", "interrupted_retirement_or_restore"):
+                    messagebox.showerror(
+                        "Cannot restore",
+                        "This journal needs manual inspection.",
+                        parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"], operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish tasks and stop the managed server first.",
+                        parent=chooser)
+                    return
+                if not messagebox.askyesno(
+                        "Restore retired GGUF",
+                        "Restore the selected verified weights to their "
+                        "original revisioned path? Existing files will "
+                        "never be overwritten.", parent=chooser):
+                    return
+                restore_state["busy"] = True
+                managed["busy"] = True
+                restore_btn.configure(state="disabled")
+                restore_status.set(
+                    "Verifying pinned bytes and restoring the model...")
+                status.set("Restoring and verifying retired GGUF...")
+                identifier = selected["id"]
+
+                def worker():
+                    try:
+                        from .model_retirement import restore_download
+                        result = restore_download(identifier)
+                        restore_events.put((selection[0], result, None))
+                    except Exception as exc:
+                        restore_events.put((
+                            selection[0], None,
+                            f"{type(exc).__name__}: {exc}"))
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(200, poll_restore)
+
+            def poll_restore():
+                try:
+                    index, result, error = restore_events.get_nowait()
+                except Empty:
+                    if chooser.winfo_exists():
+                        chooser.after(200, poll_restore)
+                    return
+                restore_state["busy"] = False
+                managed["busy"] = False
+                restore_btn.configure(state="normal")
+                if error:
+                    restore_status.set(
+                        "Restore failed; original recovery journal retained.")
+                    status.set("Local GGUF restore failed")
+                    messagebox.showerror(
+                        "Could not restore local GGUF", error, parent=chooser)
+                    return
+                listing.delete(index)
+                restore_status.set(
+                    "Restored GGUF to " + result["path"])
+                status.set("Local GGUF restored and SHA-256 verified")
+                messagebox.showinfo(
+                    "Local model restored",
+                    "Verified weight restored. Choose it from ForgeOS "
+                    "downloads to run it.", parent=chooser)
+
+            def close_restoration():
+                if restore_state["busy"]:
+                    restore_status.set(
+                        "Restore is active. Keep this dialog open until "
+                        "the recovery operation finishes.")
+                    return
+                chooser.destroy()
+            chooser.protocol("WM_DELETE_WINDOW", close_restoration)
+            restore_btn = ttk.Button(
+                body, text="Restore selected GGUF",
+                command=begin_restore)
+            restore_btn.pack(anchor="e", pady=(8, 0))
+
+        ttk.Button(
+            panel, text="Restore a retired GGUF (recoverable)",
+            command=restore_retired).pack(anchor="w", pady=(0, 8))
+
+
         ttk.Label(
             panel, wraplength=820,
             text="Do not use checksums taken solely from the same untrusted file. "

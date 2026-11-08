@@ -55,6 +55,46 @@ class ModelRetirementTests(unittest.TestCase):
             self.retire()
         self.assertEqual(sibling.read_bytes(), b"keep me")
 
+    def test_hardlinked_model_and_manifest_are_never_retired(self):
+        import os
+        outside = self.root.parent / (self.root.name + "-shared.gguf")
+        try:
+            os.link(self.model, outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unsupported on this filesystem")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        with self.assertRaisesRegex(RuntimeError, "single-link"):
+            self.retire()
+        self.assertEqual(outside.read_bytes(), self.data)
+        self.assertTrue(self.model.exists())
+        outside.unlink()
+        manifest_link = self.root.parent / (self.root.name + "-shared.json")
+        try:
+            os.link(self.manifest, manifest_link)
+        except (OSError, NotImplementedError):
+            self.skipTest("Manifest hard links unsupported")
+        self.addCleanup(lambda: manifest_link.unlink(missing_ok=True))
+        with self.assertRaisesRegex(RuntimeError, "single-link"):
+            self.retire()
+        self.assertTrue(self.manifest.exists())
+
+    def test_hardlinked_retired_weight_blocks_restoration(self):
+        import os
+        ticket = self.retire()
+        saved = self.root / ".forgeos-retired" / ticket["id"] / "weights.gguf"
+        outside = self.root.parent / (self.root.name + "-retired-link.gguf")
+        try:
+            os.link(saved, outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unsupported on this filesystem")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        with self.assertRaisesRegex(RuntimeError, "single-link"):
+            self.restore(ticket["id"])
+        self.assertFalse(self.model.exists())
+        self.assertEqual(saved.read_bytes(), self.data)
+        outside.unlink()
+        self.assertEqual(self.restore(ticket["id"])["status"], "restored")
+
     def test_partial_download_blocks_both_retire_and_restore(self):
         partial = self.model.with_name("coder.gguf.part")
         partial.write_bytes(b"partial")

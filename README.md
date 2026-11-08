@@ -263,3 +263,6 @@ The CLI can now retire one locally SHA-verified GGUF without deleting its bytes,
 
 
 The same recoverable retirement action is available in the existing desktop Manage local GGUF > Choose from ForgeOS downloads picker. It is disabled while ForgeOS is performing a task or owns a managed model process; a worker thread performs the full SHA-256 recheck, and the recovery ID is shown on completion.
+
+
+The existing managed GGUF window can now **restore a retired model** using the same verified journal as the CLI. Restoration is explicit, offline, and non-overwriting; the worker hashes weights without blocking the Tk interface. Retirement/restoration additionally rejects hard-linked model or manifest files to avoid manipulating bytes also accessible outside the model directory.

@@ -188,6 +188,23 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("this DOES NOT free storage space", source)
         self.assertIn('gguf_path.set("")', source)
 
+    def test_restore_gui_reuses_existing_retirement_journal_and_worker(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for required in (
+                'text="Restore a retired GGUF (recoverable)"',
+                'from .model_retirement import list_retired',
+                'from .model_retirement import restore_download',
+                'restore_events = Queue(maxsize=1)',
+                'chooser.after(200, poll_restore)',
+                'chooser.protocol("WM_DELETE_WINDOW", close_restoration)',
+                'if restore_state["busy"]:',
+                'managed["busy"] = True',
+                'managed["busy"] = False'):
+            with self.subTest(fragment=required):
+                self.assertIn(required, source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

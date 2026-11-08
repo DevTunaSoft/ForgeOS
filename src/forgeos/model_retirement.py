@@ -89,8 +89,17 @@ def _record(root: Path, entry: Path) -> tuple[Path, dict]:
     return model, info
 
 
+def _single_link(path: Path) -> None:
+    """Do not move a model whose bytes are shared via hard links."""
+    if not path.is_file() or path.stat().st_nlink != 1:
+        raise RuntimeError(
+            "GGUF retirement requires an ordinary single-link file; "
+            "hard-linked or missing files are not movable")
+
+
 def _validate_bytes(path: Path, root: Path, info: dict) -> None:
     _reject_existing_link(path, root)
+    _single_link(path)
     if not path.is_file():
         raise RuntimeError("Retired GGUF bytes missing")
     before = path.stat()
@@ -106,6 +115,7 @@ def _validate_bytes(path: Path, root: Path, info: dict) -> None:
 
 def _validate_manifest(path: Path, root: Path, info: dict) -> None:
     _reject_existing_link(path, root)
+    _single_link(path)
     if not path.is_file() or path.stat().st_size > 4096:
         raise RuntimeError("Retired model manifest missing or oversized")
     try:
@@ -136,7 +146,12 @@ def retire_download(path: str | Path, *,
     with _exclusive_download_lock(lock):
         if partial.exists() or download_journal.exists():
             raise RuntimeError("Unresolved GGUF download journal")
+        _single_link(model)
+        _single_link(manifest)
         verify_download(model, directory=root)
+        # Recheck after the multi-gigabyte SHA read before either move.
+        _single_link(model)
+        _single_link(manifest)
         token = uuid.uuid4().hex
         store = _store(root, create=True)
         entry = store / token
@@ -209,7 +224,8 @@ def restore_download(identifier: str, *,
             raise RuntimeError("Cannot restore over unfinished GGUF download")
         stored_weight, stored_manifest = saved_weight.exists(), saved_manifest.exists()
         original_weight, original_manifest = model.exists(), manifest.exists()
-        if stored_weight and original_weight or stored_manifest and original_manifest:
+        if (stored_weight and original_weight or
+                stored_manifest and original_manifest):
             raise RuntimeError("Restore refuses to overwrite existing files")
         if not (stored_weight or original_weight) or not (stored_manifest or original_manifest):
             raise RuntimeError("Retirement bytes or manifest missing")
