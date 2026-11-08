@@ -75,17 +75,29 @@ def _valid_model_name(name: str) -> bool:
 class LocalChatModel:
     """Compatible with ForgeOS's existing plan/generate_edits interface."""
 
-    def __init__(self, *, backend: str, model: str, endpoint: str | None = None):
+    def __init__(self, *, backend: str, model: str, endpoint: str | None = None,
+                 api_key: str | None = None):
         if backend not in DEFAULT_ENDPOINTS:
             raise ValueError("Unknown local inference backend")
         if not _valid_model_name(model):
             raise ValueError("Invalid local model identifier")
+        if api_key is not None and (not isinstance(api_key, str)
+                or not 20 <= len(api_key) <= 128
+                or not all(x.isalnum() or x in "-_" for x in api_key)):
+            raise ValueError("Invalid local server API key")
         self.backend = backend
         self.model = model
         self.base = validate_endpoint(endpoint or DEFAULT_ENDPOINTS[backend])
+        self._api_key = api_key
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Accept": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = "Bearer " + self._api_key
+        return headers
 
     def installed(self) -> list[dict]:
-        req = Request(self.base + "/models", headers={"Accept": "application/json"})
+        req = Request(self.base + "/models", headers=self._headers())
         payload = _read_json(req, limit=MAX_CATALOG_BYTES, timeout=10)
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             raise RuntimeError("Local endpoint did not expose a compatible model catalog")
@@ -137,7 +149,8 @@ class LocalChatModel:
             raise ValueError("Model request exceeds the bounded context budget")
         req = Request(
             self.base + "/chat/completions", data=encoded,
-            headers={"Content-Type": "application/json"}, method="POST")
+            headers={**self._headers(), "Content-Type": "application/json"},
+            method="POST")
         payload = _read_json(req, limit=MAX_RESPONSE_BYTES, timeout=180)
         if not isinstance(payload, dict):
             raise RuntimeError("Local chat response must be a JSON object")
@@ -166,13 +179,16 @@ class LocalChatModel:
 
 
 def create_model(*, backend: str = "ollama", model: str = "auto",
-                 endpoint: str | None = None):
+                 endpoint: str | None = None, api_key: str | None = None):
     """Preserve canonical Ollama integration while adding local adapters."""
     if backend == "ollama":
+        if api_key is not None:
+            raise ValueError("Ollama does not use a ForgeOS managed API key")
         if endpoint not in (None, "", "http://127.0.0.1:11434"):
             raise ValueError("Ollama uses its existing fixed local endpoint")
         if not _valid_model_name(model):
             raise ValueError("Invalid Ollama model identifier")
         from .core import Ollama
         return Ollama(model=model)
-    return LocalChatModel(backend=backend, model=model, endpoint=endpoint or None)
+    return LocalChatModel(backend=backend, model=model,
+                          endpoint=endpoint or None, api_key=api_key)
