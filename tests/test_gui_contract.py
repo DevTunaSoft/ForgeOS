@@ -359,9 +359,9 @@ class DashboardContractTests(unittest.TestCase):
                 'write_acceptance_snapshot(active)',
                 'managed["busy"] = True',
                 'acceptance_events.get_nowait()',
-                '"Physical Windows evidence: "',
-                '"Frozen EXE SHA-256: "',
-                '"Managed model evidence: "'):
+                'Physical Windows evidence: ',
+                'Frozen EXE SHA-256: ',
+                'Managed model evidence: '):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 

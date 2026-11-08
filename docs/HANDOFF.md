@@ -1644,3 +1644,8 @@ Started the post-PR-51 physical acceptance phase from verified main `7c582f8`. T
 ### Frozen artifact source-identity binding
 
 The #56 recorder initially could hash a downloaded frozen EXE but could not prove which source SHA produced it once outside a Git checkout. The Windows packaging workflow now writes a validated `forgeos_build/build_info.json` from GitHub's exact workflow SHA before PyInstaller and bundles it beside the offline guide. The recorder reads only a valid 40-hex embedded SHA and records it as `artifact.build_source_commit` together with the EXE SHA-256. Source-mode local builds can create the same metadata with `forgeos_build/write_build_info.py`. Invalid embedded metadata is ignored rather than trusted.
+
+
+### Acceptance GUI contract assertion repair
+
+The first #56 checkpoint showed three source-contract failures caused only by over-specific quote matching around multi-line string fragments in the Activity log. The runtime logging code already emitted the intended Physical Windows, frozen EXE SHA-256 and managed-model evidence fields. The contract test now asserts the actual stable text fragments rather than Python source quoting.
