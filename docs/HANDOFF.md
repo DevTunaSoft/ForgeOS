@@ -463,3 +463,17 @@ Remaining: verify latest commit on Linux/Windows 3.10/3.12 and packaged
 Windows EXE AppContainer boundary smoke. Merge only after successful CI.
 Physical 4/8 GiB Windows GUI/AI and long-run memory acceptance remains open.
 Arbitrary other generated files still lack an aggregate disk quota.
+
+
+## PR #35 — native process memory measurements (in progress)
+
+Branch feat/native-memory-measurement based on PR #33 merge f84f0c61.
+Reuses existing model_routing.py as the canonical resource-probe owner.
+Windows GetProcessMemoryInfo and Linux /proc/self/status supply on-demand
+ForgeOS process working-set statistics. No psutil, new daemons or polling.
+CLI `python -m forgeos memory` provides a one-shot diagnostic. The existing
+synthetic capture benchmark gains `--cycles 1..10`, per-cycle post-GC RSS,
+peak traced Python allocations and total time. Tests verify native readings,
+repeated benchmarks, bounds and invalid arguments. Unverified until complete
+Linux/Windows CI, frozen executable packaging and independent Windows 4/8 GiB
+hardware acceptance. This probe does not measure Ollama/model/GPU/child RAM.

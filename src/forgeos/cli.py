@@ -12,6 +12,7 @@ def main(argv=None):
     parser.add_argument('--db',default=str(default_db()))
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
+    sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
     evidence.add_argument('operation',choices=['show','stats'])
     evidence.add_argument('reference',nargs='?')
@@ -43,6 +44,22 @@ def main(argv=None):
     if args.action=='gui':
         from .gui import launch
         return launch(args.db)
+    if args.action == 'memory':
+        from .model_routing import (system_memory, process_memory,
+                                    safe_model_file_budget, local_memory_settings)
+        system = system_memory()
+        process = process_memory()
+        print(json.dumps({
+            "total_system_ram_bytes": system.total_bytes if system else None,
+            "available_system_ram_bytes": system.available_bytes if system else None,
+            "forgeos_process_rss_bytes": process.rss_bytes if process else None,
+            "forgeos_process_peak_rss_bytes": process.peak_rss_bytes if process else None,
+            "forgeos_process_private_bytes": process.private_bytes if process else None,
+            "safe_local_model_file_budget_bytes": safe_model_file_budget(system),
+            "local_model_settings": local_memory_settings(),
+            "warning": "One-shot own-process reading; excludes Ollama/child process/GPU RAM"
+        }, indent=2))
+        return 0
     if args.action == 'diagnostics':
         if args.operation == 'show':
             from .diagnostics import EvidenceStore

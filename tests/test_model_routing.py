@@ -3,8 +3,9 @@ import json
 import unittest
 from unittest.mock import patch
 from forgeos.model_routing import (
-    MemorySnapshot, choose_installed_model, installed_models,
-    local_memory_settings, safe_model_file_budget,
+    MemorySnapshot, ProcessMemorySnapshot, choose_installed_model,
+    installed_models, local_memory_settings, process_memory,
+    safe_model_file_budget,
 )
 
 MODELS = [
@@ -58,6 +59,17 @@ class LocalModelRoutingTests(unittest.TestCase):
             result = choose_installed_model("Fix a button")
         self.assertEqual(result,"qwen2.5-coder:3b")
         self.assertEqual(mock.call_args.args[0],"http://127.0.0.1:11434/api/tags")
+
+    def test_process_rss_probe_is_one_shot_and_nonnegative(self):
+        reading = process_memory()
+        # A few Unix variants may not expose /proc/self/status.
+        if reading is None:
+            self.skipTest("No supported native process working-set probe")
+        self.assertIsInstance(reading, ProcessMemorySnapshot)
+        self.assertGreater(reading.rss_bytes, 0)
+        self.assertGreaterEqual(reading.peak_rss_bytes, reading.rss_bytes)
+        if reading.private_bytes is not None:
+            self.assertGreaterEqual(reading.private_bytes, 0)
 
     def test_low_ram_protects_against_oversized_installed_models(self):
         gib = 1024 ** 3
