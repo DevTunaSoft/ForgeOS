@@ -67,6 +67,13 @@ checkbox; checking it does **not** magically sandbox generated code. Only
 test projects you trust. Packaged Windows security isolation is narrower and
 has supported-preset restrictions. See [Safety](#10-safety-data-storage-and-limitations).
 
+### Find this guide inside the application
+
+Once ForgeOS is open, select **Activity & diagnostics** and choose
+**How to use ForgeOS**. The same guide opens in a scrollable **offline**
+window. It is displayed as plain Markdown text to avoid requiring a browser
+or a heavyweight rendering package. The EXE includes the guide at build time.
+
 ## 3. Get ForgeOS running
 
 ### Option A: Download the Windows executable
@@ -384,6 +391,8 @@ Before calling a feature complete, verify:
 - [ ] Prerequisites, permissions and security implications are accurate.
 - [ ] Errors, recovery actions and known limitations are explained.
 - [ ] Any changed button labels, commands and paths match the actual source.
+- [ ] The built-in **How to use ForgeOS** button opens the current offline
+      manual in the packaged Windows executable without network access.
 - [ ] Screenshots or examples (if supplied) match a tested build, not a mockup.
 - [ ] README and [Windows build instructions](WINDOWS_BUILD.md) link to this
       manual rather than duplicating and eventually contradicting its steps.

@@ -18,6 +18,7 @@ class GuiAcceptanceCommandTests(unittest.TestCase):
                     "ram_after_paging_bytes": 28500000,
                     "rss_growth_during_paging_bytes": 500000,
                     "paginated_history_ok": True,
+                    "offline_manual_available": True,
                     "tasks_verified": 520,
                     "page_sizes": [150, 150, 150, 70],
                     "tabs": ["Development", "Activity & diagnostics"]}
@@ -53,6 +54,7 @@ class GuiAcceptanceCommandTests(unittest.TestCase):
                 "ram_after_paging_bytes": 90000000, "tasks_verified": 520,
                 "page_sizes": [150, 150, 150, 70],
                 "paginated_history_ok": False,
+                "offline_manual_available": True,
                 "rss_growth_during_paging_bytes": 500000,
             }
             with patch("forgeos.gui.launch", return_value=base):
@@ -72,6 +74,20 @@ class GuiAcceptanceCommandTests(unittest.TestCase):
             }):
                 code = main(["--gui-acceptance-report", str(destination)])
             self.assertEqual(code, 12)
+
+    def test_missing_offline_manual_fails_frozen_acceptance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "report.json"
+            with patch("forgeos.gui.launch", return_value={
+                "gui_started": True, "queue_initialized": True,
+                "closed_cleanly": True, "ram_after_gui_startup_bytes": 28000000,
+                "ram_after_paging_bytes": 28500000, "tasks_verified": 520,
+                "page_sizes": [150, 150, 150, 70],
+                "paginated_history_ok": True,
+                "rss_growth_during_paging_bytes": 500000,
+            }):
+                self.assertEqual(
+                    main(["--gui-acceptance-report", str(destination)]), 12)
 
     def test_tk_failure_writes_false_report_and_nonzero_exit(self):
         with tempfile.TemporaryDirectory() as tmp:

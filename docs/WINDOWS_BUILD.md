@@ -39,7 +39,7 @@ execution permissions and troubleshooting.
 From the repository root on Windows:
 
     py -3.12 -m pip install "pyinstaller>=6.0,<7" .
-    py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src forgeos_build/launcher.py
+    py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_MANUAL.md;forgeos" forgeos_build/launcher.py
 
 The output is dist/ForgeOS.exe. Do not distribute it as production-ready
 until real-device installation, AI workflow and security acceptance are
@@ -48,3 +48,12 @@ and should be used only on trusted projects. The packaged Windows version
 uses a restricted AppContainer for supported test workloads; not every test
 preset has a secure frozen execution path. Never bypass a refused sandbox
 by running untrusted tests directly on the host.
+
+
+## Built-in offline manual
+
+The packaging command embeds the **single canonical**
+[ForgeOS User Manual](USER_MANUAL.md) in the EXE. In the desktop app,
+select **Activity & diagnostics** → **How to use ForgeOS** to read it offline
+without an account, browser or network connection. The frozen GUI acceptance
+run fails if the manual is missing from the packaged application.

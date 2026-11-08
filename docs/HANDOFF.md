@@ -548,3 +548,12 @@ consumer; this is source/documentation only. Once merged, treat the manual
 as an acceptance requirement on each feature cycle: change instructions in
 the same PR as code, run docs contract tests and full CI, and retain feature
 limitations until verified on target Windows machines.
+
+
+The same PR also packages docs/USER_MANUAL.md into the frozen Windows
+PyInstaller artifact via --add-data; the existing GUI exposes an offline
+How to use ForgeOS text view when the user clicks. It loads no help content
+at startup, downloads nothing, adds no subscriptions or new rendering
+libraries. The real frozen GUI acceptance now requires the help resource
+to be present. Additional tests check source-mode manual availability,
+failed packaged-missing-manual acceptance, and source GUI button text.

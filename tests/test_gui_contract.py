@@ -54,6 +54,13 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('rss_growth_during_paging_bytes', text)
         self.assertIn('paginated_history_ok', text)
 
+    def test_editable_checkout_provides_offline_user_manual(self):
+        from forgeos.gui import user_manual_path
+        path = user_manual_path()
+        self.assertIsNotNone(path)
+        self.assertEqual(path.name, "USER_MANUAL.md")
+        self.assertIn("# ForgeOS User Manual", path.read_text(encoding="utf-8"))
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

@@ -51,6 +51,7 @@ class LivingManualContractTests(unittest.TestCase):
             "Run tests only", "Refresh", "Older tasks", "Newer tasks",
             "AI efficiency and repair learning", "Show local memory snapshot",
             "Compare selected task: original vs AI summary",
+            "How to use ForgeOS",
             "Allow tests to run on this computer",
         ]
         for label in labels:
@@ -84,6 +85,8 @@ class LivingManualContractTests(unittest.TestCase):
 
     def test_download_artifact_and_memory_guidance_match_build(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("--add-data", workflow)
+        self.assertIn("docs/USER_MANUAL.md;forgeos", workflow)
         self.assertIn("ForgeOS-Windows-EXE", workflow)
         self.assertIn("ForgeOS-Windows-EXE", self.manual)
         self.assertIn("retention-days: 14", workflow)

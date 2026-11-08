@@ -1,6 +1,6 @@
 # ForgeOS — Autonomous Software Engineering Platform
 
-**New here?** Start with the [step-by-step ForgeOS User Manual](docs/USER_MANUAL.md). It explains setup, the real GUI controls, your first task, diagnostic reports, memory information, recovery, safety, and what ForgeOS cannot yet do. We maintain it as features change.
+**New here?** Start with the [step-by-step ForgeOS User Manual](docs/USER_MANUAL.md). It explains setup, the real GUI controls, your first task, diagnostic reports, memory information, recovery, safety, and what ForgeOS cannot yet do. In the application, select **Activity & diagnostics → How to use ForgeOS** to open the same guide offline. We maintain it as features change.
 
 **Status: evolving local-first prototype. Git worktree edits, bounded test/repair loops, diagnostics, and Windows frozen AppContainer unittest isolation exist; full autonomous application delivery and interactive Windows acceptance are not yet complete.**
 
