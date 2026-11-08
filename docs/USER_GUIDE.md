@@ -578,3 +578,8 @@ From PowerShell, `py -m forgeos acceptance` captures the host/source or frozen-e
 ### Windows GUI task buttons and mouse editing
 
 The **Add task**, **Build / test / repair**, **Generate plan**, **Run tests only**, and **Refresh** actions appear immediately above the expanding development queue, including on smaller Windows displays. Right-click editable text fields to access **Cut**, **Copy**, **Paste**, and **Select All**; read-only fields do not permit cutting or pasting. These changes are pending physical Windows validation. Keep **Allow tests to run on this computer** unchecked until you deliberately approve executing generated code on the host.
+
+
+### Desktop settings across restarts (pending Windows verification)
+
+ForgeOS now saves nonsecret desktop preferences to `%USERPROFILE%\\.forgeos\\desktop-settings.json` on normal window close and restores them on the next launch. This includes the project path, local model, backend, local endpoint, test preset, task role, workspace parent, and repair retry count. The file is local JSON and is replaced atomically; invalid or oversized settings are ignored. Task prompts, API credentials, and the **Allow tests to run on this computer** permission are never persisted; host execution must be enabled explicitly each session. Do not place secrets in the local endpoint field.
