@@ -1,0 +1,22 @@
+name: Documentation integrity
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify local Markdown links and headings
+        run: python tools/check_documentation.py --links
+      - name: Require documentation alongside implementation changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python tools/check_documentation.py --base "$BASE_SHA" --head HEAD
