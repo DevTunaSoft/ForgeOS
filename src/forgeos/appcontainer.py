@@ -764,11 +764,12 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
         output.flush()
         output.seek(0)
         encoding = locale.getpreferredencoding(False) or "utf-8"
-        text = output.read().decode(encoding, errors="replace")
+        from .output_capture import summarize_output_file
+        capture = summarize_output_file(output, encoding=encoding)
         return {
             "passed": code.value == 0,
             "returncode": int(code.value),
-            "output": text,
+            **capture,
             "containment": "windows-zero-capability-appcontainer+job-object",
             "token_is_appcontainer": True,
             "capability_count": 0,

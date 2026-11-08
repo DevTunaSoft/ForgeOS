@@ -468,11 +468,12 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         output.flush()
         output.seek(0)
         encoding = locale.getpreferredencoding(False) or "utf-8"
-        text = output.read().decode(encoding, errors="replace")
+        from .output_capture import summarize_output_file
+        capture = summarize_output_file(output, encoding=encoding)
         return {
             "passed": code.value == 0,
             "returncode": int(code.value),
-            "output": text,
+            **capture,
             "ui_restrictions": ui_restrictions,
             "handle_allowlist": True,
             "containment": (

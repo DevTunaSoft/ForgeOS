@@ -206,15 +206,8 @@ def _execute_test_process(argv, root: Path, timeout: int, *,
             argv, root, timeout=timeout, low_integrity=low_integrity, env=env)
     if low_integrity:
         raise ValueError('Low-integrity execution is only available on Windows')
-    result = subprocess.run(
-        argv, cwd=root, capture_output=True, text=True, env=env,
-        timeout=timeout, shell=False, errors='replace')
-    return {
-        'passed': result.returncode == 0,
-        'returncode': result.returncode,
-        'output': result.stdout + '\n' + result.stderr,
-        'containment': 'none',
-    }
+    from .output_capture import run_streamed_process
+    return run_streamed_process(argv, root, timeout, env=env)
 
 
 def run_test(project: str, command: str, timeout: int = 180, *,

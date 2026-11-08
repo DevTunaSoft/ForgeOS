@@ -259,6 +259,10 @@ def _execute_task(
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
+            if outcome.get("capture_complete") is False:
+                raise RuntimeError(
+                    "Test output exceeds safe evidence limits or original archive "
+                    "could not be retained; automatic repair/approval blocked")
             previous_failure = last_output
             last_output = outcome["output"]
             if outcome["passed"]:
