@@ -450,8 +450,11 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         kernel32.CloseHandle(thread)
         thread = None
 
-        wait_ms = min(timeout * 1000, 0xFFFFFFFE)
-        status = kernel32.WaitForSingleObject(process, wait_ms)
+        from .output_capture import wait_native_output_bounded
+        status = wait_native_output_bounded(
+            process, job, output, timeout, kernel32=kernel32,
+            wait_timeout=WAIT_TIMEOUT, wait_failed=WAIT_FAILED,
+            wait_object_0=WAIT_OBJECT_0)
         if status == WAIT_TIMEOUT:
             if not kernel32.TerminateJobObject(job, 124):
                 raise _win_error("TerminateJobObject")

@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import time
 from typing import BinaryIO
 
 MAX_RAW_BYTES = 32 * 1024 * 1024
@@ -20,6 +21,36 @@ MAX_VISIBLE_BYTES = 2 * 1024 * 1024
 HEAD_BYTES = 256 * 1024
 TAIL_BYTES = 512 * 1024
 CHUNK_BYTES = 64 * 1024
+
+
+def wait_native_output_bounded(process, job, stream, timeout: int, *,
+                               kernel32, wait_timeout: int,
+                               wait_failed: int, wait_object_0: int) -> int:
+    """Low-frequency native Windows wait with temporary output disk guard.
+
+    Does not change execution token, handle allowlist, Job Object limits or
+    child command. Existing caller keeps final timeout/exit-code logic.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return wait_timeout
+        wait_ms = min(500, max(1, int(remaining * 1000)))
+        state = kernel32.WaitForSingleObject(process, wait_ms)
+        if state == wait_object_0:
+            return state
+        if state != wait_timeout:
+            return state
+        if os.fstat(stream.fileno()).st_size > MAX_RAW_BYTES:
+            if not kernel32.TerminateJobObject(job, 125):
+                raise OSError("Could not terminate oversized native test output")
+            kernel32.WaitForSingleObject(process, 5000)
+            raise OSError(
+                "Native test output exceeded 32 MiB disk limit; "
+                "Job Object terminated to protect storage")
+        if time.monotonic() >= deadline:
+            return wait_timeout
 
 
 def _sample(stream: BinaryIO, size: int, *, encoding: str) -> str:

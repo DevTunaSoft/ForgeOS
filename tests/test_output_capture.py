@@ -103,6 +103,36 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         self.assertTrue(result["output_preview_only"])
         self.assertLess(peak, 32 * 1024 * 1024)
 
+    def test_native_disk_output_watchdog_kills_oversize_job(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        class FakeWindowsKernel:
+            def __init__(self): self.killed = False
+            def WaitForSingleObject(self, process, delay):
+                return 0 if self.killed else 258
+            def TerminateJobObject(self, job, reason):
+                self.killed = True
+                return 1
+        kernel = FakeWindowsKernel()
+        with tempfile.TemporaryFile(mode="w+b") as native:
+            native.truncate(MAX_RAW_BYTES + 1)
+            with self.assertRaisesRegex(OSError, "disk limit"):
+                wait_native_output_bounded(
+                    10, 20, native, 15, kernel32=kernel,
+                    wait_timeout=258, wait_failed=4294967295, wait_object_0=0)
+        self.assertTrue(kernel.killed)
+
+    def test_native_output_watchdog_passes_success_without_termination(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        class FinishedKernel:
+            def WaitForSingleObject(self, process, delay): return 0
+            def TerminateJobObject(self, job, reason):
+                raise AssertionError("Successful process was terminated")
+        with tempfile.TemporaryFile(mode="w+b") as native:
+            self.assertEqual(wait_native_output_bounded(
+                10, 20, native, 5, kernel32=FinishedKernel(),
+                wait_timeout=258, wait_failed=4294967295,
+                wait_object_0=0), 0)
+
     def test_timeout_terminates_process(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             run_streamed_process(

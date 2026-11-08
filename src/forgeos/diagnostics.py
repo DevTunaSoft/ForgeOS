@@ -98,7 +98,7 @@ class EvidenceStore:
         prefix_limit = allowance * 3 // 4
         suffix_limit = allowance - prefix_limit
         digest = hashlib.sha256()
-        decoder = codecs.getincrementaldecoder("utf-8")("strict")
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
         byte_count = 0
         chars = 0
         complete = []
