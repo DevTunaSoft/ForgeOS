@@ -117,7 +117,7 @@ py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --preset pyt
 
 Create the workspace parent folder before running this CLI command. The `--allow-host-tests` flag permits source-mode execution of project code on the host. It is **not** a declaration that the host is sandboxed.
 
-Supported CLI recovery commands also include `resume-safe`, `run --resume` and `recover-edits`, with strict workspace/checkpoint validation. Read the [manual](docs/USER_GUIDE.md#recovery-after-an-interruption) before using them.
+Supported CLI recovery commands also include `resume-safe`, `run --resume` and `recover-edits`, with strict workspace/checkpoint validation. Read the [manual](docs/USER_GUIDE.md#6-recovery-after-an-interruption) before using them.
 
 ## Local AI and memory efficiency
 
