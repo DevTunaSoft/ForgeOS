@@ -416,6 +416,60 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Label(hash_line, text="Trusted binary SHA-256", width=23).pack(side="left")
         ttk.Entry(hash_line, textvariable=expected_hash).pack(
             side="left", fill="x", expand=True)
+        def choose_downloaded():
+            """Browse already-downloaded GGUF metadata without rehashing GBs."""
+            from .model_inventory import list_downloads
+            try:
+                records = [
+                    entry for entry in list_downloads()
+                    if entry["status"] == "present_not_reverified"]
+            except (OSError, RuntimeError, ValueError) as exc:
+                messagebox.showerror(
+                    "Cannot list local GGUF files", str(exc), parent=popup)
+                return
+            if not records:
+                messagebox.showinfo(
+                    "No downloaded models",
+                    "Download a SHA-verified GGUF using Browse Hugging Face "
+                    "before starting a managed local model.", parent=popup)
+                return
+            chooser = tk.Toplevel(popup)
+            chooser.title("ForgeOS | Downloaded GGUF weights")
+            chooser.geometry("795x400")
+            body = ttk.Frame(chooser, padding=12)
+            body.pack(fill="both", expand=True)
+            ttk.Label(
+                body, wraplength=760,
+                text="Metadata-only inventory (no large file is rehashed "
+                     "in this view). ForgeOS verifies SHA-256 again "
+                     "when you start the model.").pack(anchor="w", pady=(0, 8))
+            listing = ttk.Treeview(
+                body, columns=("model", "size", "source"),
+                show="headings", selectmode="browse")
+            for key, width in (("model", 400), ("size", 110), ("source", 210)):
+                listing.heading(key, text=key.title())
+                listing.column(key, width=width, stretch=key == "model")
+            listing.pack(fill="both", expand=True)
+            for index, entry in enumerate(records):
+                listing.insert("", "end", iid=str(index),
+                               values=(entry["file"],
+                                       f'{entry["bytes"]/(1024**3):.2f} GiB',
+                                       entry["repo"]))
+            def select_local():
+                chosen = listing.selection()
+                if chosen:
+                    gguf_path.set(records[int(chosen[0])]["path"])
+                    chooser.destroy()
+                else:
+                    messagebox.showinfo(
+                        "Select local model", "Choose a downloaded GGUF file.",
+                        parent=chooser)
+            ttk.Button(body, text="Use selected GGUF",
+                       command=select_local).pack(anchor="e", pady=(8, 0))
+
+        ttk.Button(
+            panel, text="Choose from ForgeOS downloads",
+            command=choose_downloaded).pack(anchor="w", pady=(0, 9))
         ttk.Label(
             panel, wraplength=820,
             text="Do not use checksums taken solely from the same untrusted file. "
