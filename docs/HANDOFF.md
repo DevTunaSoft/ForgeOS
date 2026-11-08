@@ -1393,3 +1393,8 @@ The previous managed-file-identity commit `9efc9eb` is undergoing hosted validat
 ## 2026-11-08 duplicate-work and CI re-audit
 
 A branch/roadmap/issues audit was performed after repeated-looking GitHub activity was reported. The source commits were distinct, but `.github/workflows/ci.yml` was launching the same four-job foundation matrix on both `push` and `pull_request` for feature-branch commits. The workflow now runs feature-branch validation only through the PR event and reserves push-triggered foundation validation for `main`. This removes the duplicate matrix without reducing PR coverage. The enhancement deduplication audit was also refreshed for PR #51 and now explicitly lists the existing multi-LLM owners and the genuinely new acceptance gaps. Future implementation must pass that anti-duplication gate before adding a subsystem or repeating a hardening pass.
+
+
+## 2026-11-08 roadmap drift correction and Actions labeling
+
+A second anti-duplication audit compared the current branch to `runtime_installer.py`, `managed_llama.py`, `model_inventory.py`, `model_retirement.py` and the active roadmap. Stale roadmap rows incorrectly described the pinned runtime installer and bounded GGUF inventory/lifecycle as wholly planned. They are now marked partial experimental implementations with the genuinely missing acceptance work separated explicitly. GitHub Actions workflows also now set distinct run names (Foundation tests, Windows EXE, Documentation) so the All workflows page no longer presents three different PR workflows under the same ambiguous PR-title heading. This is documentation/CI clarity work only; it does not claim real native GGUF inference acceptance.

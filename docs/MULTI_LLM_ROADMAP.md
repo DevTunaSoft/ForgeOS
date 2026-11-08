@@ -2,7 +2,7 @@
 
 **Canonical scope:** [ForgeOS engineering roadmap](ROADMAP.md) · [Model compatibility and setup](MODEL_COMPATIBILITY.md) · [Architecture and security](ARCHITECTURE.md) · [Full development handoff](HANDOFF.md) · [52 RTK-inspired enhancements](RTK_ENHANCEMENTS.md) and [deduplication audit](ENHANCEMENT_DEDUP_AUDIT.md).
 
-**Audit baseline (2026-11-07/08 GitHub Actions):** `main` commit `c4f017b3957f1f492903bf17804bbf06e19bb844`; feature PR [#51](https://github.com/DevTunaSoft/ForgeOS/pull/51), reviewed head `ba985c9dda192b2d991b4642b6bbf7c21c434e68`. All six required hosted GitHub check jobs passed on that feature head: four Windows/Linux Python 3.10/3.12 test matrix jobs, documentation integrity and packaged Windows EXE acceptance. The feature PR is **draft and unmerged**. Hosted CI is not proof of real llama.cpp, LM Studio, multi-GiB downloads, model quality, physical Windows stability or production readiness.
+**Audit baseline (refreshed 2026-11-08):** `main` remains the released baseline; feature PR [#51](https://github.com/DevTunaSoft/ForgeOS/pull/51) is **draft and unmerged**. Current audited branch head is `f7241a374c3593e1f5468a04925a085cacaf2b2a`; the latest fully completed six-gate evidence before later superseded/cancelled runs is `67c2e7495aef6b1cd40bb6294cf86d874c298157`. Hosted CI is regression evidence only and is not proof of real llama.cpp, LM Studio, multi-GiB downloads, model quality, physical Windows stability or production readiness.
 
 This is a **requirements-to-evidence tracker, not a declaration that all capabilities are built**. Every row below carries a source owner, a status and an observable exit gate. Existing capabilities are extended in place; no second desktop application, duplicated task engine, duplicate database or parallel model selection subsystem.
 
@@ -35,8 +35,8 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 | Explicit pinned GGUF download, SHA-256, resume | `src/forgeos/gguf_download.py` | PR #51 + hosted CI | Multi-GiB real download, interrupted resume, disk limits, Windows paths |
 | User GUI backend/endpoint selection and HF browser/download | `src/forgeos/gui.py` | PR #51 + hosted CI | Manual accessible GUI exercise with real backend/HF model |
 | Backend-aware checkpoint recreation | `src/forgeos/recovery.py`, `engine.py` | PR #51 + hosted CI | Crash/reboot, file/model identity and lease safety |
-| Native managed llama.cpp CPU runtime | `src/forgeos/managed_llama.py` plus one existing GUI control | **Partial experimental PR #51:** SHA-pinned manual binary, GGUF verified, private CPU-only single server and GUI start/stop; automatic installer, complete child cleanup and live inference remain planned | Verified versioned binary, install/connect/unload/restart without extra GUI |
-| Installed GGUF lifecycle and profiles | New bounded model inventory, reusing existing routing | Planned | Install/import/update/remove/repair, pinned hashes and atomic storage |
+| Native managed llama.cpp CPU runtime | `src/forgeos/runtime_installer.py`, `managed_llama.py`, existing GUI | **Partial experimental PR #51:** pinned official Windows x64 CPU runtime installer, archive/DLL re-verification, SHA-verified GGUF loading, authenticated loopback server, GUI start/stop, POSIX process-group cleanup and Windows suspended Job Object launch are implemented; real native GGUF inference remains unverified | Real Windows install → load → infer → stop/restart, with measured RAM/latency and process identity evidence |
+| Installed GGUF lifecycle and profiles | `src/forgeos/model_inventory.py`, `model_retirement.py`, existing downloader/GUI | **Partial experimental PR #51:** bounded offline inventory, explicit SHA reverify, resumable downloads and reversible retirement/restore exist without a second database; safe import/update/repair and richer status UX remain incomplete | Real Windows lifecycle plus import/update/repair and active/checkpoint protection |
 | Role-aware multi-model routing | Extend `model_routing.py` and engine orchestration | Planned | Repeatable task-level quality/performance benefit |
 | RAM/process-tree budget and resource governor | Extend `model_routing.py` + managed runtime | Planned | Actual process-tree RSS/commit sampling and OOM failover |
 | Fully autonomous development with multiple models | Existing engine + recovery + leases | Partial | Full plan/edit/test/review/recovery cycle on real runtimes |
@@ -61,8 +61,8 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 
 **Owner:** one new minimal managed-runtime module behind `local_models.create_model` or its successor; do **not** embed another GUI.
 
-- [ ] Select a version-pinned CPU-compatible llama.cpp Windows binary distribution; record exact license, transitive licenses, binary hashes, source and update policy.
-- [ ] Download a signed/checksummed runtime from trusted upstream release metadata with explicit consent; use safe binary origin validation and fail closed when authenticity cannot be established.
+- [x] **Experimental implementation:** a specific official llama.cpp Windows x64 CPU release is pinned by tag, asset name, size and SHA-256 in `runtime_installer.py`; exact license/transitive-attribution review remains a separate release gate.
+- [x] **Experimental implementation:** explicit GUI install downloads only the pinned official GitHub asset, disables proxies, restricts redirects, verifies upstream release metadata plus SHA-256/size, safely extracts, retains the source archive and re-verifies installed executable/DLL bytes before use. This is checksum/provenance hardening, not a vendor-signature claim.
 - [x] **Experimental source path:** launch a user-provided `llama-server` with argument-array subprocess execution, explicit binary/model paths, random available local port, no shell and **localhost-only** bind.
 - [ ] Prove port ownership and harden child process-tree cleanup on Windows; the current launch/readiness code does **not** establish exclusive process ownership.
 - [ ] Verify that the listener is the expected child process and version before passing project prompts; protect against port takeover/rebinding.
@@ -86,8 +86,8 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [ ] Confirm metadata-to-weights integrity through source revision and hash without accepting arbitrary third-party redirects, untrusted archives or symlink/path traversal.
 - [ ] Show license, model author, repository, family, parameter count, quantization, context claim, chat template, tool/structured-output claims, download size and actual local verification status. Label unverified metadata as such.
 - [ ] Support imported existing GGUF weights **without copying multiple large files**; choose a safe read-only reference policy and recheck hashes on use.
-- [ ] Model inventory with installed, incomplete, corrupt, imported, loaded and unsupported states; no new always-running database daemon.
-- [ ] Add safe remove, update, repair/reverify and cleanup workflows. Never delete user files or old model versions without explicit selection; protect active/checkpoint-referenced weights.
+- [x] **Partial inventory baseline:** bounded offline inventory and explicit streaming re-verification exist in `model_inventory.py`; downloaded weights can be classified as missing, size-mismatch or present-not-reverified without an always-running database. Imported/loaded/unsupported state coverage remains open.
+- [x] **Partial lifecycle baseline:** reversible explicit retirement/restore with recovery journal exists in `model_retirement.py` and the existing GUI/CLI. Update, repair, imported-weight handling, active/checkpoint protection and final atomic no-clobber Windows semantics remain open.
 - [ ] Support model revision pinning, storage quotas, resume limits, deduplicated file references and readable diagnosis of failed operations.
 - [ ] Test malicious Hub metadata, invalid names, bad file sizes, missing license, model-card changes and model disappearance.
 

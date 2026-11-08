@@ -1,4 +1,5 @@
 name: ForgeOS foundation tests
+run-name: Foundation tests • ${{ github.event_name }} • ${{ github.head_ref || github.ref_name }}
 on:
   # Feature branches are already validated by pull_request. Restrict push
   # validation to main so one feature commit does not launch the same matrix
