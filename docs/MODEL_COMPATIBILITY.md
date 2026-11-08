@@ -46,9 +46,13 @@ for these code paths.
 The backend and endpoint are captured when a GUI task is started. Non-Ollama
 execution checkpoints record backend and endpoint in their resume contract,
 preventing an incompatible configuration from being substituted silently.
-Existing Ollama checkpoint compatibility is retained. **Automatic safe resume
-currently only reconstructs Ollama**, so other backends may require explicit
-manual inspection and a future backend-aware recovery implementation.
+Existing Ollama checkpoint compatibility is retained. **The experimental
+backend-aware `resume-safe` path also reconstructs the saved llama.cpp,
+LM Studio or local endpoint configuration**, after validating that the
+persisted backend and canonical loopback endpoint match the original
+execution contract. Corrupt or unexpected provider records are skipped;
+there is no silent fallback to a different model or server. End-to-end
+restart/recovery acceptance with real runtimes is still unverified.
 
 ### CLI examples
 
@@ -145,7 +149,8 @@ model management. Do not mark these verified without corresponding evidence.
 ## Future integration phases
 
 1. Confirm this adapter branch passes all CI and packaged EXE acceptance gates.
-2. Add persistent, versioned provider profiles and backend-aware safe resume,
+2. Add persistent, versioned provider profiles and extend the current
+   backend-aware checkpoint resume with end-to-end interruption tests,
    retaining the existing SQLite state machine and preventing silent changes.
 3. Add a managed, signed/checksummed **llama.cpp CPU runtime** with absolute
    executable paths, controlled launch/stop, idle unloading, and process-tree
