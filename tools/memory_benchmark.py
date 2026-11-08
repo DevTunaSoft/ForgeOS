@@ -64,7 +64,16 @@ def main(argv=None):
                 bool(report["evidence_reference"]) and
                 report["returncode"] == 0 and
                 peak < 32 * 1024 * 1024)
+            final_capture = {
+                "source_bytes": report["capture_source_bytes"],
+                "in_memory_preview_chars": len(report["output"]),
+                "complete": report["capture_complete"],
+                "archive_recoverable": bool(report["evidence_reference"]),
+                "test_exit_code": report["returncode"],
+            }
             overall_peak = max(overall_peak, peak)
+            # Release the large preview before measuring residual RSS.
+            del report
             gc.collect()
             reading = process_memory()
             readings.append({
@@ -76,11 +85,7 @@ def main(argv=None):
         snapshot = system_memory()
         after = process_memory()
         data = {
-            "source_bytes": report["capture_source_bytes"],
-            "in_memory_preview_chars": len(report["output"]),
-            "complete": report["capture_complete"],
-            "archive_recoverable": bool(report["evidence_reference"]),
-            "test_exit_code": report["returncode"],
+            **final_capture,
             "python_tracemalloc_peak_bytes": overall_peak,
             "cycles_run": args.cycles,
             "cycle_readings": readings,
