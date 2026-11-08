@@ -32,7 +32,7 @@ flowchart TB
 | `src/forgeos/core.py` | SQLite task state, leases, local Ollama connector, test orchestration primitives |
 | `src/forgeos/engine.py` | Edit constraints, structured prompt/edit manifest, bounded local task cycle, checkpoint validation |
 | `src/forgeos/workspace.py` | Git repository/worktree setup and ownership |
-| `src/forgeos/transactions.py` | Transactional edit journal, failure/rollback/recovery boundaries |
+| `src/forgeos/transactions.py` | Transactional edit journal, streamed bounded original-file backups (8 MiB/file), failure/rollback/recovery boundaries |
 | `src/forgeos/recovery.py` | Eligible checkpoint resumption and safe recovery workflow |
 | `src/forgeos/test_runtime.py` | Disposable runtime snapshots and cleanup |
 | `src/forgeos/secure_runner.py`, `appcontainer.py`, `windows_containment.py`, `sandbox_runner.py` | Frozen Windows execution containment |

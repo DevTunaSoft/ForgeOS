@@ -682,3 +682,25 @@ pass before merge; no real Windows/Ollama hardware acceptance was performed.
   Run physical Windows crash/restart recovery and 4/8 GiB usage tests before
   claiming hardware acceptance. Future memory hardening: stream or cap massive
   aggregated `resume-safe` reports without obscuring skipped-task reasons.
+
+## Streamed, bounded edit transaction hardening — 2026-11-07 (review branch)
+
+- Starting commit: `07b0ea2e0c1cd2b9e958436456a31685e4ee1511` (after merged PR #45).
+- Branch: `hardening/streamed-transaction-backups`.
+- `transactions.py` now preflights all target sizes/content/counts; original
+  source files and recovery backup hashes use 64 KiB chunks, not
+  `Path.read_bytes()` materialization. Existing inputs over 8 MiB are
+  explicitly rejected while preserving original files. The 8-file/128 KB
+  new-content constraints reuse the canonical engine constants.
+- Journal manifests are bounded to 32 KiB and malformed/duplicate entry
+  metadata is rejected before any restoration; oversized/incompatible
+  journals remain on disk for manual inspection.
+- Regression tests cover sparse >8 MiB files rejected pre-journal, large
+  streamed backup/restore with `Path.read_bytes` disabled, oversized
+  manifest and duplicate entry preservation. Previously existing rollback
+  and external-conflict tests remain the regression baseline.
+- At implementation/commit time: **full Python/Windows frozen tests and real
+  hardware acceptance not yet verified**. Next: observe CI for 3.10/3.12
+  Linux/Windows, docs, packaged Windows acceptance; resolve failures before
+  merging. Follow with randomized size-boundary and interrupted-copy
+  fault-injection and physical crash/restart tests.

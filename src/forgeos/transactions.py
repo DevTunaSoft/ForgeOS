@@ -17,6 +17,13 @@ class TransactionError(RuntimeError):
     pass
 
 
+# Bounds apply to the existing file being backed up, not the output preview.
+# A large existing file must never be read fully into ForgeOS memory.
+MAX_BACKUP_BYTES = 8 * 1024 * 1024
+MAX_MANIFEST_BYTES = 32 * 1024
+COPY_CHUNK_BYTES = 64 * 1024
+
+
 def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -37,6 +44,41 @@ def _durable_write(path: Path, data: bytes) -> None:
         os.fsync(stream.fileno())
 
 
+def _hash_file(path: Path) -> str:
+    """Hash bounded file contents without materializing them in memory."""
+    value = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        while True:
+            chunk = stream.read(COPY_CHUNK_BYTES)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_BACKUP_BYTES:
+                raise TransactionError(f"File exceeds transaction backup limit: {path}")
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def _copy_bounded(source: Path, destination: Path) -> str:
+    """Create a durable, streamed copy, rejecting oversized source data."""
+    value = hashlib.sha256()
+    size = 0
+    with source.open("rb") as read, destination.open("xb") as write:
+        while True:
+            chunk = read.read(COPY_CHUNK_BYTES)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_BACKUP_BYTES:
+                raise TransactionError(f"File exceeds transaction backup limit: {source}")
+            write.write(chunk)
+            value.update(chunk)
+        write.flush()
+        os.fsync(write.fileno())
+    return value.hexdigest()
+
+
 def _journal(root: Path) -> Path:
     return root / ".forgeos" / "pending-edit"
 
@@ -48,9 +90,10 @@ def _safe_target(root: Path, name: str) -> Path:
 
 
 def recover_edits(root: Path) -> bool:
-    """Roll back an interrupted edit, or finish cleanup after commit.
+    """Roll back interrupted edits without loading large files into RAM.
 
     Refuses to overwrite a target changed by a third party after the crash.
+    Invalid/oversized journals and backups remain intact for inspection.
     """
     root = Path(root).resolve(strict=True)
     txn = _journal(root)
@@ -59,45 +102,67 @@ def recover_edits(root: Path) -> bool:
     manifest_path = txn / "manifest.json"
     if not manifest_path.is_file() or manifest_path.is_symlink():
         raise TransactionError(f"Transaction manifest missing: {txn}")
-    data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if data.get("version") != 1 or data.get("state") not in ("pending", "committed"):
+    if manifest_path.stat().st_size > MAX_MANIFEST_BYTES:
+        raise TransactionError("Transaction manifest exceeds safety limit")
+    with manifest_path.open("rb") as stream:
+        raw = stream.read(MAX_MANIFEST_BYTES + 1)
+    if len(raw) > MAX_MANIFEST_BYTES:
+        raise TransactionError("Transaction manifest exceeds safety limit")
+    try:
+        data = json.loads(raw)
+    except (UnicodeError, ValueError) as exc:
+        raise TransactionError("Invalid transaction manifest JSON") from exc
+    if (not isinstance(data, dict) or data.get("version") != 1
+            or data.get("state") not in ("pending", "committed")):
         raise TransactionError("Invalid edit journal")
     entries = data.get("entries")
     if not isinstance(entries, list) or not 1 <= len(entries) <= 8:
         raise TransactionError("Invalid journal entries")
-    if data["state"] == "committed":
-        shutil.rmtree(txn)
-        return True
-    # Verify *all* paths and contents before rolling back any file.
+
+    # Inspect every entry before making any edit, including cleanup after
+    # commit. A malformed or duplicate path must not delete the journal.
+    seen = set()
     planned = []
     for i, item in enumerate(entries):
         if not isinstance(item, dict) or set(item) != {"path", "before", "after"}:
             raise TransactionError("Malformed journal entry")
         target = _safe_target(root, item["path"])
-        before = item["before"]
-        after = item["after"]
-        if before is not None and (not isinstance(before, str) or len(before) != 64):
+        name = str(target).casefold()
+        if name in seen:
+            raise TransactionError("Duplicate edit journal target")
+        seen.add(name)
+        before, after = item["before"], item["after"]
+        def valid_hash(value):
+            return (isinstance(value, str) and len(value) == 64
+                    and all(c in "0123456789abcdef" for c in value))
+        if before is not None and not valid_hash(before):
             raise TransactionError("Invalid backup hash")
-        if not isinstance(after, str) or len(after) != 64:
+        if not valid_hash(after):
             raise TransactionError("Invalid staged hash")
+        if data["state"] == "committed":
+            continue
         backup = txn / f"{i}.bak"
         if before is not None:
-            if backup.is_symlink() or not backup.is_file() or _digest(backup.read_bytes()) != before:
+            if backup.is_symlink() or not backup.is_file() or _hash_file(backup) != before:
                 raise TransactionError("Backup missing or damaged")
-        current = target.read_bytes() if target.exists() else None
-        if current is not None and _digest(current) not in {before, after}:
+        current_hash = _hash_file(target) if target.exists() else None
+        if current_hash is not None and current_hash not in {before, after}:
             raise TransactionError(f"Conflicting external edit: {target}")
-        if current is None and before is not None:
+        if current_hash is None and before is not None:
             raise TransactionError(f"Original file unexpectedly removed: {target}")
-        planned.append((target, backup if before is not None else None, current))
-    for target, backup, current in planned:
+        planned.append((target, backup if before is not None else None, current_hash, before))
+    if data["state"] == "committed":
+        shutil.rmtree(txn)
+        return True
+
+    for target, backup, current_hash, before in planned:
         if backup is None:
             if target.exists():
                 target.unlink()
-        elif current is None or _digest(current) != _digest(backup.read_bytes()):
+        elif current_hash != before:
             temp = target.parent / (".forgeos-restore-" + next(tempfile._get_candidate_names()))
             try:
-                _durable_write(temp, backup.read_bytes())
+                _copy_bounded(backup, temp)
                 os.replace(temp, target)
                 _sync_dir(target.parent)
             finally:
@@ -107,40 +172,62 @@ def recover_edits(root: Path) -> bool:
 
 
 def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
-    """Stage all files, journal backups, then replace; roll back on failure."""
-    # Keep the caller's path spelling: Windows may resolve 8.3 temp paths
-    # to a different alias, breaking Path.relative_to on valid targets.
+    """Stage bounded edits, journal streamed backups, then atomically replace.
+
+    No edits occur until every stage file and durable manifest exist. When
+    staging fails, the original workspace remains unchanged.
+    """
+    from .engine import MAX_FILE_BYTES, MAX_FILES
+
     root = Path(root).absolute()
     txn = _journal(root)
     if txn.exists():
         raise TransactionError(f"Pending transaction requires recovery: {txn}")
+    if not isinstance(edits, list) or not 1 <= len(edits) <= MAX_FILES:
+        raise TransactionError("Invalid transaction edit count")
+    staged = []
+    seen = set()
+    # Preflight every target and bounded replacement before creating a journal.
+    for target, content in edits:
+        name = target.relative_to(root).as_posix()
+        target = _safe_target(root, name)
+        key = str(target).casefold()
+        if key in seen:
+            raise TransactionError("Duplicate transaction target")
+        seen.add(key)
+        if not isinstance(content, str):
+            raise TransactionError("Transaction content must be text")
+        after = content.encode("utf-8")
+        if len(after) > MAX_FILE_BYTES:
+            raise TransactionError("Replacement exceeds edit size limit")
+        if target.exists() and target.stat().st_size > MAX_BACKUP_BYTES:
+            raise TransactionError(f"File exceeds transaction backup limit: {target}")
+        staged.append((name, after))
+
     txn.parent.mkdir(parents=True, exist_ok=True)
     txn.mkdir()
     entries = []
     prepared = False
     try:
-        for i, (target, content) in enumerate(edits):
-            name = target.relative_to(root).as_posix()
+        for i, (name, after) in enumerate(staged):
             target = _safe_target(root, name)
-            if target.is_symlink() or (target.exists() and not target.is_file()):
-                raise TransactionError(f"Unsafe edit target: {target}")
-            before = target.read_bytes() if target.exists() else None
-            after = content.encode("utf-8")
-            if before is not None:
-                _durable_write(txn / f"{i}.bak", before)
+            before = (_copy_bounded(target, txn / f"{i}.bak")
+                      if target.exists() else None)
             _durable_write(txn / f"{i}.new", after)
-            entries.append({"path": name, "before": _digest(before) if before is not None else None,
-                            "after": _digest(after)})
+            entries.append({"path": name, "before": before, "after": _digest(after)})
         manifest = {"version": 1, "state": "pending", "entries": entries}
-        _durable_write(txn / "manifest.json", json.dumps(manifest).encode())
+        serialized = json.dumps(manifest).encode("utf-8")
+        if len(serialized) > MAX_MANIFEST_BYTES:
+            raise TransactionError("Transaction manifest exceeds safety limit")
+        _durable_write(txn / "manifest.json", serialized)
         _sync_dir(txn)
         _sync_dir(txn.parent)
         prepared = True
-        for i, (target, _) in enumerate(edits):
+        for i, (name, _) in enumerate(staged):
             # Detect external changes since staging, and reject symlink swaps.
-            target = _safe_target(root, entries[i]["path"])
-            current = target.read_bytes() if target.exists() else None
-            if (None if current is None else _digest(current)) != entries[i]["before"]:
+            target = _safe_target(root, name)
+            current = _hash_file(target) if target.exists() else None
+            if current != entries[i]["before"]:
                 raise TransactionError(f"Edit target changed during staging: {target}")
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(txn / f"{i}.new", target)

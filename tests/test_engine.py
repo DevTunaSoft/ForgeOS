@@ -244,6 +244,60 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertFalse((self.root / "second.py").exists())
         self.assertFalse((self.root / ".forgeos" / "pending-edit").exists())
 
+    def test_large_existing_file_refused_without_journal_or_allocation(self):
+        from forgeos.transactions import MAX_BACKUP_BYTES, TransactionError
+        huge = self.root / "existing.py"
+        with huge.open("wb") as stream:
+            stream.truncate(MAX_BACKUP_BYTES + 1)
+        with self.assertRaisesRegex(TransactionError, "backup limit"):
+            apply_edits(self.root, self.manifest([
+                {"path": "existing.py", "content": "replacement"}]))
+        self.assertEqual(huge.stat().st_size, MAX_BACKUP_BYTES + 1)
+        self.assertFalse((self.root / ".forgeos" / "pending-edit").exists())
+
+    def test_backup_and_restore_stream_without_path_read_bytes(self):
+        from unittest.mock import patch
+        from forgeos.transactions import recover_edits, _digest
+        original = (b"streaming-backup\n" * 100000)
+        target = self.root / "existing.py"
+        target.write_bytes(original)
+        with patch.object(Path, "read_bytes", side_effect=AssertionError("full file read")):
+            self.assertEqual(apply_edits(self.root, self.manifest([
+                {"path": "existing.py", "content": "replacement"}])),
+                             ["existing.py"])
+        self.assertEqual(target.read_text(), "replacement")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "0.bak").write_bytes(original)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "existing.py", "before": _digest(original),
+                "after": _digest(b"replacement") }]}))
+        with patch.object(Path, "read_bytes", side_effect=AssertionError("full file read")):
+            self.assertTrue(recover_edits(self.root))
+        self.assertEqual(target.read_bytes(), original)
+        self.assertFalse(txn.exists())
+
+    def test_oversized_or_duplicate_journal_preserved_without_mutation(self):
+        from forgeos.transactions import MAX_MANIFEST_BYTES, TransactionError, _digest, recover_edits
+        target = self.root / "first.py"
+        target.write_text("changed")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        entry = {"path": "first.py", "before": None,
+                 "after": _digest(b"changed")}
+        (txn / "manifest.json").write_bytes(b" " * (MAX_MANIFEST_BYTES + 1))
+        with self.assertRaisesRegex(TransactionError, "manifest exceeds"):
+            recover_edits(self.root)
+        self.assertEqual(target.read_text(), "changed")
+        self.assertTrue(txn.exists())
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [entry, entry]}))
+        with self.assertRaisesRegex(TransactionError, "Duplicate"):
+            recover_edits(self.root)
+        self.assertEqual(target.read_text(), "changed")
+        self.assertTrue(txn.exists())
+
     def test_manual_recovery_of_interrupted_journal(self):
         from forgeos.transactions import recover_edits, _digest
         (self.root / "first.py").write_text("original")
