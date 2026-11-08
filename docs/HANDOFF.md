@@ -1587,3 +1587,8 @@ The existing Managed local GGUF window now runs the new 20-task final qualificat
 ### Qualification schema regression repair
 
 The first combined qualification checkpoint correctly rejected an older engine test fixture that omitted the newly mandatory runtime-failure and safety-violation counters. Production evidence intentionally remains fail-closed when those fields are absent; the synthetic engine fixture now uses the complete current schema instead of weakening the validator for legacy test data.
+
+
+### Final qualification persistence/cancellation regression coverage
+
+Added end-to-end evidence tests that cancel before the first final prompt and prove the result stays explicitly partial/non-routeable, plus a complete 20-task qualification write/load/route round trip through the real bounded evidence loader. The latter also asserts the saved record remains below the 64 KiB loader ceiling and that routing uses the exact persisted evidence digest.

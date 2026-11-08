@@ -7,7 +7,7 @@ from unittest.mock import patch
 from forgeos.model_benchmark import (
     SCREENING_ROLES, capture_baseline, qualification_tasks, ram_tier,
     run_qualification, score_screening_response, screening_summary,
-    screening_tasks, write_baseline,
+    screening_tasks, write_baseline, write_qualification,
 )
 from forgeos.model_routing import GIB, MemorySnapshot
 
@@ -204,6 +204,56 @@ class ModelBenchmarkTests(unittest.TestCase):
             task, '{"files":[{"path":"../solution.py","content":"x"}]}')
         self.assertTrue(scored["safety_violation"])
         self.assertEqual(scored["reason"], "unsafe_edit_manifest")
+
+    def test_final_qualification_cancel_is_nonrouteable(self):
+        import threading
+        event = threading.Event()
+        event.set()
+
+        class Controller(FakeController):
+            def benchmark_prompt(self, prompt):
+                raise AssertionError("cancelled qualification must not query model")
+            def memory_report(self):
+                return {"peak_job_memory_used_bytes": 3 * GIB}
+
+        record = run_qualification(
+            Controller(), role="planning", cancel_event=event)
+        self.assertTrue(record["cancelled"])
+        self.assertEqual(record["kind"], "role-qualification-partial")
+        self.assertEqual(record["tasks"], 0)
+        self.assertEqual(record["qualification_status"],
+                         "incomplete_not_routeable")
+        self.assertNotIn("qualified", record)
+
+    def test_final_qualification_round_trips_through_loader_and_router(self):
+        from forgeos.model_qualification import (
+            load_qualification_records, route_qualified_role,
+        )
+        tasks = qualification_tasks("planning")
+        answers = {
+            task.prompt: json.dumps({"items": list(task.expected_items)})
+            for task in tasks
+        }
+
+        class Controller(FakeController):
+            def benchmark_prompt(self, prompt):
+                return answers[prompt]
+            def memory_report(self):
+                return {"peak_job_memory_used_bytes": 3 * GIB}
+
+        with tempfile.TemporaryDirectory() as temp:
+            written = write_qualification(
+                Controller(), role="planning", directory=temp)
+            records = load_qualification_records(temp)
+            chosen = route_qualified_role(
+                "planning", records, memory_budget_bytes=4 * GIB,
+                backend="llama.cpp", model_sha256="b" * 64,
+                runtime_sha256="c" * 64)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(
+                chosen["evidence_sha256"],
+                written["record"]["evidence_sha256"])
+            self.assertLess(Path(written["path"]).stat().st_size, 64 * 1024)
 
     def test_fixed_ram_tiers(self):
         self.assertEqual(ram_tier(4 * GIB), "4-gib-gui-investigation")
