@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 from forgeos.gui import (
     PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
@@ -10,7 +11,7 @@ class DashboardContractTests(unittest.TestCase):
     def test_primary_actions_precede_expanding_queue(self):
         source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertLess(source.index('actions = ttk.Frame(dashboard)'),
-                        source.index('tasks_frame = ttk.LabelFrame(dashboard')))
+                        source.index('tasks_frame = ttk.LabelFrame(dashboard'))
         for label in ("Add task", "Build / test / repair", "Generate plan", "Run tests only"):
             self.assertIn(f'"{label}"', source)
 
