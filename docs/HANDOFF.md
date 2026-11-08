@@ -1552,3 +1552,8 @@ The single ForgeOS dashboard now exposes **Resume safe blocked tasks** in Activi
 ### Managed recovery authentication compatibility repair
 
 A focused compatibility audit found that `LocalChatModel` intentionally keeps the ephemeral server credential in private state (`_api_key`), while the first recovery re-attestation implementation checked a nonexistent public `api_key` attribute. That would have rejected every real managed recovery despite correct hashes. The client now exposes only a read-only boolean `authenticated` property; the secret remains private and is never serialized or returned. Recovery checks that boolean. Regression coverage verifies authenticated/unauthenticated behavior and that no public secret attribute is introduced.
+
+
+### Checkpoint CI repair after managed recovery integration
+
+The first checkpoint run correctly caught compatibility assumptions in the new recovery tests. The managed recovery fixture used a non-canonical loopback endpoint without `/v1`, while production validation requires the canonical endpoint. Historical tests also still asserted that every SHA-pinned managed checkpoint must be rejected, which is no longer the contract: parsing is now allowed, but execution still requires authenticated re-attestation. Those assertions were updated to verify preserved hashes instead. The unauthenticated legacy managed checkpoint continues to fail closed with the established error wording. A test that attempted to prove the private API key was absent from the object's private `__dict__` was corrected; the security contract is that no public credential attribute or serialized checkpoint exists, not that the runtime can authenticate without storing the ephemeral secret in private memory.

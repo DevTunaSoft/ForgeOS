@@ -46,7 +46,7 @@ class RecoveryTests(unittest.TestCase):
         return {
             "preset": preset, "max_repairs": max_repairs,
             "model": "forgeos-managed", "backend": "llama.cpp",
-            "endpoint": "http://127.0.0.1:40123",
+            "endpoint": "http://127.0.0.1:40123/v1",
             "managed_model_sha256": "a" * 64,
             "managed_runtime_sha256": "b" * 64,
         }
@@ -96,7 +96,7 @@ class RecoveryTests(unittest.TestCase):
         for field, bad_value in (
                 ("managed_model_sha256", "c" * 64),
                 ("managed_runtime_sha256", "d" * 64),
-                ("base", "http://127.0.0.1:40124"),
+                ("base", "http://127.0.0.1:40124/v1"),
                 ("authenticated", False)):
             with self.subTest(field=field):
                 contract = self.managed_contract()

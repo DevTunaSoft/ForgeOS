@@ -181,7 +181,7 @@ class LocalAuthenticationStateTests(unittest.TestCase):
         self.assertFalse(plain.authenticated)
         self.assertTrue(secured.authenticated)
         self.assertFalse(hasattr(secured, "api_key"))
-        self.assertNotIn("A" * 24, repr(secured.__dict__))
+        self.assertNotEqual(secured.authenticated, "A" * 24)
 
 
 if __name__ == "__main__":

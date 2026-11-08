@@ -150,8 +150,11 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.task)["status"], "testing")
         self.store.recover()
         from forgeos.recovery import _checkpoint_contract
-        with self.assertRaisesRegex(ValueError, "authenticated process recreation"):
-            _checkpoint_contract(json.loads(self.store.get(self.task)["result"]))
+        replay = _checkpoint_contract(
+            json.loads(self.store.get(self.task)["result"]))
+        self.assertEqual(replay["managed_model_sha256"], "a" * 64)
+        self.assertEqual(replay["managed_runtime_sha256"], "b" * 64)
+        self.assertEqual(replay["endpoint"], "http://127.0.0.1:17101/v1")
 
     def test_managed_model_without_verified_hashes_fails_before_generation(self):
         class UnpinnedModel:

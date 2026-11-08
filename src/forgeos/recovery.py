@@ -57,7 +57,7 @@ def _checkpoint_contract(checkpoint):
         elif backend == "llama.cpp" and model == "forgeos-managed":
             raise ValueError(
                 "Managed local GGUF checkpoint needs verified runtime and "
-                "model identity; automatic recovery is not supported")
+                "model identity; automatic recovery is not yet supported")
         # Reuse the exact originally persisted server identity. Never
         # substitute a port, backend, cloud endpoint, or different model.
         result.update(backend=backend, endpoint=endpoint)

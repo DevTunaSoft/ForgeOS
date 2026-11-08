@@ -668,8 +668,9 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         checkpoint["contract"].update(
             managed_model_sha256="a" * 64,
             managed_runtime_sha256="b" * 64)
-        with self.assertRaisesRegex(ValueError, "authenticated process recreation"):
-            _checkpoint_contract(checkpoint)
+        replay = _checkpoint_contract(checkpoint)
+        self.assertEqual(replay["managed_model_sha256"], "a" * 64)
+        self.assertEqual(replay["managed_runtime_sha256"], "b" * 64)
         checkpoint["contract"]["managed_model_sha256"] = "bad-hash"
         with self.assertRaisesRegex(ValueError, "Invalid managed GGUF checkpoint identity"):
             _checkpoint_contract(checkpoint)
