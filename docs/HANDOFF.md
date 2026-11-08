@@ -1639,3 +1639,8 @@ The first validation of the shared task-role selector found two stale source-con
 ## #56 local acceptance evidence recorder
 
 Started the post-PR-51 physical acceptance phase from verified main `7c582f8`. The new acceptance module captures one bounded local JSON snapshot rather than adding another monitoring service. It records host/runtime memory, OS/Python/machine identity, source Git SHA when discoverable, and a chunked SHA-256 of the frozen executable when applicable. With a running managed GGUF it reuses the existing exact benchmark identity, self-test and one-shot managed memory report. Only allowlisted model/runtime/settings/self-test fields are serialized, so endpoint credentials, temporary API keys, raw model replies and project source are excluded. The GUI runs collection off the Tk thread and keeps the managed model busy for the duration. A CLI host-only snapshot is also available.
+
+
+### Frozen artifact source-identity binding
+
+The #56 recorder initially could hash a downloaded frozen EXE but could not prove which source SHA produced it once outside a Git checkout. The Windows packaging workflow now writes a validated `forgeos_build/build_info.json` from GitHub's exact workflow SHA before PyInstaller and bundles it beside the offline guide. The recorder reads only a valid 40-hex embedded SHA and records it as `artifact.build_source_commit` together with the EXE SHA-256. Source-mode local builds can create the same metadata with `forgeos_build/write_build_info.py`. Invalid embedded metadata is ignored rather than trusted.

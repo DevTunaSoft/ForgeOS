@@ -16,7 +16,8 @@ class AcceptanceSnapshotTests(unittest.TestCase):
              patch("forgeos.acceptance._frozen_identity",
                    return_value={"frozen_executable": True,
                                  "executable_sha256": "b" * 64,
-                                 "executable_bytes": 123}), \
+                                 "executable_bytes": 123,
+                                 "build_source_commit": "a" * 40}), \
              patch("forgeos.model_routing.memory_report",
                    return_value={"total_system_ram_bytes": 32 * 1024**3}):
             record = collect_acceptance_snapshot()
@@ -28,6 +29,38 @@ class AcceptanceSnapshotTests(unittest.TestCase):
         payload = json.dumps(record)
         self.assertNotIn("api_key", payload)
         self.assertNotIn("token", payload.lower())
+
+    def test_frozen_identity_binds_executable_hash_to_embedded_source_sha(self):
+        from forgeos.acceptance import _frozen_identity
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            exe = root / "ForgeOS.exe"
+            exe.write_bytes(b"frozen-bytes")
+            bundle = root / "bundle" / "forgeos"
+            bundle.mkdir(parents=True)
+            (bundle / "build_info.json").write_text(
+                json.dumps({"source_commit": "c" * 40}), encoding="utf-8")
+            with patch("forgeos.acceptance.sys.frozen", True, create=True), \
+                 patch("forgeos.acceptance.sys.executable", str(exe)), \
+                 patch("forgeos.acceptance.sys._MEIPASS",
+                       str(root / "bundle"), create=True):
+                identity = _frozen_identity()
+        self.assertTrue(identity["frozen_executable"])
+        self.assertEqual(identity["build_source_commit"], "c" * 40)
+        self.assertEqual(
+            identity["executable_sha256"],
+            __import__("hashlib").sha256(b"frozen-bytes").hexdigest())
+
+    def test_invalid_embedded_build_sha_is_not_accepted(self):
+        from forgeos.acceptance import _embedded_build_commit
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp) / "forgeos"
+            bundle.mkdir()
+            (bundle / "build_info.json").write_text(
+                '{"source_commit":"../not-a-sha"}', encoding="utf-8")
+            with patch("forgeos.acceptance.sys._MEIPASS",
+                       str(Path(temp)), create=True):
+                self.assertIsNone(_embedded_build_commit())
 
     def test_managed_snapshot_uses_allowlisted_identity_and_self_test(self):
         controller = Mock()
@@ -54,7 +87,8 @@ class AcceptanceSnapshotTests(unittest.TestCase):
              patch("forgeos.acceptance._frozen_identity",
                    return_value={"frozen_executable": False,
                                  "executable_sha256": None,
-                                 "executable_bytes": None}), \
+                                 "executable_bytes": None,
+                                 "build_source_commit": None}), \
              patch("forgeos.model_routing.memory_report", return_value={}):
             record = collect_acceptance_snapshot(controller)
         managed = record["managed_model"]

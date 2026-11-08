@@ -68,7 +68,9 @@ In PowerShell from the repository root:
 ```powershell
 py -3.12 -m pip install "pyinstaller>=6.0,<7" ".[secure-pytest]"
 py -3.12 -m unittest discover -s tests -v
-py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" forgeos_build/launcher.py
+$sha = (git rev-parse HEAD).Trim()
+py -3.12 forgeos_build/write_build_info.py --sha $sha
+py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
 ```
 
 The result should be `dist/ForgeOS.exe` if all commands succeed. Do not claim it succeeded without examining the actual files and command exit statuses.
@@ -111,3 +113,8 @@ API-key file and loopback port, JSON edit response, shutdown and whole
 process tree, model/endpoint spoofing, active-task exit, memory pressure,
 reboot and blocked managed-session resume. Hosted smoke alone does not
 establish these guarantees.
+
+
+### Artifact-to-source acceptance identity
+
+Every GitHub-built frozen EXE now contains a tiny `build_info.json` with the exact 40-character Git SHA supplied by the workflow. **Run local acceptance snapshot** records that embedded source SHA together with a freshly calculated SHA-256 of the actual `ForgeOS.exe` bytes. This provides the source→artifact identity pair required for physical release evidence even after the EXE is downloaded away from its Git checkout.

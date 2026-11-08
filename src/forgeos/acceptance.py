@@ -62,12 +62,34 @@ def _source_commit() -> str | None:
     return None
 
 
+def _embedded_build_commit() -> str | None:
+    """Read the packaged immutable source SHA without trusting environment variables."""
+    bundle = getattr(sys, "_MEIPASS", None)
+    if not bundle:
+        return None
+    path = Path(bundle) / "forgeos" / "build_info.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+    value = payload.get("source_commit") if isinstance(payload, dict) else None
+    if not isinstance(value, str) or len(value) != 40:
+        return None
+    value = value.lower()
+    try:
+        int(value, 16)
+    except ValueError:
+        return None
+    return value
+
+
 def _frozen_identity() -> dict:
     frozen = bool(getattr(sys, "frozen", False))
     result = {"frozen_executable": frozen, "executable_sha256": None,
-              "executable_bytes": None}
+              "executable_bytes": None, "build_source_commit": None}
     if not frozen:
         return result
+    result["build_source_commit"] = _embedded_build_commit()
     path = Path(sys.executable)
     try:
         if path.is_file() and not path.is_symlink():

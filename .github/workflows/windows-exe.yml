@@ -27,13 +27,15 @@ jobs:
       - name: Install package and PyInstaller
         run: python -m pip install --upgrade pip "pyinstaller>=6.0,<7" ".[secure-pytest]"
       - name: Validate Python sources
-        run: python -m compileall -q src tests
+        run: python -m compileall -q src tests forgeos_build
+      - name: Embed exact build source commit
+        run: python forgeos_build/write_build_info.py --sha "${{ github.sha }}"
       # Full Linux/Windows Python 3.10/3.12 regression coverage belongs to
       # the separate required Foundation tests workflow. Do not run that
       # same suite again here; this workflow owns frozen-Windows packaging
       # and executable/security acceptance.
       - name: Package GUI executable
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" forgeos_build/launcher.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
       - name: Check executable exists and is nonempty
         shell: pwsh
         run: |
