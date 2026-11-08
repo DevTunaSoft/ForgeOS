@@ -67,6 +67,31 @@ class HuggingFaceCatalogTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "bounded metadata"):
                 search_gguf("coder")
 
+
+    def test_model_revision_is_pinned_and_gated_is_refused(self):
+        from forgeos.huggingface_catalog import model_revision
+        sha = "b" * 40
+        with patch("forgeos.huggingface_catalog.urlopen",
+                   return_value=Response(json.dumps({"sha": sha}).encode())):
+            self.assertEqual(model_revision("Qwen/Coder-GGUF"), sha)
+        for item in ({"sha": "main"}, {"sha": sha, "gated": True},
+                     {"sha": sha, "private": True}):
+            with patch("forgeos.huggingface_catalog.urlopen",
+                       return_value=Response(json.dumps(item).encode())):
+                with self.assertRaises(RuntimeError):
+                    model_revision("Qwen/Coder-GGUF")
+
+    def test_pinned_revision_is_part_of_file_listing(self):
+        from forgeos.huggingface_catalog import list_gguf_files
+        revision = "c" * 40
+        with patch("forgeos.huggingface_catalog.urlopen",
+                   return_value=Response(b"[]")) as opened:
+            self.assertEqual(list_gguf_files(
+                "Qwen/Coder-GGUF", revision=revision), [])
+        self.assertIn("/tree/" + revision, opened.call_args.args[0].full_url)
+        with self.assertRaises(ValueError):
+            list_gguf_files("Qwen/Coder-GGUF", revision="../main")
+
     def test_invalid_file_response_and_path(self):
         for repo in ("../../passwd", "https://example.org/model", "name"):
             with self.assertRaises(ValueError):
