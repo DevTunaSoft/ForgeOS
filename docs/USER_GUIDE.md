@@ -573,3 +573,8 @@ Open **Activity & diagnostics** and choose **Run local acceptance snapshot**. Fo
 If a verified managed GGUF is already running, the same button also performs the existing local-model self-test and records its exact model/runtime hashes, startup/self-test latency and managed peak-memory reading. It does **not** store the temporary API credential, project source, or raw model response.
 
 From PowerShell, `py -m forgeos acceptance` captures the host/source or frozen-executable portion without a GUI-managed model session. A snapshot is evidence from that machine only; it does not by itself complete the Windows release gate.
+
+
+### Windows GUI task buttons and mouse editing
+
+The **Add task**, **Build / test / repair**, **Generate plan**, **Run tests only**, and **Refresh** actions appear immediately above the expanding development queue, including on smaller Windows displays. Right-click editable text fields to access **Cut**, **Copy**, **Paste**, and **Select All**; read-only fields do not permit cutting or pasting. These changes are pending physical Windows validation. Keep **Allow tests to run on this computer** unchecked until you deliberately approve executing generated code on the host.

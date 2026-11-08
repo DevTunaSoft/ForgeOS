@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 from forgeos.gui import (
     PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
@@ -7,6 +8,20 @@ from forgeos.gui import (
 
 
 class DashboardContractTests(unittest.TestCase):
+    def test_primary_actions_precede_expanding_queue(self):
+        source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertLess(source.index('actions = ttk.Frame(dashboard)'),
+                        source.index('tasks_frame = ttk.LabelFrame(dashboard'))
+        for label in ("Add task", "Build / test / repair", "Generate plan", "Run tests only"):
+            self.assertIn(f'"{label}"', source)
+
+    def test_right_click_editing_is_wired_to_text_fields(self):
+        source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for action in ("<<Cut>>", "<<Copy>>", "<<Paste>>", "<<SelectAll>>"):
+            self.assertIn(action, source)
+        self.assertIn('child.bind("<Button-3>", show_edit_menu, add="+")', source)
+        self.assertIn("bind_edit_menus(root)", source)
+
     def test_statuses_cover_engine_lifecycle(self):
         for status in ("queued", "planning", "planned", "editing",
                        "testing", "passed", "failed", "blocked"):
