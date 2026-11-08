@@ -1512,3 +1512,16 @@ responses. Cancellation preserves partial results. The runner reuses the
 controller's pinned identity and one-shot memory accounting; it creates no
 second runtime, router, monitor or database. GUI exposure remains separate so
 progress/cancel behavior can be added without blocking Tk.
+
+
+## 2026-11-08 GUI per-role screening with cancellation
+
+The existing Managed local GGUF window now exposes the already-implemented
+screening runner without adding another GUI. Users choose one of eight fixed
+roles and run exactly five synthetic prompts. Progress is delivered through
+the existing managed-event queue/Tk polling loop; progress events deliberately
+do not release the managed-operation busy interlock. Cancellation uses a
+threading Event checked between prompts. Window close during an active
+screening requests cancellation instead of discarding the result, and the
+runner persists partial evidence before clearing the interlock. No raw model
+response or project source is stored.

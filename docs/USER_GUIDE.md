@@ -499,3 +499,20 @@ A role survives screening only with at least **4/5 valid JSON/contracts** and
 qualification; the router still requires the issue #55 qualification evidence
 (95% structured output, 80% objective success, <=5% timeout/crash/OOM and zero
 fail-open safety violations).
+
+
+### Run a five-task role screening from the GUI
+
+With a verified managed GGUF running, open **Managed local GGUF**, choose one
+of the eight **Screening role** values, and select **Run 5-task role
+screening**. ForgeOS sends only the fixed synthetic prompts for that role. The
+screen shows progress after each prompt and keeps the model/task interlocks
+active so normal project work cannot overlap the screening run.
+
+**Cancel screening** is cooperative: the response already being generated may
+finish, then ForgeOS stops before the next prompt and writes the partial
+evidence file. Closing the managed-model window during screening requests the
+same cancellation and keeps the window open until the partial evidence is
+saved. The evidence records contract/objective results, timing, response byte
+counts and error types; it does not save raw model replies or project source.
+A screening pass is not final model qualification and does not enable routing.

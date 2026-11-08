@@ -368,3 +368,13 @@ and cancellation. Results persist only objective/contract scores, timing,
 response size and error type; raw model output is discarded. This is still a
 screening mechanism, not final qualification, and it does not execute generated
 code or enable role routing.
+
+
+### #55 GUI screening status
+
+The existing Managed local GGUF dialog now exposes five-task per-role
+screening with progress and cooperative cancellation. Screening shares the
+single managed runtime and existing Tk event queue, preserves partial evidence
+when cancelled, and keeps normal model/task operations interlocked. It remains
+a screening-only workflow; automatic role routing and final model
+qualification remain disabled.

@@ -253,6 +253,26 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('("baseline", controller, outcome, None)', source)
         self.assertIn('action == "baseline"', source)
 
+    def test_role_screening_gui_reuses_existing_managed_runner(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Run 5-task role screening"',
+                'text="Cancel screening"',
+                'from .model_benchmark import write_screening',
+                'managed["screening_cancel"] = cancel_event',
+                'cancel_event.set()',
+                '"screening-progress", controller',
+                'if action == "screening-progress":',
+                'if action == "screening":',
+                'managed["screening_cancel"] = None',
+                'record["cancelled"]',
+                'popup.protocol("WM_DELETE_WINDOW", close_managed_dialog)'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+        self.assertNotIn("threading.Timer(", source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

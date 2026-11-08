@@ -131,7 +131,8 @@ def launch(db_path, *, acceptance: bool = False):
     events = Queue()
     managed_events = Queue(maxsize=2)
     managed = {"controller": None, "busy": False, "last_used": None,
-               "unexpected_exit": False, "stop_failed": False}
+               "unexpected_exit": False, "stop_failed": False,
+               "screening_cancel": None}
     busy = {"value": False}
     closing = {"value": False}
 
@@ -432,8 +433,8 @@ def launch(db_path, *, acceptance: bool = False):
             return
         popup = tk.Toplevel(root)
         popup.title("ForgeOS | Managed local GGUF (experimental)")
-        popup.geometry("875x520")
-        popup.minsize(750, 465)
+        popup.geometry("980x620")
+        popup.minsize(820, 540)
         panel = ttk.Frame(popup, padding=15)
         panel.pack(fill="both", expand=True)
         ttk.Label(
@@ -447,6 +448,10 @@ def launch(db_path, *, acceptance: bool = False):
         expected_hash = tk.StringVar()
         gguf_path = tk.StringVar()
         memory_cap_mib = tk.StringVar()
+        from .model_benchmark import SCREENING_ROLES
+        screening_role = tk.StringVar(value=SCREENING_ROLES[0])
+        screening_status = tk.StringVar(
+            value="Role screening runs five synthetic prompts; no project source is sent.")
         for title, variable, selector in (
                 ("llama-server binary", exe_path,
                  lambda: filedialog.askopenfilename(
@@ -970,6 +975,75 @@ def launch(db_path, *, acceptance: bool = False):
                         f"{type(exc).__name__}: {exc}"))
             threading.Thread(target=worker, daemon=True).start()
 
+        def run_role_screening():
+            if busy["value"] or managed["busy"]:
+                messagebox.showerror(
+                    "Model in use",
+                    "Complete the current task/model operation before screening.",
+                    parent=popup)
+                return
+            controller = managed["controller"]
+            if controller is None or not controller.running():
+                messagebox.showinfo(
+                    "Role screening",
+                    "Start a verified managed local model first.", parent=popup)
+                return
+            role = screening_role.get()
+            if role not in SCREENING_ROLES:
+                messagebox.showerror(
+                    "Role screening", "Choose a valid screening role.",
+                    parent=popup)
+                return
+            cancel_event = threading.Event()
+            managed["screening_cancel"] = cancel_event
+            managed["busy"] = True
+            managed["last_used"] = time.monotonic()
+            screening_status.set(
+                "Running 0/5 for " + role.replace("_", " ") + "...")
+            status.set("Screening managed model role: " + role)
+            def worker():
+                try:
+                    from .model_benchmark import write_screening
+                    def report_progress(done, total, result):
+                        managed_events.put((
+                            "screening-progress", controller,
+                            {"done": done, "total": total,
+                             "task_id": result["task_id"], "role": role},
+                            None))
+                    outcome = write_screening(
+                        controller, role=role, cancel_event=cancel_event,
+                        progress_callback=report_progress)
+                    managed_events.put(
+                        ("screening", controller, outcome, None))
+                except Exception as exc:
+                    managed_events.put((
+                        "screening", controller, None,
+                        f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+
+        def cancel_role_screening():
+            cancel_event = managed["screening_cancel"]
+            if cancel_event is None:
+                messagebox.showinfo(
+                    "Role screening", "No role screening is active.",
+                    parent=popup)
+                return
+            cancel_event.set()
+            screening_status.set(
+                "Cancellation requested. The current model response may "
+                "finish before partial evidence is saved.")
+            status.set("Role screening cancellation requested")
+
+        def close_managed_dialog():
+            cancel_event = managed["screening_cancel"]
+            if cancel_event is not None:
+                cancel_event.set()
+                screening_status.set(
+                    "Cancellation requested. Keep this window open until "
+                    "partial screening evidence is saved.")
+                return
+            popup.destroy()
+
         def do_stop():
             if busy["value"] or managed["busy"]:
                 messagebox.showerror(
@@ -1006,6 +1080,24 @@ def launch(db_path, *, acceptance: bool = False):
             text=("A model is running" if managed["controller"] is not None
                   and managed["controller"].running() else "No managed model active")
         ).pack(side="left", padx=12)
+
+        screening_row = ttk.Frame(panel)
+        screening_row.pack(fill="x", pady=(12, 0))
+        ttk.Label(screening_row, text="Screening role").pack(side="left")
+        ttk.Combobox(
+            screening_row, textvariable=screening_role,
+            values=SCREENING_ROLES, state="readonly", width=23
+        ).pack(side="left", padx=(7, 8))
+        ttk.Button(
+            screening_row, text="Run 5-task role screening",
+            command=run_role_screening).pack(side="left")
+        ttk.Button(
+            screening_row, text="Cancel screening",
+            command=cancel_role_screening).pack(side="left", padx=8)
+        ttk.Label(
+            panel, textvariable=screening_status, wraplength=930,
+            foreground="#52647b").pack(anchor="w", pady=(6, 0))
+        popup.protocol("WM_DELETE_WINDOW", close_managed_dialog)
 
     def browse_hub_models():
         """Opt-in GGUF browser and verified downloader without Tk thread blocking."""
@@ -1348,10 +1440,20 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 while True:
                     action, controller, outcome, error = managed_events.get_nowait()
+                    if action == "screening-progress":
+                        status.set(
+                            "Screening " + outcome["role"] + ": "
+                            + str(outcome["done"]) + "/"
+                            + str(outcome["total"]) + " complete")
+                        continue
                     managed["busy"] = False
+                    if action == "screening":
+                        managed["screening_cancel"] = None
                     if error:
                         if action == "stop":
                             managed["stop_failed"] = True
+                        if action == "screening":
+                            managed["screening_cancel"] = None
                         if action == "install" and controller[0].winfo_exists():
                             controller[1].set("CPU runtime installation failed: " + error)
                         status.set("Managed llama.cpp operation failed")
@@ -1366,6 +1468,31 @@ def launch(db_path, *, acceptance: bool = False):
                         log("Pinned CPU runtime installed: release " + outcome["tag"]
                             + ", ZIP SHA-256 " + outcome["asset_sha256"]
                             + ". Select a GGUF and Start installed CPU runtime.")
+                    elif action == "screening":
+                        managed["last_used"] = time.monotonic()
+                        record = outcome["record"]
+                        role = record["role_scope"]
+                        role_result = record["summary"]["roles"][role]
+                        if record["cancelled"]:
+                            status.set(
+                                "Role screening cancelled; partial evidence saved")
+                        else:
+                            status.set(
+                                "Role screening complete: "
+                                + role.replace("_", " "))
+                        log(
+                            "Role screening evidence: " + outcome["path"]
+                            + "\nRole: " + role
+                            + "\nContract successes: "
+                            + str(role_result["json_successes"]) + "/5"
+                            + "\nObjective successes: "
+                            + str(role_result["objective_successes"]) + "/5"
+                            + "\nScreening pass: "
+                            + str(role_result["screening_pass"])
+                            + ("\nCancelled: partial results retained."
+                               if record["cancelled"] else "")
+                            + "\nScreening is not final model qualification.")
+                        tabs.select(activity)
                     elif action == "baseline":
                         managed["last_used"] = time.monotonic()
                         status.set("Managed-model benchmark baseline saved")
