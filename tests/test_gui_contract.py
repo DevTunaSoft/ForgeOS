@@ -1,5 +1,8 @@
 import unittest
-from forgeos.gui import PRESETS, STATUS_LABELS, _format_task
+from unittest.mock import Mock
+from forgeos.gui import (
+    PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
+)
 
 
 class DashboardContractTests(unittest.TestCase):
@@ -100,6 +103,44 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('root.after(150, poll)', source)
         self.assertIn('last_used=managed["last_used"]', source)
         self.assertNotIn('threading.Timer(', source)
+
+    def test_crash_detection_precedes_idle_and_latches_failed_cleanup(self):
+        process = Mock()
+        process.running.return_value = False
+        kwargs = {
+            "now": 1000, "last_used": 100, "task_busy": False,
+            "operation_busy": False,
+        }
+        self.assertEqual(_managed_session_event(process, **kwargs), "crashed")
+        self.assertIsNone(_managed_session_event(None, **kwargs))
+        self.assertIsNone(_managed_session_event(
+            process, **{**kwargs, "task_busy": True}))
+        self.assertIsNone(_managed_session_event(
+            process, **{**kwargs, "operation_busy": True}))
+        self.assertIsNone(_managed_session_event(
+            process, **kwargs, stop_failed=True))
+        process.running.return_value = True
+        self.assertEqual(_managed_session_event(process, **kwargs), "idle")
+        self.assertIsNone(_managed_session_event(
+            process, **{**kwargs, "now": 101, "last_used": 100}))
+        self.assertIsNone(_managed_session_event(
+            process, **{**kwargs, "last_used": None}))
+
+    def test_crash_cleanup_is_one_shot_and_restores_safe_default(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'if lifecycle == "crashed":',
+                'managed["unexpected_exit"] = True',
+                'request_managed_stop(controller)',
+                'managed["stop_failed"] = True',
+                'stop_failed=managed["stop_failed"]',
+                'backend.set("ollama")',
+                'model.set("auto")',
+                'endpoint.set("")'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
 
     def test_opt_in_official_runtime_installer_preserves_single_gui(self):
         from pathlib import Path
