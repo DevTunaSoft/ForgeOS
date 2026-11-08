@@ -101,6 +101,23 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('last_used=managed["last_used"]', source)
         self.assertNotIn('threading.Timer(', source)
 
+    def test_opt_in_official_runtime_installer_preserves_single_gui(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn("Install verified official Windows CPU runtime (opt-in)", source)
+        self.assertIn("Install official Windows x64 CPU runtime", source)
+        self.assertIn("from .runtime_installer import install_pinned_cpu_runtime", source)
+        self.assertIn("controller.start_installed_cpu(", source)
+        self.assertIn("Start installed CPU runtime", source)
+        self.assertIn("Start manual runtime", source)
+        self.assertIn('managed_events.put(("install", None, details, None))', source)
+        self.assertIn('elif action == "install":', source)
+        self.assertIn("threading.Thread(target=worker, daemon=True).start()", source)
+        # Downloading cannot happen on ordinary dashboard initialization.
+        self.assertNotIn("install_pinned_cpu_runtime()",
+                         source.split("    def manage_local_gguf():")[0])
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)
