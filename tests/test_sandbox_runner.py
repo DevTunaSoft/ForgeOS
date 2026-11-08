@@ -72,7 +72,7 @@ class SandboxRunnerTests(unittest.TestCase):
                                      if output.exists() else "missing child output")
                     self.assertNotIn("FORGEOS_BOOTSTRAP_LOCALAPPDATA", os.environ)
                     self.assertTrue(
-                        Path(os.environ["APPDATA"]).resolve().is_relative_to(root))
+                        Path(os.environ["APPDATA"]).resolve().is_relative_to(root.resolve()))
             finally:
                 os.chdir(previous)
             self.assertEqual(len(calls), 1)
