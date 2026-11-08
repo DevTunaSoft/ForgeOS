@@ -1,0 +1,234 @@
+"""Opt-in, single-process, CPU-first llama.cpp server lifecycle.
+
+One managed llama-server belongs to one ForgeOS GUI session. Executables are
+provided explicitly and pinned to a SHA-256 supplied by the operator; no code
+downloads, remote inference, Docker, shell or second desktop application.
+
+A checksum is integrity evidence, NOT a software publisher signature. Verify
+the upstream binary and adjacent DLL provenance before electing to run it.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import socket
+import subprocess
+import tempfile
+import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request
+
+from .local_models import LocalChatModel, _open
+from .model_routing import local_memory_settings, safe_model_file_budget, system_memory
+
+CHUNK_BYTES = 1024 * 1024
+MAX_MANIFEST_BYTES = 4096
+SHA256 = re.compile(r"[a-f0-9]{64}\Z")
+ALIAS = "forgeos-managed"
+MAX_TIMEOUT = 180
+DEFAULT_TIMEOUT = 90
+
+
+def _hex_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _existing_file(path: str | Path, *, suffix: str) -> Path:
+    target = Path(path).expanduser().absolute()
+    if not target.is_file() or target.suffix.lower() != suffix:
+        raise ValueError("Select an existing " + suffix + " file")
+    # Refuse symlink chains to avoid unintentional path substitution between
+    # selection, inspection and model loading. Junction/reparse hardening and
+    # concurrent mutation remain separate Windows acceptance requirements.
+    if any(p.is_symlink() for p in (target, *target.parents)):
+        raise ValueError("Managed local inference does not follow symbolic links")
+    if os.name != "nt" and suffix != ".gguf" and not os.access(target, os.X_OK):
+        raise ValueError("llama-server must be executable")
+    return target
+
+
+def _verified_model(path: str | Path) -> tuple[Path, dict]:
+    target = _existing_file(path, suffix=".gguf")
+    manifest = target.with_name(target.name + ".forgeos.json")
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError("Only SHA-verified ForgeOS GGUF downloads can be loaded")
+    if manifest.stat().st_size > MAX_MANIFEST_BYTES:
+        raise ValueError("GGUF verification manifest is too large")
+    try:
+        info = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise ValueError("Invalid GGUF verification manifest") from exc
+    if not isinstance(info, dict):
+        raise ValueError("Invalid GGUF verification manifest format")
+    expected = info.get("sha256")
+    size = info.get("bytes")
+    if (not isinstance(expected, str) or not SHA256.fullmatch(expected)
+            or type(size) is not int or size < 16
+            or size > 16 * 1024**3 or target.stat().st_size != size):
+        raise ValueError("GGUF identity or file size disagrees with its manifest")
+    # The metadata alone is not trusted. Rehash immediately before inference.
+    if _hex_digest(target) != expected:
+        raise ValueError("GGUF SHA-256 mismatch; refusing modified model")
+    with target.open("rb") as source:
+        if source.read(4) != b"GGUF":
+            raise ValueError("Verified file does not have a GGUF header")
+    memory_limit = safe_model_file_budget(system_memory())
+    if size > memory_limit:
+        raise RuntimeError(
+            "This GGUF exceeds the conservative free RAM budget; "
+            "stop competing apps, or choose a smaller model")
+    return target, dict(info)
+
+
+def _verified_runtime(binary: str | Path, expected_sha256: str) -> Path:
+    if not isinstance(expected_sha256, str) or not SHA256.fullmatch(expected_sha256):
+        raise ValueError("Enter the trusted, lowercase 64-character llama-server SHA-256")
+    suffix = ".exe" if os.name == "nt" else ""
+    path = _existing_file(binary, suffix=suffix)
+    if path.stat().st_size > 512 * 1024**2:
+        raise ValueError("llama-server binary exceeds the expected size cap")
+    if _hex_digest(path) != expected_sha256:
+        raise ValueError("llama-server SHA-256 did not match the trusted checksum")
+    return path
+
+
+def _child_environment() -> dict[str, str]:
+    """Drop env switches that could enable downloads, proxies or remote binds."""
+    denied = ("LLAMA_", "HF_", "HUGGINGFACE_", "OPENAI_", "ANTHROPIC_",
+              "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+    return {key: value for key, value in os.environ.items()
+            if not key.upper().startswith(denied)}
+
+
+def _unused_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listening:
+        listening.bind(("127.0.0.1", 0))
+        return int(listening.getsockname()[1])
+
+
+class ManagedLlamaServer:
+    """Bounded, explicit lifecycle for one independently verified GGUF model.
+
+    start() is blocking: GUI invokes it in a worker thread and only communicates
+    with Tk from the main event queue. No startup polling runs when idle.
+    """
+
+    def __init__(self):
+        self.process: subprocess.Popen | None = None
+        self._secrets: tempfile.TemporaryDirectory | None = None
+        self.api_key: str | None = None
+        self.endpoint: str | None = None
+        self.model_name: str | None = None
+        self.model_sha256: str | None = None
+        self.runtime_sha256: str | None = None
+
+    def running(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def start(self, *, executable: str | Path, executable_sha256: str,
+              model_path: str | Path, timeout: int = DEFAULT_TIMEOUT,
+              threads: int | None = None, context: int | None = None) -> dict:
+        if self.process is not None or self._secrets is not None:
+            raise RuntimeError("A managed llama-server session already exists")
+        if type(timeout) is not int or not 1 <= timeout <= MAX_TIMEOUT:
+            raise ValueError("Startup timeout must be 1–180 seconds")
+        model_file, manifest = _verified_model(model_path)
+        binary = _verified_runtime(executable, executable_sha256)
+        settings = local_memory_settings()
+        if context is None:
+            context = min(4096, settings["num_ctx"])
+        if type(context) is not int or not 512 <= context <= 8192:
+            raise ValueError("Model context must be between 512 and 8192 tokens")
+        if threads is None:
+            threads = min(8, max(1, (os.cpu_count() or 2) // 2))
+        if type(threads) is not int or not 1 <= threads <= 32:
+            raise ValueError("CPU thread count must be between 1 and 32")
+
+        try:
+            self._secrets = tempfile.TemporaryDirectory(prefix="forgeos-llama-")
+            key = secrets.token_urlsafe(32)
+            key_file = Path(self._secrets.name) / "api-keys"
+            # Private permissions on POSIX; Windows ACLs still depend on the
+            # temporary-directory security policy of the user's session.
+            fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="ascii") as output:
+                output.write(key + "\n")
+            port = _unused_loopback_port()
+            argv = [str(binary), "--model", str(model_file),
+                    "--host", "127.0.0.1", "--port", str(port),
+                    "--alias", ALIAS, "--api-key-file", str(key_file),
+                    "--ctx-size", str(context), "--threads", str(threads),
+                    "--n-gpu-layers", "0", "--parallel", "1",
+                    "--no-webui"]
+            flags = (subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+            self.process = subprocess.Popen(
+                argv, shell=False, cwd=str(binary.parent),
+                env=_child_environment(), stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=flags, start_new_session=(os.name != "nt"))
+            self.api_key = key
+            self.endpoint = f"http://127.0.0.1:{port}/v1"
+            self.model_name = ALIAS
+            self.model_sha256 = manifest["sha256"]
+            self.runtime_sha256 = executable_sha256
+            # Public health is not an authenticated identity proof: require
+            # an authenticated model-catalog request before returning READY.
+            until = time.monotonic() + timeout
+            while time.monotonic() < until:
+                if self.process.poll() is not None:
+                    raise RuntimeError("Managed llama-server exited before becoming ready")
+                req = Request(
+                    self.endpoint + "/health",
+                    headers={"Accept": "application/json"})
+                try:
+                    with _open(req, timeout=2) as response:
+                        data = response.read(256)
+                    if len(data) > 256 or json.loads(data).get("status") != "ok":
+                        raise RuntimeError("Unexpected llama-server health response")
+                    models = LocalChatModel(
+                        backend="llama.cpp", model=ALIAS,
+                        endpoint=self.endpoint, api_key=key).installed()
+                    if not any(item["name"] == ALIAS for item in models):
+                        raise RuntimeError("Managed server reported the wrong model")
+                    return {"endpoint": self.endpoint, "model": ALIAS,
+                            "sha256": self.model_sha256, "runtime_sha256":
+                                self.runtime_sha256, "pid": self.process.pid}
+                except (HTTPError, URLError, TimeoutError, OSError,
+                        ConnectionError, ValueError):
+                    pass
+                time.sleep(0.2)
+            raise RuntimeError("Managed llama-server startup timed out")
+        except BaseException:
+            self.stop()
+            raise
+
+    def stop(self) -> None:
+        process = self.process
+        self.process = None
+        try:
+            if process is not None:
+                if process.poll() is None:
+                    process.terminate()
+                try:
+                    process.wait(timeout=4)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=4)
+        finally:
+            temporary = self._secrets
+            self._secrets = None
+            if temporary is not None:
+                temporary.cleanup()
+            self.api_key = None
+            self.endpoint = None
+            self.model_name = None
+            self.model_sha256 = None
+            self.runtime_sha256 = None
