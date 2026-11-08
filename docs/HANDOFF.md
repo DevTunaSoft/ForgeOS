@@ -512,3 +512,19 @@ and failure without an X display; hosted Windows performs actual GUI startup.
 Remaining: real 4/8 GiB physical/VM user desktop acceptance, Ollama
 connectivity, edit/test/repair execution, crash recovery, memory soak,
 and any required security hardening from observed runtime defects.
+
+## PR #38: frozen GUI history paging and memory-growth acceptance (in progress)
+
+Branch feat/frozen-gui-history-soak, based on merged PR #37
+d9c085afba59f094af6a207977f4a5719ecab3c5.
+The existing frozen launcher now seeds a disposable test SQLite DB with
+520 synthetic completed/failed tasks (each with an approximately 8 KiB
+diagnostic blob). The existing Tk GUI acceptance callback exercises
+Older/Newer paging through [150,150,150,70] rows and back to first page.
+It samples native process working set before and after and fails on more
+than 64 MiB additional RSS. The existing CLI acceptance flags and security
+smoke remain intact; no new service, daemon, model or GUI. Regression tests
+verify the fixture is complete, bogus GUI pagination is rejected, and a
+runaway working-set result cannot be accepted. Next: verify all 4 OS/Python
+jobs and frozen Windows real Tk EXE test, repair any failures, and merge.
+Hardware acceptance and Ollama end-to-end validation remain unverified.
