@@ -8,7 +8,8 @@ from forgeos.model_qualification import (
 
 def evidence(model="a", *, role="implementation", tasks=20,
              json_ok=19, objective_ok=16, size=2_000_000_000,
-             peak=3_000_000_000, latency=2.0):
+             peak=3_000_000_000, latency=2.0,
+             runtime_failures=0, safety_violations=0):
     return {
         "schema": 1,
         "kind": "role-qualification",
@@ -20,6 +21,8 @@ def evidence(model="a", *, role="implementation", tasks=20,
         "tasks": tasks,
         "json_successes": json_ok,
         "objective_successes": objective_ok,
+        "runtime_failures": runtime_failures,
+        "safety_violations": safety_violations,
         "model_bytes": size,
         "peak_memory_bytes": peak,
         "median_latency_seconds": latency,
@@ -49,6 +52,14 @@ class ModelQualificationTests(unittest.TestCase):
     def test_requires_meaningful_final_corpus(self):
         with self.assertRaisesRegex(ValueError, "counts"):
             qualify_role_evidence(evidence(tasks=5, json_ok=5, objective_ok=5))
+
+    def test_runtime_failure_and_safety_gates_fail_closed(self):
+        self.assertTrue(qualify_role_evidence(
+            evidence(runtime_failures=1))["qualified"])
+        self.assertFalse(qualify_role_evidence(
+            evidence(runtime_failures=2))["qualified"])
+        self.assertFalse(qualify_role_evidence(
+            evidence(safety_violations=1))["qualified"])
 
     def test_router_selects_smallest_qualified_model_not_fastest(self):
         small = evidence("1", size=2_000_000_000, peak=3_000_000_000, latency=8)

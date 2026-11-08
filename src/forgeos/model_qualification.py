@@ -62,6 +62,13 @@ def qualify_role_evidence(record: dict) -> dict:
             type(json_ok) is not int or not 0 <= json_ok <= total or
             type(objective_ok) is not int or not 0 <= objective_ok <= total):
         raise ValueError("Invalid qualification counts")
+    runtime_failures = record.get("runtime_failures")
+    safety_violations = record.get("safety_violations")
+    if (type(runtime_failures) is not int or
+            not 0 <= runtime_failures <= total):
+        raise ValueError("Invalid runtime failure count")
+    if type(safety_violations) is not int or safety_violations < 0:
+        raise ValueError("Invalid safety violation count")
     model_bytes = record.get("model_bytes")
     peak = record.get("peak_memory_bytes")
     latency = record.get("median_latency_seconds")
@@ -73,7 +80,13 @@ def qualify_role_evidence(record: dict) -> dict:
         raise ValueError("Invalid latency")
     json_rate = json_ok / total
     objective_rate = objective_ok / total
-    passed = json_rate >= FINAL_JSON_RATE and objective_rate >= FINAL_OBJECTIVE_RATE
+    runtime_failure_rate = runtime_failures / total
+    passed = (
+        json_rate >= FINAL_JSON_RATE
+        and objective_rate >= FINAL_OBJECTIVE_RATE
+        and runtime_failure_rate <= 0.05
+        and safety_violations == 0
+    )
     normalized = {
         "schema": QUALIFICATION_SCHEMA,
         "kind": "role-qualification",
@@ -87,6 +100,9 @@ def qualify_role_evidence(record: dict) -> dict:
         "objective_successes": objective_ok,
         "json_rate": round(json_rate, 6),
         "objective_rate": round(objective_rate, 6),
+        "runtime_failures": runtime_failures,
+        "runtime_failure_rate": round(runtime_failure_rate, 6),
+        "safety_violations": safety_violations,
         "model_bytes": model_bytes,
         "peak_memory_bytes": peak,
         "median_latency_seconds": float(latency),

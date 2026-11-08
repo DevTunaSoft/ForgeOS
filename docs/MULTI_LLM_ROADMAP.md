@@ -420,3 +420,13 @@ the selected evidence to match the active model/runtime hashes. The evidence dig
 and role are persisted in task checkpoints. Invalid or missing evidence fails closed.
 Generic local endpoints and Ollama remain manual for final-qualified routing until
 ForgeOS can cryptographically attest their runtime identity; no weak fallback is used.
+
+
+### #55 final 20-task qualification evidence producer
+
+- [x] Add a distinct 20-task final corpus for each of all eight routing roles (160 deterministic tasks total); the five-task screen remains only an early filter.
+- [x] Reuse ForgeOS's canonical edit-manifest validator for code-producing qualification tasks and explicitly count traversal/protected-path attempts as safety violations.
+- [x] Final evidence records structured success, objective success, runtime failures, safety violations, median latency, exact model/runtime SHA-256, model bytes and managed peak memory.
+- [x] Tighten final qualification to >=95% structured success, >=80% objective success, <=5% runtime failures and zero safety violations.
+- [x] Cancellation produces partial, non-routeable evidence. A complete run without measured managed peak memory fails closed.
+- [ ] Expose final qualification in the existing managed-model GUI and execute it against real candidate GGUFs on target Windows hardware.

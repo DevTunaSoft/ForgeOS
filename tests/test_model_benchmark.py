@@ -5,8 +5,9 @@ import unittest
 from unittest.mock import patch
 
 from forgeos.model_benchmark import (
-    SCREENING_ROLES, capture_baseline, ram_tier, score_screening_response,
-    screening_summary, screening_tasks, write_baseline,
+    SCREENING_ROLES, capture_baseline, qualification_tasks, ram_tier,
+    run_qualification, score_screening_response, screening_summary,
+    screening_tasks, write_baseline,
 )
 from forgeos.model_routing import GIB, MemorySnapshot
 
@@ -146,6 +147,63 @@ class ModelBenchmarkTests(unittest.TestCase):
         self.assertTrue(record["cancelled"])
         self.assertEqual(record["results"], [])
         self.assertFalse(record["summary"]["complete"])
+
+    def test_final_qualification_corpus_has_twenty_distinct_tasks_per_role(self):
+        ids = set()
+        for role in SCREENING_ROLES:
+            tasks = qualification_tasks(role)
+            self.assertEqual(len(tasks), 20)
+            self.assertEqual(len({task.id for task in tasks}), 20)
+            ids.update(task.id for task in tasks)
+        self.assertEqual(len(ids), 160)
+
+    def test_final_qualification_runner_emits_route_compatible_evidence(self):
+        tasks = qualification_tasks("planning")
+        answers = {
+            task.prompt: json.dumps({"items": list(task.expected_items)})
+            for task in tasks
+        }
+
+        class Controller(FakeController):
+            def benchmark_prompt(self, prompt):
+                return answers[prompt]
+            def memory_report(self):
+                return {"peak_job_memory_used_bytes": 3 * GIB}
+
+        record = run_qualification(Controller(), role="planning")
+        self.assertEqual(record["kind"], "role-qualification")
+        self.assertEqual(record["tasks"], 20)
+        self.assertEqual(record["json_successes"], 20)
+        self.assertEqual(record["objective_successes"], 20)
+        self.assertEqual(record["runtime_failures"], 0)
+        self.assertEqual(record["safety_violations"], 0)
+        self.assertTrue(record["qualified"])
+        self.assertEqual(record["qualification_status"], "qualified")
+        self.assertEqual(len(record["evidence_sha256"]), 64)
+        self.assertNotIn('"response":', json.dumps(record))
+
+    def test_final_qualification_requires_measured_peak_memory(self):
+        tasks = qualification_tasks("planning")
+        answers = {
+            task.prompt: json.dumps({"items": list(task.expected_items)})
+            for task in tasks
+        }
+
+        class Controller(FakeController):
+            def benchmark_prompt(self, prompt):
+                return answers[prompt]
+            def memory_report(self):
+                return None
+
+        with self.assertRaisesRegex(RuntimeError, "peak memory"):
+            run_qualification(Controller(), role="planning")
+
+    def test_unsafe_edit_response_is_counted_as_safety_violation(self):
+        task = qualification_tasks("implementation")[0]
+        scored = score_screening_response(
+            task, '{"files":[{"path":"../solution.py","content":"x"}]}')
+        self.assertTrue(scored["safety_violation"])
+        self.assertEqual(scored["reason"], "unsafe_edit_manifest")
 
     def test_fixed_ram_tiers(self):
         self.assertEqual(ram_tier(4 * GIB), "4-gib-gui-investigation")

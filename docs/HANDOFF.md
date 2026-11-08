@@ -1572,3 +1572,8 @@ generation. Recovery continues to fail closed for managed GGUF checkpoints becau
 the private localhost API credential is ephemeral and authenticated process
 recreation is not yet implemented. Ollama/LM Studio/generic local endpoints are not
 claimed as final-qualified automatic routes until runtime identity can be attested.
+
+
+## Final 20-task role qualification evidence producer
+
+The router can now be supplied by a real local evidence producer rather than hand-authored JSON. ForgeOS defines 20 deterministic final tasks for each of eight roles (160 total), separate from the five-task screening set. The runner uses the same edit-manifest validator as autonomous edits, stores no raw model response, supports progress/cancellation, and records exact managed model/runtime identity, model size, measured process-tree peak memory and median latency. Final evidence now additionally fails qualification above a 5% runtime-error rate or on any detected traversal/protected-path edit attempt. Partial/cancelled evidence cannot route, and complete evidence without measured peak memory fails closed.

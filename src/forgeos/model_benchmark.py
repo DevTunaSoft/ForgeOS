@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import statistics
 import tempfile
 import time
 import uuid
@@ -200,24 +201,24 @@ def screening_tasks(role: str | None = None) -> tuple[ScreeningTask, ...]:
 
 
 def score_screening_response(task: ScreeningTask, response: str) -> dict:
-    """Score format and objective screening separately; no LLM judge."""
+    """Score format and objective success; unsafe edit attempts are explicit."""
     if not isinstance(task, ScreeningTask):
         raise TypeError("ScreeningTask required")
+    base = {"task_id": task.id, "role": task.role, "safety_violation": False}
     if not isinstance(response, str):
-        return {"task_id": task.id, "role": task.role, "json_contract": False,
-                "objective_pass": False, "reason": "no_response"}
+        return {**base, "json_contract": False, "objective_pass": False,
+                "reason": "no_response"}
     if task.kind == "items":
         try:
             payload = json.loads(response)
         except (TypeError, ValueError):
-            return {"task_id": task.id, "role": task.role, "json_contract": False,
-                    "objective_pass": False, "reason": "invalid_json"}
+            return {**base, "json_contract": False, "objective_pass": False,
+                    "reason": "invalid_json"}
         contract = (isinstance(payload, dict) and set(payload) == {"items"}
                     and isinstance(payload["items"], list)
                     and all(isinstance(x, str) for x in payload["items"]))
         objective = contract and tuple(payload["items"]) == task.expected_items
-        return {"task_id": task.id, "role": task.role,
-                "json_contract": contract, "objective_pass": objective,
+        return {**base, "json_contract": contract, "objective_pass": objective,
                 "reason": "passed" if objective else
                           "wrong_items" if contract else "invalid_schema"}
     if task.kind != "edit":
@@ -225,22 +226,32 @@ def score_screening_response(task: ScreeningTask, response: str) -> dict:
     try:
         with tempfile.TemporaryDirectory() as temp:
             edits = parse_edits(Path(temp), response)
-    except (EditError, OSError, ValueError):
-        return {"task_id": task.id, "role": task.role, "json_contract": False,
-                "objective_pass": False, "reason": "invalid_edit_manifest"}
+    except EditError as exc:
+        unsafe = str(exc) in {
+            "Non-portable or unsafe path",
+            "Path traversal or absolute path",
+            "Protected path",
+            "Path escapes workspace",
+            "Cannot edit links or non-files",
+        }
+        return {**base, "json_contract": False, "objective_pass": False,
+                "safety_violation": unsafe,
+                "reason": "unsafe_edit_manifest" if unsafe
+                          else "invalid_edit_manifest"}
+    except (OSError, ValueError):
+        return {**base, "json_contract": False, "objective_pass": False,
+                "reason": "invalid_edit_manifest"}
     if len(edits) != 1:
-        return {"task_id": task.id, "role": task.role, "json_contract": True,
-                "objective_pass": False, "reason": "wrong_edit_count"}
+        return {**base, "json_contract": True, "objective_pass": False,
+                "reason": "wrong_edit_count"}
     path, content = edits[0]
     objective = (
         path.name == task.path
         and all(marker in content for marker in task.required_markers)
         and all(marker not in content for marker in task.forbidden_markers)
     )
-    return {"task_id": task.id, "role": task.role, "json_contract": True,
-            "objective_pass": objective,
+    return {**base, "json_contract": True, "objective_pass": objective,
             "reason": "passed" if objective else "rubric_miss"}
-
 
 def screening_summary(results: list[dict]) -> dict:
     """Apply the fixed 4/5 JSON and 3/5 objective screening gate per role."""
@@ -471,3 +482,240 @@ def write_screening(controller, *, role: str | None = None,
         controller, role=role, cancel_event=cancel_event,
         progress_callback=progress_callback)
     return _write_record(record, prefix="screening", directory=directory)
+
+
+# Final qualification is deliberately distinct from the five-task screening
+# corpus. Every role receives 20 deterministic objective tasks.
+_QUAL_PLAN = tuple(
+    (f"stage-{i}-observe", f"stage-{i}-change",
+     f"stage-{i}-test", f"stage-{i}-accept")
+    for i in range(1, 21)
+)
+_QUAL_SECURITY = (
+    ("shell-injection", "path-traversal"),
+    ("ssrf", "secret-logging"),
+    ("sql-injection", "unsafe-deserialization"),
+    ("overbroad-permissions", "insecure-temp-file"),
+    ("missing-timeout", "untrusted-redirect"),
+    ("command-injection", "environment-leak"),
+    ("symlink-escape", "arbitrary-file-write"),
+    ("hardlink-alias", "integrity-bypass"),
+    ("credential-persistence", "log-injection"),
+    ("race-condition", "time-of-check-time-of-use"),
+    ("unbounded-input", "memory-exhaustion"),
+    ("process-escape", "orphan-process"),
+    ("remote-endpoint", "proxy-bypass"),
+    ("weak-hash-check", "unverified-binary"),
+    ("unsafe-archive", "path-traversal"),
+    ("open-redirect", "ssrf"),
+    ("world-writable-file", "privilege-escalation"),
+    ("stale-lock", "concurrent-write"),
+    ("missing-authentication", "local-port-hijack"),
+    ("fail-open", "unsafe-fallback"),
+)
+_QUAL_DOCS = (
+    ("purpose", "usage", "default", "failure"),
+    ("threat-model", "guarantees", "non-goals", "recovery"),
+    ("prerequisites", "install", "verify", "rollback"),
+    ("download", "verify", "run", "remove"),
+    ("symptoms", "preserve", "recover", "escalate"),
+    ("overview", "configuration", "example", "troubleshooting"),
+    ("scope", "inputs", "outputs", "limitations"),
+    ("setup", "first-run", "validation", "cleanup"),
+    ("risk", "mitigation", "evidence", "status"),
+    ("architecture", "components", "data-flow", "tradeoffs"),
+    ("trigger", "behavior", "failure-mode", "recovery"),
+    ("permissions", "boundaries", "audit", "revocation"),
+    ("requirements", "procedure", "acceptance", "rollback"),
+    ("model", "runtime", "memory", "compatibility"),
+    ("build", "package", "install", "uninstall"),
+    ("backup", "migration", "verification", "restore"),
+    ("detection", "diagnosis", "repair", "regression"),
+    ("privacy", "storage", "network", "deletion"),
+    ("benchmark", "hardware", "results", "limitations"),
+    ("status", "known-issues", "next-steps", "support"),
+)
+_QUAL_SUMMARY = tuple(
+    (f"key{i}=value{i}", f"count={i}",
+     f"enabled={'true' if i % 2 else 'false'}")
+    for i in range(1, 21)
+)
+
+
+def qualification_tasks(role: str) -> tuple[ScreeningTask, ...]:
+    """Return exactly 20 fixed final-qualification tasks for one role."""
+    if role not in SCREENING_ROLES:
+        raise ValueError("Unknown qualification role")
+    tasks = []
+    if role == "planning":
+        for i, expected in enumerate(_QUAL_PLAN, 1):
+            tasks.append(_items(
+                f"qual-planning-{i:02d}", role,
+                "Order these required stages exactly: " + " before ".join(expected) + ".",
+                expected))
+    elif role == "security_review":
+        for i, expected in enumerate(_QUAL_SECURITY, 1):
+            tasks.append(_items(
+                f"qual-security-{i:02d}", role,
+                "Identify these applicable security finding IDs in order: "
+                + ", ".join(expected) + ".", expected))
+    elif role == "documentation":
+        for i, expected in enumerate(_QUAL_DOCS, 1):
+            tasks.append(_items(
+                f"qual-docs-{i:02d}", role,
+                "Return these required documentation section IDs in order: "
+                + ", ".join(expected) + ".", expected))
+    elif role == "context_summarization":
+        for i, expected in enumerate(_QUAL_SUMMARY, 1):
+            tasks.append(_items(
+                f"qual-summary-{i:02d}", role,
+                "Normalize these facts in order: " + "; ".join(expected) + ".",
+                expected))
+    elif role == "implementation":
+        for i in range(1, 21):
+            tasks.append(_edit(
+                f"qual-implementation-{i:02d}", role,
+                f"Implement add_{i}(value) in solution.py returning value + {i}.",
+                "solution.py", (f"def add_{i}", f"+ {i}")))
+    elif role == "review_refactor":
+        for i in range(1, 21):
+            tasks.append(_edit(
+                f"qual-review-{i:02d}", role,
+                f"Refactor normalize_{i}(text) in refactor.py to return "
+                "text.strip().lower() directly.",
+                "refactor.py", (f"def normalize_{i}", ".strip()", ".lower()")))
+    elif role == "debugging":
+        for i in range(1, 21):
+            tasks.append(_edit(
+                f"qual-debug-{i:02d}", role,
+                f"bug.py has def multiply_{i}(value): return value + {i}. "
+                f"Fix it to multiply by {i}.",
+                "bug.py", (f"def multiply_{i}", f"* {i}"), (f"+ {i}",)))
+    elif role == "test_generation":
+        for i in range(1, 21):
+            tasks.append(_edit(
+                f"qual-tests-{i:02d}", role,
+                f"Create unittest coverage in test_target.py asserting "
+                f"target_{i}({i}) == {i * 2}.",
+                "test_target.py",
+                ("import unittest", "def test_", "assertEqual",
+                 f"target_{i}", str(i * 2))))
+    if len(tasks) != 20 or len({task.id for task in tasks}) != 20:
+        raise RuntimeError("Final qualification corpus must contain 20 unique tasks")
+    return tuple(tasks)
+
+
+def run_qualification(controller, *, role: str, cancel_event=None,
+                      progress_callback=None) -> dict:
+    """Run final role evidence without storing raw model responses."""
+    tasks = qualification_tasks(role)
+    identity = controller.benchmark_identity()
+    results = []
+    cancelled = False
+    for index, task in enumerate(tasks, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
+        started = time.perf_counter()
+        response = None
+        try:
+            response = controller.benchmark_prompt(task.prompt)
+            scored = score_screening_response(task, response)
+            error_type = None
+        except Exception as exc:
+            reason = ("timeout" if isinstance(exc, TimeoutError) else
+                      "oom" if isinstance(exc, MemoryError) else "model_error")
+            scored = {
+                "task_id": task.id, "role": task.role,
+                "json_contract": False, "objective_pass": False,
+                "safety_violation": False, "reason": reason,
+            }
+            error_type = type(exc).__name__
+        result = {
+            **scored,
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "response_bytes": (
+                len(response.encode("utf-8"))
+                if isinstance(response, str) else None),
+            "error_type": error_type,
+        }
+        results.append(result)
+        if progress_callback is not None:
+            progress_callback(index, len(tasks), result)
+
+    try:
+        memory = controller.memory_report()
+    except (OSError, RuntimeError, ValueError):
+        memory = None
+    peak = None
+    if isinstance(memory, dict):
+        for key in ("peak_job_memory_used_bytes",
+                    "peak_process_memory_used_bytes"):
+            value = memory.get(key)
+            if type(value) is int and value > 0:
+                peak = value
+                break
+
+    json_ok = sum(x.get("json_contract") is True for x in results)
+    objective_ok = sum(x.get("objective_pass") is True for x in results)
+    runtime_failures = sum(x.get("error_type") is not None for x in results)
+    safety_violations = sum(x.get("safety_violation") is True for x in results)
+    elapsed = [x["elapsed_seconds"] for x in results]
+    complete = len(results) == 20 and not cancelled
+    core = {
+        "schema": SCHEMA_VERSION,
+        "kind": "role-qualification" if complete
+                else "role-qualification-partial",
+        "model_sha256": identity["model"]["sha256"],
+        "runtime_sha256": identity["runtime"]["sha256"],
+        "role": role,
+        "backend": "llama.cpp",
+        "model_name": "forgeos-managed",
+        "tasks": len(results),
+        "json_successes": json_ok,
+        "objective_successes": objective_ok,
+        "runtime_failures": runtime_failures,
+        "safety_violations": safety_violations,
+        "model_bytes": identity["model"]["bytes"],
+        "peak_memory_bytes": peak,
+        "median_latency_seconds": (
+            round(float(statistics.median(elapsed)), 3) if elapsed else 0.0),
+    }
+    record = {
+        **core,
+        "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+        "cancelled": cancelled,
+        "model": identity["model"],
+        "runtime": identity["runtime"],
+        "settings": identity["settings"],
+        "results": results,
+        "managed_memory_after_qualification": memory,
+        "qualification_status": "incomplete_not_routeable",
+    }
+    if complete:
+        if peak is None:
+            raise RuntimeError(
+                "Final qualification requires measured managed peak memory")
+        from .model_qualification import qualify_role_evidence
+        normalized = qualify_role_evidence(core)
+        record.update(
+            json_rate=normalized["json_rate"],
+            objective_rate=normalized["objective_rate"],
+            runtime_failure_rate=normalized["runtime_failure_rate"],
+            evidence_sha256=normalized["evidence_sha256"],
+            qualified=normalized["qualified"],
+            qualification_status=(
+                "qualified" if normalized["qualified"]
+                else "completed_not_qualified"))
+    return record
+
+
+def write_qualification(controller, *, role: str,
+                        directory: str | Path | None = None,
+                        cancel_event=None, progress_callback=None) -> dict:
+    """Run and persist one bounded final role qualification record."""
+    record = run_qualification(
+        controller, role=role, cancel_event=cancel_event,
+        progress_callback=progress_callback)
+    return _write_record(
+        record, prefix="qualification", directory=directory)
