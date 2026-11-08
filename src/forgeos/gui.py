@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 from queue import Empty, Queue
@@ -25,6 +26,27 @@ STATUS_LABELS = {
 def _format_task(task: dict) -> tuple:
     return (task["id"], STATUS_LABELS.get(task["status"], task["status"]),
             task["description"][:140])
+
+
+def user_guide_path() -> Path | None:
+    """Canonical local guide; no network call, no startup content loaded."""
+    bundle = getattr(sys, "_MEIPASS", None)
+    candidates = ([Path(bundle) / "forgeos" / "USER_GUIDE.md"] if bundle else [])
+    candidates.append(
+        Path(__file__).resolve().parents[2] / "docs" / "USER_GUIDE.md")
+    # The CI package installation may import site-packages, while the
+    # development source checkout (containing the canonical guide) is cwd.
+    source_root = Path.cwd()
+    if (source_root / "src" / "forgeos" / "gui.py").is_file():
+        candidates.append(source_root / "docs" / "USER_GUIDE.md")
+    for candidate in candidates:
+        try:
+            if (not candidate.is_symlink() and candidate.is_file()
+                    and candidate.stat().st_size <= 256 * 1024):
+                return candidate
+        except OSError:
+            continue
+    return None
 
 
 def launch(db_path, *, acceptance: bool = False):
@@ -197,6 +219,39 @@ def launch(db_path, *, acceptance: bool = False):
             tabs.select(activity)
         except Exception as exc:
             messagebox.showerror("Efficiency information unavailable", str(exc))
+
+    def show_user_guide():
+        # No background polling, network, separate application or heavy renderer.
+        path = user_guide_path()
+        if path is None:
+            messagebox.showerror(
+                "User guide unavailable",
+                "The offline user guide is missing. See docs/USER_GUIDE.md "
+                "in the ForgeOS repository.")
+            return
+        try:
+            body = path.read_text(encoding="utf-8")
+            popup = tk.Toplevel(root)
+            popup.title("ForgeOS | How to use")
+            popup.geometry("940x710")
+            ttk.Label(
+                popup,
+                text="ForgeOS User Guide — setup, first task, diagnostics, recovery",
+                padding=(12, 10)).pack(anchor="w")
+            panel = ttk.Frame(popup, padding=(10, 0, 10, 10))
+            panel.pack(fill="both", expand=True)
+            viewer = tk.Text(panel, wrap="word")
+            scroll = ttk.Scrollbar(panel, orient="vertical", command=viewer.yview)
+            viewer.configure(yscrollcommand=scroll.set)
+            viewer.pack(side="left", fill="both", expand=True)
+            scroll.pack(side="right", fill="y")
+            viewer.insert("1.0", body)
+            viewer.configure(state="disabled")
+        except (OSError, UnicodeError, tk.TclError) as exc:
+            messagebox.showerror("Cannot display user guide", str(exc))
+
+    ttk.Button(activity, text="How to use ForgeOS",
+               command=show_user_guide).pack(anchor="w", pady=(0, 8))
 
     ttk.Button(activity, text="AI efficiency and repair learning",
                command=show_efficiency).pack(anchor="w", pady=(0, 8))
@@ -397,6 +452,8 @@ def launch(db_path, *, acceptance: bool = False):
                     raise RuntimeError("Unexpected GUI tab configuration")
                 if not tree.winfo_exists():
                     raise RuntimeError("Task queue was not constructed")
+                if user_guide_path() is None:
+                    raise RuntimeError("Offline user guide missing from executable")
                 from .model_routing import process_memory
                 memory = process_memory()
                 if memory is None or memory.rss_bytes <= 0:
@@ -427,6 +484,7 @@ def launch(db_path, *, acceptance: bool = False):
                     "tasks_verified": total,
                     "page_sizes": sizes,
                     "paginated_history_ok": True,
+                    "offline_user_guide_available": True,
                     "ram_after_paging_bytes": after.rss_bytes,
                     "rss_growth_during_paging_bytes": delta,
                     "gui_started": True,
