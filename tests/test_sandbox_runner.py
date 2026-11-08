@@ -66,7 +66,10 @@ class SandboxRunnerTests(unittest.TestCase):
                 env["FORGEOS_TEST_LOG_FILE"] = str(logs)
                 with patch.dict(os.environ, env, clear=True), \
                      patch.dict(sys.modules, {"pytest": fake}):
-                    self.assertEqual(run_pytest(), 0)
+                    code = run_pytest()
+                    self.assertEqual(code, 0,
+                                     output.read_text(encoding="utf-8")
+                                     if output.exists() else "missing child output")
                     self.assertNotIn("FORGEOS_BOOTSTRAP_LOCALAPPDATA", os.environ)
                     self.assertTrue(
                         Path(os.environ["APPDATA"]).resolve().is_relative_to(root))

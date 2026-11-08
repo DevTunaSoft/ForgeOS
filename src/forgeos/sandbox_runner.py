@@ -88,9 +88,21 @@ def run_pytest() -> int:
         _scrub_bootstrap_environment(root)
         from .test_runtime import RUNTIME_DIR
         logfile = root / RUNTIME_DIR / "pytest-log.txt"
-        if (os.environ.get("FORGEOS_TEST_LOG_FILE") != str(logfile)
-                or logfile.is_symlink() or not logfile.parent.is_dir()):
+        raw_log = os.environ.get("FORGEOS_TEST_LOG_FILE", "")
+        supplied = Path(raw_log) if raw_log else None
+        # Windows may normalize a temporary path or 8.3/casing when
+        # resolving cwd. Compare the canonical OWNED parent, not its
+        # spelling, and still reject a renamed/logged external file.
+        if (supplied is None or not supplied.is_absolute()
+                or supplied.name != "pytest-log.txt"
+                or supplied.parent.name != RUNTIME_DIR
+                or supplied.parent.is_symlink()
+                or not supplied.parent.is_dir()
+                or supplied.parent.resolve(strict=True) !=
+                   logfile.parent.resolve(strict=True)
+                or supplied.is_symlink()):
             raise RuntimeError("Secure pytest log path is invalid")
+        logfile = supplied
         sys.path.insert(0, str(root))
         # Import only in hidden frozen child, not on GUI startup.
         import pytest
