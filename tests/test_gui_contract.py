@@ -111,7 +111,9 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("controller.start_installed_cpu(", source)
         self.assertIn("Start installed CPU runtime", source)
         self.assertIn("Start manual runtime", source)
-        self.assertIn('managed_events.put(("install", None, details, None))', source)
+        self.assertIn('("install", (popup, install_state), details, None)', source)
+        self.assertIn('textvariable=install_state', source)
+        self.assertIn('controller[0].winfo_exists()', source)
         self.assertIn('elif action == "install":', source)
         self.assertIn("threading.Thread(target=worker, daemon=True).start()", source)
         # Downloading cannot happen on ordinary dashboard initialization.
