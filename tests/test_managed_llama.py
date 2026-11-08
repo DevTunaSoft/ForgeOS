@@ -412,6 +412,32 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     proc.wait(timeout=5)
                 proc.close()
 
+    def test_benchmark_identity_is_secret_free_and_requires_complete_identity(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.poll.return_value = None
+        process.pid = 77
+        controller.process = process
+        controller.model_identity = {
+            "repo": "owner/model", "revision": "a" * 40,
+            "file": "model-q4_k_m.gguf", "bytes": 1234,
+            "sha256": "b" * 64,
+        }
+        controller.runtime_sha256 = "c" * 64
+        controller.runtime_release_tag = "b12199"
+        controller.context_tokens = 2048
+        controller.thread_count = 6
+        controller.memory_ceiling_bytes = 3 * 1024**3
+        controller.startup_elapsed_seconds = 2.5
+        identity = controller.benchmark_identity()
+        self.assertEqual(identity["model"]["sha256"], "b" * 64)
+        self.assertEqual(identity["runtime"]["release_tag"], "b12199")
+        self.assertNotIn("api_key", identity)
+        self.assertNotIn("endpoint", identity)
+        del controller.model_identity["repo"]
+        with self.assertRaisesRegex(RuntimeError, "incomplete"):
+            controller.benchmark_identity()
+
     def test_memory_report_requires_active_server(self):
         controller = ManagedLlamaServer()
         with self.assertRaisesRegex(RuntimeError, "No managed llama-server"):

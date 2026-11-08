@@ -943,6 +943,33 @@ def launch(db_path, *, acceptance: bool = False):
                         f"{type(exc).__name__}: {exc}"))
             threading.Thread(target=worker, daemon=True).start()
 
+        def save_benchmark_baseline():
+            if busy["value"] or managed["busy"]:
+                messagebox.showerror(
+                    "Model in use",
+                    "Complete the current task/model operation before recording.",
+                    parent=popup)
+                return
+            controller = managed["controller"]
+            if controller is None or not controller.running():
+                messagebox.showinfo(
+                    "Benchmark baseline",
+                    "Start a verified managed local model first.", parent=popup)
+                return
+            managed["busy"] = True
+            managed["last_used"] = time.monotonic()
+            status.set("Recording managed-model benchmark baseline...")
+            def worker():
+                try:
+                    from .model_benchmark import write_baseline
+                    outcome = write_baseline(controller)
+                    managed_events.put(("baseline", controller, outcome, None))
+                except Exception as exc:
+                    managed_events.put((
+                        "baseline", controller, None,
+                        f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+
         def do_stop():
             if busy["value"] or managed["busy"]:
                 messagebox.showerror(
@@ -966,6 +993,9 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Button(
             buttons_row, text="Test local model",
             command=test_local_model).pack(side="left", padx=8)
+        ttk.Button(
+            buttons_row, text="Save benchmark baseline",
+            command=save_benchmark_baseline).pack(side="left", padx=8)
         ttk.Button(
             buttons_row, text="Show model memory",
             command=show_model_memory).pack(side="left", padx=8)
@@ -1246,7 +1276,8 @@ def launch(db_path, *, acceptance: bool = False):
         for button in buttons.values():
             button.configure(state="disabled")
         def worker():
-            worker_store = Store(db_path)
+            worker_store = None
+            value = "RuntimeError: worker ended without a result"
             def selected_model():
                 instance = create_model(
                     backend=chosen_backend, model=chosen_model,
@@ -1258,6 +1289,7 @@ def launch(db_path, *, acceptance: bool = False):
                     instance.managed_runtime_sha256 = manager.runtime_sha256
                 return instance
             try:
+                worker_store = Store(db_path)
                 if operation == "plan":
                     value = plan_task(
                         worker_store, task_id,
@@ -1280,8 +1312,17 @@ def launch(db_path, *, acceptance: bool = False):
                 # never overwrite a task taken over by another process.
                 value = f"{type(exc).__name__}: {exc}"
             finally:
-                worker_store.close()
-            events.put((task_id, operation, value))
+                try:
+                    if worker_store is not None:
+                        worker_store.close()
+                except Exception as close_exc:
+                    value += (
+                        "\nStore close failed: "
+                        f"{type(close_exc).__name__}: {close_exc}")
+                finally:
+                    # Always notify the Tk thread, including Store/open/close
+                    # failures, so busy state and buttons cannot remain locked.
+                    events.put((task_id, operation, value))
         threading.Thread(target=worker, daemon=True).start()
 
     add_button("add", "Add task", add)
@@ -1292,104 +1333,115 @@ def launch(db_path, *, acceptance: bool = False):
 
     def poll():
         try:
-            while True:
-                task_id, operation, value = events.get_nowait()
-                busy["value"] = False
-                for button in buttons.values():
-                    button.configure(state="normal")
-                refresh()
-                status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
-                log(f"Task #{task_id} / {operation}\n{value}")
-                tabs.select(activity)
-        except Empty:
-            pass
-        try:
-            while True:
-                action, controller, outcome, error = managed_events.get_nowait()
-                managed["busy"] = False
-                if error:
-                    if action == "stop":
-                        managed["stop_failed"] = True
-                    if action == "install" and controller[0].winfo_exists():
-                        controller[1].set("CPU runtime installation failed: " + error)
-                    status.set("Managed llama.cpp operation failed")
-                    log("Managed local model: " + error)
+            try:
+                while True:
+                    task_id, operation, value = events.get_nowait()
+                    busy["value"] = False
+                    for button in buttons.values():
+                        button.configure(state="normal")
+                    refresh()
+                    status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
+                    log(f"Task #{task_id} / {operation}\n{value}")
                     tabs.select(activity)
-                elif action == "install":
-                    if controller[0].winfo_exists():
-                        controller[1].set(
-                            "Verified official CPU runtime installed. "
-                            "Choose a GGUF and click Start installed CPU runtime.")
-                    status.set("Verified official CPU llama.cpp runtime installed")
-                    log("Pinned CPU runtime installed: release " + outcome["tag"]
-                        + ", ZIP SHA-256 " + outcome["asset_sha256"]
-                        + ". Select a GGUF and Start installed CPU runtime.")
-                elif action == "smoke":
-                    managed["last_used"] = time.monotonic()
-                    status.set("Managed local model self-test passed")
-                    memory = outcome.get("memory")
-                    detail = (
-                        "Managed local model self-test passed in "
-                        + str(outcome["elapsed_seconds"]) + " seconds; "
-                        + str(outcome["response_bytes"]) + " response bytes.")
-                    if (isinstance(memory, dict)
-                            and memory.get("peak_job_memory_used_bytes")
-                            is not None):
-                        detail += (
-                            " Peak Windows job committed memory: "
-                            + f'{memory["peak_job_memory_used_bytes"]/(1024**2):.1f}'
-                            + " MiB.")
-                    log(detail)
-                    tabs.select(activity)
-                elif action == "start":
-                    managed["controller"] = controller
-                    managed["last_used"] = time.monotonic()
-                    managed["unexpected_exit"] = False
-                    managed["stop_failed"] = False
-                    backend.set("llama.cpp")
-                    model.set(outcome["model"])
-                    endpoint.set(outcome["endpoint"])
-                    status.set("Verified local llama.cpp model running")
-                    log("Managed model ready: localhost endpoint " +
-                        outcome["endpoint"] + ", model SHA-256 " +
-                        outcome["sha256"] + "; process " + str(outcome["pid"]))
-                else:
-                    was_crash = managed["unexpected_exit"]
-                    if managed["controller"] is controller:
-                        managed["controller"] = None
-                        if model.get() == "forgeos-managed":
-                            backend.set("ollama")
-                            model.set("auto")
-                            endpoint.set("")
-                    managed["last_used"] = None
-                    managed["unexpected_exit"] = False
-                    managed["stop_failed"] = False
-                    status.set(
-                        "Local llama.cpp server exited unexpectedly"
-                        if was_crash else "Managed local model stopped")
-                    log("Managed local llama.cpp credentials cleared after "
-                        + ("unexpected process exit." if was_crash
-                           else "normal server shutdown."))
-        except Empty:
-            pass
-        controller = managed["controller"]
-        lifecycle = _managed_session_event(
-            controller, now=time.monotonic(), last_used=managed["last_used"],
-            task_busy=busy["value"], operation_busy=managed["busy"],
-            stop_failed=managed["stop_failed"])
-        if lifecycle == "crashed":
-            managed["unexpected_exit"] = True
-            request_managed_stop(controller)
-            log("Managed llama.cpp process exited unexpectedly; releasing "
-                "temporary credentials and switching back to Ollama. "
-                "Inspect diagnostics before explicitly restarting the model.")
-        elif lifecycle == "idle":
-            # Unload the memory-heavy CPU model after five idle minutes;
-            # avoid interrupting planning, edits, tests and repair.
-            request_managed_stop(controller)
-            log("Managed local model idle for 5 minutes: unloading to free RAM.")
-        if not closing["value"]:
-            root.after(150, poll)
+            except Empty:
+                pass
+            try:
+                while True:
+                    action, controller, outcome, error = managed_events.get_nowait()
+                    managed["busy"] = False
+                    if error:
+                        if action == "stop":
+                            managed["stop_failed"] = True
+                        if action == "install" and controller[0].winfo_exists():
+                            controller[1].set("CPU runtime installation failed: " + error)
+                        status.set("Managed llama.cpp operation failed")
+                        log("Managed local model: " + error)
+                        tabs.select(activity)
+                    elif action == "install":
+                        if controller[0].winfo_exists():
+                            controller[1].set(
+                                "Verified official CPU runtime installed. "
+                                "Choose a GGUF and click Start installed CPU runtime.")
+                        status.set("Verified official CPU llama.cpp runtime installed")
+                        log("Pinned CPU runtime installed: release " + outcome["tag"]
+                            + ", ZIP SHA-256 " + outcome["asset_sha256"]
+                            + ". Select a GGUF and Start installed CPU runtime.")
+                    elif action == "baseline":
+                        managed["last_used"] = time.monotonic()
+                        status.set("Managed-model benchmark baseline saved")
+                        log("Benchmark baseline saved: " + outcome["path"]
+                            + "\nBaseline evidence is not model qualification "
+                              "and cannot enable routing.")
+                        tabs.select(activity)
+                    elif action == "smoke":
+                        managed["last_used"] = time.monotonic()
+                        status.set("Managed local model self-test passed")
+                        memory = outcome.get("memory")
+                        detail = (
+                            "Managed local model self-test passed in "
+                            + str(outcome["elapsed_seconds"]) + " seconds; "
+                            + str(outcome["response_bytes"]) + " response bytes.")
+                        if (isinstance(memory, dict)
+                                and memory.get("peak_job_memory_used_bytes")
+                                is not None):
+                            detail += (
+                                " Peak Windows job committed memory: "
+                                + f'{memory["peak_job_memory_used_bytes"]/(1024**2):.1f}'
+                                + " MiB.")
+                        log(detail)
+                        tabs.select(activity)
+                    elif action == "start":
+                        managed["controller"] = controller
+                        managed["last_used"] = time.monotonic()
+                        managed["unexpected_exit"] = False
+                        managed["stop_failed"] = False
+                        backend.set("llama.cpp")
+                        model.set(outcome["model"])
+                        endpoint.set(outcome["endpoint"])
+                        status.set("Verified local llama.cpp model running")
+                        log("Managed model ready: localhost endpoint " +
+                            outcome["endpoint"] + ", model SHA-256 " +
+                            outcome["sha256"] + "; process " + str(outcome["pid"]))
+                    else:
+                        was_crash = managed["unexpected_exit"]
+                        if managed["controller"] is controller:
+                            managed["controller"] = None
+                            if model.get() == "forgeos-managed":
+                                backend.set("ollama")
+                                model.set("auto")
+                                endpoint.set("")
+                        managed["last_used"] = None
+                        managed["unexpected_exit"] = False
+                        managed["stop_failed"] = False
+                        status.set(
+                            "Local llama.cpp server exited unexpectedly"
+                            if was_crash else "Managed local model stopped")
+                        log("Managed local llama.cpp credentials cleared after "
+                            + ("unexpected process exit." if was_crash
+                               else "normal server shutdown."))
+            except Empty:
+                pass
+            controller = managed["controller"]
+            lifecycle = _managed_session_event(
+                controller, now=time.monotonic(), last_used=managed["last_used"],
+                task_busy=busy["value"], operation_busy=managed["busy"],
+                stop_failed=managed["stop_failed"])
+            if lifecycle == "crashed":
+                managed["unexpected_exit"] = True
+                request_managed_stop(controller)
+                log("Managed llama.cpp process exited unexpectedly; releasing "
+                    "temporary credentials and switching back to Ollama. "
+                    "Inspect diagnostics before explicitly restarting the model.")
+            elif lifecycle == "idle":
+                # Unload the memory-heavy CPU model after five idle minutes;
+                # avoid interrupting planning, edits, tests and repair.
+                request_managed_stop(controller)
+                log("Managed local model idle for 5 minutes: unloading to free RAM.")
+        finally:
+            # A transient refresh/widget/database error must not permanently
+            # stop queue polling and leave the dashboard locked.
+            if not closing["value"]:
+                root.after(150, poll)
 
     def close():
         if managed["busy"]:

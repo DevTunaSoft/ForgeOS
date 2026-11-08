@@ -1459,3 +1459,20 @@ automatic canonical ceiling and can only make the managed Job Object smaller.
 Cross-platform policy tests cover requested caps below/above the automatic
 limit and invalid sub-512 MiB values; the existing launch test verifies the
 effective cap is forwarded to the Windows Job Object path.
+
+
+## 2026-11-08 feature-branch main sync and #55 baseline evidence
+
+Before starting role routing, PR #51 was reconciled with the verified main
+reliability changes from `8c40944527`: worker completion is emitted from
+`finally`, GUI polling reschedules from `finally`, CI concurrency includes
+the event name, and code deletions are included in the documentation gate.
+
+The first unblocked #55 implementation is one-shot baseline evidence, not a
+router. `model_benchmark.py` reuses the active verified managed controller,
+its pinned GGUF identity, runtime identity, existing structured-output
+self-test, fixed RAM tier, startup/self-test latency, configured memory ceiling
+and one-shot managed peak memory. Records are bounded JSON under
+`~/.forgeos/benchmarks`; there is no new database, monitor, model runner or
+background sampler. Records explicitly remain `baseline_only_not_qualified`.
+License and quantization source verification remain #54 gaps.

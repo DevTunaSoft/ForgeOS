@@ -336,3 +336,14 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 
 
 - [x] Harden journal and rename durability with POSIX directory fsync, plus fault injection for synchronization interruption. Windows directory durability requires physical NTFS acceptance before any power-loss guarantee.
+
+
+### #55 measured-routing prerequisite: baseline capture
+
+The current PR now has an explicit **Save benchmark baseline** path for a
+running verified managed GGUF. It captures the fixed RAM-tier label, pinned
+model/runtime identity, context/threads, startup and structured-output
+self-test latency, configured managed-memory ceiling and available one-shot
+Windows Job Object peak accounting. This is evidence collection only. The
+fixed role corpus, deterministic scorers, qualification tables and role router
+remain open and must not be enabled without real qualifying model data.

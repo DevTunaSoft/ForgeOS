@@ -230,6 +230,28 @@ class DashboardContractTests(unittest.TestCase):
             with self.subTest(fragment=required):
                 self.assertIn(required, source)
 
+    def test_worker_completion_and_poll_reschedule_fail_closed(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        worker = source.split("        def worker():", 1)[1].split(
+            "        threading.Thread(target=worker", 1)[0]
+        self.assertIn("finally:", worker)
+        self.assertIn("events.put((task_id, operation, value))", worker)
+        poll = source.split("    def poll():", 1)[1].split(
+            "    def close():", 1)[0]
+        self.assertIn("finally:", poll)
+        self.assertIn("root.after(150, poll)", poll)
+
+    def test_benchmark_baseline_reuses_managed_controller(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Save benchmark baseline"', source)
+        self.assertIn("from .model_benchmark import write_baseline", source)
+        self.assertIn('("baseline", controller, outcome, None)', source)
+        self.assertIn('action == "baseline"', source)
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

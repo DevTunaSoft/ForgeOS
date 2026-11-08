@@ -466,3 +466,19 @@ of 512 MiB or greater can only reduce the automatically calculated Job Object
 ceiling; it cannot grant the model more memory than ForgeOS considers safe
 from the current RAM snapshot. This controls the managed llama.cpp process
 tree only, not the whole computer or project test processes.
+
+
+### Save a benchmark baseline before comparing local models
+
+While a verified managed GGUF is running, open **Managed local GGUF** and choose
+**Save benchmark baseline**. ForgeOS performs the harmless empty-edit JSON
+self-test and saves a small JSON evidence record under
+`~/.forgeos/benchmarks`. It records pinned GGUF repository/revision/file/SHA,
+runtime SHA/release tag when known, context, threads, RAM tier, startup and
+self-test latency, configured model-memory ceiling and available one-shot
+Windows Job Object peak memory.
+
+The record deliberately excludes the managed API key, local endpoint and
+project source. It is labelled baseline-only and cannot qualify or route a
+model. License and quantization remain explicitly unverified until #54 stores
+trusted source metadata for those fields.

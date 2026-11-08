@@ -333,6 +333,12 @@ class ManagedLlamaServer:
         self.model_name: str | None = None
         self.model_sha256: str | None = None
         self.runtime_sha256: str | None = None
+        self.model_identity: dict | None = None
+        self.runtime_release_tag: str | None = None
+        self.context_tokens: int | None = None
+        self.thread_count: int | None = None
+        self.memory_ceiling_bytes: int | None = None
+        self.startup_elapsed_seconds: float | None = None
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -353,6 +359,37 @@ class ManagedLlamaServer:
             raise RuntimeError("Managed Windows Job Object is unavailable")
         return {"pid": self.process.pid,
                 **_windows_job_memory_report(self._windows_job)}
+
+    def benchmark_identity(self) -> dict:
+        """Return verified model/runtime identity without paths or API secrets."""
+        if not self.running() or not isinstance(self.model_identity, dict):
+            raise RuntimeError("A verified managed llama-server must be running")
+        required = ("repo", "revision", "file", "bytes", "sha256")
+        if any(key not in self.model_identity for key in required):
+            raise RuntimeError("Managed model identity is incomplete")
+        info = {key: self.model_identity[key] for key in required}
+        if (not isinstance(info["repo"], str)
+                or not isinstance(info["revision"], str)
+                or not isinstance(info["file"], str)
+                or type(info["bytes"]) is not int
+                or not isinstance(info["sha256"], str)
+                or not SHA256.fullmatch(info["sha256"])
+                or not isinstance(self.runtime_sha256, str)
+                or not SHA256.fullmatch(self.runtime_sha256)):
+            raise RuntimeError("Managed benchmark identity is invalid")
+        return {
+            "model": info,
+            "runtime": {
+                "sha256": self.runtime_sha256,
+                "release_tag": self.runtime_release_tag,
+            },
+            "settings": {
+                "context_tokens": self.context_tokens,
+                "threads": self.thread_count,
+                "memory_ceiling_bytes": self.memory_ceiling_bytes,
+            },
+            "startup_elapsed_seconds": self.startup_elapsed_seconds,
+        }
 
     def inference_self_test(self) -> dict:
         """Exercise the active local model without sending project content."""
@@ -404,11 +441,14 @@ class ManagedLlamaServer:
         """
         from .runtime_installer import verify_installed_cpu_runtime
         verified = verify_installed_cpu_runtime(directory)
-        return self.start(executable=verified["path"],
-                          executable_sha256=verified["sha256"],
-                          model_path=model_path, timeout=timeout,
-                          threads=threads, context=context,
-                          memory_limit_bytes=memory_limit_bytes)
+        result = self.start(executable=verified["path"],
+                            executable_sha256=verified["sha256"],
+                            model_path=model_path, timeout=timeout,
+                            threads=threads, context=context,
+                            memory_limit_bytes=memory_limit_bytes)
+        self.runtime_release_tag = verified["tag"]
+        result["runtime_release_tag"] = verified["tag"]
+        return result
 
     def start(self, *, executable: str | Path, executable_sha256: str,
               model_path: str | Path, timeout: int = DEFAULT_TIMEOUT,
@@ -416,6 +456,7 @@ class ManagedLlamaServer:
               memory_limit_bytes: int | None = None) -> dict:
         if self.process is not None or self._secrets is not None:
             raise RuntimeError("A managed llama-server session already exists")
+        startup_started = time.perf_counter()
         if type(timeout) is not int or not 1 <= timeout <= MAX_TIMEOUT:
             raise ValueError("Startup timeout must be 1–180 seconds")
         model_file, manifest = _verified_model(model_path)
@@ -500,10 +541,18 @@ class ManagedLlamaServer:
                         endpoint=self.endpoint, api_key=key).installed()
                     if not any(item["name"] == ALIAS for item in models):
                         raise RuntimeError("Managed server reported the wrong model")
+                    self.model_identity = dict(manifest)
+                    self.context_tokens = context
+                    self.thread_count = threads
+                    self.memory_ceiling_bytes = runtime_ceiling
+                    self.startup_elapsed_seconds = round(
+                        time.perf_counter() - startup_started, 3)
                     return {"endpoint": self.endpoint, "model": ALIAS,
                             "sha256": self.model_sha256, "runtime_sha256":
                                 self.runtime_sha256, "pid": self.process.pid,
-                            "memory_ceiling_bytes": runtime_ceiling}
+                            "memory_ceiling_bytes": runtime_ceiling,
+                            "startup_elapsed_seconds":
+                                self.startup_elapsed_seconds}
                 except (HTTPError, URLError, TimeoutError, OSError,
                         ConnectionError, ValueError):
                     pass
@@ -553,3 +602,9 @@ class ManagedLlamaServer:
             self.model_name = None
             self.model_sha256 = None
             self.runtime_sha256 = None
+            self.model_identity = None
+            self.runtime_release_tag = None
+            self.context_tokens = None
+            self.thread_count = None
+            self.memory_ceiling_bytes = None
+            self.startup_elapsed_seconds = None
