@@ -254,3 +254,14 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 - [Memory engineering limits](MEMORY_BUDGET.md)
 - [Engineering handoff](HANDOFF.md)
 - [Report a defect](https://github.com/DevTunaSoft/ForgeOS/issues)
+
+
+### GUI task completion resilience
+
+ForgeOS keeps the desktop queue poll scheduled even if a transient refresh,
+widget, or local database read raises an exception. Worker threads also always
+publish a completion event back to the Tk thread, including failures opening or
+closing their worker database connection. This prevents a failed background
+operation from permanently leaving task buttons disabled. If the GUI still
+appears stuck, preserve the task database and workspace, restart ForgeOS, and
+inspect the task status/recovery state rather than deleting files.

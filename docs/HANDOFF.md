@@ -834,3 +834,23 @@ entire Windows/Linux suite and frozen EXE acceptance before merge.
   No code change or new runtime features in this branch. Documentation and
   regression CI are required before merging; real Windows acceptance is
   still pending.
+
+
+## 2026-11-08 main-branch reliability and CI/documentation gates
+
+Applied three fail-safe corrections directly to main:
+
+- GUI worker completion is published from a nested finally, including worker
+  Store open/close failures, so Tk busy state cannot remain locked because no
+  event was emitted.
+- GUI poll() reschedules itself from finally; a transient
+  refresh/widget/database error cannot permanently stop queue polling.
+- Foundation CI concurrency includes github.event_name, preventing a push run
+  and pull-request run with the same ref label from cancelling each other.
+- Documentation change detection uses --diff-filter=ACMRD, so deleting product
+  code is subject to the same documentation-update gate as adding, copying,
+  modifying or renaming it.
+
+Regression contracts cover the GUI finally/reschedule pattern, event-aware CI
+concurrency and deletion-aware Git diff filter. This is source/hosted-CI
+hardening, not physical Windows acceptance.

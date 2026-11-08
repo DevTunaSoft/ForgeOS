@@ -86,7 +86,7 @@ def changed_paths(base: str, head: str, root: Path = ROOT) -> set[str]:
         if not re.fullmatch(r"[A-Za-z0-9_./-]+", revision) or revision.startswith("-"):
             raise ValueError("Invalid Git revision")
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", base, head],
+        ["git", "diff", "--name-only", "--diff-filter=ACMRD", base, head],
         cwd=root, check=True, capture_output=True, text=True,
     )
     return {line for line in result.stdout.splitlines() if line}

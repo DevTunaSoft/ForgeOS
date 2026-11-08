@@ -2,6 +2,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import check_documentation as docs
@@ -26,6 +27,18 @@ class DocumentationTests(unittest.TestCase):
         changed = {"src/forgeos/secure_runner.py", "docs/HANDOFF.md"}
         self.assertTrue(any("Execution security" in item for item in docs.check_sync(changed)))
         self.assertEqual(docs.check_sync(changed | {"docs/ARCHITECTURE.md"}), [])
+
+    def test_deleted_code_is_included_in_docs_diff_gate(self):
+        fake = Mock(stdout="src/forgeos/removed_feature.py\n")
+        with patch.object(docs.subprocess, "run", return_value=fake) as run:
+            changed = docs.changed_paths("base123", "head456")
+        self.assertEqual(changed, {"src/forgeos/removed_feature.py"})
+        self.assertIn("--diff-filter=ACMRD", run.call_args.args[0])
+
+    def test_ci_concurrency_separates_push_and_pull_request_runs(self):
+        workflow = (docs.ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8")
+        self.assertIn("github.event_name", workflow)
 
     def test_invalid_git_revisions_rejected(self):
         with self.assertRaises(ValueError):

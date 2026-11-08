@@ -71,6 +71,24 @@ class DashboardContractTests(unittest.TestCase):
         self.assertNotIn("worker_store.update(", source)
         self.assertIn('operation in {"run", "test"}', source)
 
+    def test_worker_completion_and_poll_reschedule_fail_closed(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        worker = source.split("        def worker():", 1)[1].split(
+            "        threading.Thread(target=worker", 1)[0]
+        self.assertIn("finally:", worker)
+        self.assertIn("events.put((task_id, operation, value))", worker)
+        self.assertGreater(
+            worker.rfind("events.put((task_id, operation, value))"),
+            worker.find("finally:"))
+        poll = source.split("    def poll():", 1)[1].split(
+            "    def close():", 1)[0]
+        self.assertIn("finally:", poll)
+        self.assertIn("root.after(150, poll)", poll)
+        self.assertGreater(
+            poll.rfind("root.after(150, poll)"), poll.find("finally:"))
+
     def test_presets_are_unique(self):
         self.assertEqual(len(PRESETS), len(set(PRESETS)))
         self.assertIn("python-unittest", PRESETS)

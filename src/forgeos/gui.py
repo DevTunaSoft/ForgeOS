@@ -374,8 +374,10 @@ def launch(db_path, *, acceptance: bool = False):
         for button in buttons.values():
             button.configure(state="disabled")
         def worker():
-            worker_store = Store(db_path)
+            worker_store = None
+            value = "RuntimeError: worker ended without a result"
             try:
+                worker_store = Store(db_path)
                 if operation == "plan":
                     value = plan_task(
                         worker_store, task_id,
@@ -398,8 +400,17 @@ def launch(db_path, *, acceptance: bool = False):
                 # never overwrite a task taken over by another process.
                 value = f"{type(exc).__name__}: {exc}"
             finally:
-                worker_store.close()
-            events.put((task_id, operation, value))
+                try:
+                    if worker_store is not None:
+                        worker_store.close()
+                except Exception as close_exc:
+                    value += (
+                        "\nStore close failed: "
+                        f"{type(close_exc).__name__}: {close_exc}")
+                finally:
+                    # Always notify the Tk thread, including Store/open/close
+                    # failures, so busy state and buttons cannot remain locked.
+                    events.put((task_id, operation, value))
         threading.Thread(target=worker, daemon=True).start()
 
     add_button("add", "Add task", add)
@@ -410,19 +421,23 @@ def launch(db_path, *, acceptance: bool = False):
 
     def poll():
         try:
-            while True:
-                task_id, operation, value = events.get_nowait()
-                busy["value"] = False
-                for button in buttons.values():
-                    button.configure(state="normal")
-                refresh()
-                status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
-                log(f"Task #{task_id} / {operation}\n{value}")
-                tabs.select(activity)
-        except Empty:
-            pass
-        if not closing["value"]:
-            root.after(150, poll)
+            try:
+                while True:
+                    task_id, operation, value = events.get_nowait()
+                    busy["value"] = False
+                    for button in buttons.values():
+                        button.configure(state="normal")
+                    refresh()
+                    status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
+                    log(f"Task #{task_id} / {operation}\n{value}")
+                    tabs.select(activity)
+            except Empty:
+                pass
+        finally:
+            # A transient refresh/widget/database error must not permanently
+            # stop queue polling and leave the dashboard locked.
+            if not closing["value"]:
+                root.after(150, poll)
 
     def close():
         if busy["value"]:
