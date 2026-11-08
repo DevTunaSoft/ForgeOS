@@ -173,6 +173,65 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(report["skipped"], [])
         self.assertEqual(runner.call_count, 41)
 
+    def test_streaming_results_keep_constant_size_and_all_event_reasons(self):
+        tasks = []
+        for index in range(60):
+            if index % 3 == 0:
+                checkpoint = {"phase": "test_pending",
+                              "workspace": str(self.parent / f"task-{index}"),
+                              "contract": self.contract()}
+            else:
+                checkpoint = {"phase": "unknown"}
+            tasks.append(self.task(index, checkpoint))
+        events = []
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(FakeStore(tasks), self.parent,
+                             allow_host_tests=True, execute=runner,
+                             on_event=events.append, collect_results=False)
+        self.assertEqual(report["resumed"], [])
+        self.assertEqual(report["skipped"], [])
+        self.assertEqual(report["failed"], [])
+        self.assertEqual(report["counts"],
+                         {"resumed": 20, "skipped": 40, "failed": 0})
+        self.assertEqual(len(events), 60)
+        self.assertEqual(events[0], {"event": "resumed", "id": 0})
+        self.assertEqual(events[1]["event"], "skipped")
+        self.assertIn("reason", events[1])
+        self.assertEqual(runner.call_count, 20)
+
+    def test_streaming_failure_count_and_sink_errors_not_swallowed(self):
+        tasks = [self.task(1, {"phase": "test_pending",
+                               "workspace": str(self.parent / "task-1"),
+                               "contract": self.contract()}),
+                 self.task(2, {"phase": "test_pending",
+                               "workspace": str(self.parent / "task-2"),
+                               "contract": self.contract()})]
+        runner = Mock(side_effect=[RuntimeError("test crash"), {"passed": True}])
+        events = []
+        report = resume_safe(FakeStore(tasks), self.parent,
+                             allow_host_tests=True, execute=runner,
+                             collect_results=False, on_event=events.append)
+        self.assertEqual(report["counts"],
+                         {"resumed": 1, "skipped": 0, "failed": 1})
+        self.assertEqual(events[0],
+                         {"event": "failed", "id": 1, "reason": "test crash"})
+        sink = Mock(side_effect=RuntimeError("stream closed"))
+        with self.assertRaisesRegex(RuntimeError, "stream closed"):
+            resume_safe(FakeStore(tasks), self.parent, allow_host_tests=True,
+                        execute=Mock(return_value={"passed": True}),
+                        collect_results=False, on_event=sink)
+        self.assertEqual(sink.call_count, 1)
+
+    def test_invalid_stream_options_rejected_before_store_mutation(self):
+        store = FakeStore([])
+        with self.assertRaisesRegex(ValueError, "boolean"):
+            resume_safe(store, self.parent, allow_host_tests=True,
+                        collect_results=1)
+        with self.assertRaisesRegex(ValueError, "callable"):
+            resume_safe(store, self.parent, allow_host_tests=True,
+                        on_event="not callable")
+        self.assertEqual(store.recovery_calls, 0)
+
     def test_missing_contract_is_skipped(self):
         checkpoint = {"phase": "test_pending",
                       "workspace": str(self.parent / "task-8")}

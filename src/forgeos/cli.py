@@ -41,6 +41,8 @@ def main(argv=None):
     resume_all.add_argument('--allow-host-tests',action='store_true')
     resume_all.add_argument('--preset',choices=['python-unittest','python-pytest','npm-test','cargo-test','go-test','dotnet-test'],help='Optional safety override; must match each saved checkpoint')
     resume_all.add_argument('--max-repairs',type=int,help='Optional safety override; must match each saved checkpoint')
+    resume_all.add_argument('--stream-report',action='store_true',
+                            help='Emit one JSON event per task and a final count summary, with bounded result RAM')
     args=parser.parse_args(argv)
     if args.action=='gui':
         from .gui import launch
@@ -102,11 +104,20 @@ def main(argv=None):
                 raise
         elif args.action=='resume-safe':
             from .recovery import resume_safe
+            sink = (lambda event: print(json.dumps(event, ensure_ascii=False), flush=True)
+                    ) if args.stream_report else None
             report=resume_safe(store,Path(args.workspace_parent),preset=args.preset,
-                               max_repairs=args.max_repairs,allow_host_tests=args.allow_host_tests)
-            print(json.dumps(report,indent=2))
-            if report['failed']:
-                return 1
+                               max_repairs=args.max_repairs,allow_host_tests=args.allow_host_tests,
+                               on_event=sink,collect_results=not args.stream_report)
+            if args.stream_report:
+                print(json.dumps({"event": "summary", "interrupted": report["interrupted"],
+                                  **report["counts"]}))
+                if report["counts"]["failed"]:
+                    return 1
+            else:
+                print(json.dumps(report,indent=2))
+                if report["failed"]:
+                    return 1
         elif args.action=='run':
             from .engine import execute_task
             result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,

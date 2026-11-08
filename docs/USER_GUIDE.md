@@ -187,6 +187,12 @@ py -m forgeos run 1 --workspace-parent C:\forgeos-work --model auto --preset pyt
 py -m forgeos resume-safe --workspace-parent C:\forgeos-work --allow-host-tests
 ```
 
+For a large recovery backlog, add `--stream-report` to this command. Each
+task outcome is printed as one JSON line, followed by a final count summary;
+the usual complete JSON report remains the default. Streaming does not relax
+checkpoint checks, sandbox permissions, model selection or the need to inspect
+a workspace before recovery.
+
 **File transaction limits:** ForgeOS now streams backup copies instead of loading an existing source file fully into RAM. Existing files larger than 8 MiB are rejected for automated replacement, and edit journals larger than 32 KiB are preserved for manual inspection. Do not delete the journal or original workspace to bypass a safety check. These are transaction limits, separate from the 64 KiB task-checkpoint limit.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.
@@ -205,7 +211,7 @@ py -m forgeos resume-safe --workspace-parent C:\forgeos-work --allow-host-tests
 | `py -m forgeos run ID --workspace-parent PATH --allow-host-tests` | Prototype edit/test/repair cycle on trusted source |
 | `py -m forgeos recover` | Mark interrupted states for safe inspection |
 | `py -m forgeos recover-edits WORKSPACE` | Recover pending edit transaction |
-| `py -m forgeos resume-safe --workspace-parent PATH --allow-host-tests` | Resume only eligible tasks |
+| `py -m forgeos resume-safe --workspace-parent PATH --allow-host-tests` | Resume only eligible tasks; add `--stream-report` for memory-bounded JSON Lines output |
 | `py -m forgeos diagnostics stats` | Output evidence statistics |
 | `py -m forgeos learning stats` | Verified repair-learning statistics |
 | `py -m forgeos memory` | One-time own-process memory measurement |
