@@ -88,6 +88,24 @@ class GGUFInventoryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "scan limit"):
                 list_downloads(self.root)
 
+    def test_cli_inventory_and_explicit_verification_use_existing_code(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from forgeos.cli import main
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main([
+                "models-local", "--directory", str(self.root)]), 0)
+        items = json.loads(output.getvalue())
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["status"], "present_not_reverified")
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main([
+                "model-verify-local", str(self.path),
+                "--directory", str(self.root)]), 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "verified")
+
     def test_no_automatic_network_or_model_execution(self):
         with patch("forgeos.huggingface_catalog.search_gguf") as remote, \
              patch("forgeos.managed_llama.subprocess.Popen") as spawn:
