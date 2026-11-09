@@ -258,6 +258,14 @@ def launch(db_path, *, acceptance: bool = False):
     newer_button.pack(side="right")
 
 
+    # Lightweight, Tk-thread-only monitor; no extra polling thread or network calls.
+    monitor_text = tk.StringVar(value="Idle — select and start a task.")
+    ttk.Label(activity, text="Live activity monitor", font=("TkDefaultFont", 11, "bold")).pack(anchor="w")
+    ttk.Label(activity, textvariable=monitor_text, wraplength=850,
+              justify="left").pack(anchor="w", pady=(2, 8))
+    monitor = {"task_id": None, "operation": None, "started": None,
+               "last_stage": None, "last_check": 0.0}
+
     diagnostics = tk.Text(activity, wrap="word", state="disabled")
     diagnostics.pack(fill="both", expand=True)
     # A long autonomous session must not accumulate unlimited Tk text buffers.
@@ -1538,7 +1546,7 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 from .readiness import check_readiness
                 checks = check_readiness(**snapshot)
-                message = "\\n".join(
+                message = "\n".join(
                     ("READY: " if check.ok else "NEEDS ATTENTION: ") +
                     check.name + " — " + check.message for check in checks)
                 ok = all(check.ok for check in checks)
@@ -1597,6 +1605,9 @@ def launch(db_path, *, acceptance: bool = False):
             messagebox.showerror("Cannot start", str(exc))
             return
         busy["value"] = True
+        monitor.update(task_id=task_id, operation=operation,
+                       started=time.monotonic(), last_stage=None, last_check=0.0)
+        monitor_text.set(f"Task #{task_id} • {operation} • starting • 0s elapsed")
         status.set(f"Running {operation} for task #{task_id}")
         for button in buttons.values():
             button.configure(state="disabled")
@@ -1659,10 +1670,48 @@ def launch(db_path, *, acceptance: bool = False):
 
     def poll():
         try:
+            # The existing Tk poll loop updates elapsed time continuously.
+            # Read SQLite at most once per second, not every 150 ms.
+            if monitor["task_id"] is not None and monitor["started"] is not None:
+                now = time.monotonic()
+                elapsed = int(now - monitor["started"])
+                if now - monitor["last_check"] >= 1.0:
+                    monitor["last_check"] = now
+                    try:
+                        live = store.get(monitor["task_id"])
+                        stage = live["status"]
+                        if stage != monitor["last_stage"]:
+                            monitor["last_stage"] = stage
+                            log(f"Task #{monitor['task_id']} entered {stage} "
+                                f"({elapsed}s elapsed)")
+                    except Exception as exc:
+                        stage = "status unavailable"
+                        if monitor["last_stage"] != stage:
+                            monitor["last_stage"] = stage
+                            log(f"Activity monitor could not read task status: {exc}")
+                stage = monitor["last_stage"] or "starting"
+                details = {
+                    "planning": "Requesting an AI plan",
+                    "editing": "Preparing workspace or waiting for AI edits",
+                    "testing": "Running project tests",
+                    "blocked": "Stopped; inspect diagnostic output",
+                    "passed": "Tests passed",
+                    "failed": "Tests failed",
+                }.get(stage, "Working")
+                monitor_text.set(
+                    f"Task #{monitor['task_id']} • {monitor['operation']} • "
+                    f"{stage} • {elapsed}s elapsed — {details}")
             try:
                 while True:
                     task_id, operation, value = events.get_nowait()
                     busy["value"] = False
+                    elapsed = int(time.monotonic() - monitor["started"]) if (
+                        monitor["task_id"] == task_id and monitor["started"] is not None) else 0
+                    monitor_text.set(
+                        f"Task #{task_id} • {operation} • "
+                        f"{store.get(task_id)['status']} • {elapsed}s elapsed. "
+                        "See diagnostic output below.")
+                    monitor.update(task_id=None, started=None, last_stage=None)
                     for button in buttons.values():
                         button.configure(state="normal")
                     refresh()
