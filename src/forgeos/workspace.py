@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -23,10 +24,38 @@ class Workspace:
     branch: str
 
 
+def find_git() -> str:
+    """Find Git on PATH or bundled with a local GitHub Desktop installation.
+
+    GitHub Desktop installs into versioned directories that change on update.
+    Only known local executable paths are considered; never invoke a shell.
+    """
+    on_path = shutil.which("git")
+    if on_path:
+        return on_path
+    if os.name != "nt":
+        raise WorkspaceError("Git was not found on PATH. Install Git to use workspaces.")
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        desktop = Path(local) / "GitHubDesktop"
+        # Prefer the most recently updated installed application version.
+        candidates = []
+        for app in desktop.glob("app-*"):
+            candidate = app / "resources" / "app" / "git" / "cmd" / "git.exe"
+            if candidate.is_file():
+                candidates.append(candidate)
+        if candidates:
+            return str(max(candidates, key=lambda p: p.stat().st_mtime))
+    raise WorkspaceError(
+        "Git executable not found. Install Git for Windows or GitHub Desktop, "
+        "then restart ForgeOS."
+    )
+
+
 def _git(cwd: Path, *args: str, timeout: int = 30) -> str:
     try:
         result = subprocess.run(
-            ["git", *args], cwd=cwd, shell=False, text=True,
+            [find_git(), *args], cwd=cwd, shell=False, text=True,
             capture_output=True, timeout=timeout, errors="replace",
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
