@@ -266,3 +266,9 @@ The same recoverable retirement action is available in the existing desktop Mana
 
 
 The existing managed GGUF window can now **restore a retired model** using the same verified journal as the CLI. Restoration is explicit, offline, and non-overwriting; the worker hashes weights without blocking the Tk interface. Retirement/restoration additionally rejects hard-linked model or manifest files to avoid manipulating bytes also accessible outside the model directory.
+
+### Live task activity (experimental)
+
+The **Activity & diagnostics** tab now shows the active task ID, operation, elapsed seconds, and current persisted task stage (planning, editing, testing, blocked, passed, or failed). Stage changes are appended to the bounded diagnostic log. The monitor reuses the GUI's existing event loop and reads the task database at most once per second; it does not start a second polling worker. **Editing** includes both workspace setup and waiting for model output: token-level model progress and subprocess output are not yet streamed. Test results and errors appear when the worker finishes. The monitor does not continue execution after ForgeOS exits.
+
+**Recovery limitation:** The existing **Resume safe blocked tasks** action handles structured test/repair checkpoints, not early model-generation timeouts. Do not create duplicate tasks or delete workspaces to work around a blocked generation task. A guarded pre-edit retry path remains planned and is not yet implemented.
