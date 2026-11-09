@@ -1526,7 +1526,7 @@ def launch(db_path, *, acceptance: bool = False):
                 popup.after(200, poll_hub)
         popup.after(200, poll_hub)
 
-    def run_readiness_check():
+    def run_readiness_check(show_dialog=True):
         """Show actionable prerequisites without blocking the Tk event loop."""
         snapshot = dict(project=project.get().strip(),
                         workspace_parent=workspaces.get().strip(),
@@ -1549,8 +1549,9 @@ def launch(db_path, *, acceptance: bool = False):
                 if closing["value"]:
                     return
                 status.set("Ready" if ok else "Setup needs attention")
-                (messagebox.showinfo if ok else messagebox.showwarning)(
-                    "ForgeOS readiness", message)
+                if show_dialog:
+                    (messagebox.showinfo if ok else messagebox.showwarning)(
+                        "ForgeOS readiness", message)
             root.after(0, finish)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -2009,6 +2010,8 @@ def launch(db_path, *, acceptance: bool = False):
                 else:
                     report["closed_cleanly"] = True
         root.after(300, verify_gui)
+    if not acceptance and project.get().strip():
+        root.after(400, lambda: run_readiness_check(show_dialog=False))
     poll()
     root.mainloop()
     return report if acceptance else None
