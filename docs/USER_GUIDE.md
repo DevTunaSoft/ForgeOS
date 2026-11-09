@@ -583,3 +583,8 @@ The **Add task**, **Build / test / repair**, **Generate plan**, **Run tests only
 ### Slow local AI responses (pending CI verification)
 
 ForgeOS applies a 180-second monotonic response deadline to its built-in Ollama generator and retains an 8 MiB response-size ceiling. If a local model streams too slowly, the request fails with a deadline or socket timeout instead of waiting indefinitely. Socket reads may overshoot the exact wall-clock deadline by up to the configured per-read timeout; the lease guard still prevents stale task results from being published. This does not impose a deadline on other model backends.
+
+
+### GitHub Desktop Git detection (Windows)
+
+ForgeOS checks for `git` on PATH first. If Git is not on PATH, the Windows workspace engine also looks for GitHub Desktop's bundled `git.exe` under `%LOCALAPPDATA%\\GitHubDesktop\\app-*\\resources\\app\\git\\cmd\\git.exe`. Versioned application folders are detected automatically after GitHub Desktop updates. Restart ForgeOS after installing or updating GitHub Desktop. If the executable is missing, install Git for Windows or GitHub Desktop. This does not bypass the requirement that the selected project be an initialized Git repository.

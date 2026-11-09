@@ -3,10 +3,37 @@ import subprocess
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from forgeos.workspace import (
-    WorkspaceError, create_workspace, release_workspace, workspace_diff,
+    WorkspaceError, _github_desktop_git, create_workspace, find_git,
+    release_workspace, workspace_diff,
 )
+
+
+class GitDiscoveryTests(unittest.TestCase):
+    def test_github_desktop_versioned_git(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "GitHubDesktop"
+            old = root / "app-3.6.9" / "resources" / "app" / "git" / "cmd" / "git.exe"
+            new = root / "app-3.6.10" / "resources" / "app" / "git" / "cmd" / "git.exe"
+            for executable in (old, new):
+                executable.parent.mkdir(parents=True)
+                executable.write_bytes(b"test")
+            old.touch()
+            new.touch()
+            import os
+            os.utime(old, (100, 100))
+            os.utime(new, (200, 200))
+            self.assertEqual(_github_desktop_git(tmp), str(new))
+
+    def test_no_desktop_git(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(_github_desktop_git(tmp))
+
+    def test_git_on_path_preferred(self):
+        with patch("forgeos.workspace.shutil.which", return_value="/usr/bin/git"):
+            self.assertEqual(find_git(), "/usr/bin/git")
 
 
 @unittest.skipUnless(shutil.which("git"), "Git required")
