@@ -1526,6 +1526,38 @@ def launch(db_path, *, acceptance: bool = False):
                 popup.after(200, poll_hub)
         popup.after(200, poll_hub)
 
+    def run_readiness_check():
+        """Show actionable prerequisites without blocking the Tk event loop."""
+        snapshot = dict(project=project.get().strip(),
+                        workspace_parent=workspaces.get().strip(),
+                        backend=backend.get(), model=model.get().strip(),
+                        endpoint=endpoint.get().strip())
+        status.set("Checking local prerequisites...")
+
+        def worker():
+            try:
+                from .readiness import check_readiness
+                checks = check_readiness(**snapshot)
+                message = "\\n".join(
+                    ("READY: " if check.ok else "NEEDS ATTENTION: ") +
+                    check.name + " — " + check.message for check in checks)
+                ok = all(check.ok for check in checks)
+            except Exception as exc:
+                message, ok = f"Readiness check failed: {exc}", False
+
+            def finish():
+                if closing["value"]:
+                    return
+                status.set("Ready" if ok else "Setup needs attention")
+                (messagebox.showinfo if ok else messagebox.showwarning)(
+                    "ForgeOS readiness", message)
+            root.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    ttk.Button(provider_row, text="Check readiness",
+               command=run_readiness_check).pack(side="left", padx=6)
+
     def start(operation):
         if busy["value"]:
             return
