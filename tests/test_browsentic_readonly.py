@@ -485,6 +485,29 @@ for line in sys.stdin:
             permitted_origin="https://example.com",
             scroll_direction="down", approve_scroll=True, changes_only=True)
 
+    def test_utf8_size_check_streams_non_ascii_without_full_copy(self):
+        from forgeos.browsentic_readonly import _fits_utf8_budget
+        budget = 48 * 1024
+        self.assertTrue(_fits_utf8_budget("X" * budget, budget))
+        self.assertTrue(_fits_utf8_budget("☃" * (budget // 3), budget))
+        self.assertFalse(_fits_utf8_budget("☃" * (budget // 3 + 1), budget))
+        self.assertFalse(_fits_utf8_budget("😀" * (budget // 4 + 1), budget))
+        self.assertFalse(_fits_utf8_budget("\ud800", budget))
+        self.assertFalse(_fits_utf8_budget(123, budget))
+        with self.assertRaises(ValueError):
+            compact_diagram("😀" * (budget // 4 + 1))
+
+    def test_utf8_validator_keeps_large_ascii_peak_under_budget(self):
+        from forgeos.browsentic_readonly import _fits_utf8_budget
+        text = "\n" * 47_000
+        tracemalloc.start()
+        try:
+            self.assertTrue(_fits_utf8_budget(text, 48 * 1024))
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 8 * 1024)
+
     def test_reject_invalid_deadlines(self):
         for v in (True, 0, 31, "3"):
             with self.subTest(v=v), self.assertRaises(ValueError):

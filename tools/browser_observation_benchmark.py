@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     metrics = run_benchmark()
     print(json.dumps(metrics, indent=2))
     if args.check and not (
-        metrics["formatter_peak_traced_allocations_bytes"] < 256 * 1024
+        metrics["formatter_peak_traced_allocations_bytes"] < 32 * 1024
         and metrics["pathological_output_chars"] <= 2400
         and metrics["changed_only_chars"] <= 2400
         and metrics["changed_only_char_reduction_percent"] >= 50
