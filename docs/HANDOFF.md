@@ -1761,3 +1761,12 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 **New tests:** Four *real Python subprocess* tests for 1 MiB stdout overflow, ordinary short output, hung child reaping and nonuse of `communicate()`. Previous fake acceptance tests are retained and adapted to exercise report status independently of pipe mechanics. CI must run them on Ubuntu/Windows Python 3.10/3.12; **NOT RUN at authoring**. On an actual Windows target, continue operator-controlled public-tab acceptance, Bridge/browser PID measurement, and no saved private page content.
 
 **Next:** Check full CI, investigate failure root causes without re-running unchanged builds, then continue real Windows pairing/interop and process-tree RAM acceptance. Keep PR #66 unmerged as experimental until verified; do not auto-enable click, type, login or form submission.
+
+
+## Native memory-probe setup reuse — 2026-11-10
+
+**Baseline:** `8c5ac00866ebbb6596da4d6b63e3843c94a8fd13` on `feat/browser-observation-65` / PR #66. Full Ubuntu/Windows Python 3.10/3.12, Windows frozen EXE smoke and docs workflows PASS for the prior bounded-output fix; live Windows Browsentic interoperability remains unverified.
+
+**Optimization:** Existing `_windows_process_tree()` previously defined two `ctypes.Structure` classes, bound kernel32/psapi functions, and loaded DLL wrappers for **every** 150 ms memory sample, multiplied by up to two external PIDs. Moved only these immutable bindings into a lazy `functools.lru_cache(maxsize=1)` helper `_windows_api()`. Every sample still opens fresh native Toolhelp snapshots, reads current process working-set sizes, and closes all process/snapshot handles; no persistent service or model workload. The cache survives only for the short-lived harness process and uses one small fixed entry. No promised or unmeasured CPU/RAM improvement is claimed.
+
+**Tests:** Added cross-platform lazy-cache identity check and Windows-native repeated snapshot/cache-hit regression on a disposable Python child. Full CI and physical browser testing are NOT RUN for this new commit at authoring. Next verify all 4 matrix jobs, native WinAPI probe and Windows EXE packaging, document exact evidence in issue #65; then return to real paired-browser acceptance and action-safety architecture.

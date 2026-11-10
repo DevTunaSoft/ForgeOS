@@ -267,6 +267,16 @@ class WindowsBrowserAcceptanceTests(unittest.TestCase):
                 acceptance.run_acceptance(origin="https://127.0.0.1", confirmed=True)
             popen.assert_not_called()
 
+    def test_windows_api_bindings_are_cached_without_polling(self):
+        # Initialization is lazy and reusable; no process snapshots are cached.
+        api = acceptance._windows_api()
+        self.assertIs(acceptance._windows_api(), api)
+        if os.name == "nt":
+            self.assertIsNotNone(api)
+            self.assertEqual(len(api), 4)
+        else:
+            self.assertIsNone(api)
+
     def test_non_windows_memory_probe_returns_unavailable(self):
         if os.name != "nt":
             self.assertIsNone(acceptance._windows_process_tree(os.getpid()))
@@ -286,6 +296,11 @@ class WindowsBrowserAcceptanceTests(unittest.TestCase):
             self.assertGreaterEqual(sample.process_count, 1)
             self.assertGreater(sample.working_set_bytes, 0)
             self.assertLessEqual(sample.unreadable_processes, sample.process_count)
+            before_hits = acceptance._windows_api.cache_info().hits
+            next_sample = acceptance._windows_process_tree(child.pid)
+            self.assertIsNotNone(next_sample)
+            self.assertGreaterEqual(acceptance._windows_api.cache_info().hits,
+                                    before_hits + 1)
             child.terminate()
             child.wait(timeout=3)
 

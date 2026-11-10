@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+from functools import lru_cache
 import json
 import os
 import shutil
@@ -33,12 +34,9 @@ class TreeMemory(NamedTuple):
     unreadable_processes: int
 
 
-def _windows_process_tree(root_pid: int) -> TreeMemory | None:
-    """One-shot Windows Toolhelp+PSAPI working set; no WMI or psutil dependency.
-
-    This captures the acceptance CLI process and its *current descendants*.
-    An already running Browser/Bridge is NOT a descendant and is excluded.
-    """
+@lru_cache(maxsize=1)
+def _windows_api():
+    """Cache PSAPI bindings and native structures for this short-lived test.\n\n    Snapshots still read fresh process state on each call; no RAM figures are\n    cached. The test process exits after a single acceptance operation.\n    """
     if not _is_windows():
         return None
 
@@ -81,6 +79,20 @@ def _windows_process_tree(root_pid: int) -> TreeMemory | None:
         wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
     ]
     psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+    return PROCESSENTRY32W, PROCESS_MEMORY_COUNTERS, kernel, psapi
+
+
+def _windows_process_tree(root_pid: int) -> TreeMemory | None:
+    """One-shot Windows Toolhelp+PSAPI working set; no WMI or psutil dependency.
+
+    This captures the acceptance CLI process and its *current descendants*.
+    An already running Browser/Bridge is NOT a descendant and is excluded.
+    """
+    api = _windows_api()
+    if api is None:
+        return None
+    PROCESSENTRY32W, PROCESS_MEMORY_COUNTERS, kernel, psapi = api
 
     handle = kernel.CreateToolhelp32Snapshot(0x00000002, 0)
     if not handle or handle == ctypes.c_void_p(-1).value:

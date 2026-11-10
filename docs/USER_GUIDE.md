@@ -669,7 +669,7 @@ If the `browsentic` executable is not available on PATH, or the tab moves to ano
    Get-Content browser-acceptance.json
    ```
 
-   Do not use the sample numbers unless they are your actual observed PIDs. The report's client-process memory and external-process memory **are separate peaks and must not be summed**, because process trees can overlap. `null` means memory was not sampled; it does not mean zero.
+   Do not use the sample numbers unless they are your actual observed PIDs. The report's client-process memory and external-process memory **are separate peaks and must not be summed**, because process trees can overlap. `null` means memory was not sampled; it does not mean zero. The acceptance harness initializes its native Windows monitoring bindings once to avoid repeated setup during the short-lived test; each memory reading still queries current process state.
 5. **Only after the read-only check works**, optionally verify a single, explicitly approved scroll on a public test site:
 
    ```powershell

@@ -113,6 +113,8 @@ py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-pu
 
 The result is a small JSON object containing PASS/BLOCKED/FAIL, elapsed time, output character count, and sampled Windows working-set memory of the launched ForgeOS CLI and its descendants. **It never prints or stores page text, page URLs, browser titles, or raw MCP errors. The acceptance runner's child stdout is drained in fixed 1 KiB chunks and stops immediately above a 4 KiB capture budget; it no longer uses `communicate()` to buffer untrusted output without limit. Failure and timeout paths terminate the temporary child tree without browser-action retries.** An opt-in `--external-pid 1234` argument (repeat up to twice) can also sample the independently running Browser/Bridge process trees; these values are reported *separately*, never added, to avoid accidental double counting. Use the PID shown in Windows Task Manager's **Details** tab. Do not interpret missing samples as zero memory.
 
+The Windows memory monitor lazily initializes native Win32 DLL bindings and ctypes structures once per acceptance invocation, rather than rebuilding them for every sample. Each process-memory reading remains fresh; no RAM values are cached.
+
 This is **not** verification that a browser is installed or paired: a real Windows test must still be performed by an operator. Tests in GitHub CI use mocked connections and a native Windows process-memory probe, not a real Browsentic installation. See the [user guide](docs/USER_GUIDE.md) for full steps and scope.
 
 ## Quick start
