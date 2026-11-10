@@ -593,3 +593,104 @@ ForgeOS checks for `git` on PATH first. If Git is not on PATH, the Windows works
 ### Startup readiness (experimental)
 
 When a saved project is selected, ForgeOS performs a nonblocking, local-only startup check and displays **Ready** or **Setup needs attention** in the window status. Click **Check readiness** next to the inference backend to see specific results and corrective instructions. Checks cover executable Git discovery (including GitHub Desktop), project Git metadata, an existing workspace folder outside the project tree, and the local Ollama model catalog when Ollama is selected. The Ollama probe uses the loopback-only `/api/tags` endpoint with a three-second timeout and a one-MiB response cap. Other local backends currently report that connectivity remains unverified until task start. The check does not execute generated code, install dependencies, or bypass host-execution permissions. A green readiness status does **not** guarantee that generated code or tests will succeed.
+
+
+## Experimental read-only browser observation (review branch)
+
+**Who should use this:** Developers testing a public website, **not** normal users or anyone working with accounts, passwords, private pages, or financial/personal information. This is **not integrated into the ForgeOS desktop GUI or packaged EXE yet**. No website automation or form submission occurs.
+
+1. From a source checkout of the browser-agent review branch, open PowerShell in the ForgeOS directory.
+2. Install the **optional** browser tooling explicitly, then install the matching Chromium build:
+   ```powershell
+   py -m pip install -e ".[browser]"
+   py -m playwright install chromium
+   ```
+3. Run the temporary read-only probe against a public site:
+   ```powershell
+   py -m forgeos.browser_probe https://example.com/ --allow-origin https://example.com
+   ```
+4. Examine the short control list. It contains page labels, not form values; results are capped. Browser and context are closed after the observation. No local AI or web AI receives this data automatically.
+
+**Troubleshooting:** If the optional package or Chromium is missing, install it with the commands above. If the site requires third-party domains, JavaScript authentication, or redirects, the probe may fail deliberately. Do **not** disable restrictions to access private pages. Playwright's request interception cannot guarantee that redirect destinations are never fetched, and the observed page content must never be treated as trusted instructions.
+
+**Memory and tokens:** The normal ForgeOS process does not import Playwright. Browser memory is incurred only when you explicitly run this development command; the browser process must exit after observation. Character limits reduce input size but **actual LLM token savings and Windows RAM usage are unmeasured**. See [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
+
+
+## Experimental Browsentic read-only connection (review branch)
+
+**Developer preview, not yet part of the ForgeOS GUI or packaged EXE.** Browsentic is an independently maintained [open-source browser extension and local Bridge](https://github.com/imshaikot/browsentic) that can work with an already signed-in browser. Its Windows support is marked experimental. This connector does not install Browsentic or require it for other ForgeOS tasks.
+
+1. Review Browsentic's [security model](https://github.com/imshaikot/browsentic/blob/main/SECURITY.md) and install it yourself from its official documentation if you choose. Pair the extension with its local Bridge.
+2. Select a tab whose visible content is safe to display in a terminal. Do not test using banking, password managers, medical data, confidential company systems or other sensitive pages.
+3. In a ForgeOS source checkout of the browser prototype branch, open PowerShell and run:
+   ```powershell
+   py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://github.com
+   ```
+4. The command opens a temporary MCP client, confirms that the selected tab is on the approved HTTPS origin, requests only the compact page diagram, checks the tab and browser again before printing a bounded/redacted summary, and closes its client process. Replace `https://github.com` with the exact site origin you approved. There are **no** clicks, typing, forms, agent reasoning or remote LLM calls. The default command stays read-only.
+
+**Developer-only one-time scrolling:** For a safe, intentionally selected page, explicitly approve one deterministic scroll, still bound to that site's origin:
+
+```powershell
+py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://example.com --scroll-direction down --approve-scroll
+```
+
+Replace the origin with the exact approved site. Supported directions are `up`, `down`, `top`, and `bottom`. This command never clicks, types or submits a form, never retries an uncertain action, and never starts an AI agent. Missing `--approve-scroll` blocks the scroll before any browser process starts. **Scrolling can trigger JavaScript and network requests**, so only use it on a safe public test page. A tab change or failed MCP response stops the command, but before/after checks are not an atomic security boundary. The separate one-shot CLI remains available; an **experimental manual scroll button** is also present in the ForgeOS GUI on the PR #66 branch. Real Browsentic/Windows acceptance remains unverified.
+
+**Save repeated AI context:** To see just the *visible changes* between before and after a single approved scroll, add `--changes-only`:
+
+```powershell
+py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://example.com --scroll-direction down --approve-scroll --changes-only
+```
+
+This is a developer preview, **not yet automatic agent token optimization**. It reads at most two bounded page diagrams in the same session, compares sanitized lines without storing long-term browsing history, and prints only newly visible or no-longer-visible lines. This may omit details if the page is very long or a diagram was truncated. The result reflects changes in what was observed, not a guaranteed change to the underlying website data. No cloud service is invoked. To reproduce synthetic allocation and output-character checks, run `python tools/browser_observation_benchmark.py --check` from the repository root with `PYTHONPATH=src` set; real browser/LLM RAM and token reductions are still unverified.
+
+If the `browsentic` executable is not available on PATH, or the tab moves to another origin or URL while being read, the command fails closed. The before/after tab check is not atomic and does not guarantee immunity to every concurrent switch. If the extension is disconnected or the response is invalid/too large, it fails closed. This is an explicitly consented read of a real browser tab: best-effort filtering suppresses entire credential-like labels (rather than just the first word of a multiword password), masks emails, and rejects malformed controls and ambiguous URLs. It **cannot promise complete secret removal** and may hide ordinary labels mentioning credentials. Keep Browsentic's default MCP approval safeguards; do **not** set `guardrails.unattended: "allow"`. Other programs running as your OS user may reach a previously paired session.
+
+**Performance and safety status:** no default dependency, no always-running ForgeOS browser process, 48 KiB resource and 2,400-character output limit. Only mocked protocol tests have passed so far; actual Browsentic compatibility, RAM consumption and token savings are **UNVERIFIED**. The connector is a separate option from the experimental throwaway Playwright probe. [Issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65) tracks the permissions, GUI, real-browser and Windows acceptance gates.
+
+
+## Windows Browsentic acceptance testing (review branch)
+
+**This is a developer-only test, not part of the installed ForgeOS GUI.** It does not install Browsentic or access its browser without explicit consent. Use a **disposable public page**, not any personal, business, medical, bank or signed-in private tab. Browsentic's Bridge and extension must already be installed and paired. Windows support must be confirmed on the target machine.
+
+1. Open Windows **Task Manager → Details** only if you want extra RAM information. You may note the PID of the Browsentic Bridge and the main Chrome/Edge process. This is optional; do not guess a PID. The process IDs can change after restarting an application.
+2. In your ForgeOS source checkout of the PR #66 branch, open PowerShell and activate your normal Python environment. Select the public website in your paired browser. Then run:
+
+   ```powershell
+   py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab
+   ```
+
+3. The acceptance runner's output capture is memory-bounded (4 KiB maximum; 1 KiB read chunks). Excessive output is reported as `OUTPUT_OVERSIZE` and the temporary test client is stopped. A timed-out client is also terminated, with no automatic action retry. The command returns **one JSON report**. `PASS` means the read-only CLI returned a bounded diagram; `BLOCKED` means prerequisites, consent or the connection were denied; `FAIL` means an execution error or timeout. Exit code is **0** for PASS, **2** otherwise. It does **not** report the page text, URL or title.
+4. To include the separate existing browser/Bridge memory trees, supply explicit PIDs. Substitute the *actual current* PIDs shown by Task Manager:
+
+   ```powershell
+   py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab --external-pid 1234 --external-pid 5678 > browser-acceptance.json
+   $LASTEXITCODE
+   Get-Content browser-acceptance.json
+   ```
+
+   Do not use the sample numbers unless they are your actual observed PIDs. The report's client-process memory and external-process memory **are separate peaks and must not be summed**, because process trees can overlap. `null` means memory was not sampled; it does not mean zero. The acceptance harness initializes its native Windows monitoring bindings once to avoid repeated setup during the short-lived test; each memory reading still queries current process state.
+5. **Only after the read-only check works**, optionally verify a single, explicitly approved scroll on a public test site:
+
+   ```powershell
+   py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab --scroll-direction down --approve-scroll --changes-only
+   ```
+
+   A scroll can trigger JavaScript and network requests, even if no form is submitted. This is a deliberate one-shot test, **not** autonomous browsing, and it does not retry a failed action.
+
+**Privacy:** Reports contain status codes, elapsed time and numeric counters only; they omit visited URLs, page content, titles, raw MCP responses and credentials. Avoid capturing raw terminal/browser logs of private pages. The origin check and best-effort redaction are not guarantees of atomic tab control.
+
+**Troubleshooting:** If you see `BROWSENTIC_NOT_INSTALLED`, review and install the upstream Browsentic Bridge from its official project, then ensure `browsentic` is accessible on PATH. `CONNECTOR_REJECTED` means the connector could not complete the read (e.g., a disconnected extension, an unauthorized tab or protocol mismatch). `WINDOWS_REQUIRED` means you ran this Windows-only harness elsewhere. `TIMEOUT` means the bounded test expired; investigate pairing and Bridge rather than retrying an uncertain browser action. The baseline should run without Docker or paid APIs. The results are not production certification or an LLM token benchmark.
+
+See [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65) for the acceptance checklist and [PR #66](https://github.com/DevTunaSoft/ForgeOS/pull/66) for current code.
+
+
+## Browser action approvals and crash recovery (developer preview)
+
+ForgeOS has a **developer-preview manual browser scroll button** on the PR #66 branch, backed by the existing task database and lease. Nothing runs automatically at startup; **no autonomous click/type actions** are available. This has not yet been accepted against an actual installed Browsentic/Chrome/Edge session on the user's Windows PC.
+
+The internal process is: a future GUI prepares a one-use, origin-bound scroll request for an existing ForgeOS task; a person explicitly approves the exact operation; ForgeOS marks that action as attempted in its existing SQLite store **before** sending it to Browsentic. If a crash or timeout makes the outcome unknown, the action stays marked **uncertain**, and ForgeOS will **not repeat it automatically**. To take another action, an operator must inspect the page and explicitly approve a new request. Only a SHA-256 hash of the approved **full page URL, origin, and scroll direction** is retained, not page text or the address itself. If you decline, the pending proposal is deleted.
+
+**How to use the experimental GUI control:** In ForgeOS's **Development** tab, select a queued or planned task. Choose **Browser scroll (experimental)** in the small row directly below the main task buttons. In the small popup, paste the **exact full HTTPS page URL** of a public, non-sensitive browser tab you have already selected and paired through Browsentic, including its path (the address must match exactly, including a trailing slash); choose `up`, `down`, `top`, or `bottom`. Select **Review and approve one scroll**, read the specific action details and warning, then choose **Yes** only if the site is public and contains no private data. Declining does not send any browser action. After approval, ForgeOS verifies the current page URL before the one scroll, reads bounded page diagrams before and after, then verifies the URL and browser identity again. A full-URL mismatch or incomplete readback is marked uncertain, with no retry. **These checks cannot tell apart two different tabs showing the same URL or eliminate a rapid tab-switching race.** A successful readback does not by itself prove that the page physically moved. A successful operation records only the action status; the webpage contents are never added to ForgeOS's task log. Failed or interrupted actions become **uncertain**, not automatically repeated. You must inspect the page and explicitly approve a **new** action if you want to continue.
+
+The dialog does not install or pair Browsentic. Do not enable its `guardrails.unattended: "allow"` setting. A scroll can trigger website scripts or network activity; no general browser actions are available. **Do not expose `approve_scroll()` as an AI/model tool.** Its `human_confirmed` flag is an internal user-gesture contract, **not authentication** against other same-user programs. Physical Windows browser interaction, session-identity races and actual memory remain **unverified**.

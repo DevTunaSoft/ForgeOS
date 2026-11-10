@@ -143,6 +143,7 @@ def launch(db_path, *, acceptance: bool = False):
     managed_events = Queue(maxsize=2)
     recovery_events = Queue(maxsize=1)
     acceptance_events = Queue(maxsize=1)
+    browser_events = Queue(maxsize=1)
     managed = {"controller": None, "busy": False, "last_used": None,
                "unexpected_exit": False, "stop_failed": False,
                "screening_cancel": None, "qualification_cancel": None}
@@ -226,7 +227,11 @@ def launch(db_path, *, acceptance: bool = False):
     # Keep the primary actions above the expanding queue so they stay visible
     # at minimum window height and at high Windows display scaling.
     actions = ttk.Frame(dashboard)
-    actions.pack(fill="x", pady=(0, 10))
+    actions.pack(fill="x", pady=(0, 6))
+    # Keep experimental tools on their own row so the main task controls
+    # remain reachable at 880px minimum width and Windows display scaling.
+    browser_row = ttk.Frame(dashboard)
+    browser_row.pack(fill="x", pady=(0, 6))
     buttons = {}
     def add_button(key, text, callback):
         button = ttk.Button(actions, text=text, command=callback)
@@ -528,6 +533,148 @@ def launch(db_path, *, acceptance: bool = False):
         if not items:
             raise ValueError("Select a task in the queue first.")
         return int(items[0])
+
+    def open_browser_scroll():
+        """One explicit Tk action; no browser/DB worker until operator confirms."""
+        if busy["value"] or managed["busy"] or closing["value"]:
+            messagebox.showerror(
+                "Browser action busy",
+                "Finish the current operation before requesting a browser action.")
+            return
+        try:
+            task_id = selected()
+            if store.get(task_id)["status"] not in ("queued", "planned"):
+                raise ValueError("Choose a queued or planned task.")
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showerror("Select a task", str(exc))
+            return
+
+        from uuid import uuid4
+        popup = tk.Toplevel(root)
+        popup.title("ForgeOS | Browser action approval (experimental)")
+        popup.geometry("590x300")
+        popup.transient(root)
+        popup.grab_set()
+        frame = ttk.Frame(popup, padding=16)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text=f"Task #{task_id} — one public-site scroll",
+                  style="Section.TLabel").pack(anchor="w")
+        ttk.Label(frame, text=(
+            "Only use a non-sensitive public tab paired with Browsentic. "
+            "Scrolling can trigger website scripts and network requests."),
+            wraplength=530, justify="left").pack(anchor="w", pady=(8, 12))
+        page_url_var = tk.StringVar(value="https://example.com/")
+        direction_var = tk.StringVar(value="down")
+        site_row = ttk.Frame(frame)
+        site_row.pack(fill="x")
+        ttk.Label(site_row, text="Exact public page URL").pack(side="left")
+        ttk.Entry(site_row, textvariable=page_url_var, width=42).pack(
+            side="left", fill="x", expand=True, padx=(8, 0))
+        direction_row = ttk.Frame(frame)
+        direction_row.pack(fill="x", pady=(10, 8))
+        ttk.Label(direction_row, text="One scroll direction").pack(side="left")
+        ttk.Combobox(direction_row, textvariable=direction_var,
+                     values=("down", "up", "top", "bottom"),
+                     state="readonly", width=12).pack(side="left", padx=(8, 0))
+        ttk.Label(frame, text=(
+            "No clicks, typing, form submissions, AI-directed actions, "
+            "or automatic retries."),
+            foreground="#52647b", wraplength=530).pack(anchor="w", pady=(4, 8))
+        action_key = uuid4().hex
+        submitted = {"value": False}
+
+        def approve_and_run():
+            if submitted["value"] or busy["value"] or managed["busy"]:
+                return
+            page_url = page_url_var.get().strip()
+            direction = direction_var.get()
+            try:
+                from .browser_observation import allowed_origin
+                site = allowed_origin(page_url)
+                import shutil
+                if shutil.which("browsentic") is None:
+                    raise ValueError(
+                        "Browsentic is not installed or not available on PATH.")
+                from .browser_action_gate import propose_scroll
+                propose_scroll(store, task_id, action_key, site, direction,
+                               tab_url=page_url)
+            except (ValueError, OSError) as exc:
+                messagebox.showerror("Cannot propose browser scroll",
+                                     str(exc), parent=popup)
+                return
+            except Exception:
+                # Unique action keys can never be re-proposed. Do not print SQL
+                # errors or expose raw browser/DB details in crew-facing UI.
+                messagebox.showerror("Browser scroll unavailable",
+                                     "Could not create a one-use proposal.",
+                                     parent=popup)
+                return
+            submitted["value"] = True
+            confirmed = messagebox.askyesno(
+                "Approve exactly one browser action",
+                f"Task #{task_id}\n\nExact page: {page_url}\n"
+                f"Action: scroll {direction} ONCE\n\n"
+                "I confirm the selected browser tab is PUBLIC and contains no "
+                "private data. Scrolling may trigger site scripts and network "
+                "requests. The action will not be automatically retried.",
+                parent=popup)
+            if not confirmed:
+                # Remove the declined proposal rather than growing SQLite
+                # indefinitely with abandoned short-lived dialog attempts.
+                from .browser_action_gate import cancel_scroll
+                cancel_scroll(store, task_id, action_key, site, direction,
+                              tab_url=page_url)
+                popup.destroy()
+                status.set("Browser scroll declined; no browser action started.")
+                return
+            try:
+                from .browser_action_gate import approve_scroll
+                approve_scroll(store, task_id, action_key, site, direction,
+                               human_confirmed=True, tab_url=page_url)
+            except Exception:
+                messagebox.showerror(
+                    "Browser approval not saved",
+                    "The proposal expired or could not be approved. "
+                    "No browser action was started.", parent=popup)
+                popup.destroy()
+                return
+            popup.destroy()
+            busy["value"] = True
+            for button in buttons.values():
+                button.configure(state="disabled")
+            status.set(f"Task #{task_id}: approved browser scroll running")
+
+            def worker():
+                worker_store = None
+                result_state = "unverified"
+                try:
+                    from .browser_action_gate import (
+                        run_approved_scroll, scroll_status)
+                    worker_store = Store(db_path)
+                    # Never pass this observation to the GUI, logs or model.
+                    run_approved_scroll(worker_store, task_id, action_key,
+                                        site, direction, tab_url=page_url)
+                    result_state = scroll_status(worker_store, task_id, action_key)
+                except Exception:
+                    if worker_store is not None:
+                        try:
+                            from .browser_action_gate import scroll_status
+                            result_state = scroll_status(
+                                worker_store, task_id, action_key) or "unverified"
+                        except Exception:
+                            result_state = "unverified"
+                finally:
+                    if worker_store is not None:
+                        try:
+                            worker_store.close()
+                        except Exception:
+                            pass
+                    browser_events.put((task_id, result_state))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        ttk.Button(frame, text="Review and approve one scroll",
+                   command=approve_and_run).pack(anchor="e", pady=(10, 0))
 
     def add():
         try:
@@ -1667,6 +1814,11 @@ def launch(db_path, *, acceptance: bool = False):
     add_button("plan", "Generate plan", lambda: start("plan"))
     add_button("test", "Run tests only", lambda: start("test"))
     add_button("refresh", "Refresh", refresh)
+    browser_button = ttk.Button(
+        browser_row, text="Browser scroll (experimental)",
+        command=open_browser_scroll)
+    browser_button.pack(side="left")
+    buttons["browser"] = browser_button
 
     def poll():
         try:
@@ -1718,6 +1870,24 @@ def launch(db_path, *, acceptance: bool = False):
                     status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
                     log(f"Task #{task_id} / {operation}\n{value}")
                     tabs.select(activity)
+            except Empty:
+                pass
+            try:
+                browser_task_id, browser_state = browser_events.get_nowait()
+                busy["value"] = False
+                for button in buttons.values():
+                    button.configure(state="normal")
+                refresh()
+                if browser_state == "succeeded":
+                    status.set(f"Task #{browser_task_id}: one browser scroll completed")
+                    log(f"Task #{browser_task_id}: approved browser scroll succeeded. "
+                        "No page text or URLs were retained in the GUI log.")
+                else:
+                    status.set(f"Task #{browser_task_id}: browser outcome unverified")
+                    log(f"Task #{browser_task_id}: browser action state {browser_state}. "
+                        "Inspect the browser manually before proposing a NEW "
+                        "one-use action. ForgeOS did not automatically retry.")
+                tabs.select(activity)
             except Empty:
                 pass
             try:
@@ -2007,6 +2177,10 @@ def launch(db_path, *, acceptance: bool = False):
                     raise RuntimeError("Unexpected GUI tab configuration")
                 if not tree.winfo_exists():
                     raise RuntimeError("Task queue was not constructed")
+                if not buttons["browser"].winfo_exists():
+                    raise RuntimeError("Manual browser approval entry was not constructed")
+                if buttons["browser"].master is not browser_row:
+                    raise RuntimeError("Browser action must not overcrowd primary task controls")
                 if user_guide_path() is None:
                     raise RuntimeError("Offline user guide missing from executable")
                 from .model_routing import process_memory
