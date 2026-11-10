@@ -103,6 +103,18 @@ The approved action list contains **only** up/down/top/bottom scrolling, perform
 
 **Security:** The active tab might contain private data; only run this after inspecting the selected tab. The connector never sends its output to AI automatically, limits resource size to 48 KiB and displayed content to 2,400 characters, and suppresses whole labels that resemble credentials (including multiword passwords, bearer tokens, JWTs and common personal identifiers). Email addresses are masked. These checks run on at most 1,024 characters per label and **cannot guarantee** removal of every secret. Suppression can also hide some otherwise useful page labels. Browsentic's MCP client can ordinarily access additional capabilities, but ForgeOS currently calls only the read-only `browsentic_status` tool (before and after) and `browsentic://page/diagram` resource; do not set `guardrails.unattended: "allow"`. Browsentic's own security docs say that another program running as your OS user can control an already paired browser. The origin/tab check is not atomic and cannot rule out every concurrent tab switch. The unit suite also exercises stdio against a temporary simulated MCP subprocess on Windows/Linux CI; this does not establish real Browsentic compatibility. Real Browsentic/Windows/EXE browser behavior and token savings have **not yet been verified**. See the [user manual](docs/USER_GUIDE.md#experimental-browsentic-read-only-connection-review-branch) and [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
 
+### Windows Browsentic acceptance harness (experimental)
+
+The **optional, stdlib-only Windows acceptance harness** tests the existing browser connection against a **public, non-sensitive page** in your paired Chrome/Edge tab. It launches the existing ForgeOS Browsentic CLI once, checks only a bounded response, and exits. It does **not** install Browsentic, run unattended browser actions, poll in the background, or make model calls.
+
+```powershell
+py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab
+```
+
+The result is a small JSON object containing PASS/BLOCKED/FAIL, elapsed time, output character count, and sampled Windows working-set memory of the launched ForgeOS CLI and its descendants. **It never prints or stores page text, page URLs, browser titles, or raw MCP errors.** An opt-in `--external-pid 1234` argument (repeat up to twice) can also sample the independently running Browser/Bridge process trees; these values are reported *separately*, never added, to avoid accidental double counting. Use the PID shown in Windows Task Manager's **Details** tab. Do not interpret missing samples as zero memory.
+
+This is **not** verification that a browser is installed or paired: a real Windows test must still be performed by an operator. Tests in GitHub CI use mocked connections and a native Windows process-memory probe, not a real Browsentic installation. See the [user guide](docs/USER_GUIDE.md) for full steps and scope.
+
 ## Quick start
 
 ### Option A — use the packaged Windows prototype

@@ -68,6 +68,16 @@ The caller must explicitly acknowledge the sensitivity of the current tab and sp
 
 There is no general ForgeOS action approval flow yet. The first explicit-action prototype requires both `--scroll-direction` (up/down/top/bottom only) and `--approve-scroll` for **one** `page_scrollTo` MCP tool call. The same MCP connection checks the exact browser/tab identity before and after the action, then reads a bounded page diagram and checks again. A denial, malformed result, timeout, changed tab or missing approval fails closed; **there are no retries**. By default the connector remains read-only. No click, type, submit, navigation or model-triggered execution is exposed. The per-command CLI approval is **not** a replacement for a durable GUI approval/lease mechanism and scrolling may still invoke page scripts or network traffic. The protocol has mocked process tests and cross-platform subprocess-transport smoke tests using a simulated MCP server; real installed Browsentic, real Chrome/Edge, Windows browser memory and EXE browser support remain unverified. The subprocess tests exercise stdio framing and bounded timeouts, not real browser interoperability.
 
+### Windows browser-acceptance harness (optional, source checkout)
+
+`src/forgeos/browser_acceptance.py` is an on-demand, stdlib-only developer command. It **does not** import any browser extension/Node daemon, touch the autonomous task engine, or run in the default GUI. It gates execution on an explicit public HTTPS origin, operator confirmation of a non-sensitive test tab, Windows, and a user-installed Browsentic executable; invalid configuration stops before process launch.
+
+It runs the existing `forgeos.browsentic_readonly` command in one short-lived child process. Only a bounded 4 KiB output is inspected. Test evidence is JSON with coded PASS/BLOCKED/FAIL results, duration, memory sample counts, response character count, and **no page text, URL, title, cookies, credentials or raw errors**. Optional single-scroll testing still requires separate `--approve-scroll`. Timeout stops the process tree with Windows `taskkill /T /F`; it never retries an uncertain browser action.
+
+Native Win32 Toolhelp/PSAPI snapshots sample **current working-set bytes** and descendant process counts at 150 ms intervals **only while the test is running**; no WMI, psutil, polling service, or extra dependency. Rooted snapshots cover only the launched CLI and its descendants. The already-running Browsentic Bridge and browser are usually **not** descendants; optional operator-supplied `--external-pid` roots (maximum two) measure these process trees separately without summing overlapping trees. Failed/unavailable snapshots are marked UNVERIFIED or partial rather than zero. Working set is **not** private commit, peak GPU VRAM, or a system-wide memory census.
+
+GitHub CI exercises the CLI's safe `--help`, fake subprocess/denial/timeout/consent/privacy paths, and a real native Toolhelp memory probe on hosted Windows. Only a **physical Windows machine with installed Browsentic** can verify live pairing, browser rendering/scrolling and actual environment-specific resource consumption. Track in [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
+
 ## Multi-backend inference boundary (feature branch)
 
 `Ollama` in `core.py` remains canonical for existing tasks. The new

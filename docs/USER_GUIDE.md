@@ -647,3 +647,39 @@ This is a developer preview, **not yet automatic agent token optimization**. It 
 If the `browsentic` executable is not available on PATH, or the tab moves to another origin or URL while being read, the command fails closed. The before/after tab check is not atomic and does not guarantee immunity to every concurrent switch. If the extension is disconnected or the response is invalid/too large, it fails closed. This is an explicitly consented read of a real browser tab: best-effort filtering suppresses entire credential-like labels (rather than just the first word of a multiword password), masks emails, and rejects malformed controls and ambiguous URLs. It **cannot promise complete secret removal** and may hide ordinary labels mentioning credentials. Keep Browsentic's default MCP approval safeguards; do **not** set `guardrails.unattended: "allow"`. Other programs running as your OS user may reach a previously paired session.
 
 **Performance and safety status:** no default dependency, no always-running ForgeOS browser process, 48 KiB resource and 2,400-character output limit. Only mocked protocol tests have passed so far; actual Browsentic compatibility, RAM consumption and token savings are **UNVERIFIED**. The connector is a separate option from the experimental throwaway Playwright probe. [Issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65) tracks the permissions, GUI, real-browser and Windows acceptance gates.
+
+
+## Windows Browsentic acceptance testing (review branch)
+
+**This is a developer-only test, not part of the installed ForgeOS GUI.** It does not install Browsentic or access its browser without explicit consent. Use a **disposable public page**, not any personal, business, medical, bank or signed-in private tab. Browsentic's Bridge and extension must already be installed and paired. Windows support must be confirmed on the target machine.
+
+1. Open Windows **Task Manager → Details** only if you want extra RAM information. You may note the PID of the Browsentic Bridge and the main Chrome/Edge process. This is optional; do not guess a PID. The process IDs can change after restarting an application.
+2. In your ForgeOS source checkout of the PR #66 branch, open PowerShell and activate your normal Python environment. Select the public website in your paired browser. Then run:
+
+   ```powershell
+   py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab
+   ```
+
+3. The command returns **one JSON report**. `PASS` means the read-only CLI returned a bounded diagram; `BLOCKED` means prerequisites, consent or the connection were denied; `FAIL` means an execution error or timeout. Exit code is **0** for PASS, **2** otherwise. It does **not** report the page text, URL or title.
+4. To include the separate existing browser/Bridge memory trees, supply explicit PIDs. Substitute the *actual current* PIDs shown by Task Manager:
+
+   ```powershell
+   py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab --external-pid 1234 --external-pid 5678 > browser-acceptance.json
+   $LASTEXITCODE
+   Get-Content browser-acceptance.json
+   ```
+
+   Do not use the sample numbers unless they are your actual observed PIDs. The report's client-process memory and external-process memory **are separate peaks and must not be summed**, because process trees can overlap. `null` means memory was not sampled; it does not mean zero.
+5. **Only after the read-only check works**, optionally verify a single, explicitly approved scroll on a public test site:
+
+   ```powershell
+   py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab --scroll-direction down --approve-scroll --changes-only
+   ```
+
+   A scroll can trigger JavaScript and network requests, even if no form is submitted. This is a deliberate one-shot test, **not** autonomous browsing, and it does not retry a failed action.
+
+**Privacy:** Reports contain status codes, elapsed time and numeric counters only; they omit visited URLs, page content, titles, raw MCP responses and credentials. Avoid capturing raw terminal/browser logs of private pages. The origin check and best-effort redaction are not guarantees of atomic tab control.
+
+**Troubleshooting:** If you see `BROWSENTIC_NOT_INSTALLED`, review and install the upstream Browsentic Bridge from its official project, then ensure `browsentic` is accessible on PATH. `CONNECTOR_REJECTED` means the connector could not complete the read (e.g., a disconnected extension, an unauthorized tab or protocol mismatch). `WINDOWS_REQUIRED` means you ran this Windows-only harness elsewhere. `TIMEOUT` means the bounded test expired; investigate pairing and Bridge rather than retrying an uncertain browser action. The baseline should run without Docker or paid APIs. The results are not production certification or an LLM token benchmark.
+
+See [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65) for the acceptance checklist and [PR #66](https://github.com/DevTunaSoft/ForgeOS/pull/66) for current code.
