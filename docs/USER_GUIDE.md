@@ -636,6 +636,14 @@ py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://exa
 
 Replace the origin with the exact approved site. Supported directions are `up`, `down`, `top`, and `bottom`. This command never clicks, types or submits a form, never retries an uncertain action, and never starts an AI agent. Missing `--approve-scroll` blocks the scroll before any browser process starts. **Scrolling can trigger JavaScript and network requests**, so only use it on a safe public test page. A tab change or failed MCP response stops the command, but before/after checks are not an atomic security boundary. This is not yet integrated into the desktop GUI; real Browsentic/Windows acceptance remains unverified.
 
+**Save repeated AI context:** To see just the *visible changes* between before and after a single approved scroll, add `--changes-only`:
+
+```powershell
+py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://example.com --scroll-direction down --approve-scroll --changes-only
+```
+
+This is a developer preview, **not yet automatic agent token optimization**. It reads at most two bounded page diagrams in the same session, compares sanitized lines without storing long-term browsing history, and prints only newly visible or no-longer-visible lines. This may omit details if the page is very long or a diagram was truncated. The result reflects changes in what was observed, not a guaranteed change to the underlying website data. No cloud service is invoked. To reproduce synthetic allocation and output-character checks, run `python tools/browser_observation_benchmark.py --check` from the repository root with `PYTHONPATH=src` set; real browser/LLM RAM and token reductions are still unverified.
+
 If the `browsentic` executable is not available on PATH, or the tab moves to another origin or URL while being read, the command fails closed. The before/after tab check is not atomic and does not guarantee immunity to every concurrent switch. If the extension is disconnected or the response is invalid/too large, it fails closed. This is an explicitly consented read of a real browser tab: best-effort filtering **cannot promise complete secret removal**. Keep Browsentic's default MCP approval safeguards; do **not** set `guardrails.unattended: "allow"`. Other programs running as your OS user may reach a previously paired session.
 
 **Performance and safety status:** no default dependency, no always-running ForgeOS browser process, 48 KiB resource and 2,400-character output limit. Only mocked protocol tests have passed so far; actual Browsentic compatibility, RAM consumption and token savings are **UNVERIFIED**. The connector is a separate option from the experimental throwaway Playwright probe. [Issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65) tracks the permissions, GUI, real-browser and Windows acceptance gates.

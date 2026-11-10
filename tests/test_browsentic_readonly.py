@@ -3,11 +3,12 @@ import io
 import json
 import subprocess
 import sys
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
 from forgeos.browsentic_readonly import (
-    _read_diagram, compact_diagram, observe_paired_browser, main,
+    _read_diagram, compact_diagram, changed_diagram, observe_paired_browser, main,
 )
 
 
@@ -331,7 +332,7 @@ for line in sys.stdin:
             ]), 0)
         observer.assert_called_once_with(
             permitted_origin="https://example.com",
-            scroll_direction="down", approve_scroll=True,
+            scroll_direction="down", approve_scroll=True, changes_only=False,
         )
         printer.assert_called_once_with("Safe text")
 
@@ -342,6 +343,147 @@ for line in sys.stdin:
                   "--scroll-direction", "down"])
         self.assertEqual(error.exception.code, 2)
         which.assert_not_called()
+
+    def test_streaming_formatter_bounds_allocations_with_thousands_of_lines(self):
+        # Input is allocated before tracing; this measures formatter allocations,
+        # not total process RAM or third-party browser memory.
+        payload = ("\n" * 45000) + "heading Last"
+        tracemalloc.start()
+        try:
+            result = compact_diagram(payload)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertIn("heading Last", result.text)
+        self.assertLess(peak, 160 * 1024)
+
+    def test_changes_only_output_is_smaller_on_repeated_page(self):
+        stable = "".join("heading Section {}\n".format(i) for i in range(20))
+        before = stable + "button Old\n"
+        after = stable + "button New\n"
+        delta = changed_diagram(before, after)
+        self.assertIn("+ button New", delta.text)
+        self.assertIn("- button Old", delta.text)
+        self.assertNotIn("Section 1\n", delta.text)
+        self.assertLess(len(delta.text), len(compact_diagram(after).text) // 2)
+        self.assertEqual(delta.controls, 2)
+
+    def test_no_changes_are_not_retransmitted(self):
+        payload = "heading Unchanged\nlink Another\n"
+        delta = changed_diagram(payload, payload)
+        self.assertEqual(delta.controls, 0)
+        self.assertIn("[No visible changes]", delta.text)
+        self.assertNotIn("Unchanged", delta.text)
+
+    def test_changes_are_redacted_and_bounded(self):
+        before = "heading Safe\n"
+        after = "password=private_password\ncontact dev@example.com\n" + (
+            "button " + "x" * 85 + "\n") * 60
+        delta = changed_diagram(before, after)
+        self.assertNotIn("private_password", delta.text)
+        self.assertNotIn("dev@example.com", delta.text)
+        self.assertLessEqual(len(delta.text), 2400)
+        self.assertTrue(delta.truncated)
+
+    @patch("forgeos.browsentic_readonly.shutil.which")
+    def test_changes_only_requires_explicit_scroll_before_launch(self, which):
+        with self.assertRaises(ValueError):
+            observe_paired_browser(permitted_origin="https://example.com",
+                                   changes_only=True)
+        which.assert_not_called()
+
+    def test_changes_only_mcp_sequence_and_action_count(self):
+        packets = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Stable\nbutton Previous"}]}},
+            status_reply(4),
+            {"jsonrpc": "2.0", "id": 5, "result": {"content": []}},
+            status_reply(6),
+            {"jsonrpc": "2.0", "id": 7, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Stable\nbutton Next"}]}},
+            status_reply(8),
+        ]
+        proc = FakeProcess(packets)
+        before, after = _read_diagram(proc, 2, "https://example.com",
+                                      scroll_direction="down", approve_scroll=True,
+                                      changes_only=True)
+        self.assertEqual(before, "heading Stable\nbutton Previous")
+        self.assertEqual(after, "heading Stable\nbutton Next")
+        methods = [json.loads(row) for row in proc.stdin.getvalue().splitlines()]
+        self.assertEqual([row["method"] for row in methods],
+                         ["initialize", "notifications/initialized", "tools/call",
+                          "resources/read", "tools/call", "tools/call",
+                          "tools/call", "resources/read", "tools/call"])
+        self.assertEqual(sum(row.get("params", {}).get("name") == "page_scrollTo"
+                             for row in methods), 1)
+
+    def test_changes_only_changed_tab_before_scroll_never_acts(self):
+        packets = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Before"}]}},
+            status_reply(4, "https://evil.example/switch"),
+        ]
+        proc = FakeProcess(packets)
+        with self.assertRaises(ValueError):
+            _read_diagram(proc, 2, "https://example.com",
+                          scroll_direction="down", approve_scroll=True,
+                          changes_only=True)
+        methods = [json.loads(row) for row in proc.stdin.getvalue().splitlines()]
+        self.assertEqual(
+            sum(row.get("params", {}).get("name") == "page_scrollTo" for row in methods), 0)
+
+    def test_changes_only_malformed_pre_observation_never_scrolls(self):
+        packets = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {"contents": [{
+                "uri": "browsentic://page/current", "text": "private"}]}},
+        ]
+        proc = FakeProcess(packets)
+        with self.assertRaises(ValueError):
+            _read_diagram(proc, 2, "https://example.com",
+                          scroll_direction="up", approve_scroll=True,
+                          changes_only=True)
+        methods = [json.loads(row) for row in proc.stdin.getvalue().splitlines()]
+        self.assertNotIn("page_scrollTo", [row.get("params", {}).get("name")
+                                            for row in methods])
+
+    @patch("forgeos.browsentic_readonly.subprocess.Popen")
+    @patch("forgeos.browsentic_readonly.shutil.which", return_value="/bin/browsentic")
+    def test_changes_only_transforms_result_and_closes_process(self, _which, popen):
+        packets = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Stable\nbutton Old"}]}},
+            status_reply(4),
+            {"jsonrpc": "2.0", "id": 5, "result": {"content": []}},
+            status_reply(6),
+            {"jsonrpc": "2.0", "id": 7, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Stable\nbutton New"}]}},
+            status_reply(8),
+        ]
+        proc = FakeProcess(packets)
+        popen.return_value = proc
+        result = observe_paired_browser(permitted_origin="https://example.com",
+                                        scroll_direction="down", approve_scroll=True,
+                                        changes_only=True)
+        self.assertIn("+ button New", result.text)
+        self.assertNotIn("heading Stable\n", result.text)
+        self.assertTrue(proc.terminated)
+        self.assertTrue(proc.stdin.closed)
+
+    @patch("forgeos.browsentic_readonly.observe_paired_browser")
+    def test_cli_passes_explicit_changes_only_flag(self, observer):
+        from forgeos.browser_observation import Observation
+        observer.return_value = Observation("Changes", 1, False)
+        with patch("builtins.print"):
+            main(["--allow-origin", "https://example.com",
+                  "--allow-current-tab", "--scroll-direction", "down",
+                  "--approve-scroll", "--changes-only"])
+        observer.assert_called_once_with(
+            permitted_origin="https://example.com",
+            scroll_direction="down", approve_scroll=True, changes_only=True)
 
     def test_reject_invalid_deadlines(self):
         for v in (True, 0, 31, "3"):
