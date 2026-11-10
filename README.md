@@ -77,15 +77,15 @@ The probe reads a bounded list of page controls, omits input values and applies 
 
 ### Browsentic read-only connection (experimental review branch)
 
-ForgeOS now has a **separate, opt-in, dependency-free connector** for the [Browsentic](https://github.com/imshaikot/browsentic) browser extension/Bridge, which can read a compact *page diagram* from a browser tab you are already using. It invokes the user-installed `browsentic mcp` process **only on explicit request** and exits after reading one resource; it does **not** load Playwright, install Node, automate clicks, call an LLM or run in the desktop GUI. Normal ForgeOS installs are unaffected.
+ForgeOS now has a **separate, opt-in, dependency-free connector** for the [Browsentic](https://github.com/imshaikot/browsentic) browser extension/Bridge, which can read a compact *page diagram* from a browser tab you are already using. It invokes the user-installed `browsentic mcp` process **only on explicit request**, verifies the approved tab's HTTPS origin before and after reading one resource, and then exits; it does **not** load Playwright, install Node, automate clicks, call an LLM or run in the desktop GUI. Normal ForgeOS installs are unaffected.
 
 After independently reviewing and installing Browsentic and pairing its extension, the **developer-only** command is:
 
 ```powershell
-py -m forgeos.browsentic_readonly --allow-current-tab
+py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://github.com
 ```
 
-**Security:** The active tab might contain private data; only run this after inspecting the selected tab. The connector never sends its output to AI automatically, limits resource size to 48 KiB and displayed content to 2,400 characters, and uses best-effort redaction (which **cannot guarantee** removal of all secrets). Browsentic's MCP client can ordinarily access additional capabilities, but ForgeOS currently requests **only** `browsentic://page/diagram`; do not set `guardrails.unattended: "allow"`. Browsentic's own security docs say that another program running as your OS user can control an already paired browser. Real Browsentic/Windows/EXE compatibility and token savings have **not yet been verified**. See the [user manual](docs/USER_GUIDE.md#experimental-browsentic-read-only-connection-review-branch) and [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
+**Security:** The active tab might contain private data; only run this after inspecting the selected tab. The connector never sends its output to AI automatically, limits resource size to 48 KiB and displayed content to 2,400 characters, and uses best-effort redaction (which **cannot guarantee** removal of all secrets). Browsentic's MCP client can ordinarily access additional capabilities, but ForgeOS currently calls only the read-only `browsentic_status` tool (before and after) and `browsentic://page/diagram` resource; do not set `guardrails.unattended: "allow"`. Browsentic's own security docs say that another program running as your OS user can control an already paired browser. The origin/tab check is not atomic and cannot rule out every concurrent tab switch. Real Browsentic/Windows/EXE compatibility and token savings have **not yet been verified**. See the [user manual](docs/USER_GUIDE.md#experimental-browsentic-read-only-connection-review-branch) and [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
 
 ## Quick start
 

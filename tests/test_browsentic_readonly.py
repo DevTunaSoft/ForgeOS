@@ -27,52 +27,66 @@ class FakeProcess:
         self.killed = True
 
 
+def status_reply(request_id, url="https://example.com/docs", *, connected=True,
+                 browser="Chrome"):
+    return {"jsonrpc": "2.0", "id": request_id, "result": {"content": [
+        {"type": "text", "text": json.dumps({
+            "connected": connected, "activeTab": {"url": url, "title": "PRIVATE TITLE"},
+            "browser": browser,
+        })}]}}
+
+
 def ok_replies(text="button Save"):
     return [
         {"jsonrpc": "2.0", "id": 1,
          "result": {"protocolVersion": "2025-03-26", "capabilities": {},
                     "serverInfo": {"name": "browsentic", "version": "0.9"}}},
-        {"jsonrpc": "2.0", "id": 2, "result": {"contents": [
-            {"uri": "browsentic://page/diagram", "mimeType": "text/plain", "text": text}]}}
+        status_reply(2),
+        {"jsonrpc": "2.0", "id": 3, "result": {"contents": [
+            {"uri": "browsentic://page/diagram", "mimeType": "text/plain", "text": text}]}},
+        status_reply(4),
     ]
 
 
 class BrowsenticReadOnlyTests(unittest.TestCase):
     def test_mcp_issues_only_readonly_messages(self):
         process = FakeProcess(ok_replies())
-        self.assertEqual(_read_diagram(process, 2), "button Save")
+        self.assertEqual(_read_diagram(process, 2, "https://example.com"), "button Save")
         sent = [json.loads(x) for x in process.stdin.getvalue().splitlines()]
         self.assertEqual([x["method"] for x in sent],
-                         ["initialize", "notifications/initialized", "resources/read"])
-        self.assertEqual(sent[2]["params"], {"uri": "browsentic://page/diagram"})
+                         ["initialize", "notifications/initialized", "tools/call",
+                          "resources/read", "tools/call"])
+        self.assertEqual(sent[3]["params"], {"uri": "browsentic://page/diagram"})
+        self.assertEqual(sent[2]["params"], {"name": "browsentic_status", "arguments": {}})
+        self.assertEqual(sent[4]["params"], {"name": "browsentic_status", "arguments": {}})
 
     def test_malformed_handshake_fails_closed(self):
         process = FakeProcess([{"jsonrpc": "2.0", "id": 1, "result": {}}])
         with self.assertRaises(ValueError):
-            _read_diagram(process, 2)
+            _read_diagram(process, 2, "https://example.com")
 
     def test_unexpected_resource_is_rejected(self):
         packets = ok_replies()
-        packets[1]["result"]["contents"][0]["uri"] = "browsentic://page/current"
+        packets[2]["result"]["contents"][0]["uri"] = "browsentic://page/current"
         with self.assertRaises(ValueError):
-            _read_diagram(FakeProcess(packets), 2)
+            _read_diagram(FakeProcess(packets), 2, "https://example.com")
 
     def test_error_packets_never_expose_server_contents(self):
         packets = ok_replies()
-        packets[1] = {"jsonrpc": "2.0", "id": 2,
+        packets[2] = {"jsonrpc": "2.0", "id": 3,
                       "error": {"code": -32603, "message": "private URL and token"}}
         with self.assertRaisesRegex(ValueError, "MCP request failed") as cm:
-            _read_diagram(FakeProcess(packets), 2)
+            _read_diagram(FakeProcess(packets), 2, "https://example.com")
         self.assertNotIn("private URL", str(cm.exception))
 
     def test_excessive_json_line_fails_closed(self):
         process = FakeProcess(ok_replies("A" * 70_000))
         with self.assertRaises(ValueError):
-            _read_diagram(process, 2)
+            _read_diagram(process, 2, "https://example.com")
 
     def test_offline_process_fails_closed(self):
         with self.assertRaises(ValueError):
-            _read_diagram(FakeProcess([]), 2)
+            _read_diagram(FakeProcess([]), 2, "https://example.com")
 
     def test_bounded_text_and_best_effort_redaction(self):
         result = compact_diagram("password=secret123\ncontact jane@example.com\n" + "heading\n" * 80)
@@ -92,7 +106,7 @@ class BrowsenticReadOnlyTests(unittest.TestCase):
     def test_lazy_launch_and_cleanup(self, _which, popen):
         process = FakeProcess(ok_replies("button Next"))
         popen.return_value = process
-        result = observe_paired_browser()
+        result = observe_paired_browser(permitted_origin="https://example.com")
         self.assertIn("Next", result.text)
         self.assertTrue(process.terminated)
         self.assertFalse(process.killed)
@@ -105,7 +119,7 @@ class BrowsenticReadOnlyTests(unittest.TestCase):
     @patch("forgeos.browsentic_readonly.shutil.which", return_value=None)
     def test_missing_install_never_launches(self, _which, popen):
         with self.assertRaises(RuntimeError):
-            observe_paired_browser()
+            observe_paired_browser(permitted_origin="https://example.com")
         popen.assert_not_called()
 
     @patch("forgeos.browsentic_readonly.observe_paired_browser")
@@ -115,10 +129,71 @@ class BrowsenticReadOnlyTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 2)
         observer.assert_not_called()
 
+
+    def test_mismatched_origin_is_blocked_before_reading_diagram(self):
+        packets = ok_replies("PRIVATE CONTENT")
+        packets[1] = status_reply(2, "https://other.example/private")
+        process = FakeProcess(packets)
+        with self.assertRaisesRegex(ValueError, "outside the approved origin"):
+            _read_diagram(process, 2, "https://example.com")
+        sent = [json.loads(line)["method"] for line in process.stdin.getvalue().splitlines()]
+        self.assertNotIn("resources/read", sent)
+
+    def test_tab_switch_during_observation_fails_closed(self):
+        packets = ok_replies("PRIVATE CONTENT")
+        packets[3] = status_reply(4, "https://example.com/different")
+        with self.assertRaisesRegex(ValueError, "tab changed"):
+            _read_diagram(FakeProcess(packets), 2, "https://example.com")
+
+    def test_browser_switch_during_observation_fails_closed(self):
+        packets = ok_replies()
+        packets[3] = status_reply(4, browser="Edge")
+        with self.assertRaisesRegex(ValueError, "tab changed"):
+            _read_diagram(FakeProcess(packets), 2, "https://example.com")
+
+    def test_disconnected_status_fails_closed(self):
+        packets = ok_replies()
+        packets[1] = status_reply(2, connected=False)
+        with self.assertRaisesRegex(ValueError, "not connected"):
+            _read_diagram(FakeProcess(packets), 2, "https://example.com")
+
+    def test_malformed_status_fails_closed(self):
+        packets = ok_replies()
+        packets[1] = {"jsonrpc": "2.0", "id": 2, "result": {
+            "content": [{"type": "text", "text": "SECRET USER URL"}]}}
+        with self.assertRaisesRegex(ValueError, "Invalid browser status") as cm:
+            _read_diagram(FakeProcess(packets), 2, "https://example.com")
+        self.assertNotIn("SECRET", str(cm.exception))
+
+    def test_rejects_noncanonical_origin_without_opening_process(self):
+        with patch("forgeos.browsentic_readonly.shutil.which") as which:
+            for origin in ("http://example.com", "https://example.com/path",
+                           "https://localhost", "https://example.com?secret=x",
+                           "https://user:pw@example.com"):
+                with self.subTest(origin=origin), self.assertRaises(ValueError):
+                    observe_paired_browser(permitted_origin=origin)
+            which.assert_not_called()
+
+    def test_status_url_is_not_in_printed_diagram(self):
+        packets = ok_replies("Safe heading")
+        url = "https://example.com/account?token=PRIVATE_SECRET"
+        packets[1] = status_reply(2, url)
+        packets[3] = status_reply(4, url)
+        result = _read_diagram(FakeProcess(packets), 2, "https://example.com")
+        self.assertEqual(result, "Safe heading")
+        self.assertNotIn("PRIVATE_SECRET", result)
+
+    @patch("forgeos.browsentic_readonly.observe_paired_browser")
+    def test_cli_requires_both_tab_consent_and_origin(self, observer):
+        with self.assertRaises(SystemExit) as error:
+            main(["--allow-origin", "https://example.com"])
+        self.assertEqual(error.exception.code, 2)
+        observer.assert_not_called()
+
     def test_reject_invalid_deadlines(self):
         for v in (True, 0, 31, "3"):
             with self.subTest(v=v), self.assertRaises(ValueError):
-                observe_paired_browser(timeout_seconds=v)
+                observe_paired_browser(permitted_origin="https://example.com", timeout_seconds=v)
 
 
 if __name__ == "__main__":
