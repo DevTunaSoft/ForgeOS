@@ -1,8 +1,8 @@
-"""Opt-in, short-lived *read-only* Browsentic MCP page-diagram connection.
+"""Short-lived Browsentic MCP diagram reader with an optional approved scroll.
 
-Does not import an MCP framework, attach an agent, or install Browsentic. This
-process only calls the fixed ``resources/read`` endpoint on a user-installed
-``browsentic mcp`` executable, then exits. Browser content is untrusted.
+Default behavior remains read-only. A single explicit scroll cannot submit a
+form through this interface, but may still trigger webpage events/network.
+No automatic retries, agent tool routing, or persistent browser workers.
 """
 from __future__ import annotations
 
@@ -145,8 +145,24 @@ def _status(process: Any, output: queue.Queue[bytes | None],
     return _checked_tab(_receive(output, request_id, deadline), origin)
 
 
-def _read_diagram(process: Any, timeout_seconds: float, permitted_origin: str) -> str:
-    # Site scope is mandatory, canonical and never inferred from page content.
+_SCROLL_DIRECTIONS = frozenset(("up", "down", "top", "bottom"))
+
+
+def _check_scroll(scroll_direction: str | None, approve_scroll: bool) -> None:
+    """Validate opt-in before any browser process or MCP request is started."""
+    if scroll_direction is None:
+        if approve_scroll:
+            raise ValueError("Scroll approval requires a direction")
+        return
+    if not isinstance(scroll_direction, str) or scroll_direction not in _SCROLL_DIRECTIONS or approve_scroll is not True:
+        raise ValueError("A supported direction and explicit scroll approval are required")
+
+
+def _read_diagram(process: Any, timeout_seconds: float, permitted_origin: str, *,
+                  scroll_direction: str | None = None,
+                  approve_scroll: bool = False) -> str:
+    # Site scope and action consent are mandatory, never inferred from page data.
+    _check_scroll(scroll_direction, approve_scroll)
     if not isinstance(permitted_origin, str) or allowed_origin(permitted_origin) != permitted_origin:
         raise ValueError("Specify one exact approved HTTPS origin")
     output: queue.Queue[bytes | None] = queue.Queue(maxsize=8)
@@ -161,9 +177,26 @@ def _read_diagram(process: Any, timeout_seconds: float, permitted_origin: str) -
         raise ValueError("MCP handshake incomplete")
     _send(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
     first_tab = _status(process, output, 2, deadline, permitted_origin)
-    _send(process, {"jsonrpc": "2.0", "id": 3, "method": "resources/read",
+    next_id = 3
+    if scroll_direction is not None:
+        # The caller can request exactly one deterministic scroll, never an
+        # arbitrary Browsentic tool or unapproved form submission.
+        _send(process, {"jsonrpc": "2.0", "id": next_id, "method": "tools/call",
+                        "params": {"name": "page_scrollTo",
+                                   "arguments": {"direction": scroll_direction,
+                                                 "behavior": "instant"}}})
+        action = _receive(output, next_id, deadline)
+        if action.get("isError") is not False and action.get("isError") is not None:
+            raise ValueError("Browser scroll was refused")
+        if not isinstance(action.get("content"), list):
+            raise ValueError("Invalid browser scroll result")
+        next_id += 1
+        if _status(process, output, next_id, deadline, permitted_origin) != first_tab:
+            raise ValueError("Browser tab changed during approved scroll")
+        next_id += 1
+    _send(process, {"jsonrpc": "2.0", "id": next_id, "method": "resources/read",
                     "params": {"uri": _RESOURCE}})
-    result = _receive(output, 3, deadline)
+    result = _receive(output, next_id, deadline)
     contents = result.get("contents")
     if not isinstance(contents, list) or len(contents) != 1:
         raise ValueError("Unexpected MCP resource response")
@@ -175,17 +208,20 @@ def _read_diagram(process: Any, timeout_seconds: float, permitted_origin: str) -
         raise ValueError("Browser diagram exceeds the read-only budget")
     # Fail closed if a tab/browser switch or navigation happened during the read.
     # This is a best-effort check, NOT an atomic pinned-tab security guarantee.
-    if _status(process, output, 4, deadline, permitted_origin) != first_tab:
+    if _status(process, output, next_id + 1, deadline, permitted_origin) != first_tab:
         raise ValueError("Browser tab changed during observation")
     return value
 
 
-def observe_paired_browser(*, permitted_origin: str, timeout_seconds: float = 8.0) -> Observation:
-    """Explicitly read the selected Browsentic tab; never issue action calls.
+def observe_paired_browser(*, permitted_origin: str, timeout_seconds: float = 8.0,
+                           scroll_direction: str | None = None,
+                           approve_scroll: bool = False) -> Observation:
+    """Read the selected tab; optionally perform one explicitly approved scroll.
 
     Requires Browsentic Bridge and extension already installed and paired.
     This module does not provision or keep either running by itself.
     """
+    _check_scroll(scroll_direction, approve_scroll)
     if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or not 1 <= timeout_seconds <= 30:
         raise ValueError("Invalid MCP deadline")
     if not isinstance(permitted_origin, str) or allowed_origin(permitted_origin) != permitted_origin:
@@ -198,7 +234,10 @@ def observe_paired_browser(*, permitted_origin: str, timeout_seconds: float = 8.
         process = subprocess.Popen([executable, "mcp"], stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                    shell=False, bufsize=0)
-        return compact_diagram(_read_diagram(process, float(timeout_seconds), permitted_origin))
+        return compact_diagram(_read_diagram(
+            process, float(timeout_seconds), permitted_origin,
+            scroll_direction=scroll_direction, approve_scroll=approve_scroll,
+        ))
     except (OSError, ValueError, TimeoutError, BrokenPipeError):
         # Do not include raw MCP errors: they might expose the active URL.
         raise RuntimeError("Read-only Browsentic observation failed; check browser pairing and the current tab") from None
@@ -222,11 +261,19 @@ def main(argv: list[str] | None = None) -> int:
                         help="Explicitly allow reading the selected browser tab, including a signed-in tab")
     parser.add_argument("--allow-origin", required=True,
                         help="Exact HTTPS origin of the tab you authorize, e.g. https://github.com")
+    parser.add_argument("--scroll-direction", choices=sorted(_SCROLL_DIRECTIONS),
+                        help="Optional one-time scroll of the current tab")
+    parser.add_argument("--approve-scroll", action="store_true",
+                        help="Explicitly approve this single scroll; never stored")
     args = parser.parse_args(argv)
     if not args.allow_current_tab:
         parser.error("Specify --allow-current-tab only when it is safe to read the active tab")
     try:
-        print(observe_paired_browser(permitted_origin=args.allow_origin).text)
+        print(observe_paired_browser(
+            permitted_origin=args.allow_origin,
+            scroll_direction=args.scroll_direction,
+            approve_scroll=args.approve_scroll,
+        ).text)
     except (ValueError, RuntimeError) as exc:
         # Never echo the supplied URL or server data in error output.
         parser.exit(2, "Browser observation blocked: check origin, pairing and current tab\n")

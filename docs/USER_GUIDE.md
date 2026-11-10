@@ -626,7 +626,15 @@ When a saved project is selected, ForgeOS performs a nonblocking, local-only sta
    ```powershell
    py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://github.com
    ```
-4. The command opens a temporary MCP client, confirms that the selected tab is on the approved HTTPS origin, requests only the compact page diagram, checks the tab and browser again before printing a bounded/redacted summary, and closes its client process. Replace `https://github.com` with the exact site origin you approved. There are **no** clicks, typing, forms, agent reasoning or remote LLM calls.
+4. The command opens a temporary MCP client, confirms that the selected tab is on the approved HTTPS origin, requests only the compact page diagram, checks the tab and browser again before printing a bounded/redacted summary, and closes its client process. Replace `https://github.com` with the exact site origin you approved. There are **no** clicks, typing, forms, agent reasoning or remote LLM calls. The default command stays read-only.
+
+**Developer-only one-time scrolling:** For a safe, intentionally selected page, explicitly approve one deterministic scroll, still bound to that site's origin:
+
+```powershell
+py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://example.com --scroll-direction down --approve-scroll
+```
+
+Replace the origin with the exact approved site. Supported directions are `up`, `down`, `top`, and `bottom`. This command never clicks, types or submits a form, never retries an uncertain action, and never starts an AI agent. Missing `--approve-scroll` blocks the scroll before any browser process starts. **Scrolling can trigger JavaScript and network requests**, so only use it on a safe public test page. A tab change or failed MCP response stops the command, but before/after checks are not an atomic security boundary. This is not yet integrated into the desktop GUI; real Browsentic/Windows acceptance remains unverified.
 
 If the `browsentic` executable is not available on PATH, or the tab moves to another origin or URL while being read, the command fails closed. The before/after tab check is not atomic and does not guarantee immunity to every concurrent switch. If the extension is disconnected or the response is invalid/too large, it fails closed. This is an explicitly consented read of a real browser tab: best-effort filtering **cannot promise complete secret removal**. Keep Browsentic's default MCP approval safeguards; do **not** set `guardrails.unattended: "allow"`. Other programs running as your OS user may reach a previously paired session.
 

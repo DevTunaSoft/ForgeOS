@@ -77,13 +77,21 @@ The probe reads a bounded list of page controls, omits input values and applies 
 
 ### Browsentic read-only connection (experimental review branch)
 
-ForgeOS now has a **separate, opt-in, dependency-free connector** for the [Browsentic](https://github.com/imshaikot/browsentic) browser extension/Bridge, which can read a compact *page diagram* from a browser tab you are already using. It invokes the user-installed `browsentic mcp` process **only on explicit request**, verifies the approved tab's HTTPS origin before and after reading one resource, and then exits; it does **not** load Playwright, install Node, automate clicks, call an LLM or run in the desktop GUI. Normal ForgeOS installs are unaffected.
+ForgeOS now has a **separate, opt-in, dependency-free connector** for the [Browsentic](https://github.com/imshaikot/browsentic) browser extension/Bridge, which can read a compact *page diagram* from a browser tab you are already using. It invokes the user-installed `browsentic mcp` process **only on explicit request**, verifies the approved tab's HTTPS origin before and after reading one resource, and then exits; it does **not** load Playwright, install Node, automate clicks, type text, submit forms, call an LLM or run in the desktop GUI. A separately approved **single scroll** is the first narrowly restricted action prototype. Normal ForgeOS installs are unaffected.
 
 After independently reviewing and installing Browsentic and pairing its extension, the **developer-only** command is:
 
 ```powershell
 py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://github.com
 ```
+
+To perform **one scroll down** on a safe public tab, use a separate command that explicitly authorizes that action:
+
+```powershell
+py -m forgeos.browsentic_readonly --allow-current-tab --allow-origin https://example.com --scroll-direction down --approve-scroll
+```
+
+The approved action list contains **only** up/down/top/bottom scrolling, performed once. It never enables clicking, typing, navigation, form submission, or unattended AI actions. Scrolling can still trigger page scripts or network requests. This one-shot prototype is NOT an autonomous browser agent or a substitute for approval-gated GUI actions.
 
 **Security:** The active tab might contain private data; only run this after inspecting the selected tab. The connector never sends its output to AI automatically, limits resource size to 48 KiB and displayed content to 2,400 characters, and uses best-effort redaction (which **cannot guarantee** removal of all secrets). Browsentic's MCP client can ordinarily access additional capabilities, but ForgeOS currently calls only the read-only `browsentic_status` tool (before and after) and `browsentic://page/diagram` resource; do not set `guardrails.unattended: "allow"`. Browsentic's own security docs say that another program running as your OS user can control an already paired browser. The origin/tab check is not atomic and cannot rule out every concurrent tab switch. The unit suite also exercises stdio against a temporary simulated MCP subprocess on Windows/Linux CI; this does not establish real Browsentic compatibility. Real Browsentic/Windows/EXE browser behavior and token savings have **not yet been verified**. See the [user manual](docs/USER_GUIDE.md#experimental-browsentic-read-only-connection-review-branch) and [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
 

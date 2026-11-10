@@ -238,6 +238,111 @@ for line in sys.stdin:
         self.assertEqual(error.exception.code, 2)
         observer.assert_not_called()
 
+    def test_scroll_requires_explicit_approval_before_any_process(self):
+        from forgeos.browsentic_readonly import _check_scroll
+        for direction, approval in (("down", False), ("right", True),
+                                    ("Down", True), ([], True), ("up", 1),
+                                    (None, True), ("", True)):
+            with self.subTest(direction=direction, approval=approval):
+                with self.assertRaises(ValueError):
+                    _check_scroll(direction, approval)
+        with patch("forgeos.browsentic_readonly.shutil.which") as which:
+            with self.assertRaises(ValueError):
+                observe_paired_browser(permitted_origin="https://example.com",
+                                       scroll_direction="down", approve_scroll=False)
+            which.assert_not_called()
+
+    def test_approved_scroll_is_exactly_one_safe_tool_call(self):
+        from forgeos.browsentic_readonly import _read_diagram
+        replies = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {
+                "content": [{"type": "text", "text": "{}"}]}},
+            status_reply(4),
+            {"jsonrpc": "2.0", "id": 5, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Updated"}]}},
+            status_reply(6),
+        ]
+        proc = FakeProcess(replies)
+        output = _read_diagram(proc, 2, "https://example.com",
+                               scroll_direction="down", approve_scroll=True)
+        self.assertEqual(output, "heading Updated")
+        sent = [json.loads(line) for line in proc.stdin.getvalue().splitlines()]
+        self.assertEqual([packet["method"] for packet in sent], [
+            "initialize", "notifications/initialized", "tools/call",
+            "tools/call", "tools/call", "resources/read", "tools/call",
+        ])
+        self.assertEqual(sent[3]["params"], {
+            "name": "page_scrollTo",
+            "arguments": {"direction": "down", "behavior": "instant"},
+        })
+        self.assertEqual(
+            sum(packet.get("params", {}).get("name") == "page_scrollTo" for packet in sent),
+            1,
+        )
+
+    def test_scroll_result_error_does_not_read_or_retry(self):
+        replies = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {
+                "isError": True, "content": [{"type": "text", "text": "SECRET"}]}},
+        ]
+        proc = FakeProcess(replies)
+        with self.assertRaisesRegex(ValueError, "scroll was refused") as error:
+            _read_diagram(proc, 2, "https://example.com",
+                          scroll_direction="up", approve_scroll=True)
+        self.assertNotIn("SECRET", str(error.exception))
+        sent = [json.loads(x) for x in proc.stdin.getvalue().splitlines()]
+        self.assertEqual(
+            sum(p.get("params", {}).get("name") == "page_scrollTo" for p in sent), 1)
+        self.assertNotIn("resources/read", [p["method"] for p in sent])
+
+    def test_scroll_switch_after_action_never_reads_diagram(self):
+        replies = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {"content": []}},
+            status_reply(4, "https://malicious.example/switch"),
+        ]
+        proc = FakeProcess(replies)
+        with self.assertRaises(ValueError):
+            _read_diagram(proc, 2, "https://example.com",
+                          scroll_direction="bottom", approve_scroll=True)
+        sent = [json.loads(x)["method"] for x in proc.stdin.getvalue().splitlines()]
+        self.assertNotIn("resources/read", sent)
+
+    def test_malformed_scroll_result_fails_closed(self):
+        replies = [
+            ok_replies()[0], status_reply(2),
+            {"jsonrpc": "2.0", "id": 3, "result": {"content": "UNTRUSTED"}},
+        ]
+        proc = FakeProcess(replies)
+        with self.assertRaisesRegex(ValueError, "Invalid browser scroll result"):
+            _read_diagram(proc, 2, "https://example.com",
+                          scroll_direction="top", approve_scroll=True)
+
+    @patch("forgeos.browsentic_readonly.observe_paired_browser")
+    def test_cli_passes_single_approved_scroll(self, observer):
+        from forgeos.browser_observation import Observation
+        observer.return_value = Observation("Safe text", 1, False)
+        with patch("builtins.print") as printer:
+            self.assertEqual(main([
+                "--allow-origin", "https://example.com", "--allow-current-tab",
+                "--scroll-direction", "down", "--approve-scroll",
+            ]), 0)
+        observer.assert_called_once_with(
+            permitted_origin="https://example.com",
+            scroll_direction="down", approve_scroll=True,
+        )
+        printer.assert_called_once_with("Safe text")
+
+    @patch("forgeos.browsentic_readonly.shutil.which")
+    def test_cli_rejects_scroll_without_approval(self, which):
+        with self.assertRaises(SystemExit) as error:
+            main(["--allow-current-tab", "--allow-origin", "https://example.com",
+                  "--scroll-direction", "down"])
+        self.assertEqual(error.exception.code, 2)
+        which.assert_not_called()
+
     def test_reject_invalid_deadlines(self):
         for v in (True, 0, 31, "3"):
             with self.subTest(v=v), self.assertRaises(ValueError):
