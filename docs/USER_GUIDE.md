@@ -614,3 +614,20 @@ When a saved project is selected, ForgeOS performs a nonblocking, local-only sta
 **Troubleshooting:** If the optional package or Chromium is missing, install it with the commands above. If the site requires third-party domains, JavaScript authentication, or redirects, the probe may fail deliberately. Do **not** disable restrictions to access private pages. Playwright's request interception cannot guarantee that redirect destinations are never fetched, and the observed page content must never be treated as trusted instructions.
 
 **Memory and tokens:** The normal ForgeOS process does not import Playwright. Browser memory is incurred only when you explicitly run this development command; the browser process must exit after observation. Character limits reduce input size but **actual LLM token savings and Windows RAM usage are unmeasured**. See [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
+
+
+## Experimental Browsentic read-only connection (review branch)
+
+**Developer preview, not yet part of the ForgeOS GUI or packaged EXE.** Browsentic is an independently maintained [open-source browser extension and local Bridge](https://github.com/imshaikot/browsentic) that can work with an already signed-in browser. Its Windows support is marked experimental. This connector does not install Browsentic or require it for other ForgeOS tasks.
+
+1. Review Browsentic's [security model](https://github.com/imshaikot/browsentic/blob/main/SECURITY.md) and install it yourself from its official documentation if you choose. Pair the extension with its local Bridge.
+2. Select a tab whose visible content is safe to display in a terminal. Do not test using banking, password managers, medical data, confidential company systems or other sensitive pages.
+3. In a ForgeOS source checkout of the browser prototype branch, open PowerShell and run:
+   ```powershell
+   py -m forgeos.browsentic_readonly --allow-current-tab
+   ```
+4. The command opens a temporary MCP client, requests only the compact page diagram, prints a bounded/redacted summary and closes its client process. There are **no** clicks, typing, forms, agent reasoning or remote LLM calls.
+
+If the `browsentic` executable is not available on PATH, the command stops with a clear message. If the extension is disconnected or the response is invalid/too large, it fails closed. This is an explicitly consented read of a real browser tab: best-effort filtering **cannot promise complete secret removal**. Keep Browsentic's default MCP approval safeguards; do **not** set `guardrails.unattended: "allow"`. Other programs running as your OS user may reach a previously paired session.
+
+**Performance and safety status:** no default dependency, no always-running ForgeOS browser process, 48 KiB resource and 2,400-character output limit. Only mocked protocol tests have passed so far; actual Browsentic compatibility, RAM consumption and token savings are **UNVERIFIED**. The connector is a separate option from the experimental throwaway Playwright probe. [Issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65) tracks the permissions, GUI, real-browser and Windows acceptance gates.

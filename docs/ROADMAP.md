@@ -69,6 +69,12 @@ The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issu
 
 **Next sequence:** inspect source/PR overlap and licenses → write fake-adapter security/regression tests → implement minimal optional read-only browser observation → add guarded actions and evidence → test frozen Windows packaging and physical Windows behavior. Keep the [user guide](USER_GUIDE.md), [architecture](ARCHITECTURE.md), [handoff](HANDOFF.md) and README aligned when code actually lands.
 
+### Browsentic integration candidate (review branch, 2026-11-10)
+
+[Browsentic](https://github.com/imshaikot/browsentic) (Apache-2.0) is a promising **optional real-browser connector**, not a replacement for the existing ForgeOS engine. Its extension and local Bridge can read active authenticated tabs; its optional MCP endpoint exposes a low-cost `browsentic://page/diagram` resource. Recorded/replayed browser workflows could reduce repeated LLM calls, but token savings and RAM use have **not been measured**. Its Windows application is experimental and the user's browser must stay open.
+
+**Initial code on PR #66:** an opt-in, read-only MCP page-diagram client with bounded, best-effort-redacted output, no default dependencies, no background worker, no agent actions. The same-user browser session is sensitive; never waive Browsentic MCP unattended guardrails or silently pass page content to a model. Do not import Browsentic's full UI, Node daemon, scheduler, model router or agent CLI into ForgeOS. First verify the MCP handshake/resource against a real installation, guardrail behavior, permitted browser scope and Windows peak memory; only then add deterministic replay with approvals and metrics. Keep recovery and model routing in their existing ForgeOS modules. **Status: experimental, unmerged; physical Windows verification NOT RUN.**
+
 ## Near-term engineering priorities
 
 1. **Secure broader test execution without Docker.** With hosted pytest + unittest AppContainer smoke now passing, extend the same fail-closed guarantees to other selected frameworks and real user Windows machines.

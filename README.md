@@ -75,6 +75,18 @@ py -m forgeos.browser_probe https://example.com/ --allow-origin https://example.
 
 The probe reads a bounded list of page controls, omits input values and applies best-effort label redaction. It restricts requested origins, but Playwright routing does **not** reliably block every cross-origin redirect; this is **not** a browser network sandbox. No browser action agent, human takeover, LLM integration, GUI controls, measured token savings, packaged-EXE browser support or real-Windows acceptance is claimed. See [the browser section in the user guide](docs/USER_GUIDE.md#experimental-read-only-browser-observation-review-branch), the [architecture](docs/ARCHITECTURE.md), and [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65). The normal ForgeOS install remains browser-free.
 
+### Browsentic read-only connection (experimental review branch)
+
+ForgeOS now has a **separate, opt-in, dependency-free connector** for the [Browsentic](https://github.com/imshaikot/browsentic) browser extension/Bridge, which can read a compact *page diagram* from a browser tab you are already using. It invokes the user-installed `browsentic mcp` process **only on explicit request** and exits after reading one resource; it does **not** load Playwright, install Node, automate clicks, call an LLM or run in the desktop GUI. Normal ForgeOS installs are unaffected.
+
+After independently reviewing and installing Browsentic and pairing its extension, the **developer-only** command is:
+
+```powershell
+py -m forgeos.browsentic_readonly --allow-current-tab
+```
+
+**Security:** The active tab might contain private data; only run this after inspecting the selected tab. The connector never sends its output to AI automatically, limits resource size to 48 KiB and displayed content to 2,400 characters, and uses best-effort redaction (which **cannot guarantee** removal of all secrets). Browsentic's MCP client can ordinarily access additional capabilities, but ForgeOS currently requests **only** `browsentic://page/diagram`; do not set `guardrails.unattended: "allow"`. Browsentic's own security docs say that another program running as your OS user can control an already paired browser. Real Browsentic/Windows/EXE compatibility and token savings have **not yet been verified**. See the [user manual](docs/USER_GUIDE.md#experimental-browsentic-read-only-connection-review-branch) and [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
+
 ## Quick start
 
 ### Option A — use the packaged Windows prototype

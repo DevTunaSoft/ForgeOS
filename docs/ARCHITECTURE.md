@@ -60,6 +60,12 @@ The probe creates a fresh, non-persistent browser context, blocks service worker
 
 Future browser actions must reuse the existing task leases/checkpoints, evidence capture, transaction approvals and GUI instead of adding a second orchestration system. Hosted unit tests with fake browser interfaces are not evidence of real Chromium or physical Windows acceptance. Track further security and implementation gates in [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
 
+### Browsentic MCP read-only connector (experimental branch)
+
+`src/forgeos/browsentic_readonly.py` is a separate optional *client* of a user-installed Browsentic Bridge, not an embedded browser engine. The only JSON-RPC operation after MCP initialization is `resources/read` on `browsentic://page/diagram`. The connector has a fixed executable/argument pair (`browsentic mcp`), never requests action tools, uses a bounded 64 KiB RPC line and 48 KiB response budget, limits the summary to 32 lines/2,400 characters, and terminates its child on exit. It imports neither Node nor any MCP framework into the normal ForgeOS process. No browser or network access occurs on ordinary startup; any external Browsentic Bridge already running is a separate user-managed process.
+
+The caller must explicitly acknowledge the sensitivity of the current tab. Browser text is untrusted and the existing redactor is best effort; content is not automatically handed to an LLM or saved in diagnostics. The connection relies on Browsentic's security boundary, which allows **other processes running as the same logged-in user** to access a paired browser. MCP external clients have no human approval channel; **never** waive unattended guardrails. This integration has no ForgeOS action approval flow yet, so it is strictly read-only. The protocol has only fake-process unit-test evidence; real installed Browsentic, real Chrome/Edge, Windows memory and EXE packaging are unverified.
+
 ## Multi-backend inference boundary (feature branch)
 
 `Ollama` in `core.py` remains canonical for existing tasks. The new
