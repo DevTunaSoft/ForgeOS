@@ -55,7 +55,7 @@ The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issu
 
 ## Open-source integration and token-efficient browser agent (tracked 2026-11-10)
 
-**Status: research/design only; not implemented or Windows-verified.** Track the optional browser agent in [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65). This work must not displace the existing P0/P1 runtime, recovery, security and real-Windows acceptance gates. All external source-code reuse requires license, provenance and security review first.
+**Status: initial source-only, read-only browser observation prototype on the review branch; not merged, GUI-integrated or Windows-verified.** A small optional Playwright probe now has bounded DOM summaries and local fake-browser tests. Autonomous actions, visual fallback, credentials, GUI integration, packaged browser support and measured token/RAM savings remain planned. Track the optional browser agent in [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65). This work must not displace the existing P0/P1 runtime, recovery, security and real-Windows acceptance gates. All external source-code reuse requires license, provenance and security review first.
 
 | Candidate repositories | Potential ForgeOS improvement | Existing owner / duplication rule | Priority / gate |
 | --- | --- | --- | --- |

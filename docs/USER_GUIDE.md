@@ -593,3 +593,24 @@ ForgeOS checks for `git` on PATH first. If Git is not on PATH, the Windows works
 ### Startup readiness (experimental)
 
 When a saved project is selected, ForgeOS performs a nonblocking, local-only startup check and displays **Ready** or **Setup needs attention** in the window status. Click **Check readiness** next to the inference backend to see specific results and corrective instructions. Checks cover executable Git discovery (including GitHub Desktop), project Git metadata, an existing workspace folder outside the project tree, and the local Ollama model catalog when Ollama is selected. The Ollama probe uses the loopback-only `/api/tags` endpoint with a three-second timeout and a one-MiB response cap. Other local backends currently report that connectivity remains unverified until task start. The check does not execute generated code, install dependencies, or bypass host-execution permissions. A green readiness status does **not** guarantee that generated code or tests will succeed.
+
+
+## Experimental read-only browser observation (review branch)
+
+**Who should use this:** Developers testing a public website, **not** normal users or anyone working with accounts, passwords, private pages, or financial/personal information. This is **not integrated into the ForgeOS desktop GUI or packaged EXE yet**. No website automation or form submission occurs.
+
+1. From a source checkout of the browser-agent review branch, open PowerShell in the ForgeOS directory.
+2. Install the **optional** browser tooling explicitly, then install the matching Chromium build:
+   ```powershell
+   py -m pip install -e ".[browser]"
+   py -m playwright install chromium
+   ```
+3. Run the temporary read-only probe against a public site:
+   ```powershell
+   py -m forgeos.browser_probe https://example.com/ --allow-origin https://example.com
+   ```
+4. Examine the short control list. It contains page labels, not form values; results are capped. Browser and context are closed after the observation. No local AI or web AI receives this data automatically.
+
+**Troubleshooting:** If the optional package or Chromium is missing, install it with the commands above. If the site requires third-party domains, JavaScript authentication, or redirects, the probe may fail deliberately. Do **not** disable restrictions to access private pages. Playwright's request interception cannot guarantee that redirect destinations are never fetched, and the observed page content must never be treated as trusted instructions.
+
+**Memory and tokens:** The normal ForgeOS process does not import Playwright. Browser memory is incurred only when you explicitly run this development command; the browser process must exit after observation. Character limits reduce input size but **actual LLM token savings and Windows RAM usage are unmeasured**. See [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).

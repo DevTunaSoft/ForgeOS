@@ -1674,3 +1674,16 @@ A hosted Windows CI runner is not physical target acceptance. The recorder now s
 ### Hosted frozen acceptance contract follows explicit-target semantics
 
 The frozen launcher and PowerShell packaging gate were updated with the new acceptance semantics before the next validation run: CI requires Windows host evidence but explicitly requires `physical_windows_target_asserted == false`. This prevents a hosted runner from ever satisfying the physical-machine gate by accident.
+
+
+## Browser observation prototype — 2026-11-10, review branch (issue #65)
+
+**Current truth:** initial development-only prototype proposed on branch `feat/browser-observation-65`; `main` is unaffected until review/merge. Before implementation, current `main` source/docs and open PRs were inspected; no browser module or overlapping open browser PR was found. Existing `engine.py`, `core.py`/Store, `recovery.py`, `transactions.py`, `model_routing.py`, `context_index.py`, `diagnostics.py`, and `gui.py` remain canonical.
+
+**Source changes:** `src/forgeos/browser_observation.py` formats at most 48 control entries/3,000 characters with best-effort redaction and no required dependencies. `src/forgeos/browser_probe.py` provides an optional, read-only Playwright Chromium probe, with explicit public HTTPS origin opt-in, bounded DOM walk, fresh nonpersistent context, disabled service workers, intercepted cross-origin resources, no input values, no LLM calls and immediate process closure. `pyproject.toml` adds a `browser` optional extra, never a mandatory dependency. `tests/test_browser_observation.py` uses fake page/context objects and runs without a real browser.
+
+**Verification performed locally on Linux/Python 3.13:** `PYTHONPATH=src python -m unittest discover -s tests -v` for the isolated new test file: **12 PASS**; `python -m compileall -q` for new sources/tests: **PASS**; `python -m forgeos.browser_probe --help`: **PASS**. The full repository suite, hosted GitHub CI, live Playwright/Chromium navigation, physical Windows tests, EXE packaging and peak RAM/token benchmarks are **NOT RUN or UNVERIFIED** at handoff. These outcomes must be updated after actual CI/testing, not inferred from code presence.
+
+**Security limitations:** Python label redaction is not comprehensive. Do not use this prototype with sensitive or logged-in browser sessions. Playwright route interception does not guarantee blocking redirected requests (upstream documented limitation), and public-looking DNS names are not proof of public IP routing. The code is not a hardened network sandbox. No real human-takeover, clicking, typing, site consent, visual agent, agent orchestration, or crash-resumable browser action exists yet.
+
+**Recovery:** checkout `feat/browser-observation-65`, inspect pending review and CI evidence, run the isolated unit suite, then full existing Linux/Windows CI. For source evaluation only, run `py -m pip install -e ".[browser]"`, `py -m playwright install chromium`, `py -m forgeos.browser_probe https://example.com/ --allow-origin https://example.com`. Test only public sites. Before new browser actions, first harden redirected-request network controls and evaluate actual RAM usage, then reuse existing leases, checkpoints, diagnostics and UI. Avoid parallel routing/editing engines. See issue [#65](https://github.com/DevTunaSoft/ForgeOS/issues/65).

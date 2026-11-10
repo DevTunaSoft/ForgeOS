@@ -61,6 +61,20 @@ The diagram describes the **implemented prototype path**, not an unattended prod
 
 **Pull requests are not features on `main`.** The experimental packaged `python-pytest` AppContainer path has since been merged via PR #43 and passed hosted Windows smoke; the older PR #29 remains a separate unmerged proposal and must not be mistaken for another shipped feature. Physical Windows acceptance is still pending. Track the 52 proposed RTK-inspired outcomes in [RTK_ENHANCEMENTS.md](docs/RTK_ENHANCEMENTS.md) and the overlap audit in [ENHANCEMENT_DEDUP_AUDIT.md](docs/ENHANCEMENT_DEDUP_AUDIT.md).
 
+## Experimental browser observation (review branch)
+
+Issue [#65](https://github.com/DevTunaSoft/ForgeOS/issues/65) now has a **source-only, read-only browser observation prototype**. It does not run on startup, modify websites, use an LLM, attach to existing signed-in browser profiles, or add a required package dependency. The separate `browser` extra installs Playwright only when requested. The browser engine is launched for one observation and then closed.
+
+For **developer evaluation only** on a public site (not a sensitive or authenticated session):
+
+```powershell
+py -m pip install -e ".[browser]"
+py -m playwright install chromium
+py -m forgeos.browser_probe https://example.com/ --allow-origin https://example.com
+```
+
+The probe reads a bounded list of page controls, omits input values and applies best-effort label redaction. It restricts requested origins, but Playwright routing does **not** reliably block every cross-origin redirect; this is **not** a browser network sandbox. No browser action agent, human takeover, LLM integration, GUI controls, measured token savings, packaged-EXE browser support or real-Windows acceptance is claimed. See [the browser section in the user guide](docs/USER_GUIDE.md#experimental-read-only-browser-observation-review-branch), the [architecture](docs/ARCHITECTURE.md), and [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65). The normal ForgeOS install remains browser-free.
+
 ## Quick start
 
 ### Option A — use the packaged Windows prototype

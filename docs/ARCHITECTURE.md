@@ -50,6 +50,16 @@ flowchart TB
 
 **Do not fork duplicate implementations of these capabilities** without first checking existing ownership and the [deduplication audit](ENHANCEMENT_DEDUP_AUDIT.md).
 
+## Optional read-only browser observation boundary (review branch)
+
+`src/forgeos/browser_observation.py` contains dependency-free, bounded control-summary formatting, explicit public HTTPS origin validation and best-effort redaction. `src/forgeos/browser_probe.py` is a separate, opt-in, lazily imported Playwright development probe. Neither is called by the canonical GUI/task engine, model router or background workers.
+
+The DOM walker stops at 1,200 scanned nodes or 64 extracted controls; the Python formatter emits at most 48 controls and 3,000 characters, labels at most 120 characters. Password/file/hidden input elements and **all** input values are excluded. Raw page URLs, cookies and browser session credentials are never intentionally included in observations. Page labels remain **untrusted external content** and redaction is not comprehensive; do not use this prototype with accounts or sensitive pages.
+
+The probe creates a fresh, non-persistent browser context, blocks service workers and cross-origin resource requests where Playwright intercepts them, and closes the context and browser at completion. **Playwright routing cannot guarantee enforcement on redirected requests**; origin checks and route callbacks are *not* a hardened network isolation boundary, and DNS rebinding is not prevented. There is no automatic browser control, credentialed-session attachment, external AI submission, or packaged-EXE support.
+
+Future browser actions must reuse the existing task leases/checkpoints, evidence capture, transaction approvals and GUI instead of adding a second orchestration system. Hosted unit tests with fake browser interfaces are not evidence of real Chromium or physical Windows acceptance. Track further security and implementation gates in [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
+
 ## Multi-backend inference boundary (feature branch)
 
 `Ollama` in `core.py` remains canonical for existing tasks. The new
