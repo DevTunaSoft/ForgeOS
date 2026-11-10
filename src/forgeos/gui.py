@@ -227,7 +227,11 @@ def launch(db_path, *, acceptance: bool = False):
     # Keep the primary actions above the expanding queue so they stay visible
     # at minimum window height and at high Windows display scaling.
     actions = ttk.Frame(dashboard)
-    actions.pack(fill="x", pady=(0, 10))
+    actions.pack(fill="x", pady=(0, 6))
+    # Keep experimental tools on their own row so the main task controls
+    # remain reachable at 880px minimum width and Windows display scaling.
+    browser_row = ttk.Frame(dashboard)
+    browser_row.pack(fill="x", pady=(0, 6))
     buttons = {}
     def add_button(key, text, callback):
         button = ttk.Button(actions, text=text, command=callback)
@@ -1802,8 +1806,12 @@ def launch(db_path, *, acceptance: bool = False):
     add_button("run", "Build / test / repair", lambda: start("run"))
     add_button("plan", "Generate plan", lambda: start("plan"))
     add_button("test", "Run tests only", lambda: start("test"))
-    add_button("browser", "Browser scroll (experimental)", open_browser_scroll)
     add_button("refresh", "Refresh", refresh)
+    browser_button = ttk.Button(
+        browser_row, text="Browser scroll (experimental)",
+        command=open_browser_scroll)
+    browser_button.pack(side="left")
+    buttons["browser"] = browser_button
 
     def poll():
         try:
@@ -2164,6 +2172,8 @@ def launch(db_path, *, acceptance: bool = False):
                     raise RuntimeError("Task queue was not constructed")
                 if not buttons["browser"].winfo_exists():
                     raise RuntimeError("Manual browser approval entry was not constructed")
+                if buttons["browser"].master is not browser_row:
+                    raise RuntimeError("Browser action must not overcrowd primary task controls")
                 if user_guide_path() is None:
                     raise RuntimeError("Offline user guide missing from executable")
                 from .model_routing import process_memory
