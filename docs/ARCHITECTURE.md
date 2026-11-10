@@ -78,6 +78,14 @@ The Win32 native structures, DLL handles and function signatures are lazily cach
 
 GitHub CI exercises the CLI's safe `--help`, fake subprocess/denial/timeout/consent/privacy paths, and a real native Toolhelp memory probe on hosted Windows. Only a **physical Windows machine with installed Browsentic** can verify live pairing, browser rendering/scrolling and actual environment-specific resource consumption. Track in [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
 
+### Durable browser action approvals (experimental, no GUI integration)
+
+`browser_action_gate.py` extends the **existing** `core.Store.db` connection with a lazily created `browser_scroll_intents` table only when a source-level approval proposal occurs. Each row is keyed by `(task_id, action_key)` and stores an action-spec SHA-256 digest, fixed state, creation/update timestamps and bounded expiry. No raw URL, browsing history, credentials, page text, or additional SQLite connection is stored. Proposed actions are immutable and duplicate keys cannot be reused.
+
+Transitions are `proposed → approved → attempted → succeeded/uncertain`. The trusted caller must supply an explicit human confirmation when approving; the API **does not authenticate the caller** and therefore is **not yet a secure end-user approval boundary**. Dispatch acquires the existing task lease and atomically records `attempted` **before** the single Browsentic scroll call. A second caller cannot acquire the lease or consume the same approval. Errors persist only `uncertain`; raw browser exception text is not stored or rethrown. `core.Store.recover()` turns abandoned `attempted` records into `uncertain` after recovering expired task leases. Active leased actions are left untouched. No automatic replay of a potentially executed browser action is permitted.
+
+This is an optional **source-level primitive**, not autonomous browser execution, GUI consent, trusted approval-channel attestation, click/type automation, or real Windows Browsentic acceptance. Full integration will need a human-controlled GUI approval event, post-action evidence, and hardened browser/session provenance. It adds no mandatory packages, browser process at startup, polling, Docker, or separate task scheduler.
+
 ## Multi-backend inference boundary (feature branch)
 
 `Ollama` in `core.py` remains canonical for existing tasks. The new

@@ -81,6 +81,12 @@ The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issu
 
 **Acceptance gates still open:** actual installed Browsentic on a physical Windows device, approved origin/tab behavior against a public page, measured client + independently launched Bridge/browser RAM, reproduction of any failures with coded reports, and safeguards against tab races/redirects. Sampled working set must not be confused with total system RAM or GPU memory. Do not automatically sum potentially overlapping process trees or claim full browser integration based on hosted EXE packaging. Keep #65 open; keep PR #66 unmerged until review.
 
+### Browser action approval and crash-safety foundation (PR #66)
+
+**Implemented on review branch, offline tests only:** `browser_action_gate.py` adds an optional one-use **scroll** action approval state machine to the existing ForgeOS SQLite task database/leases. Each immutable action is bound to an existing task and SHA-256 of the approved canonical public HTTPS origin/direction. Expiring proposals need explicit human confirmation from a trusted future UI; an approved action is consumed and committed as `attempted` before the one external browser call. Success becomes `succeeded`; exceptions, lease failures or post-crash recovery become `uncertain`, with **no automatic retry**. `core.Store.recover()` reconciles orphaned attempts, preserving live leases. No extra polling process, memory cache, or database.
+
+**Not implemented/accepted:** a trusted GUI approval channel, LLM tool permission firewall, task-engine browser action wiring, arbitrary clicking, typing, form submissions, deterministic replay, session pinning, or actual installed Browsentic acceptance on Windows. The source-level human-confirmation boolean is not an authentication mechanism. Keep issue #65 and PR #66 open through real UI/browser/security testing, and never represent approval ledger existence alone as safe unattended browsing.
+
 ## Near-term engineering priorities
 
 1. **Secure broader test execution without Docker.** With hosted pytest + unittest AppContainer smoke now passing, extend the same fail-closed guarantees to other selected frameworks and real user Windows machines.

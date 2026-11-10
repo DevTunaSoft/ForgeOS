@@ -242,6 +242,20 @@ class Store:
                 "AND NOT EXISTS (SELECT 1 FROM task_leases l WHERE l.task_id=tasks.id)",
                 (now,))
             changed += cur.rowcount
+            # Browser side effects cannot be safely replayed after a crash.
+            # This optional table is created only if a browser approval was
+            # explicitly proposed; ordinary ForgeOS installs have no extra
+            # approval schema or retained browser history.
+            if self.db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='browser_scroll_intents'").fetchone():
+                self.db.execute(
+                    "UPDATE browser_scroll_intents SET status='uncertain', "
+                    "updated=? WHERE status='attempted' AND NOT EXISTS "
+                    "(SELECT 1 FROM task_leases l WHERE "
+                    "l.task_id=browser_scroll_intents.task_id)",
+                    (now,),
+                )
         return changed
 
     def close(self):

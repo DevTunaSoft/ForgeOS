@@ -117,6 +117,12 @@ The Windows memory monitor lazily initializes native Win32 DLL bindings and ctyp
 
 This is **not** verification that a browser is installed or paired: a real Windows test must still be performed by an operator. Tests in GitHub CI use mocked connections and a native Windows process-memory probe, not a real Browsentic installation. See the [user guide](docs/USER_GUIDE.md) for full steps and scope.
 
+### Browser action approval/recovery foundation (review branch)
+
+A small, **optional SQLite approval gate** now reuses ForgeOS's existing task database and exclusive task lease rather than introducing another agent, scheduler, or background service. The source-level `browser_action_gate` API can prepare a single public-site **scroll** intent, record an explicit human confirmation, and mark that exact intent **attempted before** calling the existing Browsentic connector. A successful result becomes `succeeded`; a failed, interrupted or crashed attempt remains `uncertain` and **cannot be automatically replayed**. Approved intents expire and action identifiers cannot be reused. The SQLite record holds a SHA-256 action digest and status, **not the site URL, page contents, or private text**.
+
+**Important:** The gate is **a tested development API, not a trusted GUI approval dialog**. It cannot prove a Python caller was a human, must not be exposed as an LLM-callable approval operation, and is not yet connected to the desktop GUI or autonomous task runner. Clicking, typing and submitting forms remain disabled; the earlier one-shot scroll CLI remains an independent experimental command. Real paired-browser Windows acceptance and approval UI are still required. See [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65).
+
 ## Quick start
 
 ### Option A — use the packaged Windows prototype

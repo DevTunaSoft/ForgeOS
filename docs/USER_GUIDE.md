@@ -683,3 +683,12 @@ If the `browsentic` executable is not available on PATH, or the tab moves to ano
 **Troubleshooting:** If you see `BROWSENTIC_NOT_INSTALLED`, review and install the upstream Browsentic Bridge from its official project, then ensure `browsentic` is accessible on PATH. `CONNECTOR_REJECTED` means the connector could not complete the read (e.g., a disconnected extension, an unauthorized tab or protocol mismatch). `WINDOWS_REQUIRED` means you ran this Windows-only harness elsewhere. `TIMEOUT` means the bounded test expired; investigate pairing and Bridge rather than retrying an uncertain browser action. The baseline should run without Docker or paid APIs. The results are not production certification or an LLM token benchmark.
 
 See [issue #65](https://github.com/DevTunaSoft/ForgeOS/issues/65) for the acceptance checklist and [PR #66](https://github.com/DevTunaSoft/ForgeOS/pull/66) for current code.
+
+
+## Browser action approvals and crash recovery (developer preview)
+
+ForgeOS is developing a durable approval layer for browser actions. It uses your existing task database and task lease, and does not open a browser or request AI access on its own. This stage is **for developers and automated offline tests**: there is **no user-facing ForgeOS approval button or autonomous click/type functionality yet**.
+
+The internal process is: a future GUI prepares a one-use, origin-bound scroll request for an existing ForgeOS task; a person explicitly approves the exact operation; ForgeOS marks that action as attempted in its existing SQLite store **before** sending it to Browsentic. If a crash or timeout makes the outcome unknown, the action stays marked **uncertain**, and ForgeOS will **not repeat it automatically**. To take another action, an operator must inspect the page and explicitly approve a new request. Only a hash of the approved origin and scroll direction is retained, not page text or the address itself.
+
+**Do not expose `approve_scroll()` as an AI/model tool.** Its `human_confirmed` flag is a plumbing contract for a future trusted GUI, not proof of human identity. The earlier `browser_acceptance` command tests read-only connection separately; it does not turn on automated browser permissions. No installation change or additional user steps are required at this stage. Real Windows browser approval and recovery behavior remain **unverified**.
