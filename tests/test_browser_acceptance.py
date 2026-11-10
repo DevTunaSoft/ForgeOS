@@ -37,6 +37,11 @@ class FakeClient:
         self.kill_calls += 1
         self.returncode = -9
 
+    def wait(self, timeout=None):
+        if self.returncode is None:
+            self.returncode = self.final_code
+        return self.returncode
+
 
 class TimeoutClient(FakeClient):
     def communicate(self, timeout=None):
@@ -50,9 +55,18 @@ class WindowsBrowserAcceptanceTests(unittest.TestCase):
         fake = fake or FakeClient(delay=0.15)
         args = dict(origin="https://example.com", confirmed=True)
         args.update(options)
+        def mocked_capture(client, timeout_seconds):
+            # Existing integration-level fakes intentionally bypass the
+            # native pipe reader; dedicated real-subprocess tests cover it.
+            output, _ = client.communicate(timeout=timeout_seconds)
+            return output[:acceptance.MAX_CAPTURE_BYTES], (
+                len(output) > acceptance.MAX_CAPTURE_BYTES
+            )
+
         with patch.object(acceptance, "_is_windows", return_value=True), \
              patch.object(acceptance.shutil, "which", return_value="C:/tools/browsentic.cmd"), \
              patch.object(acceptance.subprocess, "Popen", return_value=fake) as popen, \
+             patch.object(acceptance, "_capture_limited", side_effect=mocked_capture), \
              patch.object(acceptance, "_windows_process_tree",
                           return_value=acceptance.TreeMemory(33_000_000, 2, 0),
                           side_effect=sample):
@@ -85,6 +99,49 @@ class WindowsBrowserAcceptanceTests(unittest.TestCase):
         self.assertEqual(args.count("--scroll-direction"), 1)
         self.assertEqual(args.count("--approve-scroll"), 1)
         self.assertEqual(args.count("--changes-only"), 1)
+
+    def test_real_pipe_capture_stays_bounded_on_megabyte_output(self):
+        # Real child, not a mocked communicate() call. No browser/network.
+        command = [
+            sys.executable, "-u", "-c",
+            "import sys; sys.stdout.buffer.write(b'X' * 1048576); "
+            "sys.stdout.buffer.flush()",
+        ]
+        with subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as child:
+            captured, overflow = acceptance._capture_limited(child, 4)
+            self.assertTrue(overflow)
+            self.assertLessEqual(len(captured), acceptance.MAX_CAPTURE_BYTES)
+            self.assertIsNotNone(child.poll())
+
+    def test_real_pipe_capture_allows_short_successful_output(self):
+        script = "import sys; sys.stdout.buffer.write(b'Browsentic page diagram (test)\\n')"
+        with subprocess.Popen([sys.executable, "-c", script],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL) as child:
+            output, overflow = acceptance._capture_limited(child, 4)
+            self.assertFalse(overflow)
+            self.assertTrue(output.startswith(b"Browsentic page diagram"))
+            self.assertEqual(child.returncode, 0)
+
+    def test_real_pipe_capture_times_out_without_child_leak(self):
+        with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL) as child:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                acceptance._capture_limited(child, 0.2)
+            self.assertIsNotNone(child.poll())
+
+    def test_capture_reader_never_calls_communicate(self):
+        script = "import sys; sys.stdout.buffer.write(b'OK')"
+        with subprocess.Popen([sys.executable, "-c", script],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL) as child, \
+             patch.object(child, "communicate", side_effect=AssertionError(
+                 "communicate must not be used")):
+            output, overflow = acceptance._capture_limited(child, 4)
+            self.assertEqual(output, b"OK")
+            self.assertFalse(overflow)
 
     def test_default_does_not_start_without_explicit_consent(self):
         with patch.object(acceptance.subprocess, "Popen") as popen:

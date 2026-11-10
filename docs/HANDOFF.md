@@ -1748,3 +1748,16 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 **Limits/blockers:** Hosted GitHub runners do not install or pair Browsentic; a hosted PASS only proves logic/WinAPI/packaging tests, not real Browsentic interoperability. Rooted working set excludes unrelated already-running browsers/Bridge unless PIDs are explicitly supplied, process trees may overlap, memory sampling can miss short-lived processes, and working set excludes GPU allocation. This is not a hardened network sandbox, production browser agent, atomic tab lock, or demonstration of actual token savings. Keep #65 and PR #66 open until real Windows acceptance and security review.
 
 **Next:** Check CI for source regressions; fix with root-cause analysis, rerun. Validate installed Browsentic/Chrome/Edge on a disposable public tab and capture the JSON reports (no raw credentials). If real protocol or Windows .cmd startup fails, fix only the existing connector and extend tests, not a parallel browser subsystem. Instrument Bridge/browser separately using the explicit root PIDs, measure idle vs active RAM and release behavior, then design approval-gated click/type and task checkpoint semantics.
+
+
+## Acceptance runner bounded-output hardening — 2026-11-10
+
+**Baseline:** Branch `feat/browser-observation-65`, PR #66, prior head `cc63095b025ca2c8c6a65e57000369b084540258`. All three CI workflows passed for prior head, but live Browsentic acceptance remains UNVERIFIED. No overlapping browser PR or new router found.
+
+**Root cause:** `browser_acceptance.run_acceptance()` called `Popen.communicate()` and checked the stdout length only *after* the subprocess exited. A malfunctioning/untrusted child could emit an arbitrarily large stdout stream and exhaust ForgeOS RAM before the limit took effect. Early IO exceptions also risked leaving a child running.
+
+**Fix:** Add `_capture_limited()` to the existing acceptance module. One invocation-scoped reader thread reads fixed 1,024-byte chunks, storing no more than 4,096 bytes. On output overflow it terminates the client process tree; on timeout it terminates and reaps without retrying a potentially executed browser action. The parent includes a cleanup `finally` for IO errors. Raw stdout is neither printed nor included in JSON evidence. The temporary reader runs only during the manual acceptance command; no new dependency or background worker.
+
+**New tests:** Four *real Python subprocess* tests for 1 MiB stdout overflow, ordinary short output, hung child reaping and nonuse of `communicate()`. Previous fake acceptance tests are retained and adapted to exercise report status independently of pipe mechanics. CI must run them on Ubuntu/Windows Python 3.10/3.12; **NOT RUN at authoring**. On an actual Windows target, continue operator-controlled public-tab acceptance, Bridge/browser PID measurement, and no saved private page content.
+
+**Next:** Check full CI, investigate failure root causes without re-running unchanged builds, then continue real Windows pairing/interop and process-tree RAM acceptance. Keep PR #66 unmerged as experimental until verified; do not auto-enable click, type, login or form submission.

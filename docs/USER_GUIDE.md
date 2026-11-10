@@ -660,7 +660,7 @@ If the `browsentic` executable is not available on PATH, or the tab moves to ano
    py -m forgeos.browser_acceptance --allow-origin https://example.com --confirm-public-test-tab
    ```
 
-3. The command returns **one JSON report**. `PASS` means the read-only CLI returned a bounded diagram; `BLOCKED` means prerequisites, consent or the connection were denied; `FAIL` means an execution error or timeout. Exit code is **0** for PASS, **2** otherwise. It does **not** report the page text, URL or title.
+3. The acceptance runner's output capture is memory-bounded (4 KiB maximum; 1 KiB read chunks). Excessive output is reported as `OUTPUT_OVERSIZE` and the temporary test client is stopped. A timed-out client is also terminated, with no automatic action retry. The command returns **one JSON report**. `PASS` means the read-only CLI returned a bounded diagram; `BLOCKED` means prerequisites, consent or the connection were denied; `FAIL` means an execution error or timeout. Exit code is **0** for PASS, **2** otherwise. It does **not** report the page text, URL or title.
 4. To include the separate existing browser/Bridge memory trees, supply explicit PIDs. Substitute the *actual current* PIDs shown by Task Manager:
 
    ```powershell

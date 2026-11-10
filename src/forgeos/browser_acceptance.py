@@ -142,6 +142,77 @@ def _stop_tree(process: subprocess.Popen[bytes]) -> None:
         process.kill()
 
 
+
+def _capture_limited(process: subprocess.Popen[bytes], timeout_seconds: float
+                     ) -> tuple[bytes, bool]:
+    """Capture no more than MAX_CAPTURE_BYTES from stdout.
+
+    communicate() accumulates arbitrary child output in memory before a
+    caller can check its length. This reader consumes fixed-size chunks and
+    stops the child immediately on overflow; it never logs page contents.
+    Windows anonymous pipes cannot be waited on with selectors, so a single
+    temporary daemon reader handles the pipe while this thread enforces the
+    deadline. No persistent worker or dependency is introduced.
+    """
+    if process.stdout is None:
+        raise OSError("Acceptance subprocess has no stdout")
+    collected = bytearray()
+    finished = threading.Event()
+    state = {"oversize": False, "read_error": False}
+
+    def drain() -> None:
+        try:
+            while True:
+                chunk = process.stdout.read(1024)
+                if not chunk:
+                    return
+                if len(collected) + len(chunk) > MAX_CAPTURE_BYTES:
+                    state["oversize"] = True
+                    return
+                collected.extend(chunk)
+        except (OSError, ValueError):
+            state["read_error"] = True
+        finally:
+            finished.set()
+
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while True:
+            if state["oversize"]:
+                _stop_tree(process)
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    pass
+                return bytes(collected), True
+            if process.poll() is not None and finished.is_set():
+                if state["read_error"]:
+                    raise OSError("Subprocess stdout could not be read")
+                return bytes(collected), False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(process.args, timeout_seconds)
+            finished.wait(min(0.05, remaining))
+    except (subprocess.TimeoutExpired, OSError):
+        _stop_tree(process)
+        try:
+            process.wait(timeout=3)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        raise
+    finally:
+        if process.poll() is not None:
+            reader.join(timeout=1)
+            # Closing the pipe releases its small native buffer; never keep
+            # a child-owned stdout handle after the acceptance test ends.
+            try:
+                process.stdout.close()
+            except OSError:
+                pass
+
+
 def _make_report(status: str, code: str, *, elapsed_ms: int = 0,
                  output_chars: int = 0, peak: int | None = None,
                  samples: int = 0, unreadable: int = 0,
@@ -239,8 +310,8 @@ def run_acceptance(*, origin: str, confirmed: bool, timeout_seconds: int = 25,
         sampler = threading.Thread(target=sample_memory, daemon=True)
         sampler.start()
         try:
-            stdout, _stderr = process.communicate(timeout=timeout_seconds)
-            if len(stdout) > MAX_CAPTURE_BYTES:
+            stdout, oversized = _capture_limited(process, timeout_seconds)
+            if oversized:
                 status, code, output_chars = "FAIL", "OUTPUT_OVERSIZE", 0
             elif process.returncode != 0:
                 status, code, output_chars = (
@@ -261,15 +332,23 @@ def run_acceptance(*, origin: str, confirmed: bool, timeout_seconds: int = 25,
         except subprocess.TimeoutExpired:
             _stop_tree(process)
             try:
-                process.communicate(timeout=3)
-            except subprocess.TimeoutExpired:
+                process.wait(timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
                 pass
             status, code, output_chars = "FAIL", "TIMEOUT", 0
         finally:
             stop.set()
             sampler.join(timeout=3)
     except OSError:
-        status, code, output_chars = "FAIL", "PROCESS_START_FAILED", 0
+        status, code, output_chars = "FAIL", "PROCESS_IO_OR_START_FAILED", 0
+    finally:
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    _stop_tree(process)
+                process.wait(timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
     elapsed = round((time.monotonic() - start) * 1000)
     return _make_report(status, code, elapsed_ms=elapsed,
                         output_chars=output_chars, peak=peak,
