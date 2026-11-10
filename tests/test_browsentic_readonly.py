@@ -2,6 +2,7 @@
 import io
 import json
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -49,6 +50,53 @@ def ok_replies(text="button Save"):
 
 
 class BrowsenticReadOnlyTests(unittest.TestCase):
+    def test_real_stdio_transport_round_trip(self):
+        """Exercise the real subprocess pipes on Linux and Windows; no browser."""
+        server = r'''
+import json, sys
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" not in message:
+        continue
+    number = message["id"]
+    if number == 1:
+        result = {"protocolVersion": "2025-03-26"}
+    elif number in (2, 4):
+        state = {"connected": True, "browser": "Chrome",
+                 "activeTab": {"url": "https://example.com/docs",
+                               "title": "PRIVATE TITLE"}}
+        result = {"content": [{"type": "text", "text": json.dumps(state)}]}
+    elif number == 3:
+        result = {"contents": [{"uri": "browsentic://page/diagram",
+                                "mimeType": "text/plain", "text": "heading Welcome"}]}
+    else:
+        break
+    print(json.dumps({"jsonrpc": "2.0", "id": number, "result": result}), flush=True)
+'''
+        with subprocess.Popen(
+            [sys.executable, "-u", "-c", server],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, bufsize=0,
+        ) as child:
+            self.assertEqual(
+                _read_diagram(child, 5, "https://example.com"),
+                "heading Welcome",
+            )
+            child.terminate()
+            child.wait(timeout=3)
+
+    def test_real_stdio_timeout_fails_closed(self):
+        """A stalled MCP bridge must consume a bounded deadline, not hang."""
+        with subprocess.Popen(
+            [sys.executable, "-u", "-c", "import time; time.sleep(20)"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, bufsize=0,
+        ) as child:
+            with self.assertRaises(TimeoutError):
+                _read_diagram(child, 0.15, "https://example.com")
+            child.terminate()
+            child.wait(timeout=3)
+
     def test_mcp_issues_only_readonly_messages(self):
         process = FakeProcess(ok_replies())
         self.assertEqual(_read_diagram(process, 2, "https://example.com"), "button Save")
