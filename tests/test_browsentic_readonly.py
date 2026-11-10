@@ -295,6 +295,78 @@ for line in sys.stdin:
             1,
         )
 
+    def test_exact_selected_url_mismatch_blocks_before_scroll(self):
+        replies = [
+            ok_replies()[0],
+            status_reply(2, "https://example.com/different"),
+        ]
+        proc = FakeProcess(replies)
+        with self.assertRaisesRegex(ValueError, "approved exact URL"):
+            _read_diagram(
+                proc, 2, "https://example.com", scroll_direction="down",
+                approve_scroll=True,
+                expected_tab_url="https://example.com/docs",
+            )
+        packets = [json.loads(x) for x in proc.stdin.getvalue().splitlines()]
+        self.assertEqual(
+            sum(packet.get("params", {}).get("name") == "page_scrollTo"
+                for packet in packets), 0)
+        self.assertNotIn("resources/read",
+                         [packet["method"] for packet in packets])
+
+    def test_exact_selected_url_checked_through_post_action_readback(self):
+        replies = [
+            ok_replies()[0],
+            status_reply(2, "https://example.com/docs"),
+            {"jsonrpc": "2.0", "id": 3, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Before"}]}},
+            status_reply(4, "https://example.com/docs"),
+            {"jsonrpc": "2.0", "id": 5, "result": {"content": []}},
+            status_reply(6, "https://example.com/docs"),
+            {"jsonrpc": "2.0", "id": 7, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading After"}]}},
+            status_reply(8, "https://example.com/docs"),
+        ]
+        proc = FakeProcess(replies)
+        before, after = _read_diagram(
+            proc, 2, "https://example.com", scroll_direction="down",
+            approve_scroll=True, changes_only=True,
+            expected_tab_url="https://example.com/docs")
+        self.assertEqual((before, after), ("heading Before", "heading After"))
+        sent = [json.loads(x) for x in proc.stdin.getvalue().splitlines()]
+        self.assertEqual(sum(p.get("params", {}).get("name") == "page_scrollTo"
+                             for p in sent), 1)
+
+    def test_exact_url_changed_after_action_does_not_fetch_new_page(self):
+        replies = [
+            ok_replies()[0],
+            status_reply(2, "https://example.com/docs"),
+            {"jsonrpc": "2.0", "id": 3, "result": {"contents": [{
+                "uri": "browsentic://page/diagram", "text": "heading Before"}]}},
+            status_reply(4, "https://example.com/docs"),
+            {"jsonrpc": "2.0", "id": 5, "result": {"content": []}},
+            status_reply(6, "https://example.com/other"),
+        ]
+        proc = FakeProcess(replies)
+        with self.assertRaises(ValueError):
+            _read_diagram(
+                proc, 2, "https://example.com", scroll_direction="down",
+                approve_scroll=True, changes_only=True,
+                expected_tab_url="https://example.com/docs")
+        sent = [json.loads(x) for x in proc.stdin.getvalue().splitlines()]
+        self.assertEqual(sum(p.get("params", {}).get("name") == "page_scrollTo"
+                             for p in sent), 1)
+        self.assertEqual(sum(p["method"] == "resources/read" for p in sent), 1)
+
+    def test_invalid_expected_url_rejected_before_process_launch(self):
+        with patch("forgeos.browsentic_readonly.shutil.which") as which:
+            with self.assertRaises(ValueError):
+                observe_paired_browser(
+                    permitted_origin="https://example.com",
+                    scroll_direction="down", approve_scroll=True,
+                    expected_tab_url="https://attacker.example/")
+            which.assert_not_called()
+
     def test_scroll_result_error_does_not_read_or_retry(self):
         replies = [
             ok_replies()[0], status_reply(2),

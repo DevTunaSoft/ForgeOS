@@ -563,12 +563,12 @@ def launch(db_path, *, acceptance: bool = False):
             "Only use a non-sensitive public tab paired with Browsentic. "
             "Scrolling can trigger website scripts and network requests."),
             wraplength=530, justify="left").pack(anchor="w", pady=(8, 12))
-        origin_var = tk.StringVar(value="https://example.com")
+        page_url_var = tk.StringVar(value="https://example.com/")
         direction_var = tk.StringVar(value="down")
         site_row = ttk.Frame(frame)
         site_row.pack(fill="x")
-        ttk.Label(site_row, text="Approved HTTPS origin").pack(side="left")
-        ttk.Entry(site_row, textvariable=origin_var, width=42).pack(
+        ttk.Label(site_row, text="Exact public page URL").pack(side="left")
+        ttk.Entry(site_row, textvariable=page_url_var, width=42).pack(
             side="left", fill="x", expand=True, padx=(8, 0))
         direction_row = ttk.Frame(frame)
         direction_row.pack(fill="x", pady=(10, 8))
@@ -586,15 +586,18 @@ def launch(db_path, *, acceptance: bool = False):
         def approve_and_run():
             if submitted["value"] or busy["value"] or managed["busy"]:
                 return
-            site = origin_var.get().strip()
+            page_url = page_url_var.get().strip()
             direction = direction_var.get()
             try:
+                from .browser_observation import allowed_origin
+                site = allowed_origin(page_url)
                 import shutil
                 if shutil.which("browsentic") is None:
                     raise ValueError(
                         "Browsentic is not installed or not available on PATH.")
                 from .browser_action_gate import propose_scroll
-                propose_scroll(store, task_id, action_key, site, direction)
+                propose_scroll(store, task_id, action_key, site, direction,
+                               tab_url=page_url)
             except (ValueError, OSError) as exc:
                 messagebox.showerror("Cannot propose browser scroll",
                                      str(exc), parent=popup)
@@ -609,21 +612,25 @@ def launch(db_path, *, acceptance: bool = False):
             submitted["value"] = True
             confirmed = messagebox.askyesno(
                 "Approve exactly one browser action",
-                f"Task #{task_id}\n\nWebsite origin: {site}\n"
+                f"Task #{task_id}\n\nExact page: {page_url}\n"
                 f"Action: scroll {direction} ONCE\n\n"
                 "I confirm the selected browser tab is PUBLIC and contains no "
                 "private data. Scrolling may trigger site scripts and network "
                 "requests. The action will not be automatically retried.",
                 parent=popup)
             if not confirmed:
-                # The proposal expires; no approval or browser call is made.
+                # Remove the declined proposal rather than growing SQLite
+                # indefinitely with abandoned short-lived dialog attempts.
+                from .browser_action_gate import cancel_scroll
+                cancel_scroll(store, task_id, action_key, site, direction,
+                              tab_url=page_url)
                 popup.destroy()
                 status.set("Browser scroll declined; no browser action started.")
                 return
             try:
                 from .browser_action_gate import approve_scroll
                 approve_scroll(store, task_id, action_key, site, direction,
-                               human_confirmed=True)
+                               human_confirmed=True, tab_url=page_url)
             except Exception:
                 messagebox.showerror(
                     "Browser approval not saved",
@@ -646,7 +653,7 @@ def launch(db_path, *, acceptance: bool = False):
                     worker_store = Store(db_path)
                     # Never pass this observation to the GUI, logs or model.
                     run_approved_scroll(worker_store, task_id, action_key,
-                                        site, direction)
+                                        site, direction, tab_url=page_url)
                     result_state = scroll_status(worker_store, task_id, action_key)
                 except Exception:
                     if worker_store is not None:

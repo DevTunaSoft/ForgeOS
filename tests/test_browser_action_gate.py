@@ -9,7 +9,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from forgeos.browser_action_gate import (
-    approve_scroll, propose_scroll, run_approved_scroll, scroll_status,
+    approve_scroll, cancel_scroll, propose_scroll, run_approved_scroll,
+    scroll_status,
 )
 from forgeos.browser_observation import Observation
 from forgeos.core import Store
@@ -207,6 +208,101 @@ class BrowserActionGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.proposed(ttl_seconds=True)
         self.assertIsNone(scroll_status(self.store, self.task, self.key))
+
+    def test_exact_page_url_is_bound_without_persisting_raw_url(self):
+        page = "https://example.com/guide?view=public"
+        propose_scroll(self.store, self.task, self.key, self.origin,
+                       "down", tab_url=page)
+        row = self.store.db.execute(
+            "SELECT intent_hash FROM browser_scroll_intents").fetchone()
+        self.assertNotIn("example.com", row["intent_hash"])
+        self.assertNotIn("guide", row["intent_hash"])
+        with self.assertRaises(ValueError):
+            approve_scroll(self.store, self.task, self.key, self.origin, "down",
+                           human_confirmed=True, tab_url="https://example.com/other")
+        approve_scroll(self.store, self.task, self.key, self.origin, "down",
+                       human_confirmed=True, tab_url=page)
+        self.assertEqual(scroll_status(self.store, self.task, self.key),
+                         "approved")
+
+    def test_preapproved_url_mismatch_blocks_before_observer(self):
+        page = "https://example.com/article"
+        propose_scroll(self.store, self.task, self.key, self.origin,
+                       "down", tab_url=page)
+        approve_scroll(self.store, self.task, self.key, self.origin, "down",
+                       human_confirmed=True, tab_url=page)
+        observer = Mock()
+        with self.assertRaises(ValueError):
+            run_approved_scroll(self.store, self.task, self.key,
+                                self.origin, "down", tab_url="https://example.com/",
+                                observer=observer)
+        observer.assert_not_called()
+        self.assertEqual(scroll_status(self.store, self.task, self.key),
+                         "approved")
+
+    def test_exact_page_dispatch_requests_pre_and_post_evidence(self):
+        page = "https://example.com/docs"
+        propose_scroll(self.store, self.task, self.key, self.origin,
+                       "down", tab_url=page)
+        approve_scroll(self.store, self.task, self.key, self.origin, "down",
+                       human_confirmed=True, tab_url=page)
+        observer = Mock(return_value=Observation(
+            "Browsentic visible changes (UNTRUSTED):\n[No visible changes]",
+            0, False))
+        run_approved_scroll(self.store, self.task, self.key, self.origin,
+                            "down", tab_url=page, observer=observer)
+        observer.assert_called_once_with(
+            permitted_origin=self.origin, scroll_direction="down",
+            approve_scroll=True, changes_only=True, expected_tab_url=page)
+        self.assertEqual(scroll_status(self.store, self.task, self.key),
+                         "succeeded")
+        persisted = str(dict(self.store.db.execute(
+            "SELECT * FROM browser_scroll_intents").fetchone()))
+        self.assertNotIn(page, persisted)
+
+    def test_incomplete_post_action_evidence_fails_closed(self):
+        page = "https://example.com/docs"
+        propose_scroll(self.store, self.task, self.key, self.origin,
+                       "down", tab_url=page)
+        approve_scroll(self.store, self.task, self.key, self.origin, "down",
+                       human_confirmed=True, tab_url=page)
+        observer = Mock(return_value=Observation(
+            "Browsentic visible changes (UNTRUSTED):\n[Content omitted]",
+            0, True))
+        with self.assertRaisesRegex(RuntimeError, "outcome uncertain"):
+            run_approved_scroll(self.store, self.task, self.key, self.origin,
+                                "down", tab_url=page, observer=observer)
+        self.assertEqual(scroll_status(self.store, self.task, self.key),
+                         "uncertain")
+        observer.assert_called_once()
+
+    def test_declining_proposal_reclaims_storage_but_cannot_erase_approval(self):
+        page = "https://example.com/"
+        propose_scroll(self.store, self.task, self.key, self.origin,
+                       "down", tab_url=page)
+        self.assertFalse(cancel_scroll(self.store, self.task, self.key,
+                                       self.origin, "down",
+                                       tab_url="https://example.com/other"))
+        self.assertTrue(cancel_scroll(self.store, self.task, self.key,
+                                      self.origin, "down", tab_url=page))
+        self.assertIsNone(scroll_status(self.store, self.task, self.key))
+        propose_scroll(self.store, self.task, self.key, self.origin,
+                       "down", tab_url=page)
+        approve_scroll(self.store, self.task, self.key, self.origin, "down",
+                       human_confirmed=True, tab_url=page)
+        self.assertFalse(cancel_scroll(self.store, self.task, self.key,
+                                       self.origin, "down", tab_url=page))
+        self.assertEqual(scroll_status(self.store, self.task, self.key),
+                         "approved")
+
+    def test_invalid_exact_tab_urls_do_not_write_to_database(self):
+        for bad in (123, "", "http://example.com/",
+                    "https://example.com\\mistyped", "https://other.example/",
+                    "https://user:secret@example.com/", "https://127.0.0.1/"):
+            with self.subTest(bad=str(bad)[:24]), self.assertRaises(ValueError):
+                propose_scroll(self.store, self.task, self.key, self.origin,
+                               "down", tab_url=bad)
+            self.assertIsNone(scroll_status(self.store, self.task, self.key))
 
     def test_terminal_task_refuses_new_proposal_and_dispatch(self):
         self.store.update(self.task, "passed")

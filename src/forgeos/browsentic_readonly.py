@@ -247,11 +247,16 @@ def _fetch_diagram(process: Any, output: queue.Queue[bytes | None],
 def _read_diagram(process: Any, timeout_seconds: float, permitted_origin: str, *,
                   scroll_direction: str | None = None,
                   approve_scroll: bool = False,
-                  changes_only: bool = False) -> str | tuple[str, str]:
+                  changes_only: bool = False,
+                  expected_tab_url: str | None = None) -> str | tuple[str, str]:
     """Read bounded diagrams, optionally around a single approved scroll."""
     _check_scroll(scroll_direction, approve_scroll, changes_only=changes_only)
     if not isinstance(permitted_origin, str) or allowed_origin(permitted_origin) != permitted_origin:
         raise ValueError("Specify one exact approved HTTPS origin")
+    if expected_tab_url is not None and (
+            not isinstance(expected_tab_url, str)
+            or allowed_origin(expected_tab_url) != permitted_origin):
+        raise ValueError("Approved page URL must match the public HTTPS origin")
     output: queue.Queue[bytes | None] = queue.Queue(maxsize=8)
     worker = threading.Thread(target=_reader, args=(process.stdout, output), daemon=True)
     worker.start()
@@ -264,6 +269,8 @@ def _read_diagram(process: Any, timeout_seconds: float, permitted_origin: str, *
         raise ValueError("MCP handshake incomplete")
     _send(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
     first_tab = _status(process, output, 2, deadline, permitted_origin)
+    if expected_tab_url is not None and first_tab[0] != expected_tab_url:
+        raise ValueError("Selected page differs from the approved exact URL")
     next_id = 3
     before = None
     if changes_only:
@@ -297,7 +304,8 @@ def _read_diagram(process: Any, timeout_seconds: float, permitted_origin: str, *
 def observe_paired_browser(*, permitted_origin: str, timeout_seconds: float = 8.0,
                            scroll_direction: str | None = None,
                            approve_scroll: bool = False,
-                           changes_only: bool = False) -> Observation:
+                           changes_only: bool = False,
+                           expected_tab_url: str | None = None) -> Observation:
     """Read the selected tab; optionally perform one explicitly approved scroll.
 
     Requires Browsentic Bridge and extension already installed and paired.
@@ -308,6 +316,10 @@ def observe_paired_browser(*, permitted_origin: str, timeout_seconds: float = 8.
         raise ValueError("Invalid MCP deadline")
     if not isinstance(permitted_origin, str) or allowed_origin(permitted_origin) != permitted_origin:
         raise ValueError("Specify one exact approved HTTPS origin")
+    if expected_tab_url is not None and (
+            not isinstance(expected_tab_url, str)
+            or allowed_origin(expected_tab_url) != permitted_origin):
+        raise ValueError("Approved page URL must match the public HTTPS origin")
     executable = shutil.which("browsentic")
     if not executable:
         raise RuntimeError("Browsentic is not installed or not on PATH")
@@ -319,7 +331,7 @@ def observe_paired_browser(*, permitted_origin: str, timeout_seconds: float = 8.
         result = _read_diagram(
             process, float(timeout_seconds), permitted_origin,
             scroll_direction=scroll_direction, approve_scroll=approve_scroll,
-            changes_only=changes_only,
+            changes_only=changes_only, expected_tab_url=expected_tab_url,
         )
         if changes_only:
             before, after = result

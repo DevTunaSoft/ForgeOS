@@ -33,7 +33,7 @@ _ACTIVE_TASK_STATES = ("queued", "planned")
 
 
 def _validated(task_id: int, action_key: str, origin: str,
-               direction: str) -> str:
+               direction: str, tab_url: str | None = None) -> str:
     if type(task_id) is not int or task_id < 1:
         raise ValueError("A real task ID is required")
     if not isinstance(action_key, str) or not _ACTION_KEY.fullmatch(action_key):
@@ -41,7 +41,13 @@ def _validated(task_id: int, action_key: str, origin: str,
     if not isinstance(origin, str) or allowed_origin(origin) != origin:
         raise ValueError("An exact public HTTPS origin is required")
     _check_scroll(direction, True)
-    spec = json.dumps({"origin": origin, "direction": direction},
+    if tab_url is not None and (
+            not isinstance(tab_url, str) or allowed_origin(tab_url) != origin):
+        raise ValueError("The exact approved page URL must match the origin")
+    # A full URL is retained only in the short-lived caller's memory. The
+    # durable approval record holds the digest, never a raw tab URL.
+    spec = json.dumps({"origin": origin, "direction": direction,
+                       "tab_url": tab_url},
                       sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(spec.encode("utf-8")).hexdigest()
 
@@ -59,9 +65,10 @@ def _init(store: Store) -> None:
 
 def propose_scroll(store: Store, task_id: int, action_key: str,
                    origin: str, direction: str, *,
-                   ttl_seconds: int = 180) -> None:
+                   ttl_seconds: int = 180,
+                   tab_url: str | None = None) -> None:
     """Prepare an immutable proposal; never overwrite any previous attempt."""
-    intent_hash = _validated(task_id, action_key, origin, direction)
+    intent_hash = _validated(task_id, action_key, origin, direction, tab_url)
     if type(ttl_seconds) is not int or not 30 <= ttl_seconds <= 3600:
         raise ValueError("Approval lifetime must be 30..3600 seconds")
     _require_task(store, task_id)
@@ -79,9 +86,10 @@ def propose_scroll(store: Store, task_id: int, action_key: str,
 
 def approve_scroll(store: Store, task_id: int, action_key: str,
                    origin: str, direction: str, *,
-                   human_confirmed: bool = False) -> None:
+                   human_confirmed: bool = False,
+                   tab_url: str | None = None) -> None:
     """An explicit, trusted operator/UI event must invoke this; never an AI."""
-    digest = _validated(task_id, action_key, origin, direction)
+    digest = _validated(task_id, action_key, origin, direction, tab_url)
     if human_confirmed is not True:
         raise ValueError("Approval requires an explicit human confirmation")
     _require_task(store, task_id)
@@ -96,6 +104,22 @@ def approve_scroll(store: Store, task_id: int, action_key: str,
         )
         if result.rowcount != 1:
             raise ValueError("Scroll proposal missing, expired or already decided")
+
+
+def cancel_scroll(store: Store, task_id: int, action_key: str,
+                  origin: str, direction: str, *,
+                  tab_url: str | None = None) -> bool:
+    """Discard a *proposed* action after the user declines the dialog.
+
+    Approved/attempted/uncertain/succeeded entries must never be removed.
+    """
+    digest = _validated(task_id, action_key, origin, direction, tab_url)
+    with store.db:
+        changed = store.db.execute(
+            "DELETE FROM browser_scroll_intents WHERE task_id=? AND "
+            "action_key=? AND intent_hash=? AND status='proposed'",
+            (task_id, action_key, digest))
+    return changed.rowcount == 1
 
 
 def scroll_status(store: Store, task_id: int, action_key: str) -> str | None:
@@ -119,14 +143,14 @@ def scroll_status(store: Store, task_id: int, action_key: str) -> str | None:
 
 def run_approved_scroll(store: Store, task_id: int, action_key: str,
                         origin: str, direction: str, *,
-                        observer=None) -> Observation:
+                        observer=None, tab_url: str | None = None) -> Observation:
     """Consume an approved one-shot intent BEFORE issuing the MCP action.
 
     A crash after the consume commit leaves 'attempted' (then 'uncertain' on
     store.recover); neither state can execute again automatically. Approval,
     execution and checkpointing are all on the same ForgeOS task DB.
     """
-    digest = _validated(task_id, action_key, origin, direction)
+    digest = _validated(task_id, action_key, origin, direction, tab_url)
     _require_task(store, task_id)
     owner = uuid4().hex
     if not store.acquire_lease(task_id, owner):
@@ -154,9 +178,15 @@ def run_approved_scroll(store: Store, task_id: int, action_key: str,
             observer = observe_paired_browser
         if not callable(observer):
             raise ValueError("Browser observer must be callable")
-        result = observer(permitted_origin=origin, scroll_direction=direction,
-                          approve_scroll=True, changes_only=False)
-        if not isinstance(result, Observation) or len(result.text) > 2400:
+        options = {
+            "permitted_origin": origin, "scroll_direction": direction,
+            "approve_scroll": True, "changes_only": tab_url is not None,
+        }
+        if tab_url is not None:
+            options["expected_tab_url"] = tab_url
+        result = observer(**options)
+        if (not isinstance(result, Observation) or len(result.text) > 2400
+                or (tab_url is not None and result.truncated)):
             raise RuntimeError("Browser observation could not be verified")
         if not store.heartbeat_lease(task_id, owner):
             raise RuntimeError("Task lease expired during browser operation")
