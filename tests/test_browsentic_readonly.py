@@ -146,6 +146,19 @@ for line in sys.stdin:
         self.assertNotIn("jane@example.com", result.text)
         self.assertIn("UNTRUSTED", result.text)
 
+    def test_diagram_suppresses_full_multiline_credential_labels(self):
+        result = compact_diagram(
+            "heading Welcome\n"
+            "Authorization: Bearer first second third\n"
+            "password: correct horse battery staple\n"
+            "link support@example.org\n"
+        )
+        self.assertIn("heading Welcome", result.text)
+        self.assertIn("[REDACTED]", result.text)
+        self.assertIn("[EMAIL]", result.text)
+        self.assertNotIn("correct horse", result.text)
+        self.assertNotIn("first second", result.text)
+
     def test_reject_resource_larger_than_budget(self):
         with self.assertRaises(ValueError):
             compact_diagram("x" * 50000)

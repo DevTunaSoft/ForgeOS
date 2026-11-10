@@ -16,13 +16,26 @@ MAX_CHARS = 3_000
 MAX_FIELD = 120
 _ALLOWED_KINDS = frozenset({"button", "link", "input", "checkbox", "radio",
                             "select", "textarea", "heading", "tab", "combobox"})
-_SECRET = re.compile(
-    r"(?i)\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|"
-    r"authorization|secret)\b\s*[:=]\s*(?:bearer\s+)?[^\s,;]+"
+# All patterns run only on the first 1,024 chars of each untrusted label.
+# Suppress the *whole label* for credential contexts: redacting just the
+# first whitespace-delimited token could expose the rest of a multiword secret.
+_SENSITIVE_LABEL = re.compile(
+    r"(?i)\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|"
+    r"password|passphrase|passcode|authorization|secret|client[_ -]?secret|"
+    r"cookie|set-cookie|session[_ -]?id|private[_ -]?key|otp|"
+    r"oauth[_ -]?code|bearer)\b"
 )
-_BEARER = re.compile(r"(?i)\bbearer\s+[^\s,;]+")
+_KNOWN_TOKEN = re.compile(
+    r"(?i)\b(?:github_pat_[A-Za-z0-9_]{10,}|gh[psour]_[A-Za-z0-9_]{10,}|"
+    r"AKIA[A-Z0-9]{16})\b"
+)
+_JWT = re.compile(
+    r"(?<![\w])(?:[A-Za-z0-9_-]{8,}\.){2}[A-Za-z0-9_-]{8,}(?![\w])"
+)
 _EMAIL = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 _LONG_TOKEN = re.compile(r"(?<![\w])[A-Za-z0-9_-]{40,}(?![\w])")
+_SSN = re.compile(r"(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)")
+_CARD = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -40,7 +53,8 @@ def allowed_origin(url: str) -> str:
 
     This is validation, not a network sandbox or DNS-rebinding defense.
     """
-    if not isinstance(url, str) or len(url) > 2048 or any(ord(c) < 33 for c in url):
+    if (not isinstance(url, str) or len(url) > 2048 or "\\" in url
+            or any(ord(c) < 33 for c in url)):
         raise ValueError("A valid HTTPS URL is required")
     try:
         parts = urlsplit(url)
@@ -72,11 +86,11 @@ def _safe_label(value: object) -> str:
         return ""
     # Truncate *before* regex work; page-controlled strings may be enormous.
     value = _WHITESPACE.sub(" ", value[:1024]).strip()
-    value = _SECRET.sub("[REDACTED]", value)
-    value = _BEARER.sub("[REDACTED]", value)
-    value = _EMAIL.sub("[EMAIL]", value)
-    value = _LONG_TOKEN.sub("[REDACTED]", value)
-    return value[:MAX_FIELD]
+    if (_SENSITIVE_LABEL.search(value) or _KNOWN_TOKEN.search(value)
+            or _JWT.search(value) or _LONG_TOKEN.search(value)
+            or _SSN.search(value) or _CARD.search(value)):
+        return "[REDACTED]"
+    return _EMAIL.sub("[EMAIL]", value)[:MAX_FIELD]
 
 
 def compact_observation(items: Iterable[Mapping[str, object]], *,
@@ -101,7 +115,7 @@ def compact_observation(items: Iterable[Mapping[str, object]], *,
         if not isinstance(item, Mapping):
             continue
         kind = item.get("kind")
-        if kind not in _ALLOWED_KINDS or item.get("sensitive") is True:
+        if not isinstance(kind, str) or kind not in _ALLOWED_KINDS or item.get("sensitive") is True:
             continue
         label = _safe_label(item.get("label", ""))
         if not label:

@@ -4,7 +4,7 @@ import sys
 from unittest import TestCase
 from unittest.mock import MagicMock, Mock
 
-from forgeos.browser_observation import allowed_origin, compact_observation
+from forgeos.browser_observation import _safe_label, allowed_origin, compact_observation
 from forgeos.browser_probe import observe_page
 
 
@@ -40,6 +40,55 @@ class BrowserObservationTests(TestCase):
         self.assertNotIn("topsecretvalue", result.text)
         self.assertIn("Open Settings", result.text)
         self.assertIn("UNTRUSTED", result.text)
+
+    def test_browser_normalization_backslash_rejected(self):
+        with self.assertRaises(ValueError):
+            allowed_origin("https://example.com\\path")
+
+    def test_multitoken_credentials_and_known_tokens_suppress_entire_label(self):
+        labels = (
+            "Authorization: Bearer word one two three",
+            "password: correct horse battery staple",
+            "client secret = more than one word",
+            "Cookie: sessionid=safe-lookalike extra sensitive bytes",
+            "OAuth code: authorization callback value",
+            "Bearer multiple token words that must not leak",
+            "github_pat_abcdefghijklmnop1234567890",
+            "ghp_abcdefghijklmnopqrstuv1234567890",
+            "AKIAABCDEFGHIJKLMNOP",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signaturex",
+            "SSN 123-45-6789",
+            "Card 4111 1111 1111 1111",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        )
+        for label in labels:
+            with self.subTest(label=label[:20]):
+                self.assertEqual(_safe_label(label), "[REDACTED]")
+
+    def test_safe_label_remains_useful_and_email_is_redacted(self):
+        self.assertEqual(_safe_label("Open Settings"), "Open Settings")
+        self.assertEqual(_safe_label("contact jane@example.com"), "contact [EMAIL]")
+        self.assertLessEqual(len(_safe_label("A" * 200)), 120)
+
+    def test_malformed_unhashable_control_roles_are_ignored(self):
+        controls = [
+            {"kind": [], "label": "MALICIOUS"},
+            {"kind": {}, "label": "BAD"},
+            {"kind": "button", "label": "Continue"},
+        ]
+        observation = compact_observation(controls)
+        self.assertEqual(observation.controls, 1)
+        self.assertIn("Continue", observation.text)
+        self.assertNotIn("MALICIOUS", observation.text)
+
+    def test_oversized_untrusted_label_is_still_bounded(self):
+        observation = compact_observation([
+            {"kind": "link", "label": "password = a secret " + "q" * 500000},
+            {"kind": "button", "label": "Done"},
+        ])
+        self.assertLessEqual(len(observation.text), 3000)
+        self.assertIn("Done", observation.text)
+        self.assertNotIn("a secret", observation.text)
 
     def test_generator_is_bounded(self):
         visited = []
