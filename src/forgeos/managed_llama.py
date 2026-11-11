@@ -608,14 +608,20 @@ class ManagedLlamaServer:
                             pass
                 try:
                     process.wait(timeout=4)
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as exc:
+                    # Even a force-killed process may fail to exit/reap within
+                    # the second deadline. Preserve a bounded shutdown and
+                    # still close native handles and erase API credentials.
                     if os.name != "nt" and job is None:
                         try:
                             _terminate_posix_group(process.pid, signal.SIGKILL)
                         except OSError:
                             pass
-                    process.kill()
-                    process.wait(timeout=4)
+                    try:
+                        process.kill()
+                        process.wait(timeout=4)
+                    except (OSError, subprocess.TimeoutExpired):
+                        stop_error = stop_error or exc
                 except OSError as exc:
                     # A native wait failure can leave a live process behind.
                     if stop_error is None:
