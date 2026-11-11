@@ -67,6 +67,28 @@ class ForgeOSTests(unittest.TestCase):
             task = new_id
         self.assertEqual(self.store.counts()["total"], 4)
 
+    def test_partial_active_index_migrates_legacy_duplicates(self):
+        # Pre-existing active duplicates must not prevent database startup.
+        with self.store.db:
+            self.store.db.execute(
+                "DROP INDEX IF EXISTS idx_forgeos_active_task_lookup")
+            self.store.db.executemany(
+                "INSERT INTO tasks(project,description,created,updated) "
+                "VALUES(?,?,?,?)",
+                [(str(self.repo.resolve()), "Legacy duplicate", 1.0, 1.0)] * 2)
+        db_path = self.store.path
+        self.store.close()
+        self.store = Store(db_path)
+        self.assertTrue(self.store.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='idx_forgeos_active_task_lookup'").fetchone())
+        existing = self.store.db.execute(
+            "SELECT max(id) FROM tasks WHERE description='Legacy duplicate'"
+        ).fetchone()[0]
+        with self.assertRaisesRegex(ValueError, f"Active task #{existing}"):
+            self.store.add(str(self.repo), "Legacy duplicate")
+        self.assertEqual(self.store.counts()["total"], 2)
+
     def test_duplicate_add_from_two_windows_is_serialized(self):
         db_path = self.store.path
         start = threading.Barrier(4)
