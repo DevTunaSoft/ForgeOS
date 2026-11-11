@@ -632,6 +632,26 @@ class CheckpointResumeTests(EngineIntegrationTests):
                          allow_host_tests=True)
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
 
+    def test_malformed_checkpoint_shape_does_not_mask_original_resume_error(self):
+        from unittest.mock import patch
+        response = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(
+                    self.store, self.task, self.root, allow_host_tests=True,
+                    generate=lambda model, prompt: response)
+        self.store.recover()
+        self.store.update(self.task, "blocked", result="[]")
+        with self.assertRaisesRegex(AttributeError, "get"):
+            execute_task(
+                self.store, self.task, self.root,
+                allow_host_tests=True, resume=True)
+        state = self.store.get(self.task)
+        self.assertEqual(state["status"], "blocked")
+        self.assertIn("get", state["last_error"])
+        self.assertIn("workspace", json.loads(state["result"]))
+
     def test_resume_refuses_tampered_file(self):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
