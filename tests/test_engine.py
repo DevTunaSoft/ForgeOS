@@ -131,6 +131,14 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(report["resumed"], [])
         self.assertEqual(report["skipped"][0]["id"], self.task)
         resumed.assert_not_called()
+        # A rejected direct resume must not destroy the retained evidence
+        # or quietly turn a manual-review checkpoint into a replayable one.
+        with self.assertRaisesRegex(ValueError, "valid test-pending checkpoint"):
+            execute_task(self.store, self.task, self.root,
+                         allow_host_tests=True, resume=True)
+        retained = json.loads(self.store.get(self.task)["result"])
+        self.assertEqual(retained["phase"], "manual_review_required")
+        self.assertEqual(retained["sha256"], checkpoint["sha256"])
 
     def test_managed_model_hashes_are_pinned_in_checkpoint_without_secret(self):
         from unittest.mock import patch
