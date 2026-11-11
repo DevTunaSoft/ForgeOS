@@ -33,6 +33,8 @@ class LocalModelsTests(unittest.TestCase):
                 model.generate_edits("界" * (MAX_LOCAL_PROMPT_BYTES // 3 + 1))
             with self.assertRaisesRegex(ValueError, "16 KiB"):
                 model.plan("x" * (MAX_TASK_DESCRIPTION_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "invalid Unicode"):
+                model.generate_edits("\ud800")
             connection.assert_not_called()
             memory.assert_not_called()
 
