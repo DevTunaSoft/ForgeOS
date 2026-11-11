@@ -326,6 +326,15 @@ def _execute_task(
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
+            if (not isinstance(outcome, dict)
+                    or type(outcome.get("passed")) is not bool
+                    or not isinstance(outcome.get("output"), str)):
+                # A malformed test result cannot prove successful execution,
+                # even if its "passed" field is a truthy string or integer.
+                incomplete_test_evidence = True
+                capture_failure = "invalid-test-outcome"
+                raise RuntimeError(
+                    "Test runner returned an invalid outcome; manual review required")
             if outcome.get("capture_complete") is False:
                 # Incomplete diagnostics cannot support automated repair or
                 # acceptance. Mark this checkpoint non-resumable so repeated
