@@ -87,7 +87,7 @@ py -m forgeos gui
 Using the GUI:
 
 1. Under **Project repository**, browse to an **existing local Git repository**.
-2. Type a specific development task under **Tell ForgeOS what to build**.
+2. Type a specific development task under **Tell ForgeOS what to build** (maximum **16 KiB UTF-8** per task; split larger requests rather than truncating them).
 3. Select **Add task**, then select the task in the queue.
 4. Choose a local model (or `auto`), a test preset, and a workspace folder.
 5. Use **Generate plan** for planning. Enable **Host test execution** only for a trusted repository before selecting **Run tests only** or **Build / test / repair**. Both test operations use the same guarded runtime selection.
