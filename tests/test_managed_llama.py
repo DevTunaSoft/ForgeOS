@@ -145,6 +145,32 @@ class ManagedLlamaTests(unittest.TestCase):
         self.assertEqual(process.wait.call_count, 2)
         self.assertIsNone(controller.process)
 
+    def test_repeated_shutdown_timeout_is_bounded_and_erases_credentials(self):
+        import subprocess
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired("llama-server", 4),
+            subprocess.TimeoutExpired("llama-server", 4),
+        ]
+        controller.process = process
+        controller.api_key = "secret"
+        controller.endpoint = "http://127.0.0.1:12345/v1"
+        temporary = Mock()
+        controller._secrets = temporary
+        with patch("forgeos.managed_llama._terminate_posix_group"):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                controller.stop()
+        self.assertEqual(process.wait.call_count, 2)
+        process.kill.assert_called_once_with()
+        process.close.assert_called_once_with()
+        temporary.cleanup.assert_called_once_with()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+        self.assertIsNone(controller.endpoint)
+
     def test_secret_cleanup_failure_still_clears_session_identity(self):
         controller = ManagedLlamaServer()
         controller.api_key = "secret"
