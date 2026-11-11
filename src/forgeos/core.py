@@ -187,6 +187,42 @@ class Store:
             raise ValueError(f'No task #{task_id}')
         return dict(row)
 
+    def get_task_inputs(self, task_id: int, *, resume: bool = False) -> dict:
+        """Read only execution inputs; never fetch old diagnostic blobs.
+
+        A resume needs the original checkpoint, but SQL rejects oversized
+        values before SQLite transfers them into Python. Regular execution
+        does not load prior results, errors or other historical task columns.
+        """
+        if type(resume) is not bool:
+            raise ValueError("resume must be boolean")
+        fields = (
+            "id,project,status,"
+            "CASE WHEN length(CAST(description AS BLOB)) <= ? "
+            "THEN description ELSE NULL END AS description"
+        )
+        if resume:
+            sql = (
+                f"SELECT {fields},"
+                "CASE WHEN length(CAST(result AS BLOB)) <= ? "
+                "THEN result ELSE NULL END AS result,"
+                "length(CAST(result AS BLOB)) AS checkpoint_bytes "
+                "FROM tasks WHERE id=?"
+            )
+            args = (MAX_TASK_DESCRIPTION_BYTES, MAX_CHECKPOINT_BYTES, task_id)
+        else:
+            sql = f"SELECT {fields},'' AS result FROM tasks WHERE id=?"
+            args = (MAX_TASK_DESCRIPTION_BYTES, task_id)
+        row = self.db.execute(sql, args).fetchone()
+        if row is None:
+            raise ValueError(f"No task #{task_id}")
+        if row["description"] is None:
+            raise ValueError("Task description exceeds 16 KiB UTF-8")
+        if resume and (row["checkpoint_bytes"] is None
+                       or row["checkpoint_bytes"] > MAX_CHECKPOINT_BYTES):
+            raise ValueError("Resume checkpoint exceeds 64 KiB safety limit")
+        return dict(row)
+
     def update(self, task_id: int, status: str, *, error: str = '',
                result: str = '', increment: bool = False):
         if status not in STATUSES:
