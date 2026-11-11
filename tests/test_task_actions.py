@@ -56,7 +56,7 @@ class TaskActionsTests(unittest.TestCase):
                 self.store.update(self.task, "queued")
 
     def test_planning_output_type_and_unicode_fail_closed(self):
-        for output in (None, "", "  ", "\\ud800", {"unexpected": "object"}):
+        for output in (None, "", "  ", "\ud800", {"unexpected": "object"}):
             with self.subTest(output_type=type(output).__name__):
                 with self.assertRaises(RuntimeError):
                     plan_task(self.store, self.task,
