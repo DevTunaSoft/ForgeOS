@@ -584,8 +584,17 @@ class ManagedLlamaServer:
                     _release_windows_job(job)
                 except OSError as exc:
                     job_error = exc
+            poll_error = None
             if process is not None:
-                if process.poll() is None and (job is None or job_error is not None):
+                try:
+                    needs_stop = process.poll() is None
+                except OSError as exc:
+                    # If process inspection fails, assume it may still be
+                    # running and attempt cleanup before reporting the error.
+                    needs_stop = True
+                    poll_error = exc
+                if needs_stop and (job is None or job_error is not None
+                                   or poll_error is not None):
                     if os.name != "nt":
                         _terminate_posix_group(process.pid, signal.SIGTERM)
                     process.terminate()
@@ -598,6 +607,8 @@ class ManagedLlamaServer:
                     process.wait(timeout=4)
             if job_error is not None:
                 raise job_error
+            if poll_error is not None:
+                raise poll_error
         finally:
             # Native Windows process handles must close even when poll(),
             # wait(), termination, or Job Object cleanup raises.
