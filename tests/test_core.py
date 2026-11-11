@@ -172,6 +172,15 @@ class ForgeOSTests(unittest.TestCase):
         (self.repo/'test_example.py').write_text('import unittest\nclass T(unittest.TestCase):\n def test_bad(self): self.assertTrue(False)\n')
         result=run_test(str(self.repo),'python-unittest')
         self.assertFalse(result['passed'])
+    def test_ollama_rejects_unbounded_generated_prompts_before_network(self):
+        from forgeos.core import MAX_LOCAL_PROMPT_BYTES
+        with patch("forgeos.core.urlopen") as request:
+            with self.assertRaisesRegex(ValueError, "64 KiB"):
+                Ollama().generate_edits("x" * (MAX_LOCAL_PROMPT_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "64 KiB"):
+                Ollama().generate_edits("界" * (MAX_LOCAL_PROMPT_BYTES // 3 + 1))
+            request.assert_not_called()
+
     def test_local_only_ollama(self):
         with self.assertRaises(ValueError): Ollama(base='https://example.org')
     def test_ollama_request_limits_local_response_and_unloads_small_ram(self):
