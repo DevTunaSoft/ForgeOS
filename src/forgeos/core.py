@@ -187,6 +187,14 @@ class Store:
             raise ValueError(f'No task #{task_id}')
         return dict(row)
 
+    def get_status(self, task_id: int) -> str:
+        """Read a single status value for the GUI activity monitor."""
+        row = self.db.execute(
+            'SELECT status FROM tasks WHERE id=?', (task_id,)).fetchone()
+        if row is None:
+            raise ValueError(f'No task #{task_id}')
+        return row['status']
+
     def get_task_inputs(self, task_id: int, *, resume: bool = False) -> dict:
         """Read only execution inputs; never fetch old diagnostic blobs.
 
