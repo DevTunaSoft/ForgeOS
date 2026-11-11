@@ -123,6 +123,54 @@ class EngineIntegrationTests(unittest.TestCase):
             self.store.db.execute("SELECT COUNT(*) FROM task_leases").fetchone()[0],
             0)
 
+    def test_generation_failure_keeps_engine_task_record_bounded(self):
+        from unittest.mock import patch
+        error = "X" * 120000 + "MODEL-FAILED"
+        with patch("forgeos.engine._run_workspace_tests") as test_runner:
+            with self.assertRaisesRegex(RuntimeError, "MODEL-FAILED"):
+                execute_task(
+                    self.store, self.task, self.root, allow_host_tests=True,
+                    generate=lambda model, prompt: (_ for _ in ()).throw(
+                        RuntimeError(error)))
+        test_runner.assert_not_called()
+        state = self.store.get(self.task)
+        self.assertEqual(state["status"], "blocked")
+        self.assertEqual(state["last_error"], error[-4000:])
+        stored = json.loads(state["result"])
+        self.assertEqual(stored["error"], error[-4000:])
+        self.assertLess(len(state["result"].encode("utf-8")), 5000)
+        self.assertEqual(
+            self.store.db.execute(
+                "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+
+    def test_test_timeout_blocks_autonomous_resume_without_repair(self):
+        from unittest.mock import patch, Mock
+        from forgeos.core import run_test
+        from forgeos.recovery import resume_safe
+        manifest = json.dumps({"files": [
+            {"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        with patch("forgeos.core._execute_test_process",
+                   side_effect=subprocess.TimeoutExpired("python", 1)):
+            timeout_result = run_test(
+                str(self.repo), "python-unittest", timeout=1)
+        self.assertIs(timeout_result["capture_complete"], False)
+        with patch("forgeos.engine._run_workspace_tests",
+                   return_value=timeout_result) as test_runner:
+            with self.assertRaisesRegex(RuntimeError, "evidence limits"):
+                execute_task(
+                    self.store, self.task, self.root,
+                    allow_host_tests=True,
+                    generate=lambda model, prompt: manifest)
+        test_runner.assert_called_once()
+        checkpoint = json.loads(self.store.get(self.task)["result"])
+        self.assertEqual(checkpoint["phase"], "manual_review_required")
+        self.assertEqual(checkpoint["capture_error"], "test-timeout")
+        resume_runner = Mock()
+        report = resume_safe(self.store, self.root, allow_host_tests=True,
+                             execute=resume_runner)
+        self.assertEqual(report["resumed"], [])
+        resume_runner.assert_not_called()
+
     def test_incomplete_large_log_blocks_autonomous_pass(self):
         from unittest.mock import patch
         manifest = json.dumps({"files": [
