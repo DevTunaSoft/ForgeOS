@@ -78,6 +78,73 @@ class ManagedLlamaTests(unittest.TestCase):
         self.assertIsNone(controller.endpoint)
         self.assertIsNone(controller._secrets)
 
+    def test_graceful_shutdown_failure_still_kills_and_waits(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        process.terminate.side_effect = OSError("terminate failed")
+        controller.process = process
+        controller.api_key = "secret"
+        with patch("forgeos.managed_llama._terminate_posix_group"):
+            with self.assertRaisesRegex(OSError, "terminate failed"):
+                controller.stop()
+        process.kill.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=4)
+        process.close.assert_called_once_with()
+        self.assertIsNone(controller.api_key)
+        self.assertIsNone(controller.process)
+
+    def test_native_wait_error_still_kills_and_retries_wait(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        process.wait.side_effect = [OSError("wait failed"), 0]
+        controller.process = process
+        controller.api_key = "secret"
+        with patch("forgeos.managed_llama._terminate_posix_group"):
+            with self.assertRaisesRegex(OSError, "wait failed"):
+                controller.stop()
+        process.kill.assert_called_once_with()
+        self.assertEqual(process.wait.call_count, 2)
+        process.close.assert_called_once_with()
+        self.assertIsNone(controller.api_key)
+
+    @unittest.skipIf(os.name == "nt", "POSIX process-group fallback")
+    def test_group_termination_failure_still_kills_direct_child(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        controller.process = process
+        with patch("forgeos.managed_llama._terminate_posix_group",
+                   side_effect=OSError("group failed")):
+            with self.assertRaisesRegex(OSError, "group failed"):
+                controller.stop()
+        process.terminate.assert_not_called()
+        process.kill.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=4)
+
+    @unittest.skipIf(os.name == "nt", "POSIX group SIGKILL fallback")
+    def test_group_kill_failure_still_kills_direct_child(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        process.wait.side_effect = [
+            __import__("subprocess").TimeoutExpired("llama-server", 4), 0]
+        controller.process = process
+        def group_signal(pid, sig):
+            if sig == __import__("signal").SIGKILL:
+                raise OSError("group kill failed")
+        with patch("forgeos.managed_llama._terminate_posix_group",
+                   side_effect=group_signal):
+            controller.stop()
+        process.kill.assert_called_once_with()
+        self.assertEqual(process.wait.call_count, 2)
+        self.assertIsNone(controller.process)
+
     def test_secret_cleanup_failure_still_clears_session_identity(self):
         controller = ManagedLlamaServer()
         controller.api_key = "secret"
