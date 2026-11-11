@@ -35,7 +35,7 @@ class ForgeOSTests(unittest.TestCase):
         before = self.store.counts()["total"]
         for invalid in (
                 "x" * (limit + 1), "界" * (limit // 3 + 1),
-                " " * (limit + 1), "bad\\ud800", None, 17, ""):
+                " " * (limit + 1), "bad\ud800", None, 17, ""):
             with self.subTest(value_type=type(invalid).__name__,
                               size=len(invalid) if isinstance(invalid, str) else -1):
                 with self.assertRaises(ValueError):
@@ -180,7 +180,7 @@ class ForgeOSTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "64 KiB"):
                 Ollama().generate_edits("界" * (MAX_LOCAL_PROMPT_BYTES // 3 + 1))
             with self.assertRaisesRegex(ValueError, "invalid Unicode"):
-                Ollama().generate_edits("\\ud800")
+                Ollama().generate_edits("\ud800")
             request.assert_not_called()
 
     def test_local_only_ollama(self):
