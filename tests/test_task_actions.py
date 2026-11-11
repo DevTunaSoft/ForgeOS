@@ -223,6 +223,29 @@ class TaskActionsTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute(
             "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
 
+    def test_manual_tests_reject_malformed_runner_outcomes(self):
+        malformed = (
+            {"passed": "false", "output": "claimed success"},
+            {"passed": 1, "output": "claimed success"},
+            {"passed": True, "output": None},
+            {"passed": True, "output": "ok", "capture_complete": "false"},
+            None,
+        )
+        for outcome in malformed:
+            with self.subTest(outcome=outcome):
+                with patch("forgeos.task_actions._run_workspace_tests",
+                           return_value=outcome):
+                    with self.assertRaisesRegex(RuntimeError, "invalid outcome"):
+                        test_task(self.store, self.task, "python-unittest",
+                                  allow_host_tests=True)
+                record = self.store.get(self.task)
+                self.assertEqual(record["status"], "blocked")
+                self.assertEqual(record["result"], "")
+                self.assertEqual(
+                    self.store.db.execute(
+                        "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+                self.store.update(self.task, "queued")
+
     def test_failed_or_incomplete_tests_never_approve_a_task(self):
         with patch("forgeos.task_actions._run_workspace_tests",
                    return_value={"passed": False, "output": "failure"}):
