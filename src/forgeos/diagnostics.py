@@ -275,6 +275,19 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
         else:
             reference = (store if store is not None else EvidenceStore()).put(output)
     except (OSError, ValueError, UnicodeError, TypeError) as exc:
+        # No durable original evidence means neither success nor automated
+        # repair can be authorized. Never return multi-megabyte raw logs to
+        # the SQLite task row when the evidence disk is unavailable.
+        preview_limit = min(budget, DEFAULT_BUDGET)
+        head = output[:preview_limit // 2]
+        tail = output[-(preview_limit - len(head)):] if len(output) > preview_limit else ""
+        outcome["output"] = (
+            head + ("\n[ForgeOS: original diagnostic not archived; "
+                    "manual review required]\n" if tail else "") + tail
+        )
+        outcome["passed"] = False
+        outcome["capture_complete"] = False
+        outcome["capture_error"] = "evidence-archive-failed"
         outcome["optimization"] = {
             "archived": False, "optimized": False, "source_bytes": raw_bytes,
             "reason": f"Archiving failed: {type(exc).__name__}"}
