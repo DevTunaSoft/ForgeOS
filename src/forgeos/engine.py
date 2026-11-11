@@ -168,6 +168,7 @@ def _execute_task(
     ws = None
     last_output = ""
     incomplete_test_evidence = False
+    capture_failure = None
     def heartbeat():
         if not store.heartbeat_lease(task_id, lease_owner):
             raise LeaseLostError("Task execution lease was lost or expired")
@@ -327,6 +328,11 @@ def _execute_task(
                 # acceptance. Mark this checkpoint non-resumable so repeated
                 # resume-safe runs cannot re-execute an output-flooding test.
                 incomplete_test_evidence = True
+                reason = outcome.get("capture_error")
+                # Retain only a bounded, structured failure code. Never copy
+                # large or untrusted test text into recovery checkpoints.
+                if isinstance(reason, str) and 0 < len(reason) <= 80:
+                    capture_failure = reason
                 raise RuntimeError(
                     "Test output exceeds safe evidence limits or original archive "
                     "could not be retained; automatic repair/approval blocked")
@@ -405,6 +411,8 @@ def _execute_task(
             # prevent recovery from blindly replaying the same unsafe test.
             details["phase"] = "manual_review_required"
             details["capture_complete"] = False
+            if capture_failure is not None:
+                details["capture_error"] = capture_failure
         try:
             publish({"editing", "testing"}, "blocked",
                     error=str(exc), result=json.dumps(details))
