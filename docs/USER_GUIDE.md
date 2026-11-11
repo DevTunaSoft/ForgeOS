@@ -325,6 +325,8 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 
 When a source-mode test on Linux produces more than **32 MiB** of combined stdout/stderr, ForgeOS stops that test promptly rather than reading an unlimited output flood until the normal test timeout. The result is a **failed, incomplete diagnostic capture**; it is not treated as a passing test or as complete evidence for automatic repair. Output at or below the limit follows the existing disk-backed capture path. The change reuses the existing reader thread and adds no idle monitoring or extra dependency.
 
+On POSIX source-mode runs, ForgeOS also checks whether a test left a helper process running after its parent exited. It terminates helpers remaining in that test's process group and marks the result failed with incomplete evidence, even when the parent reported exit code 0. Helpers that deliberately detach into another process group are outside this safeguard; source-mode execution is not a general-purpose sandbox.
+
 The packaged Windows AppContainer runner enforces its separate native output-file limits. Neither output limit makes arbitrary generated tests safe to run on an unrestricted host: use a disposable project and grant host-test execution only when intended.
 
 ## 8. Troubleshooting
