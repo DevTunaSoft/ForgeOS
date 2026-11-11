@@ -251,7 +251,7 @@ def parse_test_summary(text: str, preset: str) -> dict[str, Any]:
 def optimize_test_result(result: dict[str, Any], preset: str, *,
                          store: EvidenceStore | None = None,
                          budget: int = DEFAULT_BUDGET) -> dict[str, Any]:
-    """Archive exact output, then create a compact context without modifying status."""
+    """Archive full output and compact context; fail closed if archiving fails."""
     if not isinstance(budget, int) or isinstance(budget, bool) or budget < 1024:
         raise ValueError("Budget must be >= 1024")
     output = result.get("output")
@@ -279,12 +279,15 @@ def optimize_test_result(result: dict[str, Any], preset: str, *,
         # repair can be authorized. Never return multi-megabyte raw logs to
         # the SQLite task row when the evidence disk is unavailable.
         preview_limit = min(budget, DEFAULT_BUDGET)
-        head = output[:preview_limit // 2]
-        tail = output[-(preview_limit - len(head)):] if len(output) > preview_limit else ""
+        if len(output) > preview_limit:
+            head = output[:preview_limit // 2]
+            tail = output[-(preview_limit - len(head)):]
+            preview = head + "\n[... original output unavailable ...]\n" + tail
+        else:
+            preview = output
         outcome["output"] = (
-            head + ("\n[ForgeOS: original diagnostic not archived; "
-                    "manual review required]\n" if tail else "") + tail
-        )
+            preview + "\n[ForgeOS: original diagnostic not archived; "
+            "manual review required]")
         outcome["passed"] = False
         outcome["capture_complete"] = False
         outcome["capture_error"] = "evidence-archive-failed"
