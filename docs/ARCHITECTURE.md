@@ -74,6 +74,12 @@ loading remain outside these adapters, so there is no claimed full
 resource governor or native GGUF execution. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
+## Low-memory SQLite read boundary
+
+The persistent `Store.get()` API remains available for explicit detailed history and evidence inspection, but **regular development, planning and manual test actions** use the narrower `Store.get_task_inputs()` projection. Its normal path selects only the project, status and bounded UTF-8 task description, without fetching historical result/error data. Direct resumption uses the same bounded projection but requests an existing checkpoint only when at most 64 KiB. Oversized legacy description/checkpoint values are rejected within the SQLite projection before Python materializes them; the original stored rows are not modified.
+
+The Tkinter Live Activity Monitor uses `Store.get_status()` to select one scalar status value at its existing once-per-second cadence. It never fetches model output, error logs or checkpoints merely to update a stage label. These are **read-path optimizations**, not a guarantee that SQLite's internal page cache, the external model process or the complete application has a fixed RAM ceiling. Full process-tree Windows acceptance remains open.
+
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository. The optional GUI/CLI **Plan** and **Run tests only** actions now share `task_actions.py` instead of using independent, unguarded SQLite state writes. Direct tests require explicit host-test permission and use the engine's platform-specific test containment (frozen Windows supported presets only).
