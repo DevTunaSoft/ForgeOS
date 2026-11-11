@@ -103,6 +103,43 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
 
+    def test_new_run_ignores_oversized_legacy_history_blobs(self):
+        from unittest.mock import patch
+        prior = "old-history" * 200000
+        self.store.update(self.task, "queued", result=prior, error=prior)
+        manifest = json.dumps({"files": [
+            {"path": "app.py", "content": "def value():\n return 42\n"}]})
+        outcome = {"passed": True, "output": "verified", "returncode": 0}
+        with (patch.object(self.store, "get",
+                           side_effect=AssertionError("full history fetched")),
+              patch("forgeos.engine._run_workspace_tests",
+                    return_value=outcome)):
+            result = execute_task(
+                self.store, self.task, self.root,
+                allow_host_tests=True,
+                generate=lambda model, prompt: manifest)
+        self.assertTrue(result["passed"])
+        self.assertEqual(self.store.get(self.task)["status"], "passed")
+
+    def test_direct_resume_rejects_large_checkpoint_before_workspace_access(self):
+        from unittest.mock import patch, Mock
+        from forgeos.core import MAX_CHECKPOINT_BYTES
+        self.store.update(
+            self.task, "blocked", result="Z" * (MAX_CHECKPOINT_BYTES + 1))
+        generator = Mock(side_effect=AssertionError("model unexpectedly called"))
+        with patch("forgeos.engine.create_workspace") as workspace:
+            with self.assertRaisesRegex(ValueError, "64 KiB"):
+                execute_task(
+                    self.store, self.task, self.root,
+                    allow_host_tests=True, resume=True, generate=generator)
+            workspace.assert_not_called()
+        generator.assert_not_called()
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+        self.assertEqual(
+            len(self.store.get(self.task)["result"]), MAX_CHECKPOINT_BYTES + 1)
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+
     def test_oversized_legacy_task_fails_before_workspace_or_model_calls(self):
         from unittest.mock import Mock, patch
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
