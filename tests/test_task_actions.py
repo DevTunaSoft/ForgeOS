@@ -55,6 +55,26 @@ class TaskActionsTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
                 self.store.update(self.task, "queued")
 
+    def test_planning_output_type_and_unicode_fail_closed(self):
+        for output in (None, "", "  ", "\\ud800", {"unexpected": "object"}):
+            with self.subTest(output_type=type(output).__name__):
+                with self.assertRaises(RuntimeError):
+                    plan_task(self.store, self.task,
+                              model=Mock(plan=Mock(return_value=output)))
+                self.assertEqual(self.store.get(self.task)["status"], "blocked")
+                self.assertEqual(self.store.get(self.task)["result"], "")
+                self.store.update(self.task, "queued")
+
+    def test_planning_exception_diagnostic_is_bounded(self):
+        original = "z" * 100000 + "PLAN-ERROR"
+        with self.assertRaisesRegex(RuntimeError, "PLAN-ERROR"):
+            plan_task(self.store, self.task,
+                      model=Mock(plan=Mock(side_effect=RuntimeError(original))))
+        stored = self.store.get(self.task)
+        self.assertEqual(stored["status"], "blocked")
+        self.assertEqual(stored["last_error"], original[-4000:])
+        self.assertEqual(stored["result"], "")
+
     def test_planning_result_at_exact_budget_is_preserved(self):
         from forgeos.core import MAX_CHECKPOINT_BYTES
         plan = "a" * MAX_CHECKPOINT_BYTES
@@ -200,6 +220,19 @@ class TaskActionsTests(unittest.TestCase):
         record = self.store.get(self.task)
         self.assertEqual(record["status"], "blocked")
         self.assertIn("storage budget", record["last_error"])
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+
+    def test_manual_runner_exception_diagnostic_is_bounded(self):
+        original = "z" * 100000 + "TEST-ERROR"
+        with patch("forgeos.task_actions._run_workspace_tests",
+                   side_effect=RuntimeError(original)):
+            with self.assertRaisesRegex(RuntimeError, "TEST-ERROR"):
+                test_task(self.store, self.task, "python-unittest",
+                          allow_host_tests=True)
+        stored = self.store.get(self.task)
+        self.assertEqual(stored["status"], "blocked")
+        self.assertEqual(stored["last_error"], original[-4000:])
         self.assertEqual(self.store.db.execute(
             "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
 
