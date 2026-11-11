@@ -36,16 +36,38 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(self.store.put(raw), ref)
         self.assertEqual(self.store.get(ref), raw)
 
-    def test_archiving_failure_returns_uncompressed(self):
+    def test_archiving_failure_blocks_approval_without_raw_log_in_sqlite(self):
         raw = "noise\n" * 400
         failed_store = Mock()
         failed_store.put.side_effect = OSError("disk full")
+        for passed in (False, True):
+            with self.subTest(initial_passed=passed):
+                result = optimize_test_result(
+                    {"passed": passed, "returncode": 0 if passed else 1,
+                     "output": raw}, "python-unittest",
+                    store=failed_store, budget=1200)
+                self.assertFalse(result["optimization"]["archived"])
+                self.assertFalse(result["passed"])
+                self.assertIs(result["capture_complete"], False)
+                self.assertEqual(result["capture_error"], "evidence-archive-failed")
+                self.assertLess(len(result["output"]), 1500)
+                self.assertIn("manual review required", result["output"])
+                self.assertNotEqual(result["output"], raw)
+                self.assertEqual(result["returncode"], 0 if passed else 1)
+
+    def test_failed_archive_of_large_success_is_bounded_and_does_not_pass(self):
+        raw = "PASS output " * 180000
+        failed_store = Mock()
+        failed_store.put.side_effect = OSError("disk full")
         result = optimize_test_result(
-            {"passed": False, "returncode": 1, "output": raw}, "python-unittest",
-            store=failed_store, budget=1200)
-        self.assertEqual(result["output"], raw)
-        self.assertFalse(result["optimization"]["archived"])
+            {"passed": True, "returncode": 0, "output": raw},
+            "python-pytest", store=failed_store)
         self.assertFalse(result["passed"])
+        self.assertEqual(result["capture_error"], "evidence-archive-failed")
+        self.assertLess(len(result["output"]), 13000)
+        self.assertFalse(result["optimization"]["archived"])
+        self.assertEqual(result["optimization"]["source_bytes"],
+                         len(raw.encode("utf-8")))
 
     def test_failures_and_counts_survive_with_recall(self):
         raw = ("INFO normal\n" * 600 + 'Traceback (most recent call last):\n'
