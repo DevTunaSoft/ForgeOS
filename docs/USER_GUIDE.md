@@ -177,6 +177,8 @@ troubleshooting and a RAM-conscious model shortlist.
 
 ## 2. Understand the screen
 
+**Memory-conscious input limits:** Task descriptions are limited to **16 KiB of UTF-8 text**, including text entered in the GUI or CLI. The local AI request path also rejects prompts larger than **64 KiB**, before model selection or JSON serialization. Oversized inputs are **rejected**, not silently truncated. Break large requirements into smaller, independently testable tasks and keep lengthy diagnostic files outside the task description. Legacy oversized task records are refused before ForgeOS creates a worktree or contacts the local AI model. These bounds are implemented but still require the latest Linux/Windows CI acceptance runs.
+
 The one-window desktop prototype has **two tabs**:
 
 | Location | What you will see | What it does |
