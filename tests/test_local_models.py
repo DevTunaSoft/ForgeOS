@@ -23,6 +23,41 @@ def payload(data):
 
 
 class LocalModelsTests(unittest.TestCase):
+    def test_real_loopback_http_trickle_has_bounded_deadline(self):
+        import threading
+        import time
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from forgeos.local_models import _read_json
+
+        class Drip(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                for item in b'{"data":[1,2,3,4,5,6,7,8,9]}':
+                    try:
+                        self.wfile.write(bytes([item]))
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                    time.sleep(0.15)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Drip)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = Request(
+                f"http://127.0.0.1:{server.server_port}/v1/models")
+            with self.assertRaisesRegex(TimeoutError, "total deadline"):
+                _read_json(request, limit=4096, timeout=1)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
     def test_trickled_local_response_hits_total_deadline(self):
         from forgeos.local_models import _read_json
         class Trickle(Response):
