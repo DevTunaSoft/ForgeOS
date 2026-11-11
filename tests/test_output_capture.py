@@ -149,6 +149,56 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
                     watched_files=(log,))
         self.assertTrue(kernel.killed)
 
+    def test_native_watcher_enforces_combined_output_budget(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        first = self.root / "test-output.txt"
+        second = self.root / "pytest-log.txt"
+        with first.open("wb") as stream:
+            stream.truncate(16 * 1024 * 1024)
+        with second.open("wb") as stream:
+            stream.truncate(9 * 1024 * 1024)
+
+        class Kernel:
+            killed = False
+            def WaitForSingleObject(self, process, ms):
+                return 0
+            def TerminateJobObject(self, job, status):
+                self.killed = True
+                return 1
+
+        kernel = Kernel()
+        with tempfile.TemporaryFile(mode="w+b") as native:
+            native.truncate(9 * 1024 * 1024)
+            with self.assertRaisesRegex(OSError, "Combined test outputs"):
+                wait_native_output_bounded(
+                    10, 20, native, 5, kernel32=kernel,
+                    wait_timeout=258, wait_object_0=0,
+                    watched_files=(first, second))
+        self.assertTrue(kernel.killed)
+
+    def test_native_watcher_accepts_exact_combined_output_budget(self):
+        from forgeos.output_capture import wait_native_output_bounded
+        first = self.root / "test-output.txt"
+        second = self.root / "pytest-log.txt"
+        with first.open("wb") as stream:
+            stream.truncate(16 * 1024 * 1024)
+        with second.open("wb") as stream:
+            stream.truncate(8 * 1024 * 1024)
+
+        class Kernel:
+            def WaitForSingleObject(self, process, ms):
+                return 0
+            def TerminateJobObject(self, job, status):
+                raise AssertionError("Exact-cap test must not terminate")
+
+        with tempfile.TemporaryFile(mode="w+b") as native:
+            native.truncate(8 * 1024 * 1024)
+            status = wait_native_output_bounded(
+                10, 20, native, 5, kernel32=Kernel(),
+                wait_timeout=258, wait_object_0=0,
+                watched_files=(first, second))
+        self.assertEqual(status, 0)
+
     def test_native_disk_output_watchdog_kills_oversize_job(self):
         from forgeos.output_capture import wait_native_output_bounded
         class FakeWindowsKernel:
