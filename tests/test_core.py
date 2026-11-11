@@ -302,15 +302,15 @@ class ForgeOSTests(unittest.TestCase):
         self.assertFalse(result['passed'])
     def test_archive_failure_disallows_successful_test_result(self):
         from unittest.mock import Mock
-        raw = "Successful test output\\n" * 5000
+        raw = "Successful test output\n" * 5000
         original = {"passed": True, "returncode": 0, "output": raw}
         failed_archive = Mock()
         failed_archive.put.side_effect = OSError("diagnostics disk unavailable")
-        with patch("forgeos.core._execute_test_process",
-                   return_value=original) as process, \\
-             patch("forgeos.diagnostics.EvidenceStore",
-                   return_value=failed_archive), \\
-             patch("forgeos.optimizer_metrics.OptimizationMetrics"):
+        with (patch("forgeos.core._execute_test_process",
+                    return_value=original) as process,
+              patch("forgeos.diagnostics.EvidenceStore",
+                    return_value=failed_archive),
+              patch("forgeos.optimizer_metrics.OptimizationMetrics")):
             result = run_test(str(self.repo), "python-unittest")
         process.assert_called_once()
         self.assertIs(result["passed"], False)
