@@ -52,6 +52,37 @@ class ManagedLlamaTests(unittest.TestCase):
             self.exe.chmod(0o700)
         self.exe_sha = hashlib.sha256(self.exe.read_bytes()).hexdigest()
 
+    def test_shutdown_failure_still_closes_native_handle_and_clears_secrets(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.poll.side_effect = OSError("process query failed")
+        controller.process = process
+        controller.api_key = "secret"
+        controller.endpoint = "http://127.0.0.1:12345/v1"
+        temporary = Mock()
+        controller._secrets = temporary
+        with self.assertRaisesRegex(OSError, "process query failed"):
+            controller.stop()
+        process.close.assert_called_once_with()
+        temporary.cleanup.assert_called_once_with()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+        self.assertIsNone(controller.endpoint)
+        self.assertIsNone(controller._secrets)
+
+    def test_secret_cleanup_failure_still_clears_session_identity(self):
+        controller = ManagedLlamaServer()
+        controller.api_key = "secret"
+        controller.model_name = ALIAS
+        temporary = Mock()
+        temporary.cleanup.side_effect = OSError("temp cleanup failed")
+        controller._secrets = temporary
+        with self.assertRaisesRegex(OSError, "temp cleanup failed"):
+            controller.stop()
+        self.assertIsNone(controller.api_key)
+        self.assertIsNone(controller.model_name)
+        self.assertIsNone(controller._secrets)
+
     def test_verified_gguf_requires_actual_bytes_and_manifest(self):
         with patch("forgeos.managed_llama.safe_model_file_budget", return_value=1024):
             path, identity = _verified_model(self.model)
