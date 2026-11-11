@@ -435,10 +435,17 @@ def run_test(project: str, command: str, timeout: int = 180, *,
             outcome["metrics_recorded"] = False
         return outcome
     except subprocess.TimeoutExpired:
+        # No complete test evidence is available. Never send this to an
+        # autonomous repair loop as an ordinary, reproducible test failure.
         return {'passed': False, 'returncode': None,
                 'output': f'Test timed out after {timeout}s',
+                'capture_complete': False, 'capture_error': 'test-timeout',
                 'containment': _containment_name(low_integrity)}
     except OSError as exc:
+        # Includes unavailable executables and native containment failures.
+        # Both are setup/runtime blockers, not verified application defects.
         return {'passed': False, 'returncode': None,
-                'output': f'Test executable unavailable: {exc}',
+                'output': f'Test runtime unavailable: {str(exc)[-4000:]}',
+                'capture_complete': False,
+                'capture_error': 'test-runtime-unavailable',
                 'containment': _containment_name(low_integrity)}
