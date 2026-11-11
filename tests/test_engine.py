@@ -109,7 +109,8 @@ class EngineIntegrationTests(unittest.TestCase):
             {"path": "app.py", "content": "def value():\n return 42\n"}]})
         fake = {"passed": True, "returncode": 0,
                 "output": "[ForgeOS warning: incomplete]",
-                "capture_complete": False}
+                "capture_complete": False,
+                "capture_error": "capture-limit-exceeded"}
         with patch("forgeos.engine._run_workspace_tests", return_value=fake) as runner:
             with self.assertRaisesRegex(RuntimeError, "evidence limits"):
                 execute_task(self.store, self.task, self.root,
@@ -120,6 +121,7 @@ class EngineIntegrationTests(unittest.TestCase):
         checkpoint = json.loads(self.store.get(self.task)["result"])
         self.assertEqual(checkpoint["phase"], "manual_review_required")
         self.assertIs(checkpoint["capture_complete"], False)
+        self.assertEqual(checkpoint["capture_error"], "capture-limit-exceeded")
         self.assertEqual((self.repo / "app.py").read_text(),
                          "def value():\n return 42\n")
         # A second recovery attempt must not re-run the same output flood.
