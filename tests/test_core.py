@@ -364,6 +364,9 @@ class ForgeOSTests(unittest.TestCase):
             result=run_test(str(self.repo),'npm-test')
         self.assertFalse(result['passed'])
         self.assertIn('unavailable',result['output'])
+        self.assertIs(result['capture_complete'], False)
+        self.assertEqual(result['capture_error'], 'test-runtime-unavailable')
+        self.assertIsNone(result['returncode'])
 
     def test_timeout_is_reported(self):
         with patch('forgeos.core._execute_test_process',
@@ -371,6 +374,9 @@ class ForgeOSTests(unittest.TestCase):
             result=run_test(str(self.repo),'python-unittest',timeout=1)
         self.assertFalse(result['passed'])
         self.assertIn('timed out',result['output'])
+        self.assertIs(result['capture_complete'], False)
+        self.assertEqual(result['capture_error'], 'test-timeout')
+        self.assertIsNone(result['returncode'])
 
     def test_bad_status(self):
         a=self.store.add(str(self.repo),'one')
