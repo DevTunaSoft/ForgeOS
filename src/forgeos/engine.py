@@ -261,6 +261,8 @@ def _execute_task(
             f"Request:\n{task['description']}\nRepository file inventory:\n{_context(ws.path, task['description'])}"
         )
         checkpoint = json.loads(task["result"]) if resume and task["result"] else {}
+        if resume and not isinstance(checkpoint, dict):
+            raise ValueError("Invalid resume checkpoint format")
         phase = checkpoint.get("phase") if resume else None
         if resume:
             saved_workspace = checkpoint.get("workspace")
