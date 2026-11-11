@@ -121,6 +121,43 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(sum(kind == "ValueError" for kind, _ in outcomes), 2)
         self.assertEqual(self.store.counts()["total"], 1)
 
+    def test_execution_view_never_materializes_historical_result_or_error(self):
+        from forgeos.core import MAX_CHECKPOINT_BYTES
+        task = self.store.add(str(self.repo), "Inspect repository safely")
+        archive = "H" * (2 * 1024 * 1024)
+        self.store.update(task, "queued", result=archive, error=archive)
+        view = self.store.get_task_inputs(task)
+        self.assertEqual(set(view), {
+            "id", "project", "status", "description", "result"})
+        self.assertEqual(view["result"], "")
+        self.assertEqual(view["description"], "Inspect repository safely")
+        self.assertEqual(self.store.get(task)["result"], archive)
+        self.store.update(task, "blocked", result="safe", error=archive)
+        checkpoint = self.store.get_task_inputs(task, resume=True)
+        self.assertEqual(checkpoint["result"], "safe")
+        self.assertEqual(checkpoint["checkpoint_bytes"], 4)
+        self.store.update(
+            task, "blocked", result="X" * (MAX_CHECKPOINT_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "64 KiB"):
+            self.store.get_task_inputs(task, resume=True)
+        # The preexisting record is never overwritten on rejection.
+        self.assertEqual(
+            len(self.store.get(task)["result"]), MAX_CHECKPOINT_BYTES + 1)
+        with self.assertRaisesRegex(ValueError, "resume must be boolean"):
+            self.store.get_task_inputs(task, resume=1)
+
+    def test_execution_view_rejects_oversized_stored_utf8_description(self):
+        from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
+        task = self.store.add(str(self.repo), "Valid original request")
+        huge = "界" * (MAX_TASK_DESCRIPTION_BYTES // 3 + 1)
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE tasks SET description=? WHERE id=?", (huge, task))
+        with self.assertRaisesRegex(ValueError, "16 KiB"):
+            self.store.get_task_inputs(task)
+        with self.assertRaisesRegex(ValueError, "16 KiB"):
+            self.store.get_task_inputs(task, resume=True)
+
     def test_brief_rows_omit_large_diagnostic_blobs(self):
         task=self.store.add(str(self.repo),'Memory lightweight activity view')
         large='z'*(2*1024*1024)
