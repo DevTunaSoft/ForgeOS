@@ -146,6 +146,12 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         except (ValueError, TypeError):
             record("skipped", {"id": task["id"], "reason": "No structured checkpoint"})
             continue
+        if isinstance(checkpoint, dict) and checkpoint.get("phase") == "manual_review_required":
+            record("skipped", {
+                "id": task["id"],
+                "reason": "Incomplete test evidence requires manual review; automatic retry disabled",
+            })
+            continue
         if (not isinstance(checkpoint, dict)
                 or checkpoint.get("phase") not in {"test_pending", "repair_pending"}):
             record("skipped", {"id": task["id"], "reason": "No resumable checkpoint"})
