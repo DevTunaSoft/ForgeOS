@@ -22,7 +22,10 @@ class MultiLLMRoadmapContractTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertIn(term.lower(), doc.lower())
         self.assertIn("real-model", doc)
-        self.assertIn("unmerged", doc)
+        # PR #51 was merged: historical branch status must not become a
+        # permanent requirement that forces the roadmap to misstate main.
+        self.assertIn("merged into `main`", doc)
+        self.assertIn("historical branch evidence", doc)
         self.assertIn("no Docker", doc)
 
     def test_roadmap_links_from_canonical_documents(self):
@@ -46,8 +49,8 @@ class MultiLLMRoadmapContractTests(unittest.TestCase):
     def test_distinguishes_ci_from_physical_windows_and_shipped_main(self):
         content = (ROOT / "docs" / "MULTI_LLM_ROADMAP.md").read_text(
             encoding="utf-8").lower()
-        for term in ("draft", "unmerged", "physical windows",
-                     "hardware", "planned", "unverified"):
+        for term in ("draft", "merged into `main`", "historical branch evidence",
+                     "physical windows", "hardware", "planned", "unverified"):
             self.assertIn(term, content)
         self.assertIn("at most one heavy resident inference model", content)
 
