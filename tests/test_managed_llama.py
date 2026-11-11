@@ -763,6 +763,58 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             if proc is not None:
                 proc.close()
 
+    @unittest.skipIf(os.name == "nt", "POSIX process-group integration")
+    def test_real_posix_controller_stop_reaps_process(self):
+        import subprocess
+        import sys
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(20)"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+        controller = ManagedLlamaServer()
+        controller.process = process
+        try:
+            controller.stop()
+            self.assertIsNotNone(process.returncode)
+            self.assertIsNone(controller.process)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object integration")
+    def test_real_windows_controller_stop_reaps_job_process(self):
+        import sys
+        from forgeos.managed_llama import (
+            _launch_windows_suspended_job, _release_windows_job)
+        process, job = _launch_windows_suspended_job(
+            [sys.executable, "-c", "import time; time.sleep(20)"],
+            Path.cwd(), {}, 1024**3)
+        controller = ManagedLlamaServer()
+        controller.process = process
+        controller._windows_job = job
+        stopped = False
+        try:
+            controller.stop()
+            stopped = True
+            self.assertIsNotNone(process.returncode)
+            self.assertIsNone(process._handle)
+            self.assertIsNone(controller.process)
+            self.assertIsNone(controller._windows_job)
+        finally:
+            if not stopped:
+                try:
+                    _release_windows_job(job)
+                except OSError:
+                    pass
+            if process._handle:
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except (OSError, __import__("subprocess").TimeoutExpired):
+                    pass
+                process.close()
+
     def test_managed_checkpoint_fails_closed_without_pinned_session_identity(self):
         from forgeos.recovery import _checkpoint_contract
         checkpoint = {"contract": {
