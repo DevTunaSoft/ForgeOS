@@ -24,6 +24,7 @@ STATUSES = {'queued','planning','planned','editing','testing','passed','failed',
 DEFAULT_LEASE_SECONDS = 600
 MAX_CHECKPOINT_BYTES = 64 * 1024
 MAX_TASK_DESCRIPTION_BYTES = 16 * 1024
+MAX_LOCAL_PROMPT_BYTES = 64 * 1024
 CHECKPOINT_PAGE_SIZE = 16
 
 
@@ -41,6 +42,17 @@ def validate_task_description(description: str) -> str:
     if len(cleaned.encode("utf-8")) > MAX_TASK_DESCRIPTION_BYTES:
         raise ValueError("Task description must be at most 16 KiB UTF-8")
     return cleaned
+
+
+def validate_local_prompt(prompt: str) -> str:
+    """Cap model requests before model routing or JSON serialization."""
+    if not isinstance(prompt, str) or len(prompt) > MAX_LOCAL_PROMPT_BYTES:
+        raise ValueError("Local model prompt exceeds 64 KiB")
+    if not prompt.strip():
+        raise ValueError("Local model prompt is required")
+    if len(prompt.encode("utf-8")) > MAX_LOCAL_PROMPT_BYTES:
+        raise ValueError("Local model prompt exceeds 64 KiB UTF-8")
+    return prompt
 
 
 class Store:
@@ -270,6 +282,7 @@ class Ollama:
 
     def _complete(self, prompt: str, *, edits: bool = False) -> str:
         """Bound network input, context length and RAM retention per request."""
+        validate_local_prompt(prompt)
         from .model_routing import choose_installed_model, local_memory_settings
         if self.model == "auto":
             self.model = choose_installed_model(prompt)
