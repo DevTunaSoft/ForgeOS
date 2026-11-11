@@ -391,7 +391,8 @@ def _execute_task(
         previous = store.get(task_id).get("result", "")
         try:
             saved = json.loads(previous)
-            if saved.get("phase") in {"test_pending", "repair_pending"}:
+            if (isinstance(saved, dict)
+                    and saved.get("phase") in {"test_pending", "repair_pending"}):
                 details = saved
         except (ValueError, TypeError):
             pass
