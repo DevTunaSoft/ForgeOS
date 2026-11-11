@@ -300,6 +300,27 @@ class ForgeOSTests(unittest.TestCase):
         (self.repo/'test_example.py').write_text('import unittest\nclass T(unittest.TestCase):\n def test_bad(self): self.assertTrue(False)\n')
         result=run_test(str(self.repo),'python-unittest')
         self.assertFalse(result['passed'])
+    def test_archive_failure_disallows_successful_test_result(self):
+        from unittest.mock import Mock
+        raw = "Successful test output\\n" * 5000
+        original = {"passed": True, "returncode": 0, "output": raw}
+        failed_archive = Mock()
+        failed_archive.put.side_effect = OSError("diagnostics disk unavailable")
+        with patch("forgeos.core._execute_test_process",
+                   return_value=original) as process, \\
+             patch("forgeos.diagnostics.EvidenceStore",
+                   return_value=failed_archive), \\
+             patch("forgeos.optimizer_metrics.OptimizationMetrics"):
+            result = run_test(str(self.repo), "python-unittest")
+        process.assert_called_once()
+        self.assertIs(result["passed"], False)
+        self.assertIs(result["capture_complete"], False)
+        self.assertEqual(result["capture_error"], "evidence-archive-failed")
+        self.assertEqual(result["returncode"], 0)
+        self.assertLess(len(result["output"]), 13000)
+        self.assertIn("manual review required", result["output"])
+        self.assertNotEqual(result["output"], raw)
+
     def test_ollama_rejects_unbounded_generated_prompts_before_network(self):
         from forgeos.core import MAX_LOCAL_PROMPT_BYTES
         with patch("forgeos.core.urlopen") as request:
