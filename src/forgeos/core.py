@@ -32,6 +32,13 @@ class LeaseLostError(RuntimeError):
     """An expired, reclaimed, or concurrently changed task cannot be published."""
 
 
+def _utf8_size(value: str) -> int:
+    try:
+        return len(value.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise ValueError("Input contains invalid Unicode text") from exc
+
+
 def validate_task_description(description: str) -> str:
     """Reject oversized prompts before copying them into SQLite or local AI context."""
     if not isinstance(description, str) or len(description) > MAX_TASK_DESCRIPTION_BYTES:
@@ -39,7 +46,7 @@ def validate_task_description(description: str) -> str:
     cleaned = description.strip()
     if not cleaned:
         raise ValueError("Task description is required")
-    if len(cleaned.encode("utf-8")) > MAX_TASK_DESCRIPTION_BYTES:
+    if _utf8_size(cleaned) > MAX_TASK_DESCRIPTION_BYTES:
         raise ValueError("Task description must be at most 16 KiB UTF-8")
     return cleaned
 
@@ -50,7 +57,7 @@ def validate_local_prompt(prompt: str) -> str:
         raise ValueError("Local model prompt exceeds 64 KiB")
     if not prompt.strip():
         raise ValueError("Local model prompt is required")
-    if len(prompt.encode("utf-8")) > MAX_LOCAL_PROMPT_BYTES:
+    if _utf8_size(prompt) > MAX_LOCAL_PROMPT_BYTES:
         raise ValueError("Local model prompt exceeds 64 KiB UTF-8")
     return prompt
 
