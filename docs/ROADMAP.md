@@ -2,13 +2,13 @@
 
 **Read [What ForgeOS Will Do — and What It Will Not Do](PRODUCT_VISION.md) for the full product vision, shipped prototype capabilities, and explicit non-goals.** The [user manual](USER_GUIDE.md) remains the canonical click-by-click operating guide.
 
-**Status as of 2026-11-07: active prototype.** This document distinguishes **implemented on `main`**, **in development**, and **future goals**. It is not a claim that the entire product is production-ready. Each milestone needs source changes, regression evidence, Windows frozen build evidence where relevant, and real end-user testing before release claims.
+**Status as of 2026-11-11: active prototype.** This document distinguishes **implemented on `main`**, **in development**, and **future goals**. It is not a claim that the entire product is production-ready. Each milestone needs source changes, regression evidence, Windows frozen build evidence where relevant, and real end-user testing before release claims.
 
 ## Dedicated multi-LLM requirements and implementation plan
 
 The [comprehensive multi-LLM roadmap](MULTI_LLM_ROADMAP.md) now tracks **all ten major work packages** (A–J): existing integration audit and compatibility; integrated CPU-first llama.cpp; Hugging Face discovery, secure downloads, installation, updates and removal; small coding-model benchmarks; specialized-role routing; resource governance; autonomous workflow/recovery; unified accessibility-first GUI; fault-injection and comprehensive QA; and documentation/handoff. It includes source ownership, concrete acceptance gates, dependencies and **P0–P3 execution sequencing**.
 
-**Prioritization for PR #51 and follow-on increments:** (P0) preserve existing work and verify latest checks, (P1) manage a native local inference runtime and pinned model identity, (P2) implement full model lifecycle plus memory/fallback governance and evidence-based role routing, and (P3) validate the combined application on real Windows hardware before release. All unimplemented capabilities remain **planned**; real llama.cpp, LM Studio and downloaded GGUF execution are **not verified** by the hosted CI result.
+**Prioritization following merged PR #51 and subsequent increments:** (P0) preserve existing work and verify latest checks, (P1) manage a native local inference runtime and pinned model identity, (P2) implement full model lifecycle plus memory/fallback governance and evidence-based role routing, and (P3) validate the combined application on real Windows hardware before release. All unimplemented capabilities remain **planned**; real llama.cpp, LM Studio and downloaded GGUF execution are **not verified** by the hosted CI result.
 
 Do not introduce second copies of `model_routing.py`, `Store`, `engine.py`, output summarization or GUI management. Use the [52-enhancement deduplication audit](ENHANCEMENT_DEDUP_AUDIT.md) to coordinate adjacent work.
 
@@ -18,10 +18,10 @@ Do not introduce second copies of `model_routing.py`, `Store`, `engine.py`, outp
 | --- | --- | --- |
 | Single GUI and persistent task queue | **Implemented prototype:** Tkinter UI, SQLite tasks/leases, paginated history, activity views and shared GUI/CLI plan/test actions | Beginner usability, accessibility and real machine soak |
 | Local AI planning/editing | **Implemented prototype:** local Ollama planning, JSON file replacements, bounded source metadata | Deeper planning and whole-app creation, robust real-model acceptance |
-| Experimental local multi-backend adapters | **Feature-branch candidate:** loopback chat adapters for llama.cpp, LM Studio and custom local endpoints; GUI selector | CI, real servers, packaged EXE, real Windows restart validation |
-| Hugging Face GGUF catalog and verified downloads | **Feature-branch candidate:** opt-in metadata browser plus pinned, SHA-256 checked resumable GGUF weight downloads | Real downloads, runtime install/update/delete and end-to-end Windows acceptance |
-| Experimental CPU llama.cpp session controller | **Feature-branch partial:** user-supplied SHA-pinned binary + verified GGUF, one local API-key-protected server, GUI start/stop | Latest CI, real model, server ownership/child cleanup, binary installation and hardware memory acceptance |
-| Offline local GGUF inventory | **Feature-branch partial:** bounded existing-manifest scan, no large-file hash on list; explicit full SHA-256 verification; selection in current GUI | Import, update/remove, live model use and installed-model lifecycle acceptance |
+| Experimental local multi-backend adapters | **Implemented experimental on `main` (merged PR #51):** loopback chat adapters for llama.cpp, LM Studio and custom local endpoints; GUI selector | CI, real servers, packaged EXE, real Windows restart validation |
+| Hugging Face GGUF catalog and verified downloads | **Implemented experimental on `main` (merged PR #51):** opt-in metadata browser plus pinned, SHA-256 checked resumable GGUF weight downloads | Real downloads, runtime install/update/delete and end-to-end Windows acceptance |
+| Experimental CPU llama.cpp session controller | **Implemented experimental on `main` (merged PR #51):** user-supplied SHA-pinned binary + verified GGUF, one local API-key-protected server, GUI start/stop | Latest CI, real model, server ownership/child cleanup, binary installation and hardware memory acceptance |
+| Offline local GGUF inventory | **Implemented experimental on `main` (merged PR #51):** bounded existing-manifest scan, no large-file hash on list; explicit full SHA-256 verification; selection in current GUI | Import, update/remove, live model use and installed-model lifecycle acceptance |
 | Optional cloud LLM adapters | **Planned / not implemented:** user-authorized ChatGPT/OpenAI, Claude/Anthropic and compatible services | Consent per disclosure, credential isolation, spending limits, no default cloud/API or required subscription |
 | Safe Git workspaces | **Implemented prototype:** per-task worktrees, path/budget validation, transactional edits | Broader recovery fault injection, demonstrated end-to-end rollback on Windows |
 | Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints, `resume-safe`, lease-fenced engine state publication | Resume additional phases safely, long-run crash/restart and concurrent worker acceptance |
@@ -39,11 +39,11 @@ Do not introduce second copies of `model_routing.py`, `Store`, `engine.py`, outp
 
 ## Multi-LLM dependency-free integration
 
-The proposed model branch must pass Python CI, Windows frozen packaging,
+The merged multi-model implementation still requires Python CI, Windows frozen packaging,
 real llama.cpp/LM Studio local endpoint acceptance, and clean recovery tests
 before its status advances beyond experimental. The next required increments
 are managed CPU llama.cpp **installer and full lifecycle** (experimental
-SHA-pinned manual-binary launch/stop is now coded on the feature branch),
+SHA-pinned runtime installation and launch/stop are now coded on `main`),
 real Windows HF download tests, canonical model profiles, measured backend
 recovery and 16/32 GB Windows memory benchmarks. Cross-agent automatic routing, OOM failover and task-specialized
 capability scoring are **planned**, not complete. See
@@ -51,7 +51,7 @@ capability scoring are **planned**, not complete. See
 
 ## GitHub tracking for the next multi-LLM milestones
 
-The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issues-on-github) now links actual GitHub work items: [managed llama.cpp #53](https://github.com/DevTunaSoft/ForgeOS/issues/53), [verified model inventory and lifecycle #54](https://github.com/DevTunaSoft/ForgeOS/issues/54), [memory governance and role routing #55](https://github.com/DevTunaSoft/ForgeOS/issues/55), and [real-Windows acceptance #56](https://github.com/DevTunaSoft/ForgeOS/issues/56). The current [experimental multi-LLM PR #51](https://github.com/DevTunaSoft/ForgeOS/pull/51) is separate from these unfinished milestones. No issue is counted as implemented until its required tests and source exist and have been verified.
+The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issues-on-github) now links actual GitHub work items: [managed llama.cpp #53](https://github.com/DevTunaSoft/ForgeOS/issues/53), [verified model inventory and lifecycle #54](https://github.com/DevTunaSoft/ForgeOS/issues/54), [memory governance and role routing #55](https://github.com/DevTunaSoft/ForgeOS/issues/55), and [real-Windows acceptance #56](https://github.com/DevTunaSoft/ForgeOS/issues/56). [Multi-LLM PR #51](https://github.com/DevTunaSoft/ForgeOS/pull/51) was merged into `main` (merge commit `7c582f8`); its experimental implementations do not close the outstanding acceptance milestones. No issue is counted as implemented until its required tests and source exist and have been verified.
 
 ## Open-source integration and token-efficient browser agent (tracked 2026-11-10)
 
