@@ -334,10 +334,10 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         # Use a tiny real spool so this live-process regression does not
         # waste memory or disk generating tens of MiB during CI.
         script = (
-            "import os,time\\n"
-            "for _ in range(100000):\\n"
-            "    os.write(1,b'x'*4096)\\n"
-            "time.sleep(20)\\n"
+            "import os,time\n"
+            "for _ in range(100000):\n"
+            "    os.write(1,b'x'*4096)\n"
+            "time.sleep(20)\n"
         )
         with patch("forgeos.output_capture.BoundedSpool",
                    side_effect=lambda: OriginalSpool(cap=8192)):
