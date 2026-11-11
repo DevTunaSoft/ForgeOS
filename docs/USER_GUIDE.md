@@ -323,6 +323,8 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 
 ### Automated test-output limits
 
+If ForgeOS reports **Incomplete test evidence requires manual review**, the task remains **blocked** and automatic recovery will deliberately skip it. This prevents repeated `resume-safe` runs from executing the same test that exceeded diagnostic limits or failed to retain its original output. The workspace and file-integrity hashes are retained for inspection, but this checkpoint is not eligible for automatic test/repair/replay. Check the task's last error and the test output settings before creating a new, explicitly authorized task; do not delete the original workspace or disable safety limits just to force it to pass.
+
 When a source-mode test on Linux produces more than **32 MiB** of combined stdout/stderr, ForgeOS stops that test promptly rather than reading an unlimited output flood until the normal test timeout. The result is a **failed, incomplete diagnostic capture**; it is not treated as a passing test or as complete evidence for automatic repair. Output at or below the limit follows the existing disk-backed capture path. The change reuses the existing reader thread and adds no idle monitoring or extra dependency.
 
 On POSIX source-mode runs, ForgeOS also checks whether a test left a helper process running after its parent exited. It terminates helpers remaining in that test's process group and marks the result failed with incomplete evidence, even when the parent reported exit code 0. Helpers that deliberately detach into another process group are outside this safeguard; source-mode execution is not a general-purpose sandbox.
