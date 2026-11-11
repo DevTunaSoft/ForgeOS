@@ -1791,3 +1791,21 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - Follow-up source commit `234d6a3` and regression commit `cec86a4`: rejected direct `--resume` on a `manual_review_required` checkpoint now retains its original edited-file hashes and workspace context, rather than replacing the checkpoint with a generic error object. Recovery remains blocked and cannot silently restart the unsafe test. **COMMITTED / NOT RUN**.
 
 - Follow-up source `6a0a741` and test `69cecba`: preserve a bounded (at most 80 characters) structured `capture_error` in the nonresumable checkpoint, e.g. `capture-limit-exceeded`. This gives troubleshooting evidence without storing complete failure-output floods in SQLite. **SOURCE AND TEST COMMITTED; NOT RUN**.
+
+
+## 2026-11-11 — bounded task descriptions and local inference prompts
+
+**Baseline and duplication audit.** Existing `Store.add`, `_execute_task`, `Ollama._complete` and `LocalChatModel._complete` lacked a common early, byte-aware input limit: `Store.add` stored arbitrary description text and direct Ollama calls had no request prompt cap; chat adapters only rejected the *encoded* request after allocating JSON. Existing memory governors, model routing and model-context index were preserved. A focused open PR/issue search showed no dedicated prompt-size fix to duplicate.
+
+**Implementation on default `main`.**
+- `332ef13`: canonical `validate_task_description` (16 KiB UTF-8; rejects invalid types and empty text) in `src/forgeos/core.py`; `Store.add` trims once, validates before inserting into SQLite.
+- `2b3963b`: `engine._execute_task` validates existing task rows before creating a Git worktree, requesting model output, or changing task status. Legacy/externally modified oversized descriptions fail closed and the execution lease is released by the existing outer `finally`.
+- `a887c8a`: direct Ollama planning also uses the canonical task-description guard.
+- `547382a`: canonical `validate_local_prompt` (64 KiB UTF-8) used by Ollama before model selection and JSON request allocation.
+- `2b327ba`: llama.cpp, LM Studio and custom loopback adapters reuse that prompt limit and the common task-description validation without introducing provider-specific limit copies.
+- Regression tests: `ba704ef` (byte boundaries, multibyte UTF-8, invalid inputs, unchanged SQLite row counts, direct planning no-network), `27ea78b` (oversized legacy SQLite row cannot create a workspace or call model), `203bf38` (local chat rejection before routing/HTTP), `c79c68c` (Ollama generation rejection before network).
+- User-facing documentation: `f5cf154` (manual), `989f87a` (README), `5423b8b` (roadmap).
+
+**Executed evidence.** A standalone copy of the two exact validation functions ran **12/12 Python boundary checks: PASS**, including ASCII/UTF-8 exact limits, overflow, bad types, whitespace, and trimming. A separate 1,000-iteration tracemalloc check of those isolated validators measured **147,671 bytes peak Python-tracked allocations** while holding 16 KiB and 64 KiB sample input strings. The numbers are not full-app RSS and the standalone tests are not the GitHub repository test suite.
+
+**Unverified / follow-up.** Full ForgeOS Linux/Windows unittest/compileall, installed/packaged Windows GUI, live model sessions and in-app autonomous testing remain **NOT RUN or UNVERIFIED** in this session. The execution container cannot resolve github.com, and the connected GitHub workflow/status interface has not supplied confirmed push-CI run results. Obtain current-head CI evidence, address failures, and measure real application+model process memory before claiming release readiness. Limits reject rather than truncate requests.
