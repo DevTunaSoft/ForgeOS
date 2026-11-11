@@ -11,6 +11,7 @@ from collections import deque
 import locale
 import os
 from pathlib import Path
+import signal
 import stat
 import subprocess
 import tempfile
@@ -251,6 +252,9 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
         process = subprocess.Popen(
             argv, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, shell=False, env=env, bufsize=0,
+            # A test can spawn helpers that outlive its direct parent.
+            # Own a POSIX session so timeout cleanup reaches descendants.
+            start_new_session=(os.name != "nt"),
         )
 
         def drain():
@@ -268,8 +272,14 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
         try:
             returncode = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
+            if os.name != "nt":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait(timeout=5)
             raise
         reader.join(timeout=3)
         if reader.is_alive():
@@ -287,9 +297,20 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
         }
     finally:
         if process is not None:
-            if process.poll() is None:
+            # Always reap the owned session; even a finished parent can leave
+            # a helper holding the inherited stdout pipe open.
+            if os.name != "nt":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            elif process.poll() is None:
                 process.kill()
-                process.wait()
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
             if reader is not None and reader.is_alive():
                 process.stdout.close()
                 reader.join(timeout=2)
