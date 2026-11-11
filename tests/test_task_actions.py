@@ -128,6 +128,29 @@ class TaskActionsTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute(
             "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
 
+    def test_shared_actions_do_not_fetch_legacy_sqlite_history_blobs(self):
+        prior = "old diagnostic" * 150000
+        self.store.update(self.task, "planned", result=prior, error=prior)
+        with patch.object(self.store, "get",
+                          side_effect=AssertionError("full task row loaded")):
+            plan = plan_task(
+                self.store, self.task,
+                model=Mock(plan=Mock(return_value="fresh short plan")))
+        self.assertEqual(plan, "fresh short plan")
+        self.assertEqual(self.store.get(self.task)["result"], plan)
+
+        self.store.update(self.task, "failed", result=prior, error=prior)
+        outcome = {"passed": True, "output": "tests passed", "returncode": 0}
+        with (patch.object(self.store, "get",
+                           side_effect=AssertionError("full task row loaded")),
+              patch("forgeos.task_actions._run_workspace_tests",
+                    return_value=outcome)):
+            result = test_task(
+                self.store, self.task, "python-unittest",
+                allow_host_tests=True)
+        self.assertEqual(result, outcome)
+        self.assertEqual(self.store.get(self.task)["status"], "passed")
+
     def test_completed_task_skips_model_factory_before_lease(self):
         self.store.update(self.task, "passed", result="previous success")
         factory = Mock()
