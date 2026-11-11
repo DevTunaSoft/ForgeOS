@@ -171,6 +171,24 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(report["resumed"], [])
         resume_runner.assert_not_called()
 
+    def test_incomplete_runner_without_output_stays_nonresumable(self):
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [
+            {"path": "app.py", "content": "def value():\n return 42\n"}]})
+        outcome = {
+            "passed": False, "capture_complete": False,
+            "capture_error": "test-runtime-unavailable",
+        }
+        with patch("forgeos.engine._run_workspace_tests",
+                   return_value=outcome):
+            with self.assertRaisesRegex(RuntimeError, "evidence limits"):
+                execute_task(
+                    self.store, self.task, self.root, allow_host_tests=True,
+                    generate=lambda model, prompt: manifest)
+        checkpoint = json.loads(self.store.get(self.task)["result"])
+        self.assertEqual(checkpoint["phase"], "manual_review_required")
+        self.assertEqual(checkpoint["capture_error"], "test-runtime-unavailable")
+
     def test_malformed_runner_result_cannot_approve_or_retry(self):
         from unittest.mock import patch, Mock
         from forgeos.recovery import resume_safe
