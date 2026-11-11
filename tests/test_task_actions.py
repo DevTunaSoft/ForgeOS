@@ -238,6 +238,31 @@ class TaskActionsTests(unittest.TestCase):
                           allow_host_tests=True)
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
 
+    def test_incomplete_capture_reason_is_bounded_and_stale_result_cleared(self):
+        self.store.update(self.task, "failed", result="old test result")
+        for reason, expected in (
+            ("capture-limit-exceeded", "capture-limit-exceeded"),
+            ("too long " * 1000, None),
+            ("../unsafe", None),
+        ):
+            with self.subTest(reason_length=len(reason)):
+                with patch("forgeos.task_actions._run_workspace_tests",
+                           return_value={"passed": True,
+                                         "capture_complete": False,
+                                         "capture_error": reason}):
+                    with self.assertRaisesRegex(RuntimeError, "incomplete"):
+                        test_task(self.store, self.task, "python-unittest",
+                                  allow_host_tests=True)
+                record = self.store.get(self.task)
+                self.assertEqual(record["status"], "blocked")
+                self.assertEqual(record["result"], "")
+                self.assertLess(len(record["last_error"]), 200)
+                if expected is not None:
+                    self.assertIn(expected, record["last_error"])
+                else:
+                    self.assertNotIn(reason, record["last_error"])
+                self.store.update(self.task, "failed", result="old test result")
+
     def test_manual_tests_reject_large_result_and_release_lease(self):
         from forgeos.core import MAX_CHECKPOINT_BYTES
         oversized = {"passed": True, "returncode": 0,
