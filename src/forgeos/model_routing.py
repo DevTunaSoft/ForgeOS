@@ -240,7 +240,8 @@ def choose_installed_model(task: str, *, available: list[dict] | None = None,
     """Select only from installed models using a stable, conservative heuristic."""
     if endpoint != LOCAL_OLLAMA:
         raise ValueError("Only local Ollama can be selected")
-    if not isinstance(task, str) or not task.strip():
+    # isspace() checks blank input without copying an arbitrarily long task.
+    if not isinstance(task, str) or not task or task.isspace():
         raise ValueError("Task specification is required")
     if type(max_model_bytes) is not int or max_model_bytes <= 0:
         raise ValueError("Model size limit must be positive")
@@ -270,12 +271,17 @@ def choose_installed_model(task: str, *, available: list[dict] | None = None,
     if coder:
         candidates = coder
     candidates.sort(key=lambda item: (item[1], item[0].lower()))
-    lowered = task.lower()
+    # Long tasks already select the largest eligible model. Do not allocate
+    # another potentially multi-megabyte lowercase copy or scan its keywords.
+    task_length = len(task)
+    if task_length >= 700:
+        return candidates[-1][0]
+    lowered = task.lower()  # at most 699 characters
     importance = sum(bool(re.search(r"\b" + re.escape(term) + r"\b", lowered))
                      for term in HARD_TASKS)
-    if importance >= 2 or len(task) >= 700:
+    if importance >= 2:
         chosen = candidates[-1]
-    elif importance >= 1 or len(task) >= 220:
+    elif importance >= 1 or task_length >= 220:
         chosen = candidates[len(candidates) // 2]
     else:
         chosen = candidates[0]
