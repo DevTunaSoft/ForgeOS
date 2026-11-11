@@ -1731,3 +1731,11 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - **PASS — GitHub source verification:** the exact updated routing code and regression tests were re-read from `main` after both commits.
 - **NOT RUN / UNVERIFIED:** complete `unittest` suite, hosted Windows/Linux build matrix, real 32 GiB Windows CPU-inference behavior, multi-model quality and release acceptance. The runtime's GitHub DNS resolution prevents a repository checkout; GitHub commit status and PR-only workflow lookup cannot prove current push CI.
 - **Next:** obtain current-head CI results, run targeted `python -m unittest tests.test_model_routing` / full suite on a source-capable runner, verify frozen EXE and physical Windows model lifecycle, then pursue #55 measured RAM governor and model qualifications.
+
+
+## 2026-11-11 — bounded managed llama.cpp forced shutdown
+
+- Source commit `7230f27`: if graceful process wait times out, the existing forced kill/reap path now catches a second timeout or native wait error, preserves the original timeout as the stop error, and still executes the native-handle and API-secret cleanup in `finally`. No new dependency or background worker.
+- Regression commit `58e264f`: `test_repeated_shutdown_timeout_is_bounded_and_erases_credentials` verifies two bounded waits, forced kill, native-handle close, and credential cleanup using a mock process.
+- Verification: **SOURCE COMMITTED**; test execution **NOT RUN** because this execution environment cannot resolve github.com for a checkout. The regression is a mocked fault-injection test and is not proof of a real Windows process shutdown.
+- Remaining: confirm current-head CI on Linux and Windows, investigate failures, and exercise physical Windows managed llama.cpp startup, inference, timeout, and process-tree memory limits.
