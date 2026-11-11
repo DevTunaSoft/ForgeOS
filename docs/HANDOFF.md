@@ -1767,3 +1767,14 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - Manual commit `accfac2`: documents behavior and limitation for helpers that deliberately detach into new process groups.
 - Local stand-alone process harness: **PASS** on Linux (parent exit 0; surviving same-session child detected via process-group probe and killed; no delayed marker file). The full repository regression suite is **NOT RUN** due GitHub checkout DNS failure. Real Windows AppContainer/packaged verification remains **UNVERIFIED**.
 - Next: obtain actual Linux/Windows CI evidence for `run_streamed_process`, test cancellation and runtime memory guards; address test failures without adding duplicate orchestration.
+
+
+## 2026-11-11 — stop autonomous recovery loops after incomplete test evidence
+
+- Source baseline audit: `engine._execute_task()` raised on `capture_complete=False` but its outer exception handler preserved `phase=test_pending`, which `recovery.resume_safe()` would replay indefinitely with no valid diagnostic evidence. This conflicts with the anti-loop and safe autonomous QA requirements.
+- Source commit `160ac02`: set a local fail-closed flag when test capture is incomplete; the existing blocked-task handler retains workspace, edited files and integrity hashes but stores `phase=manual_review_required` and `capture_complete=False`. No extra polling, service or dependency.
+- Source commit `9d64bb6`: `resume_safe` reports an explicit manual-review skip reason and never calls a model or execution for this phase.
+- Regression commits `40afca4` (`test_incomplete_large_log_blocks_autonomous_pass` now calls recovery to verify no replay) and `40dea3b` (two `resume_safe` scans assert no model/test callback for a manual-review checkpoint).
+- User manual commit `2b0ddf8`: documents blocked, nonresumable incomplete-evidence tasks and next safe actions.
+- Verification: **CODE AND REGRESSION TESTS COMMITTED; TEST EXECUTION NOT RUN**. Local checkout of GitHub remains blocked by DNS; the connected repository APIs can update files but do not provide a usable execution runner or the full push-triggered CI status. Do not count these tests as passed. Real Windows GUI, AppContainer and end-to-end autonomous crash recovery remain **UNVERIFIED**.
+- Next task: obtain a full Linux/Windows suite execution on these commits; fix failures at their root, validate explicit process termination and incomplete-capture behavior, then continue with bounded recovery/diagnostics hardening. Never automatically replay this nonresumable phase.
