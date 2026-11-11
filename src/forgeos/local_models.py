@@ -6,6 +6,7 @@ are rejected. Inference binaries/model weights are managed separately.
 from __future__ import annotations
 
 import json
+import time
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -57,10 +58,31 @@ def validate_endpoint(endpoint: str) -> str:
 
 
 def _read_json(request: Request, *, limit: int, timeout: int) -> object:
+    """Read local responses incrementally with a total deadline and bounded RAM.
+
+    Socket timeouts still govern individual blocking operations. The monotonic
+    deadline also stops servers that trickle bytes indefinitely.
+    """
+    if (type(limit) is not int or not 1 <= limit <= MAX_RESPONSE_BYTES
+            or type(timeout) is not int or not 1 <= timeout <= 180):
+        raise ValueError("Invalid local response size or deadline")
+    deadline = time.monotonic() + timeout
+    content = bytearray()
     with _open(request, timeout=timeout) as response:
-        content = response.read(limit + 1)
-    if len(content) > limit:
-        raise RuntimeError("Local model response exceeded its memory safety limit")
+        reader = getattr(response, "read1", response.read)
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Local model response exceeded total deadline")
+            # read1 returns available buffered bytes; read(n) can wait for n
+            # bytes even while a slow server continuously sends smaller pieces.
+            chunk = reader(min(8192, limit + 1 - len(content)))
+            if not chunk:
+                break
+            content.extend(chunk)
+            if len(content) > limit:
+                raise RuntimeError("Local model response exceeded its memory safety limit")
+    if time.monotonic() >= deadline:
+        raise TimeoutError("Local model response exceeded total deadline")
     try:
         return json.loads(content)
     except (ValueError, UnicodeDecodeError) as exc:
