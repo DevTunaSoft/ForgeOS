@@ -180,6 +180,8 @@ class EngineIntegrationTests(unittest.TestCase):
                 {"passed": "false", "output": "claimed success"},
                 {"passed": 1, "output": "claimed success"},
                 {"passed": True, "output": None},
+                {"passed": True, "output": "ok",
+                 "capture_complete": "false"},
                 None)):
             if index:
                 # Reuse the same fixture database without reactivating the
