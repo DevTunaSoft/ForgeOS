@@ -1747,3 +1747,14 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - Regression `55bfe18`: POSIX-only live-process test creates a delayed helper, times out its parent and verifies the helper never writes a marker. Separate from Windows AppContainer acceptance.
 - Verification: **PASS** for a local standalone POSIX subprocess-group smoke test using the same process-group mechanism: the timed-out parent and helper did not produce the helper's delayed marker. **NOT RUN** for the actual repository regression suite (checkout blocked by `github.com` DNS resolution). Confirm on Linux CI, then review Windows behavior separately. Do not call this production-verified.
 - Follow-up: verify CI and check process-group lifecycle under timeouts, child process output inheritance, and repeated task cancellation; retain Windows-native isolation checks.
+
+
+## 2026-11-11 — output-flood fast abort in existing test runner
+
+- Audited `src/forgeos/output_capture.py`, `tests/test_output_capture.py`, the core/engine test result path and open ForgeOS issues/PRs. Reused the existing disk-bounded `BoundedSpool` and single reader thread; did not duplicate #65 browser work or introduce a test-monitoring service.
+- Source commit `33c71b1`: as soon as test stdout/stderr exceeds the spool cap (normally 32 MiB), the existing reader terminates the owned process group (POSIX) or direct process (when this source-mode helper is used on Windows). `passed` is false even if the test exits 0; incomplete evidence is marked by `BoundedSpool.finish()`. Running test output is never kept in unlimited RAM.
+- Regression commits `b408e24`, `10ca49b`, `d795514`: two process-based tests cover early termination with a deliberately reduced 8 KiB spool and successful capture exactly at the cap. The last commit corrects the child fixture newline escaping.
+- Local smoke: **PASS** on Linux for a standalone reproduction of the same process-group, reader and spool-limit behavior. Early flood: incomplete/failed, 16,384 bytes captured, process signal exit -9. Exact-cap output: passed/complete, 8,192 bytes, exit 0. This is **NOT** a run of the repository tests.
+- User manual commit `672d23c` describes the early abort and incomplete-evidence gate.
+- **NOT RUN**: actual `tests/test_output_capture.py` suite, broader Linux/Windows CI, and physical Windows AppContainer tests. GitHub checkout is blocked by DNS in this tool environment; the GitHub connector supports source edits but cannot run the tests. Obtain CI execution evidence before marking this accepted.
+- Next: validate current-head tests, diagnose any failures, then continue automated failure recovery with bounded resources and no redundant agents/monitors.
