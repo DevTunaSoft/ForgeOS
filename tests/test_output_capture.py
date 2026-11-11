@@ -328,6 +328,40 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         time.sleep(1.7)
         self.assertFalse(marker.exists(), "Timed-out test left a live child")
 
+    def test_output_flood_terminates_early_with_bounded_capture(self):
+        from unittest.mock import patch
+        from forgeos.output_capture import BoundedSpool as OriginalSpool
+        # Use a tiny real spool so this live-process regression does not
+        # waste memory or disk generating tens of MiB during CI.
+        script = (
+            "import os,time\\n"
+            "for _ in range(100000):\\n"
+            "    os.write(1,b'x'*4096)\\n"
+            "time.sleep(20)\\n"
+        ).replace("\\\\n", "\\n")
+        with patch("forgeos.output_capture.BoundedSpool",
+                   side_effect=lambda: OriginalSpool(cap=8192)):
+            result = run_streamed_process(
+                [sys.executable, "-c", script], self.root, timeout=10)
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertGreater(result["capture_source_bytes"], 8192)
+        self.assertLessEqual(result["capture_source_bytes"], 8192 + 65536)
+        self.assertIn("full evidence unavailable", result["output"])
+
+    def test_output_at_spool_cap_can_still_pass(self):
+        from unittest.mock import patch
+        from forgeos.output_capture import BoundedSpool as OriginalSpool
+        with patch("forgeos.output_capture.BoundedSpool",
+                   side_effect=lambda: OriginalSpool(cap=8192)):
+            result = run_streamed_process(
+                [sys.executable, "-c",
+                 "import os; os.write(1,b'x'*8192)"],
+                self.root, timeout=10)
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["capture_complete"])
+        self.assertEqual(result["capture_source_bytes"], 8192)
+
     def test_timeout_terminates_process(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             run_streamed_process(
