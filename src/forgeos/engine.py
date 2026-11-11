@@ -5,7 +5,6 @@ WARNING: source/development mode can execute project code on the host. The froze
 from __future__ import annotations
 
 import json
-import hashlib
 import os
 import sys
 from pathlib import Path, PurePosixPath
@@ -15,7 +14,7 @@ from typing import Callable
 
 from .core import LeaseLostError, Ollama, Store, run_test, validate_task_description
 from .workspace import Workspace, create_workspace
-from .transactions import apply_transaction, recover_edits
+from .transactions import apply_transaction, recover_edits, _hash_file
 
 MAX_FILES = 8
 MAX_FILE_BYTES = 128_000
@@ -97,6 +96,17 @@ def _context(root: Path, question: str = "") -> str:
 def _generate(model: Ollama, prompt: str) -> str:
     # The local Ollama API is already the only endpoint allowed by Ollama.
     return model.generate_edits(prompt)
+
+
+def _checkpoint_file_hash(path: Path) -> str:
+    """Hash edited checkpoints using the existing bounded transaction stream.
+
+    External writes may enlarge files after the last edit. A checkpoint
+    cannot authorize an edit larger than the original 128,000-byte contract.
+    """
+    if path.stat().st_size > MAX_FILE_BYTES:
+        raise ValueError("Checkpoint file exceeds 128 KiB edit limit")
+    return _hash_file(path)
 
 
 def _require_test_outcome(outcome: object) -> dict:
@@ -304,7 +314,7 @@ def _execute_task(
                 target = _validate_path(ws.path, name)
                 if (not isinstance(digest, str) or len(digest) != 64
                         or not target.is_file()
-                        or hashlib.sha256(target.read_bytes()).hexdigest() != digest):
+                        or _checkpoint_file_hash(target) != digest):
                     raise ValueError("Checkpoint file changed since interruption")
         start_attempt = checkpoint.get("attempt", 1) if resume else 1
         if (not isinstance(start_attempt, int) or isinstance(start_attempt, bool)
@@ -335,7 +345,7 @@ def _execute_task(
                 "workspace": str(ws.path), "branch": ws.branch,
                 "edited": paths, "attempt": attempt + 1, "phase": "test_pending",
                 "contract": contract,
-                "sha256": {name: hashlib.sha256(_validate_path(ws.path, name).read_bytes()).hexdigest()
+                "sha256": {name: _checkpoint_file_hash(_validate_path(ws.path, name))
                            for name in paths},
             }))
             heartbeat()
@@ -411,7 +421,7 @@ def _execute_task(
                                  "contract": contract,
                                  "last_test_output": last_output[-6000:],
                                  "sha256": {
-                                     name: hashlib.sha256(_validate_path(ws.path, name).read_bytes()).hexdigest()
+                                     name: _checkpoint_file_hash(_validate_path(ws.path, name))
                                      for name in paths
                                  },
                              }))

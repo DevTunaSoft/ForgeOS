@@ -822,6 +822,56 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.assertIn("Invalid resume checkpoint format", state["last_error"])
         self.assertIn("workspace", json.loads(state["result"]))
 
+    def test_checkpoint_hash_rejects_large_external_edits_before_read(self):
+        from unittest.mock import patch
+        from forgeos.engine import _checkpoint_file_hash, MAX_FILE_BYTES
+        target = self.repo / "app.py"
+        with target.open("wb") as stream:
+            stream.truncate(MAX_FILE_BYTES + 1)
+        with patch.object(Path, "open", side_effect=AssertionError(
+                "Oversized file must not be opened")):
+            with self.assertRaisesRegex(ValueError, "128 KiB edit limit"):
+                _checkpoint_file_hash(target)
+
+    def test_checkpoint_hash_streams_small_files_without_read_bytes(self):
+        from unittest.mock import patch
+        from forgeos.engine import _checkpoint_file_hash, MAX_FILE_BYTES
+        import hashlib
+        target = self.repo / "app.py"
+        content = b"streamed edit checkpoint" * 1000
+        self.assertLess(len(content), MAX_FILE_BYTES)
+        target.write_bytes(content)
+        with patch.object(Path, "read_bytes", side_effect=AssertionError(
+                "Unbounded read_bytes is forbidden")):
+            self.assertEqual(
+                _checkpoint_file_hash(target), hashlib.sha256(content).hexdigest())
+
+    def test_resume_refuses_oversized_externally_modified_file(self):
+        from unittest.mock import patch, Mock
+        from forgeos.engine import MAX_FILE_BYTES
+        response = json.dumps({"files": [
+            {"path": "app.py", "content": "def value():\n return 42\n"}]})
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root,
+                             allow_host_tests=True,
+                             generate=lambda model, prompt: response)
+        self.store.recover()
+        workspace = self.root / f"task-{self.task}"
+        target = workspace / "app.py"
+        with target.open("wb") as stream:
+            stream.truncate(MAX_FILE_BYTES + 1)
+        generator = Mock(side_effect=AssertionError("Unexpected AI repair"))
+        with patch.object(Path, "read_bytes", side_effect=AssertionError(
+                "Resume may not load a whole modified file")):
+            with self.assertRaisesRegex(ValueError, "128 KiB edit limit"):
+                execute_task(self.store, self.task, self.root,
+                             allow_host_tests=True, resume=True,
+                             generate=generator)
+        generator.assert_not_called()
+        self.assertEqual(target.stat().st_size, MAX_FILE_BYTES + 1)
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+
     def test_resume_refuses_tampered_file(self):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
