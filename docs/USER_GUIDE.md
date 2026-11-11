@@ -339,6 +339,8 @@ When a manual or autonomous test cannot start its runtime, or the test process e
 
 Check the selected test preset, installed test tools, host-execution authorization, local model readiness, and the task's diagnostics. Fix the underlying runtime issue before making a new, explicitly authorized attempt. The original Git worktree and code are not silently discarded. These safeguards are implemented, but cross-platform full-suite and real Windows acceptance remain unverified.
 
+**Malformed test results:** ForgeOS also checks that a runner returns a real Boolean `passed` value, a text `output` field, and a Boolean `capture_complete` value when supplied. Strings such as `"false"` or `"true"` are not accepted as pass/fail evidence. Invalid results block task approval and, for autonomous runs, mark the checkpoint for manual review instead of repeatedly invoking an untrusted runner.
+
 ### Automated test-output limits
 
 If ForgeOS reports **Incomplete test evidence requires manual review**, the task remains **blocked** and automatic recovery will deliberately skip it. This prevents repeated `resume-safe` runs from executing the same test that exceeded diagnostic limits or failed to retain its original output. The workspace and file-integrity hashes are retained for inspection, but this checkpoint is not eligible for automatic test/repair/replay. Check the task's last error and the test output settings before creating a new, explicitly authorized task; do not delete the original workspace or disable safety limits just to force it to pass.
