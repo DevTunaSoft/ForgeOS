@@ -26,10 +26,12 @@ MAX_TASK_ACTION_RESULT_BYTES = MAX_CHECKPOINT_BYTES
 
 def _bounded_result_text(value: str) -> str:
     """Reject oversized or malformed task-action output before SQLite writes."""
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str) or not value:
         raise RuntimeError("Task action returned no usable text")
     if len(value) > MAX_TASK_ACTION_RESULT_BYTES:
         raise RuntimeError("Task action result exceeds 64 KiB storage budget")
+    if not value.strip():
+        raise RuntimeError("Task action returned no usable text")
     try:
         size = len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:
@@ -92,7 +94,7 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
         except Exception as exc:
             # Stale workers and changed statuses fail closed.
             store.transition(task_id, {"planning"}, "blocked",
-                             error=str(exc), result="", lease_owner=owner)
+                             error=str(exc)[-4000:], result="", lease_owner=owner)
             raise
 
 
@@ -136,5 +138,5 @@ def test_task(store: Store, task_id: int, preset: str, *,
             return outcome
         except Exception as exc:
             store.transition(task_id, {"testing"}, "blocked",
-                             error=str(exc), lease_owner=owner)
+                             error=str(exc)[-4000:], lease_owner=owner)
             raise
