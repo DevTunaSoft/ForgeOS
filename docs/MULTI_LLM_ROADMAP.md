@@ -2,7 +2,7 @@
 
 **Canonical scope:** [ForgeOS engineering roadmap](ROADMAP.md) · [Model compatibility and setup](MODEL_COMPATIBILITY.md) · [Architecture and security](ARCHITECTURE.md) · [Full development handoff](HANDOFF.md) · [52 RTK-inspired enhancements](RTK_ENHANCEMENTS.md) and [deduplication audit](ENHANCEMENT_DEDUP_AUDIT.md).
 
-**Audit baseline (refreshed 2026-11-08):** `main` remains the released baseline; feature PR [#51](https://github.com/DevTunaSoft/ForgeOS/pull/51) is **draft and unmerged**. Current audited branch head is `f7241a374c3593e1f5468a04925a085cacaf2b2a`; the latest fully completed six-gate evidence before later superseded/cancelled runs is `67c2e7495aef6b1cd40bb6294cf86d874c298157`. Hosted CI is regression evidence only and is not proof of real llama.cpp, LM Studio, multi-GiB downloads, model quality, physical Windows stability or production readiness.
+**Audit baseline (refreshed 2026-11-11):** multi-LLM PR [#51](https://github.com/DevTunaSoft/ForgeOS/pull/51) was merged into `main` (merge commit `7c582f8`). The previous draft-branch head `f7241a3` and hosted CI evidence `67c2e74` are historical branch evidence, not current-main verification. Hosted CI is regression evidence only and is not proof of real llama.cpp, LM Studio, multi-GiB downloads, model quality, physical Windows stability or production readiness.
 
 This is a **requirements-to-evidence tracker, not a declaration that all capabilities are built**. Every row below carries a source owner, a status and an observable exit gate. Existing capabilities are extended in place; no second desktop application, duplicated task engine, duplicate database or parallel model selection subsystem.
 
@@ -20,7 +20,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 ## Status definitions and GitHub source evidence
 
 - **Existing on main:** present in canonical `main`, within its documented limits; runtime acceptance may still be missing.
-- **PR #51 + hosted CI:** code committed to the unmerged multi-LLM branch and passed its automated test matrix; not a released feature.
+- **Experimental on main (merged PR #51):** code integrated into `main`; historical hosted CI is not physical Windows or production acceptance.
 - **Partial:** initial implementation exists but an acceptance requirement, integration or safety gate is absent.
 - **Planned:** not implemented; do not label as available.
 - **Unverified:** a behavior, compatibility statement or performance figure without direct reproduced evidence on the named system.
@@ -29,14 +29,14 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 | --- | --- | --- | --- |
 | Existing Ollama plan/edit/repair client | `src/forgeos/core.py`, `engine.py` | Existing on main | Physical Windows end-to-end real model |
 | Ollama installed models and RAM-aware heuristic | `src/forgeos/model_routing.py` | Existing on main | Measured runtime/headroom and accuracy |
-| llama.cpp OpenAI-compatible adapter | `src/forgeos/local_models.py` | PR #51 + hosted CI | Real local llama-server / model with structured edits |
-| LM Studio and custom local OpenAI-style adapters | `src/forgeos/local_models.py` | PR #51 + hosted CI | Real endpoint compatibility tests, no remote fallback |
-| Public Hugging Face GGUF catalog and metadata | `src/forgeos/huggingface_catalog.py` | PR #51 + hosted CI | Live API, model card/license, pagination, failure handling |
-| Explicit pinned GGUF download, SHA-256, resume | `src/forgeos/gguf_download.py` | PR #51 + hosted CI | Multi-GiB real download, interrupted resume, disk limits, Windows paths |
-| User GUI backend/endpoint selection and HF browser/download | `src/forgeos/gui.py` | PR #51 + hosted CI | Manual accessible GUI exercise with real backend/HF model |
-| Backend-aware checkpoint recreation | `src/forgeos/recovery.py`, `engine.py` | PR #51 + hosted CI | Crash/reboot, file/model identity and lease safety |
-| Native managed llama.cpp CPU runtime | `src/forgeos/runtime_installer.py`, `managed_llama.py`, existing GUI | **Partial experimental PR #51:** pinned official Windows x64 CPU runtime installer, archive/DLL re-verification, SHA-verified GGUF loading, authenticated loopback server, GUI start/stop, POSIX process-group cleanup and Windows suspended Job Object launch are implemented; real native GGUF inference remains unverified | Real Windows install → load → infer → stop/restart, with measured RAM/latency and process identity evidence |
-| Installed GGUF lifecycle and profiles | `src/forgeos/model_inventory.py`, `model_retirement.py`, existing downloader/GUI | **Partial experimental PR #51:** bounded offline inventory, explicit SHA reverify, resumable downloads and reversible retirement/restore exist without a second database; safe import/update/repair and richer status UX remain incomplete | Real Windows lifecycle plus import/update/repair and active/checkpoint protection |
+| llama.cpp OpenAI-compatible adapter | `src/forgeos/local_models.py` | Experimental on main (merged PR #51) | Real local llama-server / model with structured edits |
+| LM Studio and custom local OpenAI-style adapters | `src/forgeos/local_models.py` | Experimental on main (merged PR #51) | Real endpoint compatibility tests, no remote fallback |
+| Public Hugging Face GGUF catalog and metadata | `src/forgeos/huggingface_catalog.py` | Experimental on main (merged PR #51) | Live API, model card/license, pagination, failure handling |
+| Explicit pinned GGUF download, SHA-256, resume | `src/forgeos/gguf_download.py` | Experimental on main (merged PR #51) | Multi-GiB real download, interrupted resume, disk limits, Windows paths |
+| User GUI backend/endpoint selection and HF browser/download | `src/forgeos/gui.py` | Experimental on main (merged PR #51) | Manual accessible GUI exercise with real backend/HF model |
+| Backend-aware checkpoint recreation | `src/forgeos/recovery.py`, `engine.py` | Experimental on main (merged PR #51) | Crash/reboot, file/model identity and lease safety |
+| Native managed llama.cpp CPU runtime | `src/forgeos/runtime_installer.py`, `managed_llama.py`, existing GUI | **Partial experimental on main:** pinned official Windows x64 CPU runtime installer, archive/DLL re-verification, SHA-verified GGUF loading, authenticated loopback server, GUI start/stop, POSIX process-group cleanup and Windows suspended Job Object launch are implemented; real native GGUF inference remains unverified | Real Windows install → load → infer → stop/restart, with measured RAM/latency and process identity evidence |
+| Installed GGUF lifecycle and profiles | `src/forgeos/model_inventory.py`, `model_retirement.py`, existing downloader/GUI | **Partial experimental on main:** bounded offline inventory, explicit SHA reverify, resumable downloads and reversible retirement/restore exist without a second database; safe import/update/repair and richer status UX remain incomplete | Real Windows lifecycle plus import/update/repair and active/checkpoint protection |
 | Role-aware multi-model routing | Extend `model_routing.py` and engine orchestration | Planned | Repeatable task-level quality/performance benefit |
 | RAM/process-tree budget and resource governor | Extend `model_routing.py` + managed runtime | Planned | Actual process-tree RSS/commit sampling and OOM failover |
 | Fully autonomous development with multiple models | Existing engine + recovery + leases | Partial | Full plan/edit/test/review/recovery cycle on real runtimes |
