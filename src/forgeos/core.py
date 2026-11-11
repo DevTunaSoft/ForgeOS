@@ -313,28 +313,25 @@ class Ollama:
         # drip bytes forever. Bound the whole response by monotonic time and
         # read small chunks, without retaining unbounded response data.
         deadline = time.monotonic() + 180
-        chunks = []
-        total = 0
+        # One bounded accumulator avoids retaining both a full list of chunks
+        # and a second joined copy for multi-megabyte model responses.
+        bounded = bytearray()
         with urlopen(req, timeout=30) as response:
             while True:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Local AI response exceeded 180s total deadline")
                 # read1 returns currently available data rather than waiting
                 # for an entire requested block (important for slow streams).
-                chunk = response.read1(min(8192, MAX_OLLAMA_RESPONSE_BYTES + 1 - total))
+                chunk = response.read1(
+                    min(8192, MAX_OLLAMA_RESPONSE_BYTES + 1 - len(bounded)))
                 if not chunk:
                     break
-                total += len(chunk)
-                if total > MAX_OLLAMA_RESPONSE_BYTES:
+                bounded.extend(chunk)
+                if len(bounded) > MAX_OLLAMA_RESPONSE_BYTES:
                     raise RuntimeError(
                         'Local AI response exceeded safe memory limit; try smaller edits')
-                chunks.append(chunk)
         if time.monotonic() >= deadline:
             raise TimeoutError("Local AI response exceeded 180s total deadline")
-        bounded = b"".join(chunks)
-        if len(bounded) > MAX_OLLAMA_RESPONSE_BYTES:
-            raise RuntimeError(
-                'Local AI response exceeded safe memory limit; try smaller edits')
         body = json.loads(bounded)
         if not isinstance(body, dict):
             raise RuntimeError('Ollama response was not structured JSON')
