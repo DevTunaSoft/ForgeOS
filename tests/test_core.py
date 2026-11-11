@@ -211,6 +211,34 @@ class ForgeOSTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "memory limit"):
                 Ollama().generate_edits("test")
 
+    def test_ollama_response_uses_bounded_incremental_reads(self):
+        import io
+        import json
+        from forgeos.model_routing import MemorySnapshot
+
+        class TrackingResponse(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+            def __init__(self, data):
+                super().__init__(data)
+                self.max_read = 0
+                self.read_count = 0
+            def read1(self, size=-1):
+                self.max_read = max(self.max_read, size)
+                self.read_count += 1
+                return super().read1(size)
+
+        value = "valid local inference output " * 6000
+        data = TrackingResponse(json.dumps({"response": value}).encode())
+        with (patch("forgeos.model_routing.system_memory",
+                    return_value=MemorySnapshot(8*1024**3, 6*1024**3)),
+              patch("forgeos.core.urlopen", return_value=data)):
+            result = Ollama().generate_edits("check large output")
+        self.assertEqual(result, value)
+        self.assertTrue(data.closed)
+        self.assertLessEqual(data.max_read, 8192)
+        self.assertGreater(data.read_count, 2)
+
     def test_ollama_slow_trickle_hits_total_deadline(self):
         import io
         from forgeos.model_routing import MemorySnapshot
