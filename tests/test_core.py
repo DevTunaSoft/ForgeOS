@@ -23,6 +23,32 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(self.store.get(task)['status'],'queued')
         self.store.close(); self.store=Store(self.root/'state'/'tasks.sqlite3')
         self.assertEqual(self.store.get(task)['description'],'Improve startup')
+    def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
+        from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
+        limit = MAX_TASK_DESCRIPTION_BYTES
+        accepted = self.store.add(str(self.repo), "x" * limit)
+        self.assertEqual(len(self.store.get(accepted)["description"]), limit)
+        accepted_unicode = self.store.add(str(self.repo), "界" * (limit // 3))
+        self.assertEqual(
+            len(self.store.get(accepted_unicode)["description"].encode("utf-8")),
+            (limit // 3) * 3)
+        before = self.store.counts()["total"]
+        for invalid in (
+                "x" * (limit + 1), "界" * (limit // 3 + 1),
+                " " * (limit + 1), None, 17, ""):
+            with self.subTest(value_type=type(invalid).__name__,
+                              size=len(invalid) if isinstance(invalid, str) else -1):
+                with self.assertRaises(ValueError):
+                    self.store.add(str(self.repo), invalid)
+        self.assertEqual(self.store.counts()["total"], before)
+
+    def test_direct_ollama_plan_rejects_large_prompt_without_network(self):
+        from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
+        with patch("forgeos.core.urlopen") as request:
+            with self.assertRaisesRegex(ValueError, "16 KiB"):
+                Ollama().plan("z" * (MAX_TASK_DESCRIPTION_BYTES + 1))
+            request.assert_not_called()
+
     def test_brief_rows_omit_large_diagnostic_blobs(self):
         task=self.store.add(str(self.repo),'Memory lightweight activity view')
         large='z'*(2*1024*1024)
