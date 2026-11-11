@@ -377,6 +377,27 @@ class RecoveryTests(unittest.TestCase):
                         on_event="not callable")
         self.assertEqual(store.recovery_calls, 0)
 
+    def test_manual_review_checkpoint_is_skipped_without_model_or_runner(self):
+        checkpoint = {
+            "phase": "manual_review_required",
+            "capture_complete": False,
+            "workspace": str(self.parent / "task-99"),
+            "contract": self.contract(),
+        }
+        runner = Mock()
+        factory = Mock()
+        tasks = [self.task(99, checkpoint)]
+        for _ in range(2):
+            report = resume_safe(
+                FakeStore(tasks), self.parent, allow_host_tests=True,
+                execute=runner, model_factory=factory)
+            self.assertEqual(report["resumed"], [])
+            self.assertEqual(report["failed"], [])
+            self.assertEqual(report["skipped"][0]["id"], 99)
+            self.assertIn("manual review", report["skipped"][0]["reason"])
+        runner.assert_not_called()
+        factory.assert_not_called()
+
     def test_missing_contract_is_skipped(self):
         checkpoint = {"phase": "test_pending",
                       "workspace": str(self.parent / "task-8")}
