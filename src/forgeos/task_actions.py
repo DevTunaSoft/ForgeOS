@@ -116,9 +116,10 @@ def test_task(store: Store, task_id: int, preset: str, *,
         _publish(store, task_id, owner, TEST_STATUSES, "testing",
                  increment=True, result="")
         try:
-            outcome = _require_test_outcome(
-                _run_workspace_tests(Path(task["project"]), preset))
-            if outcome.get("capture_complete") is False:
+            outcome = _run_workspace_tests(Path(task["project"]), preset)
+            # Incomplete evidence must always be rejected first, even if the
+            # runner could not produce a normal output field.
+            if isinstance(outcome, dict) and outcome.get("capture_complete") is False:
                 reason = outcome.get("capture_error")
                 # Preserve a short structured reason without copying or
                 # persisting untrusted diagnostic output or arbitrary fields.
@@ -130,6 +131,7 @@ def test_task(store: Store, task_id: int, preset: str, *,
                         "automatic approval is blocked")
                 raise RuntimeError(
                     "Test evidence was incomplete; automatic approval is blocked")
+            outcome = _require_test_outcome(outcome)
             _heartbeat(store, task_id, owner)
             output_text = outcome.get("output")
             if isinstance(output_text, str) and len(output_text) > MAX_TASK_ACTION_RESULT_BYTES:
