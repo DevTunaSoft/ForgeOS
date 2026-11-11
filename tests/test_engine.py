@@ -148,7 +148,7 @@ class EngineIntegrationTests(unittest.TestCase):
         from forgeos.core import run_test
         from forgeos.recovery import resume_safe
         manifest = json.dumps({"files": [
-            {"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+            {"path": "app.py", "content": "def value():\n return 42\n"}]})
         with patch("forgeos.core._execute_test_process",
                    side_effect=subprocess.TimeoutExpired("python", 1)):
             timeout_result = run_test(
