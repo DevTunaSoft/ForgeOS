@@ -1678,8 +1678,7 @@ def launch(db_path, *, acceptance: bool = False):
                 if now - monitor["last_check"] >= 1.0:
                     monitor["last_check"] = now
                     try:
-                        live = store.get(monitor["task_id"])
-                        stage = live["status"]
+                        stage = store.get_status(monitor["task_id"])
                         if stage != monitor["last_stage"]:
                             monitor["last_stage"] = stage
                             log(f"Task #{monitor['task_id']} entered {stage} "
@@ -1707,15 +1706,16 @@ def launch(db_path, *, acceptance: bool = False):
                     busy["value"] = False
                     elapsed = int(time.monotonic() - monitor["started"]) if (
                         monitor["task_id"] == task_id and monitor["started"] is not None) else 0
+                    final_stage = store.get_status(task_id)
                     monitor_text.set(
                         f"Task #{task_id} • {operation} • "
-                        f"{store.get(task_id)['status']} • {elapsed}s elapsed. "
+                        f"{final_stage} • {elapsed}s elapsed. "
                         "See diagnostic output below.")
                     monitor.update(task_id=None, started=None, last_stage=None)
                     for button in buttons.values():
                         button.configure(state="normal")
                     refresh()
-                    status.set(f"Task #{task_id}: {store.get(task_id)['status']}")
+                    status.set(f"Task #{task_id}: {final_stage}")
                     log(f"Task #{task_id} / {operation}\n{value}")
                     tabs.select(activity)
             except Empty:
