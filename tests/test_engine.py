@@ -171,6 +171,41 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(report["resumed"], [])
         resume_runner.assert_not_called()
 
+    def test_malformed_runner_result_cannot_approve_or_retry(self):
+        from unittest.mock import patch, Mock
+        from forgeos.recovery import resume_safe
+        manifest = json.dumps({"files": [
+            {"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+        for index, malformed in enumerate((
+                {"passed": "false", "output": "claimed success"},
+                {"passed": 1, "output": "claimed success"},
+                {"passed": True, "output": None},
+                None)):
+            if index:
+                # Reuse the same fixture database without reactivating the
+                # previously blocked task; each trial is a fresh task id.
+                self.task = self.store.add(
+                    str(self.repo), f"Invalid test result case {index}")
+            with self.subTest(outcome=malformed), patch(
+                    "forgeos.engine._run_workspace_tests",
+                    return_value=malformed) as runner:
+                with self.assertRaisesRegex(RuntimeError, "invalid outcome"):
+                    execute_task(
+                        self.store, self.task, self.root,
+                        allow_host_tests=True,
+                        generate=lambda model, prompt: manifest)
+                runner.assert_called_once()
+                result = self.store.get(self.task)
+                self.assertEqual(result["status"], "blocked")
+                checkpoint = json.loads(result["result"])
+                self.assertEqual(checkpoint["phase"], "manual_review_required")
+                self.assertEqual(checkpoint["capture_error"], "invalid-test-outcome")
+                resumed = Mock()
+                report = resume_safe(self.store, self.root,
+                                     allow_host_tests=True, execute=resumed)
+                self.assertEqual(report["resumed"], [])
+                resumed.assert_not_called()
+
     def test_incomplete_large_log_blocks_autonomous_pass(self):
         from unittest.mock import patch
         manifest = json.dumps({"files": [
