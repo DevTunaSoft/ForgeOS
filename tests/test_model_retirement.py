@@ -29,6 +29,25 @@ class ModelRetirementTests(unittest.TestCase):
     def restore(self, token):
         return restore_download(token, directory=self.root)
 
+    def test_retired_inventory_rejects_unbounded_invalid_entry_scans(self):
+        from contextlib import contextmanager
+        from types import SimpleNamespace
+        from forgeos.model_inventory import MAX_SCAN_ENTRIES
+
+        (self.root / ".forgeos-retired").mkdir()
+
+        @contextmanager
+        def synthetic_entries(_folder):
+            # Emulate hostile directory clutter without allocating or
+            # creating thousands of files on the Windows CI host.
+            yield (SimpleNamespace(name=f"ignored-{index}")
+                   for index in range(MAX_SCAN_ENTRIES + 1))
+
+        with patch("forgeos.model_retirement.os.scandir",
+                   side_effect=synthetic_entries):
+            with self.assertRaisesRegex(RuntimeError, "bounded scan limit"):
+                list_retired(self.root)
+
     def test_full_recovery_and_inventory_hides_retired_weight_without_network(self):
         with patch("forgeos.huggingface_catalog.search_gguf") as remote, \
              patch("forgeos.managed_llama.subprocess.Popen") as spawned:
