@@ -249,6 +249,7 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
     reader = None
     read_error = []
     overflowed = False
+    orphaned = False
 
     def terminate_owned():
         # Only the test's isolated POSIX session is targeted. On Windows the
@@ -298,6 +299,16 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
             terminate_owned()
             process.wait(timeout=5)
             raise
+        if os.name != "nt":
+            # A completed parent must not leave test helpers running. Only
+            # inspect its dedicated process group, never an unrelated PID.
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                pass
+            else:
+                orphaned = True
+                terminate_owned()
         reader.join(timeout=3)
         if reader.is_alive():
             process.stdout.close()
@@ -306,8 +317,14 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
         if read_error:
             raise OSError(f"Test output read failed: {type(read_error[0]).__name__}")
         result = capture.finish(encoding=locale.getpreferredencoding(False) or "utf-8", store=store)
+        if orphaned:
+            result["capture_complete"] = False
+            result["capture_error"] = "test-child-outlived-parent"
+            result["output"] += (
+                "\n[ForgeOS warning: test helper survived its parent; "
+                "process group terminated; capture incomplete]")
         return {
-            "passed": returncode == 0 and not overflowed,
+            "passed": returncode == 0 and not overflowed and not orphaned,
             "returncode": returncode,
             "containment": "none",
             **result,
