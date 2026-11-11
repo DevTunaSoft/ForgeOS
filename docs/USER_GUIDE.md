@@ -179,6 +179,8 @@ troubleshooting and a RAM-conscious model shortlist.
 
 **Memory-conscious input limits:** Task descriptions are limited to **16 KiB of UTF-8 text**, including text entered in the GUI or CLI. The local AI request path also rejects prompts larger than **64 KiB**, before model selection or JSON serialization. Oversized inputs are **rejected**, not silently truncated. Break large requirements into smaller, independently testable tasks and keep lengthy diagnostic files outside the task description. Legacy oversized task records are refused before ForgeOS creates a worktree or contacts the local AI model. These bounds are implemented but still require the latest Linux/Windows CI acceptance runs.
 
+**Duplicate-task protection:** If you click **Add task** again with the same description in the same project while the original task is queued, planning, planned, editing, or testing, ForgeOS refuses to create another task and identifies the existing task number. Select that task from the queue rather than submitting the same request again. Two ForgeOS windows use one SQLite transaction to enforce this check. Completed, failed, or blocked tasks can be submitted again deliberately; an incomplete-evidence blocked task still requires manual review before deciding to retry. This guard is implemented and covered by regression tests but still needs full Linux/Windows CI acceptance.
+
 The one-window desktop prototype has **two tabs**:
 
 | Location | What you will see | What it does |
