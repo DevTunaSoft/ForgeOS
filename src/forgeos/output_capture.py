@@ -102,9 +102,14 @@ def wait_native_output_bounded(process, job, stream, timeout: int, *,
             size = os.fstat(stream.fileno()).st_size
             if size > MAX_RAW_BYTES:
                 raise OSError("Native stdout exceeded 32 MiB disk limit")
+            combined = size
             for candidate in watched_files:
-                if _watched_size(candidate) > MAX_RAW_BYTES:
+                output_bytes = _watched_size(candidate)
+                if output_bytes > MAX_RAW_BYTES:
                     raise OSError("Child-generated test output exceeded 32 MiB disk limit")
+                combined += output_bytes
+                if combined > MAX_RAW_BYTES:
+                    raise OSError("Combined test outputs exceeded 32 MiB disk limit")
         except OSError as exc:
             if not kernel32.TerminateJobObject(job, 125):
                 raise OSError("Failed to terminate unsafe test output job") from exc
