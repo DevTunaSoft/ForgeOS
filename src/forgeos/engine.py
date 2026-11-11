@@ -13,7 +13,7 @@ import re
 import uuid
 from typing import Callable
 
-from .core import LeaseLostError, Ollama, Store, run_test
+from .core import LeaseLostError, Ollama, Store, run_test, validate_task_description
 from .workspace import Workspace, create_workspace
 from .transactions import apply_transaction, recover_edits
 
@@ -152,6 +152,9 @@ def _execute_task(
     if not isinstance(role, str) or not role.strip() or len(role) > 80:
         raise ValueError("Task role is required")
     task = store.get(task_id)
+    # Old or externally modified SQLite rows bypassed Store.add() validation.
+    # Reject them before workspace creation or a model prompt allocation.
+    task["description"] = validate_task_description(task["description"])
     eligible_statuses = {"blocked"} if resume else {"queued", "planned"}
     if task["status"] not in eligible_statuses:
         raise ValueError("Task is not eligible to run")
