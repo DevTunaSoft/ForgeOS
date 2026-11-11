@@ -343,6 +343,12 @@ Check the selected test preset, installed test tools, host-execution authorizati
 
 **Malformed test results:** ForgeOS also checks that a runner returns a real Boolean `passed` value, a text `output` field, and a Boolean `capture_complete` value when supplied. Strings such as `"false"` or `"true"` are not accepted as pass/fail evidence. Invalid results block task approval and, for autonomous runs, mark the checkpoint for manual review instead of repeatedly invoking an untrusted runner.
 
+### Packaged Windows test evidence and disk budget
+
+In the packaged Windows executable, a zero exit code from the secure AppContainer is **not sufficient** to approve a test. ForgeOS also requires its snapshot-owned `test-output.txt` to exist and be readable after the child exits. A missing file, a substituted symbolic link, or a read failure produces `secure-test-output-unavailable`, with `passed=False` and `capture_complete=False`. If native AppContainer stdout capture is incomplete, a complete child test log cannot override that failure. Incomplete child evidence likewise cannot report a pass.
+
+The secure Windows output monitor now enforces **one combined 32 MiB limit** across captured native stdout, the owned test output file, and the optional pytest log. Exceeding that combined budget terminates the contained job and blocks acceptance. No additional polling loop or service was introduced; the existing output monitor checks this limit. Inspect the blocked task and reduce excessive test logging instead of increasing the limit without resource measurements. Real packaged Windows validation is still required.
+
 ### Automated test-output limits
 
 **If the diagnostic archive cannot be written** (such as disk full, read-only storage, or an invalid pre-archived evidence reference), ForgeOS marks the test **not passed**, sets `capture_complete=False`, and records `evidence-archive-failed`. It retains only a bounded head/tail preview with a manual-review warning, even when the test executable exited with code 0. Do not treat the exit code alone as acceptance: free disk space or repair diagnostic storage, inspect the task, and explicitly rerun testing when safe. Automatic repair and approval remain blocked until the evidence path is healthy.
