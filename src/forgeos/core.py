@@ -328,6 +328,7 @@ class Ollama:
         return self._complete(prompt, edits=True)
 
     def plan(self, description: str) -> str:
+        description = validate_task_description(description)
         prompt = (
             'You are a software planning assistant. Produce a concise, testable plan. '
             'Do not claim to have executed code. Include risks and acceptance tests.\n\nTask:\n'
