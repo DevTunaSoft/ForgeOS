@@ -1684,3 +1684,16 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - Automated regression tests: **NOT RUN / UNVERIFIED**. The available container could not resolve github.com to check out the repository; connected GitHub commit workflow lookup returned no PR-triggered runs for `9686a6a`, which does not establish a push-CI result.
 - Real Windows native process/llama.cpp acceptance: **UNVERIFIED**.
 - Next: obtain Linux/Windows CI results for the new head, fix any failures, then run native Windows start/infer/stop/crash acceptance with RAM telemetry. Do not mark #53 or #56 complete based on these mocked tests.
+
+
+## 2026-11-10 — post-Copilot code audit and process-poll recovery
+
+- Read-only audit: examined recent `main` commit history, recent merged PRs, experimental browser PR #66, and managed llama.cpp shutdown sources/tests. GitHub history provides no identified Copilot-authored commit or Copilot branch; local uncommitted editor changes cannot be inspected remotely. **No blanket rollback**.
+- Defect: `ManagedLlamaServer.stop()` previously let `process.poll()` raise before attempting termination, then cleared process ownership and temporary API credentials. The child might remain alive. Source fix `6e1069d` attempts termination and bounded wait if polling fails; it retains the original polling error after cleanup.
+- Regression change `d152757` extends the existing shutdown failure test to require terminate/wait and safe POSIX group handling. No new dependency, polling service, thread or UI.
+- **PASS (isolated verification only):** three locally executed simulation cases of the patched shutdown method: poll exception, already-exited process and forced kill after timeout. These simulate the control flow and are **not** the repository's imported unit tests.
+- **PASS (source verification):** GitHub fetch and commit diff confirmed the targeted source/test changes on `main`.
+- **NOT RUN / UNVERIFIED:** complete ForgeOS Linux/Windows unit suite and current push-triggered CI results. Connected workflow lookup only exposes PR-triggered runs; container cannot resolve github.com for checkout. Do not infer success from missing statuses.
+- **UNVERIFIED:** real Windows native llama.cpp shutdown, process-tree termination, model startup/inference, physical device RAM/performance.
+- Experimental browser PR #66 remains open and unmerged. Its exact-URL checks are not atomic tab identity, and physical Browsentic/Windows security acceptance is unverified. **Do not merge as production-ready** without actual Windows and browser QA.
+- Next: obtain current push CI results; run actual native Windows start/infer/stop/failure-path acceptance and confirm no orphan process; independently test PR #66 against disposable public tabs and assess cross-tab and approval races.
