@@ -12,7 +12,7 @@ from .gguf_download import (
     _reject_existing_link, _safe_name, _safe_storage_root, _write_json_atomic,
 )
 from .huggingface_catalog import REPO_ID
-from .model_inventory import _manifest_model_file, verify_download
+from .model_inventory import MAX_SCAN_ENTRIES, _manifest_model_file, verify_download
 
 RETIRE_DIR = ".forgeos-retired"
 TOKEN = re.compile(r"[a-f0-9]{32}\Z")
@@ -187,8 +187,12 @@ def list_retired(directory: str | Path | None = None) -> list[dict]:
     if not folder.exists():
         return []
     output = []
+    examined = 0
     with os.scandir(folder) as entries:
         for item in entries:
+            examined += 1
+            if examined > MAX_SCAN_ENTRIES:
+                raise RuntimeError("Retired model inventory exceeds bounded scan limit")
             if not TOKEN.fullmatch(item.name) or item.is_symlink() \
                     or not item.is_dir(follow_symlinks=False):
                 continue
