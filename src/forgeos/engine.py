@@ -397,8 +397,12 @@ def _execute_task(
         publish({"testing"}, "failed", error=result["error"], result=json.dumps(result))
         return result
     except Exception as exc:
+        # Untrusted runner/model exceptions can embed very large diagnostic
+        # bodies. Keep task-row and GUI memory bounded; the original
+        # exception still propagates to its caller.
+        failure = str(exc)[-4000:]
         details = {"workspace": str(ws.path) if ws else None,
-                   "error": str(exc)}
+                   "error": failure}
         previous = store.get(task_id).get("result", "")
         try:
             saved = json.loads(previous)
@@ -418,7 +422,7 @@ def _execute_task(
                 details["capture_error"] = capture_failure
         try:
             publish({"editing", "testing"}, "blocked",
-                    error=str(exc), result=json.dumps(details))
+                    error=failure, result=json.dumps(details))
         except LeaseLostError:
             # The old worker no longer owns this task. Preserve whatever the
             # replacement worker wrote; never mask the triggering exception.
