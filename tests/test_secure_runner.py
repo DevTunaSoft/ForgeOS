@@ -87,6 +87,80 @@ class SecureRunnerContractTests(unittest.TestCase):
         self.assertEqual(options["watched_output"], output)
         self.assertEqual(options["watched_extra_outputs"], (logfile,))
 
+    def test_missing_secure_output_can_never_approve_windows_test(self):
+        # A zero exit code is not proof that the sandbox produced test
+        # evidence. The missing-output case must block autonomous recovery.
+        fake = {
+            "passed": True, "returncode": 0, "output": "child exited",
+            "capture_complete": True,
+        }
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=fake):
+            result = run_secure_windows_test(self.runtime, "python-unittest")
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertEqual(
+            result["capture_error"], "secure-test-output-unavailable")
+        self.assertIsNone(result["evidence_reference"])
+        self.assertIn("not produced", result["output"])
+        self.assertEqual(result["returncode"], 0)
+
+    def test_unreadable_secure_output_can_never_approve_windows_test(self):
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        output.write_text("tests passed", encoding="utf-8")
+        fake = {"passed": True, "returncode": 0,
+                "output": "", "capture_complete": True}
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=fake), \
+             patch.object(Path, "open", side_effect=PermissionError(
+                 "simulated output read denial")):
+            result = run_secure_windows_test(self.runtime, "python-unittest")
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertEqual(
+            result["capture_error"], "secure-test-output-unavailable")
+        self.assertIn("simulated output read denial", result["output"])
+        self.assertIsNone(result["evidence_reference"])
+
+    def test_secure_output_substitution_after_launch_fails_closed(self):
+        outside = self.root / "private-original.txt"
+        outside.write_text("outside data")
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        output.write_text("previous result")
+
+        def swap_output(*args, **kwargs):
+            output.unlink()
+            output.symlink_to(outside)
+            return {"passed": True, "returncode": 0, "output": "",
+                    "capture_complete": True}
+
+        try:
+            with patch("forgeos.secure_runner._is_windows", return_value=True), \
+                 patch.object(sys, "frozen", True, create=True), \
+                 patch("forgeos.secure_runner._host_local_appdata",
+                       return_value=r"C:\Users\Example\AppData\Local"), \
+                 patch("forgeos.secure_runner.run_secure_appcontainer",
+                       side_effect=swap_output):
+                result = run_secure_windows_test(
+                    self.runtime, "python-unittest")
+        except (OSError, NotImplementedError) as exc:
+            if not output.is_symlink():
+                self.skipTest(f"File symlinks unavailable: {exc}")
+            raise
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertEqual(
+            result["capture_error"], "secure-test-output-unavailable")
+        self.assertEqual(outside.read_text(), "outside data")
+
     def test_symlinked_pytest_log_refused_before_launch(self):
         outside = self.root / "outside.txt"
         outside.write_text("safe")
