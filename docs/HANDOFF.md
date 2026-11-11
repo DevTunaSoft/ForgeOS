@@ -1739,3 +1739,11 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - Regression commit `58e264f`: `test_repeated_shutdown_timeout_is_bounded_and_erases_credentials` verifies two bounded waits, forced kill, native-handle close, and credential cleanup using a mock process.
 - Verification: **SOURCE COMMITTED**; test execution **NOT RUN** because this execution environment cannot resolve github.com for a checkout. The regression is a mocked fault-injection test and is not proof of a real Windows process shutdown.
 - Remaining: confirm current-head CI on Linux and Windows, investigate failures, and exercise physical Windows managed llama.cpp startup, inference, timeout, and process-tree memory limits.
+
+
+## 2026-11-11 — POSIX test descendant containment (low-memory incremental fix)
+
+- Source `61f98dd`: non-Windows `run_streamed_process()` starts tests in a dedicated session and sends SIGKILL to its process group during timeout/final cleanup. Previously only the direct Python test process was killed; a subprocess could survive and retain an output pipe or perform delayed work. Shutdown waits are now capped at five seconds. This reuses the existing disk-bounded output spool, with no additional polling threads or dependencies.
+- Regression `55bfe18`: POSIX-only live-process test creates a delayed helper, times out its parent and verifies the helper never writes a marker. Separate from Windows AppContainer acceptance.
+- Verification: **COMMITTED / NOT RUN** for the full repository tests. Environment checkout fails because `github.com` DNS resolution is unavailable. Confirm on Linux CI, then review Windows behavior separately. Do not call this production-verified.
+- Follow-up: verify CI and check process-group lifecycle under timeouts, child process output inheritance, and repeated task cancellation; retain Windows-native isolation checks.
