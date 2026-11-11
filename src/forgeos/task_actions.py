@@ -76,7 +76,8 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
         raise ValueError("Task is not eligible for planning")
     description = validate_task_description(task["description"])
     with _owned_task(store, task_id) as owner:
-        _publish(store, task_id, owner, PLAN_STATUSES, "planning", increment=True)
+        _publish(store, task_id, owner, PLAN_STATUSES, "planning",
+                 increment=True, result="")
         try:
             chosen_model = (model if model is not None else
                             model_factory() if model_factory is not None else
@@ -112,7 +113,8 @@ def test_task(store: Store, task_id: int, preset: str, *,
     if task["status"] not in TEST_STATUSES:
         raise ValueError("Task is not eligible for a manual test run")
     with _owned_task(store, task_id) as owner:
-        _publish(store, task_id, owner, TEST_STATUSES, "testing", increment=True)
+        _publish(store, task_id, owner, TEST_STATUSES, "testing",
+                 increment=True, result="")
         try:
             outcome = _run_workspace_tests(Path(task["project"]), preset)
             if not isinstance(outcome, dict) or type(outcome.get("passed")) is not bool:
@@ -138,5 +140,5 @@ def test_task(store: Store, task_id: int, preset: str, *,
             return outcome
         except Exception as exc:
             store.transition(task_id, {"testing"}, "blocked",
-                             error=str(exc)[-4000:], lease_owner=owner)
+                             error=str(exc)[-4000:], result="", lease_owner=owner)
             raise
