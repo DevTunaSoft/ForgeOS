@@ -248,6 +248,21 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
     process = None
     reader = None
     read_error = []
+    overflowed = False
+
+    def terminate_owned():
+        # Only the test's isolated POSIX session is targeted. On Windows the
+        # packaged test runner uses its separate contained process Job Object.
+        if process is None:
+            return
+        if os.name != "nt":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        elif process.poll() is None:
+            process.kill()
+
     try:
         process = subprocess.Popen(
             argv, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -258,12 +273,20 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
         )
 
         def drain():
+            nonlocal overflowed
             try:
                 while True:
                     block = process.stdout.read(CHUNK_BYTES)
                     if not block:
                         break
                     capture.feed(block)
+                    if capture.total > capture.cap:
+                        # The full diagnostic is no longer available. Stop an
+                        # output-flooding test promptly instead of draining
+                        # unbounded bytes and burning CPU until timeout.
+                        overflowed = True
+                        terminate_owned()
+                        break
             except (OSError, ValueError) as exc:
                 read_error.append(exc)
 
@@ -272,13 +295,7 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
         try:
             returncode = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            if os.name != "nt":
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            else:
-                process.kill()
+            terminate_owned()
             process.wait(timeout=5)
             raise
         reader.join(timeout=3)
@@ -290,7 +307,7 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
             raise OSError(f"Test output read failed: {type(read_error[0]).__name__}")
         result = capture.finish(encoding=locale.getpreferredencoding(False) or "utf-8", store=store)
         return {
-            "passed": returncode == 0,
+            "passed": returncode == 0 and not overflowed,
             "returncode": returncode,
             "containment": "none",
             **result,
@@ -299,13 +316,7 @@ def run_streamed_process(argv, root: Path, timeout: int, *, env=None, store=None
         if process is not None:
             # Always reap the owned session; even a finished parent can leave
             # a helper holding the inherited stdout pipe open.
-            if os.name != "nt":
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            elif process.poll() is None:
-                process.kill()
+            terminate_owned()
             if process.poll() is None:
                 try:
                     process.wait(timeout=5)
