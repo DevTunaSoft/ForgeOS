@@ -118,9 +118,19 @@ class EngineIntegrationTests(unittest.TestCase):
         runner.assert_called_once()
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
         checkpoint = json.loads(self.store.get(self.task)["result"])
-        self.assertEqual(checkpoint["phase"], "test_pending")
+        self.assertEqual(checkpoint["phase"], "manual_review_required")
+        self.assertIs(checkpoint["capture_complete"], False)
         self.assertEqual((self.repo / "app.py").read_text(),
                          "def value():\n return 42\n")
+        # A second recovery attempt must not re-run the same output flood.
+        from forgeos.recovery import resume_safe
+        from unittest.mock import Mock
+        resumed = Mock()
+        report = resume_safe(self.store, self.root, allow_host_tests=True,
+                             execute=resumed)
+        self.assertEqual(report["resumed"], [])
+        self.assertEqual(report["skipped"][0]["id"], self.task)
+        resumed.assert_not_called()
 
     def test_managed_model_hashes_are_pinned_in_checkpoint_without_secret(self):
         from unittest.mock import patch
