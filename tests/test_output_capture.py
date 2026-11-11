@@ -328,6 +328,32 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         time.sleep(1.7)
         self.assertFalse(marker.exists(), "Timed-out test left a live child")
 
+    @unittest.skipIf(os.name == "nt", "POSIX process-group leak detection")
+    def test_parent_success_does_not_hide_surviving_child(self):
+        import time
+        marker = self.root / "outlived-parent.txt"
+        child = (
+            "import pathlib,time,sys; time.sleep(1.2); "
+            "pathlib.Path(sys.argv[1]).write_text('outlived')"
+        )
+        parent = (
+            "import subprocess,sys; "
+            "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]], "
+            "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL); "
+            "print('parent finished',flush=True)"
+        )
+        outcome = run_streamed_process(
+            [sys.executable, "-c", parent, child, str(marker)],
+            self.root, timeout=6)
+        self.assertEqual(outcome["returncode"], 0)
+        self.assertFalse(outcome["passed"])
+        self.assertFalse(outcome["capture_complete"])
+        self.assertEqual(outcome["capture_error"], "test-child-outlived-parent")
+        self.assertIn("test helper survived", outcome["output"])
+        time.sleep(1.4)
+        self.assertFalse(marker.exists(), "Test helper was not terminated")
+
     def test_output_flood_terminates_early_with_bounded_capture(self):
         from unittest.mock import patch
         from forgeos.output_capture import BoundedSpool as OriginalSpool
