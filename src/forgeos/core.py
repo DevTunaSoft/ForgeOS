@@ -79,11 +79,25 @@ class Store:
         if not project_path.is_dir() or not (project_path / '.git').exists():
             raise ValueError('Project must be an existing local Git repository')
         description = validate_task_description(description)
+        project_key = str(project_path)
         now = time.time()
         with self.db:
+            # Serialize the check and insert across separate ForgeOS windows.
+            # A read followed by a deferred write could race another process.
+            self.db.execute("BEGIN IMMEDIATE")
+            existing = self.db.execute(
+                "SELECT id FROM tasks WHERE project=? AND description=? "
+                "AND status IN ('queued','planning','planned','editing','testing') "
+                "ORDER BY id DESC LIMIT 1",
+                (project_key, description),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError(
+                    f"Active task #{existing['id']} already has this description; "
+                    "select the existing task instead")
             cur = self.db.execute(
                 'INSERT INTO tasks(project,description,created,updated) VALUES(?,?,?,?)',
-                (str(project_path), description, now, now))
+                (project_key, description, now, now))
         return int(cur.lastrowid)
 
     def list(self, *, brief: bool = False, limit: int | None = None,
