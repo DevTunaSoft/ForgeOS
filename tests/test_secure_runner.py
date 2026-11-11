@@ -87,6 +87,31 @@ class SecureRunnerContractTests(unittest.TestCase):
         self.assertEqual(options["watched_output"], output)
         self.assertEqual(options["watched_extra_outputs"], (logfile,))
 
+    def test_incomplete_child_output_cannot_return_passing_test(self):
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        output.write_text("Some tests passed", encoding="utf-8")
+        native = {
+            "passed": True, "returncode": 0,
+            "output": "bootstrap complete", "capture_complete": True,
+        }
+        incomplete = {
+            "output": "partial test output", "capture_complete": False,
+            "capture_error": "archive-failed",
+        }
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=native), \
+             patch("forgeos.output_capture.summarize_output_file",
+                   return_value=incomplete):
+            result = run_secure_windows_test(self.runtime, "python-unittest")
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertEqual(result["capture_error"], "archive-failed")
+        self.assertEqual(result["output"], "partial test output")
+
     def test_complete_child_log_cannot_erase_incomplete_native_capture(self):
         output = self.root / RUNTIME_DIR / "test-output.txt"
         output.write_text("All application tests passed", encoding="utf-8")
