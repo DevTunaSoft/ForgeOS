@@ -21,6 +21,12 @@ LEASE_SCHEMA = """CREATE TABLE IF NOT EXISTS task_leases (
  acquired REAL NOT NULL, heartbeat REAL NOT NULL
 );"""
 
+# Index only active tasks: past task history remains outside this small lookup.
+# Non-unique so older databases with duplicate active tasks can migrate safely.
+ACTIVE_TASK_LOOKUP_INDEX = """CREATE INDEX IF NOT EXISTS idx_forgeos_active_task_lookup
+ ON tasks(project, description, id)
+ WHERE status IN ('queued','planning','planned','editing','testing');"""
+
 STATUSES = {'queued','planning','planned','editing','testing','passed','failed','blocked'}
 DEFAULT_LEASE_SECONDS = 600
 MAX_CHECKPOINT_BYTES = 64 * 1024
@@ -72,6 +78,7 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute(SCHEMA)
         self.db.execute(LEASE_SCHEMA)
+        self.db.execute(ACTIVE_TASK_LOOKUP_INDEX)
         self.db.commit()
 
     def add(self, project: str, description: str) -> int:
