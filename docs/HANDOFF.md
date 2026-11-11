@@ -1778,3 +1778,12 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - User manual commit `2b0ddf8`: documents blocked, nonresumable incomplete-evidence tasks and next safe actions.
 - Verification: **CODE AND REGRESSION TESTS COMMITTED; TEST EXECUTION NOT RUN**. Local checkout of GitHub remains blocked by DNS; the connected repository APIs can update files but do not provide a usable execution runner or the full push-triggered CI status. Do not count these tests as passed. Real Windows GUI, AppContainer and end-to-end autonomous crash recovery remain **UNVERIFIED**.
 - Next task: obtain a full Linux/Windows suite execution on these commits; fix failures at their root, validate explicit process termination and incomplete-capture behavior, then continue with bounded recovery/diagnostics hardening. Never automatically replay this nonresumable phase.
+
+
+## 2026-11-11 — malformed checkpoint recovery error hardening
+
+- While auditing the new nonresumable evidence guard, found a separate failure path: `_execute_task` assumed JSON-decoded checkpoints were mappings, and its outer exception handler likewise used `saved.get(...)` without checking the decoded type. A stored JSON list could replace the original failure with an `AttributeError` while recording task state.
+- Source commits `d400c5d` and `f5e0595` now require a mapping for stored resumable checkpoints and validate the prior-result type before reading its `phase`. Malformed checkpoint values fail with `ValueError("Invalid resume checkpoint format")`, leaving the original worktree intact and recording the blocked failure through the existing transactional task update.
+- Regression commits `56c80ab` and `557849b` add a corrupt-JSON-shape resume test asserting the task remains blocked, its diagnostic is retained and the workspace remains inspectable.
+- Verification status: **COMMITTED / SOURCE RE-READ**. Actual automated test execution: **NOT RUN** (environment still cannot resolve GitHub for a checkout; no current-head CI status was supplied by the connected GitHub status API). CI workflow **is configured** for ubuntu-latest and windows-latest on Python 3.10/3.12 with compileall, unittest and a memory capture benchmark; configured workflows do not constitute passing evidence.
+- Follow-up: verify CI on latest head and inspect any regression failures before broader model runtime work.
