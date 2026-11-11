@@ -91,7 +91,7 @@ Using the GUI:
 3. Select **Add task**, then select the task in the queue. If the same request is already active in that project, ForgeOS shows its existing task number instead of creating a duplicate.
 4. Choose a local model (or `auto`), a test preset, and a workspace folder.
 5. Use **Generate plan** for planning. Enable **Host test execution** only for a trusted repository before selecting **Run tests only** or **Build / test / repair**. Both test operations use the same guarded runtime selection.
-6. Review results in **Activity & diagnostics**, then inspect the generated Git worktree before accepting changes.
+6. Review results in **Activity & diagnostics**, then inspect the generated Git worktree before accepting changes. ForgeOS rejects oversized planning/manual-test database results (64 KiB limit) rather than truncating evidence or reporting an unverified pass.
 
 **Source/development mode:** generated project tests may run on your computer after explicit host-execution permission. **Do not opt in for untrusted code.** Packaged Windows runtime restrictions are described in [Security and responsible use](#security-and-responsible-use).
 
