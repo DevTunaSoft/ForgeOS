@@ -167,6 +167,7 @@ def _execute_task(
         raise ValueError("Resume requires existing workspace")
     ws = None
     last_output = ""
+    incomplete_test_evidence = False
     def heartbeat():
         if not store.heartbeat_lease(task_id, lease_owner):
             raise LeaseLostError("Task execution lease was lost or expired")
@@ -320,6 +321,10 @@ def _execute_task(
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
             if outcome.get("capture_complete") is False:
+                # Incomplete diagnostics cannot support automated repair or
+                # acceptance. Mark this checkpoint non-resumable so repeated
+                # resume-safe runs cannot re-execute an output-flooding test.
+                incomplete_test_evidence = True
                 raise RuntimeError(
                     "Test output exceeds safe evidence limits or original archive "
                     "could not be retained; automatic repair/approval blocked")
@@ -390,6 +395,11 @@ def _execute_task(
                 details = saved
         except (ValueError, TypeError):
             pass
+        if incomplete_test_evidence:
+            # Keep workspace/branch and edit hashes for manual inspection but
+            # prevent recovery from blindly replaying the same unsafe test.
+            details["phase"] = "manual_review_required"
+            details["capture_complete"] = False
         try:
             publish({"editing", "testing"}, "blocked",
                     error=str(exc), result=json.dumps(details))
