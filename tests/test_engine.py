@@ -175,7 +175,7 @@ class EngineIntegrationTests(unittest.TestCase):
         from unittest.mock import patch, Mock
         from forgeos.recovery import resume_safe
         manifest = json.dumps({"files": [
-            {"path": "app.py", "content": "def value():\\n return 42\\n"}]})
+            {"path": "app.py", "content": "def value():\n return 42\n"}]})
         for index, malformed in enumerate((
                 {"passed": "false", "output": "claimed success"},
                 {"passed": 1, "output": "claimed success"},
