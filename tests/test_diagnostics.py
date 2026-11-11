@@ -69,6 +69,28 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(result["optimization"]["source_bytes"],
                          len(raw.encode("utf-8")))
 
+    def test_tiny_success_without_archive_still_requires_review(self):
+        failed_store = Mock()
+        failed_store.put.side_effect = PermissionError("read only evidence volume")
+        result = optimize_test_result(
+            {"passed": True, "returncode": 0, "output": "OK"},
+            "python-unittest", store=failed_store)
+        self.assertFalse(result["passed"])
+        self.assertIs(result["capture_complete"], False)
+        self.assertIn("OK", result["output"])
+        self.assertIn("manual review required", result["output"])
+        self.assertLess(len(result["output"]), 300)
+
+    def test_invalid_prearchived_evidence_cannot_approve_test(self):
+        result = optimize_test_result(
+            {"passed": True, "returncode": 0, "output": "OK",
+             "evidence_reference": "../not-a-sha256"},
+            "python-unittest", store=self.store)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["capture_error"], "evidence-archive-failed")
+        self.assertIs(result["capture_complete"], False)
+        self.assertFalse(result["optimization"]["archived"])
+
     def test_failures_and_counts_survive_with_recall(self):
         raw = ("INFO normal\n" * 600 + 'Traceback (most recent call last):\n'
                + ' File "app.py", line 73\nAssertionError: expected 42\n'
