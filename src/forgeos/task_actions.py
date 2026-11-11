@@ -71,7 +71,7 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
         raise ValueError("Specify a model or model factory, not both")
     if model_factory is not None and not callable(model_factory):
         raise ValueError("Model factory must be callable" )
-    task = store.get(task_id)
+    task = store.get_task_inputs(task_id)
     if task["status"] not in PLAN_STATUSES:
         raise ValueError("Task is not eligible for planning")
     description = validate_task_description(task["description"])
@@ -109,7 +109,7 @@ def test_task(store: Store, task_id: int, preset: str, *,
     if not allow_host_tests:
         raise ValueError(
             "Test execution requires explicit --allow-host-tests permission")
-    task = store.get(task_id)
+    task = store.get_task_inputs(task_id)
     if task["status"] not in TEST_STATUSES:
         raise ValueError("Task is not eligible for a manual test run")
     with _owned_task(store, task_id) as owner:
