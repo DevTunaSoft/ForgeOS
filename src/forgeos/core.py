@@ -23,12 +23,24 @@ LEASE_SCHEMA = """CREATE TABLE IF NOT EXISTS task_leases (
 STATUSES = {'queued','planning','planned','editing','testing','passed','failed','blocked'}
 DEFAULT_LEASE_SECONDS = 600
 MAX_CHECKPOINT_BYTES = 64 * 1024
+MAX_TASK_DESCRIPTION_BYTES = 16 * 1024
 CHECKPOINT_PAGE_SIZE = 16
 
 
 class LeaseLostError(RuntimeError):
     """An expired, reclaimed, or concurrently changed task cannot be published."""
 
+
+def validate_task_description(description: str) -> str:
+    """Reject oversized prompts before copying them into SQLite or local AI context."""
+    if not isinstance(description, str) or len(description) > MAX_TASK_DESCRIPTION_BYTES:
+        raise ValueError("Task description must be text of at most 16 KiB")
+    cleaned = description.strip()
+    if not cleaned:
+        raise ValueError("Task description is required")
+    if len(cleaned.encode("utf-8")) > MAX_TASK_DESCRIPTION_BYTES:
+        raise ValueError("Task description must be at most 16 KiB UTF-8")
+    return cleaned
 
 
 class Store:
@@ -46,13 +58,12 @@ class Store:
         project_path = Path(project).expanduser().resolve(strict=True)
         if not project_path.is_dir() or not (project_path / '.git').exists():
             raise ValueError('Project must be an existing local Git repository')
-        if not description.strip():
-            raise ValueError('Task description is required')
+        description = validate_task_description(description)
         now = time.time()
         with self.db:
             cur = self.db.execute(
                 'INSERT INTO tasks(project,description,created,updated) VALUES(?,?,?,?)',
-                (str(project_path), description.strip(), now, now))
+                (str(project_path), description, now, now))
         return int(cur.lastrowid)
 
     def list(self, *, brief: bool = False, limit: int | None = None,
