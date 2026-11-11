@@ -2,6 +2,7 @@
 import io
 import json
 import unittest
+from urllib.request import Request
 from unittest.mock import patch
 
 from forgeos.local_models import (
@@ -22,6 +23,55 @@ def payload(data):
 
 
 class LocalModelsTests(unittest.TestCase):
+    def test_trickled_local_response_hits_total_deadline(self):
+        from forgeos.local_models import _read_json
+        class Trickle(Response):
+            def read1(self, size=-1):
+                return super().read(1)
+
+        # Total time advances even though each socket read returns a byte.
+        # A per-read timeout alone cannot stop this kind of slow response.
+        ticks = iter((0.0, 0.5, 1.5, 4.5, 9.5, 10.0))
+        slow = Trickle(b'{"data": [1, 2, 3]}')
+        with (patch("forgeos.local_models._open", return_value=slow),
+              patch("forgeos.local_models.time.monotonic",
+                    side_effect=lambda: next(ticks))):
+            with self.assertRaisesRegex(TimeoutError, "total deadline"):
+                _read_json(Request("http://127.0.0.1:8080/v1/models"),
+                           limit=1000, timeout=10)
+        self.assertTrue(slow.closed)
+
+    def test_local_response_reads_small_chunks_without_full_buffer_request(self):
+        from forgeos.local_models import _read_json
+        class TrackingResponse(Response):
+            reads = 0
+            max_size = 0
+            def read1(self, size=-1):
+                self.reads += 1
+                self.max_size = max(self.max_size, size)
+                return super().read(size)
+
+        body = {"choices": [{"message": {"content": "x" * 120000}}]}
+        response = TrackingResponse(json.dumps(body).encode("utf-8"))
+        with patch("forgeos.local_models._open", return_value=response):
+            value = _read_json(Request("http://127.0.0.1:8080/v1/chat/completions"),
+                               limit=150000, timeout=5)
+        self.assertEqual(value, body)
+        self.assertGreater(response.reads, 2)
+        self.assertLessEqual(response.max_size, 8192)
+        self.assertTrue(response.closed)
+
+    def test_local_response_limit_and_timeout_inputs_fail_before_connection(self):
+        from forgeos.local_models import _read_json
+        req = Request("http://127.0.0.1:8080/v1/models")
+        with patch("forgeos.local_models._open") as opened:
+            for limit, timeout in ((0, 10), (-1, 10), (1, 0),
+                                   (1, 181), (True, 10), (10, False)):
+                with self.subTest(limit=limit, timeout=timeout):
+                    with self.assertRaises(ValueError):
+                        _read_json(req, limit=limit, timeout=timeout)
+            opened.assert_not_called()
+
     def test_local_chat_rejects_oversized_prompts_before_network(self):
         from forgeos.core import MAX_LOCAL_PROMPT_BYTES, MAX_TASK_DESCRIPTION_BYTES
         model = create_model(backend="llama.cpp", model="my-coder:1b")
