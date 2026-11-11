@@ -137,8 +137,8 @@ class LocalChatModel:
             memory_limit_bytes=safe_model_file_budget(system_memory()))
 
     def _complete(self, prompt: str, *, edits: bool = False) -> str:
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("Model prompt is required")
+        from .core import validate_local_prompt
+        validate_local_prompt(prompt)
         settings = local_memory_settings()
         selected = self._choose_model(prompt)
         request_body = {
@@ -177,6 +177,8 @@ class LocalChatModel:
         return self._complete(prompt, edits=True)
 
     def plan(self, description: str) -> str:
+        from .core import validate_task_description
+        description = validate_task_description(description)
         return self._complete(
             "You are a software planning assistant. Produce a concise, "
             "testable plan. Do not claim to have executed code. "
