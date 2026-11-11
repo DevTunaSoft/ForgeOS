@@ -49,6 +49,56 @@ class ForgeOSTests(unittest.TestCase):
                 Ollama().plan("z" * (MAX_TASK_DESCRIPTION_BYTES + 1))
             request.assert_not_called()
 
+    def test_duplicate_active_task_is_rejected_without_extra_row(self):
+        task = self.store.add(str(self.repo), "  Fix startup safely  ")
+        for status in ("queued", "planning", "planned", "editing", "testing"):
+            self.store.update(task, status)
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(ValueError, f"Active task #{task}"):
+                    self.store.add(str(self.repo), "Fix startup safely")
+                self.assertFalse(self.store.db.in_transaction)
+                self.assertEqual(self.store.counts()["total"], 1)
+        # A completed, failed, or explicitly blocked task is not silently
+        # reused. A newly requested run gets its own audited task identity.
+        for terminal in ("blocked", "failed", "passed"):
+            self.store.update(task, terminal)
+            new_id = self.store.add(str(self.repo), "Fix startup safely")
+            self.assertNotEqual(new_id, task)
+            task = new_id
+        self.assertEqual(self.store.counts()["total"], 4)
+
+    def test_duplicate_add_from_two_windows_is_serialized(self):
+        db_path = self.store.path
+        start = threading.Barrier(4)
+        outcomes = []
+        lock = threading.Lock()
+
+        def worker():
+            try:
+                second_window = Store(db_path)
+                try:
+                    start.wait(timeout=10)
+                    value = ("created", second_window.add(
+                        str(self.repo), "Prevent duplicate window clicks"))
+                finally:
+                    second_window.close()
+            except Exception as exc:
+                value = (type(exc).__name__, str(exc))
+            with lock:
+                outcomes.append(value)
+
+        workers = [threading.Thread(target=worker) for _ in range(3)]
+        for thread in workers:
+            thread.start()
+        start.wait(timeout=10)
+        for thread in workers:
+            thread.join(timeout=10)
+        self.assertTrue(all(not thread.is_alive() for thread in workers))
+        self.assertEqual(len(outcomes), 3)
+        self.assertEqual(sum(kind == "created" for kind, _ in outcomes), 1)
+        self.assertEqual(sum(kind == "ValueError" for kind, _ in outcomes), 2)
+        self.assertEqual(self.store.counts()["total"], 1)
+
     def test_brief_rows_omit_large_diagnostic_blobs(self):
         task=self.store.add(str(self.repo),'Memory lightweight activity view')
         large='z'*(2*1024*1024)
