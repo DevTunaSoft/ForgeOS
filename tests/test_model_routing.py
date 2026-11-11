@@ -25,6 +25,27 @@ class LocalModelRoutingTests(unittest.TestCase):
             "Fix concurrent recovery security bugs",available=MODELS),
             "qwen2.5-coder:14b")
 
+    def test_long_task_skips_unnecessary_full_text_lowercasing(self):
+        class NoLower(str):
+            def lower(self):
+                raise AssertionError("Long tasks must not be copied for routing")
+        long_task = NoLower("Review code " * 70)
+        self.assertGreaterEqual(len(long_task), 700)
+        self.assertEqual(
+            choose_installed_model(long_task, available=MODELS),
+            "qwen2.5-coder:14b")
+
+    def test_large_task_uses_largest_eligible_model_without_keyword_scan(self):
+        large_task = "Build robust code " * 100_000
+        self.assertEqual(
+            choose_installed_model(large_task, available=MODELS,
+                                   max_model_bytes=6_000_000_000),
+            "qwen2.5-coder:7b")
+
+    def test_large_whitespace_only_task_still_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Task specification"):
+            choose_installed_model(" " * 100_000, available=MODELS)
+
     def test_middle_complexity(self):
         self.assertEqual(choose_installed_model(
             "Review crash defects",available=MODELS), "qwen2.5-coder:7b")
