@@ -1789,3 +1789,5 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - Follow-up: verify CI on latest head and inspect any regression failures before broader model runtime work.
 
 - Follow-up source commit `234d6a3` and regression commit `cec86a4`: rejected direct `--resume` on a `manual_review_required` checkpoint now retains its original edited-file hashes and workspace context, rather than replacing the checkpoint with a generic error object. Recovery remains blocked and cannot silently restart the unsafe test. **COMMITTED / NOT RUN**.
+
+- Follow-up source `6a0a741` and test `69cecba`: preserve a bounded (at most 80 characters) structured `capture_error` in the nonresumable checkpoint, e.g. `capture-limit-exceeded`. This gives troubleshooting evidence without storing complete failure-output floods in SQLite. **SOURCE AND TEST COMMITTED; NOT RUN**.
