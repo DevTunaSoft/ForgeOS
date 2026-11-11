@@ -341,15 +341,9 @@ def _execute_task(
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
-            try:
-                _require_test_outcome(outcome)
-            except RuntimeError:
-                # Malformed result cannot prove a test ran or passed; repeated
-                # automatic replays would have the same untrusted evidence.
-                incomplete_test_evidence = True
-                capture_failure = "invalid-test-outcome"
-                raise
-            if outcome.get("capture_complete") is False:
+            # Incomplete capture is non-resumable even if the runner could not
+            # return a normal output field. Validate ordinary results next.
+            if isinstance(outcome, dict) and outcome.get("capture_complete") is False:
                 # Incomplete diagnostics cannot support automated repair or
                 # acceptance. Mark this checkpoint non-resumable so repeated
                 # resume-safe runs cannot re-execute an output-flooding test.
@@ -362,6 +356,14 @@ def _execute_task(
                 raise RuntimeError(
                     "Test output exceeds safe evidence limits or original archive "
                     "could not be retained; automatic repair/approval blocked")
+            try:
+                _require_test_outcome(outcome)
+            except RuntimeError:
+                # Malformed result cannot prove a test ran or passed; repeated
+                # automatic replays would have the same untrusted evidence.
+                incomplete_test_evidence = True
+                capture_failure = "invalid-test-outcome"
+                raise
             previous_failure = last_output
             last_output = outcome["output"]
             if outcome["passed"]:
