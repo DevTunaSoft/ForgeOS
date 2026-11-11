@@ -121,6 +121,25 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(sum(kind == "ValueError" for kind, _ in outcomes), 2)
         self.assertEqual(self.store.counts()["total"], 1)
 
+    def test_live_status_query_does_not_read_diagnostic_columns(self):
+        task = self.store.add(str(self.repo), "Monitor an active task")
+        archived = "L" * (2 * 1024 * 1024)
+        self.store.update(task, "testing", result=archived, error=archived)
+        executed = []
+        self.store.db.set_trace_callback(executed.append)
+        try:
+            self.assertEqual(self.store.get_status(task), "testing")
+            self.assertEqual(self.store.get_status(task), "testing")
+            with self.assertRaisesRegex(ValueError, "No task"):
+                self.store.get_status(-1)
+        finally:
+            self.store.db.set_trace_callback(None)
+        self.assertEqual(len(executed), 3)
+        self.assertTrue(all(
+            statement.strip().lower().startswith("select status from tasks")
+            for statement in executed))
+        self.assertEqual(self.store.get(task)["result"], archived)
+
     def test_execution_view_never_materializes_historical_result_or_error(self):
         from forgeos.core import MAX_CHECKPOINT_BYTES
         task = self.store.add(str(self.repo), "Inspect repository safely")
