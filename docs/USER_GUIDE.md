@@ -321,6 +321,12 @@ a workspace before recovery.
 
 The CLI has a broader list of test preset names than the secure Windows packaged runner actually supports. **Preset visibility does not imply it is safe or usable in every environment.** For the packaged Windows EXE, `python-pytest` now uses the **bundled pytest module** in the same restricted AppContainer as unittest; the package is optional for source-only installations. Its logging file is redirected away from Windows `NUL` into the disposable snapshot and watched against a 32 MiB per-file limit. Other third-party pytest plugins do not autoload in that sandbox.
 
+### Automated test-output limits
+
+When a source-mode test on Linux produces more than **32 MiB** of combined stdout/stderr, ForgeOS stops that test promptly rather than reading an unlimited output flood until the normal test timeout. The result is a **failed, incomplete diagnostic capture**; it is not treated as a passing test or as complete evidence for automatic repair. Output at or below the limit follows the existing disk-backed capture path. The change reuses the existing reader thread and adds no idle monitoring or extra dependency.
+
+The packaged Windows AppContainer runner enforces its separate native output-file limits. Neither output limit makes arbitrary generated tests safe to run on an unrestricted host: use a disposable project and grant host-test execution only when intended.
+
 ## 8. Troubleshooting
 
 | Symptom | Likely cause / next action |
