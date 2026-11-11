@@ -584,31 +584,51 @@ class ManagedLlamaServer:
                     _release_windows_job(job)
                 except OSError as exc:
                     job_error = exc
-            poll_error = None
+            stop_error = None
             if process is not None:
                 try:
                     needs_stop = process.poll() is None
                 except OSError as exc:
-                    # If process inspection fails, assume it may still be
-                    # running and attempt cleanup before reporting the error.
+                    # A failed poll does not establish that the child exited.
                     needs_stop = True
-                    poll_error = exc
+                    stop_error = exc
                 if needs_stop and (job is None or job_error is not None
-                                   or poll_error is not None):
-                    if os.name != "nt":
-                        _terminate_posix_group(process.pid, signal.SIGTERM)
-                    process.terminate()
+                                   or stop_error is not None):
+                    try:
+                        if os.name != "nt":
+                            _terminate_posix_group(process.pid, signal.SIGTERM)
+                        process.terminate()
+                    except OSError as exc:
+                        if stop_error is None:
+                            stop_error = exc
+                        # Do not skip forceful cleanup after a failed TERM.
+                        try:
+                            process.kill()
+                        except OSError:
+                            pass
                 try:
                     process.wait(timeout=4)
                 except subprocess.TimeoutExpired:
                     if os.name != "nt" and job is None:
-                        _terminate_posix_group(process.pid, signal.SIGKILL)
+                        try:
+                            _terminate_posix_group(process.pid, signal.SIGKILL)
+                        except OSError:
+                            pass
                     process.kill()
                     process.wait(timeout=4)
+                except OSError as exc:
+                    # A native wait failure can leave a live process behind.
+                    if stop_error is None:
+                        stop_error = exc
+                    try:
+                        process.kill()
+                        process.wait(timeout=4)
+                    except (OSError, subprocess.TimeoutExpired):
+                        pass
             if job_error is not None:
                 raise job_error
-            if poll_error is not None:
-                raise poll_error
+            if stop_error is not None:
+                raise stop_error
         finally:
             # Native Windows process handles must close even when poll(),
             # wait(), termination, or Job Object cleanup raises.
