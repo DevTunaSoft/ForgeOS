@@ -103,6 +103,26 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
 
+    def test_oversized_legacy_task_fails_before_workspace_or_model_calls(self):
+        from unittest.mock import Mock, patch
+        from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE tasks SET description=? WHERE id=?",
+                ("x" * (MAX_TASK_DESCRIPTION_BYTES + 1), self.task))
+        generation = Mock(side_effect=AssertionError("Unexpected model call"))
+        with patch("forgeos.engine.create_workspace") as worktree:
+            with self.assertRaisesRegex(ValueError, "16 KiB"):
+                execute_task(self.store, self.task, self.root,
+                             allow_host_tests=True, generate=generation)
+        generation.assert_not_called()
+        worktree.assert_not_called()
+        self.assertEqual(self.store.get(self.task)["status"], "queued")
+        self.assertFalse((self.root / f"task-{self.task}").exists())
+        self.assertEqual(
+            self.store.db.execute("SELECT COUNT(*) FROM task_leases").fetchone()[0],
+            0)
+
     def test_incomplete_large_log_blocks_autonomous_pass(self):
         from unittest.mock import patch
         manifest = json.dumps({"files": [
