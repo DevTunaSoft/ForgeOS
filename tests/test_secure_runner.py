@@ -87,6 +87,47 @@ class SecureRunnerContractTests(unittest.TestCase):
         self.assertEqual(options["watched_output"], output)
         self.assertEqual(options["watched_extra_outputs"], (logfile,))
 
+    def test_complete_child_log_cannot_erase_incomplete_native_capture(self):
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        output.write_text("All application tests passed", encoding="utf-8")
+        native = {
+            "passed": True, "returncode": 0,
+            "capture_complete": False,
+            "output": "native stdout was truncated",
+            "capture_error": None,
+        }
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=native):
+            result = run_secure_windows_test(self.runtime, "python-unittest")
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertEqual(result["capture_error"], "secure-native-output-incomplete")
+        self.assertIn("native stdout was truncated", result["output"])
+        self.assertIn("All application tests passed", result["output"])
+        self.assertIn("native runner output evidence incomplete", result["output"])
+        self.assertEqual(result["returncode"], 0)
+
+    def test_both_native_and_child_output_missing_remains_incomplete(self):
+        native = {
+            "passed": True, "returncode": 0,
+            "capture_complete": False, "output": "native stdout incomplete",
+        }
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=native):
+            result = run_secure_windows_test(self.runtime, "python-unittest")
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertEqual(result["capture_error"], "secure-test-output-unavailable")
+        self.assertIn("not produced", result["output"])
+
     def test_missing_secure_output_can_never_approve_windows_test(self):
         # A zero exit code is not proof that the sandbox produced test
         # evidence. The missing-output case must block autonomous recovery.
