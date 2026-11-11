@@ -456,8 +456,10 @@ def run_test(project: str, command: str, timeout: int = 180, *,
     }
     if command not in allowed:
         raise ValueError('Unknown test preset')
-    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
-        raise ValueError('timeout must be a positive integer')
+    # Match the Windows contained runtime's 1-hour ceiling so a bad
+    # config cannot keep even a trusted host test alive indefinitely.
+    if type(timeout) is not int or not 1 <= timeout <= 3600:
+        raise ValueError('timeout must be 1..3600 seconds')
     if not isinstance(low_integrity, bool):
         raise ValueError('low_integrity must be boolean')
     if env is not None and not isinstance(env, dict):

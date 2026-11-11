@@ -445,6 +445,23 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(result['capture_error'], 'test-runtime-unavailable')
         self.assertIsNone(result['returncode'])
 
+    def test_test_runner_timeout_is_strictly_bounded_before_spawn(self):
+        for timeout in (0, -1, 3601, None, True, 1.5, "180"):
+            with self.subTest(timeout=timeout), patch(
+                    'forgeos.core._execute_test_process') as spawn:
+                with self.assertRaisesRegex(ValueError, 'timeout must be 1..3600'):
+                    run_test(str(self.repo), 'python-unittest', timeout=timeout)
+                spawn.assert_not_called()
+
+    def test_maximum_test_timeout_is_allowed(self):
+        with patch('forgeos.core._execute_test_process',
+                   side_effect=subprocess.TimeoutExpired('python', 3600)) as spawn:
+            result = run_test(str(self.repo), 'python-unittest', timeout=3600)
+        self.assertFalse(result['passed'])
+        self.assertFalse(result['capture_complete'])
+        self.assertEqual(result['capture_error'], 'test-timeout')
+        self.assertEqual(spawn.call_args.args[2], 3600)
+
     def test_timeout_is_reported(self):
         with patch('forgeos.core._execute_test_process',
                    side_effect=subprocess.TimeoutExpired('python',1)):
