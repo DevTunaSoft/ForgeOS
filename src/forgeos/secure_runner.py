@@ -126,4 +126,8 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
             + (result.get("output", "")[-12000:]
                if isinstance(result.get("output"), str) else "")
         )[-16000:]
+    # A child-output archive failure or size overflow is independently
+    # incomplete even when the native stdout stream was captured correctly.
+    if result.get("capture_complete") is False:
+        result["passed"] = False
     return result
