@@ -22,6 +22,20 @@ def payload(data):
 
 
 class LocalModelsTests(unittest.TestCase):
+    def test_local_chat_rejects_oversized_prompts_before_network(self):
+        from forgeos.core import MAX_LOCAL_PROMPT_BYTES, MAX_TASK_DESCRIPTION_BYTES
+        model = create_model(backend="llama.cpp", model="my-coder:1b")
+        with (patch("forgeos.local_models._open") as connection,
+              patch("forgeos.local_models.local_memory_settings") as memory):
+            with self.assertRaisesRegex(ValueError, "64 KiB"):
+                model.generate_edits("x" * (MAX_LOCAL_PROMPT_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "64 KiB"):
+                model.generate_edits("界" * (MAX_LOCAL_PROMPT_BYTES // 3 + 1))
+            with self.assertRaisesRegex(ValueError, "16 KiB"):
+                model.plan("x" * (MAX_TASK_DESCRIPTION_BYTES + 1))
+            connection.assert_not_called()
+            memory.assert_not_called()
+
     def test_preserves_original_ollama_factory(self):
         from forgeos.core import Ollama
         self.assertIsInstance(create_model(backend="ollama", model="auto"), Ollama)
