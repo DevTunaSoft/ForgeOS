@@ -643,13 +643,13 @@ class CheckpointResumeTests(EngineIntegrationTests):
                     generate=lambda model, prompt: response)
         self.store.recover()
         self.store.update(self.task, "blocked", result="[]")
-        with self.assertRaisesRegex(AttributeError, "get"):
+        with self.assertRaisesRegex(ValueError, "Invalid resume checkpoint format"):
             execute_task(
                 self.store, self.task, self.root,
                 allow_host_tests=True, resume=True)
         state = self.store.get(self.task)
         self.assertEqual(state["status"], "blocked")
-        self.assertIn("get", state["last_error"])
+        self.assertIn("Invalid resume checkpoint format", state["last_error"])
         self.assertIn("workspace", json.loads(state["result"]))
 
     def test_resume_refuses_tampered_file(self):
