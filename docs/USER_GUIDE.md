@@ -325,6 +325,12 @@ a workspace before recovery.
 
 The CLI has a broader list of test preset names than the secure Windows packaged runner actually supports. **Preset visibility does not imply it is safe or usable in every environment.** For the packaged Windows EXE, `python-pytest` now uses the **bundled pytest module** in the same restricted AppContainer as unittest; the package is optional for source-only installations. Its logging file is redirected away from Windows `NUL` into the disposable snapshot and watched against a 32 MiB per-file limit. Other third-party pytest plugins do not autoload in that sandbox.
 
+### Bounded task results and planning output
+
+ForgeOS now limits newly stored **planning results and manual-test result records to 64 KiB of UTF-8/JSON text**, reusing its existing checkpoint storage budget. A result that exceeds the limit is **rejected rather than truncated**, and the task is marked **Blocked** for review; ForgeOS does not report it as a pass. Error messages retained in the task database are limited to the last 4,000 characters. The original full test output, when available, belongs in the existing content-addressed diagnostic evidence store, not an oversized SQLite task row. If you encounter the limit, inspect the task's diagnostics and choose a smaller, independently testable task; do not increase the limit solely to hide a failure.
+
+These storage guards protect SQLite and the activity view; they do not establish a fixed maximum for total Python or model-process RAM usage. Full cross-platform CI and real Windows application testing are still required.
+
 ### Automated test-output limits
 
 If ForgeOS reports **Incomplete test evidence requires manual review**, the task remains **blocked** and automatic recovery will deliberately skip it. This prevents repeated `resume-safe` runs from executing the same test that exceeded diagnostic limits or failed to retain its original output. The workspace and file-integrity hashes are retained for inspection, but this checkpoint is not eligible for automatic test/repair/replay. Check the task's last error and the test output settings before creating a new, explicitly authorized task; do not delete the original workspace or disable safety limits just to force it to pass.
