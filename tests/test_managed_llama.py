@@ -55,14 +55,22 @@ class ManagedLlamaTests(unittest.TestCase):
     def test_shutdown_failure_still_closes_native_handle_and_clears_secrets(self):
         controller = ManagedLlamaServer()
         process = Mock()
+        process.pid = 1234
         process.poll.side_effect = OSError("process query failed")
         controller.process = process
         controller.api_key = "secret"
         controller.endpoint = "http://127.0.0.1:12345/v1"
         temporary = Mock()
         controller._secrets = temporary
-        with self.assertRaisesRegex(OSError, "process query failed"):
-            controller.stop()
+        # A failed poll must trigger a stop attempt before credentials and
+        # ownership are cleared, even when the original error is propagated.
+        with patch("forgeos.managed_llama._terminate_posix_group") as group:
+            with self.assertRaisesRegex(OSError, "process query failed"):
+                controller.stop()
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=4)
+        if os.name != "nt":
+            group.assert_called_once()
         process.close.assert_called_once_with()
         temporary.cleanup.assert_called_once_with()
         self.assertIsNone(controller.process)
