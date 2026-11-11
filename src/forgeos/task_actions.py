@@ -15,7 +15,7 @@ from .core import (
     MAX_CHECKPOINT_BYTES, LeaseLostError, Ollama, Store,
     validate_task_description,
 )
-from .engine import _run_workspace_tests
+from .engine import _require_test_outcome, _run_workspace_tests
 
 PLAN_STATUSES = frozenset({"queued", "planned"})
 TEST_STATUSES = frozenset({"queued", "planned", "failed"})
@@ -116,9 +116,8 @@ def test_task(store: Store, task_id: int, preset: str, *,
         _publish(store, task_id, owner, TEST_STATUSES, "testing",
                  increment=True, result="")
         try:
-            outcome = _run_workspace_tests(Path(task["project"]), preset)
-            if not isinstance(outcome, dict) or type(outcome.get("passed")) is not bool:
-                raise RuntimeError("Test runner returned an invalid outcome")
+            outcome = _require_test_outcome(
+                _run_workspace_tests(Path(task["project"]), preset))
             if outcome.get("capture_complete") is False:
                 reason = outcome.get("capture_error")
                 # Preserve a short structured reason without copying or
