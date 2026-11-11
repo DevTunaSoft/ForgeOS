@@ -327,6 +327,8 @@ The CLI has a broader list of test preset names than the secure Windows packaged
 
 ### Bounded task results and planning output
 
+When you re-plan an existing planned task or rerun tests for a previously failed task, ForgeOS clears the previous result **atomically as the new attempt begins**. If the new operation fails or is blocked, the prior result does not reappear as if it belonged to the new attempt. Inspect the current task status and error; earlier outcomes are not automatically reused as acceptance evidence.
+
 ForgeOS now limits newly stored **planning results and manual-test result records to 64 KiB of UTF-8/JSON text**, reusing its existing checkpoint storage budget. A result that exceeds the limit is **rejected rather than truncated**, and the task is marked **Blocked** for review; ForgeOS does not report it as a pass. Error messages retained in the task database are limited to the last 4,000 characters. The original full test output, when available, belongs in the existing content-addressed diagnostic evidence store, not an oversized SQLite task row. If you encounter the limit, inspect the task's diagnostics and choose a smaller, independently testable task; do not increase the limit solely to hide a failure.
 
 These storage guards protect SQLite and the activity view; they do not establish a fixed maximum for total Python or model-process RAM usage. Full cross-platform CI and real Windows application testing are still required.
