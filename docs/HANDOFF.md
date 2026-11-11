@@ -1758,3 +1758,12 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - User manual commit `672d23c` describes the early abort and incomplete-evidence gate.
 - **NOT RUN**: actual `tests/test_output_capture.py` suite, broader Linux/Windows CI, and physical Windows AppContainer tests. GitHub checkout is blocked by DNS in this tool environment; the GitHub connector supports source edits but cannot run the tests. Obtain CI execution evidence before marking this accepted.
 - Next: validate current-head tests, diagnose any failures, then continue automated failure recovery with bounded resources and no redundant agents/monitors.
+
+
+## 2026-11-11 — completed-parent orphan process fail-closed check
+
+- Source commit `0d50eb8`: after a POSIX test parent exits, the existing source-mode subprocess runner probes its owned process group for surviving helpers and terminates them before joining its output-reader thread. Exit code 0 from the parent does **not** count as a pass when a helper outlives it: the result is marked failed/incomplete with a specific capture-error label. No new thread, dependency, or polling loop.
+- Regression commit `3c20586`: a real POSIX child process outlives a successful parent; verifies the result is rejected, the helper is killed, and a delayed side-effect marker is absent. Windows keeps its separate Job Object runner.
+- Manual commit `accfac2`: documents behavior and limitation for helpers that deliberately detach into new process groups.
+- Local stand-alone process harness: **PASS** on Linux (parent exit 0; surviving same-session child detected via process-group probe and killed; no delayed marker file). The full repository regression suite is **NOT RUN** due GitHub checkout DNS failure. Real Windows AppContainer/packaged verification remains **UNVERIFIED**.
+- Next: obtain actual Linux/Windows CI evidence for `run_streamed_process`, test cancellation and runtime memory guards; address test failures without adding duplicate orchestration.
