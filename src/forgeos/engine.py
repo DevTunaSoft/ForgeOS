@@ -166,7 +166,7 @@ def _execute_task(
         raise ValueError("max_repairs must be 0..5")
     if not isinstance(role, str) or not role.strip() or len(role) > 80:
         raise ValueError("Task role is required")
-    task = store.get(task_id)
+    task = store.get_task_inputs(task_id, resume=resume)
     # Old or externally modified SQLite rows bypassed Store.add() validation.
     # Reject them before workspace creation or a model prompt allocation.
     task["description"] = validate_task_description(task["description"])
@@ -428,8 +428,8 @@ def _execute_task(
         failure = str(exc)[-4000:]
         details = {"workspace": str(ws.path) if ws else None,
                    "error": failure}
-        previous = store.get(task_id).get("result", "")
         try:
+            previous = store.get_task_inputs(task_id, resume=True)["result"]
             saved = json.loads(previous)
             if (isinstance(saved, dict)
                     and saved.get("phase") in {
@@ -467,7 +467,8 @@ def execute_task(
     """Acquire an exclusive task lease, then run the guarded task engine."""
     if not allow_host_tests:
         raise ValueError("Host test execution requires explicit --allow-host-tests")
-    store.get(task_id)
+    # acquire_lease validates the task's existence without reading its
+    # historical result/error blobs into memory.
     owner = uuid.uuid4().hex
     if not store.acquire_lease(task_id, owner):
         raise ValueError("Task already has an active execution lease")
