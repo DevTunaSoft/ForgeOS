@@ -333,6 +333,12 @@ ForgeOS now limits newly stored **planning results and manual-test result record
 
 These storage guards protect SQLite and the activity view; they do not establish a fixed maximum for total Python or model-process RAM usage. Full cross-platform CI and real Windows application testing are still required.
 
+### Test runner availability and timeout safeguards
+
+When a manual or autonomous test cannot start its runtime, or the test process exceeds its configured timeout, ForgeOS records a **failed, incomplete test result** (with the structured reason `test-runtime-unavailable` or `test-timeout`). It does **not** interpret an unavailable executable, a containment failure, or a timed-out process as an ordinary test assertion failure. Autonomous repair stops and leaves the workspace and task checkpoint for inspection; `resume-safe` will not replay that incomplete-evidence checkpoint automatically.
+
+Check the selected test preset, installed test tools, host-execution authorization, local model readiness, and the task's diagnostics. Fix the underlying runtime issue before making a new, explicitly authorized attempt. The original Git worktree and code are not silently discarded. These safeguards are implemented, but cross-platform full-suite and real Windows acceptance remain unverified.
+
 ### Automated test-output limits
 
 If ForgeOS reports **Incomplete test evidence requires manual review**, the task remains **blocked** and automatic recovery will deliberately skip it. This prevents repeated `resume-safe` runs from executing the same test that exceeded diagnostic limits or failed to retain its original output. The workspace and file-integrity hashes are retained for inspection, but this checkpoint is not eligible for automatic test/repair/replay. Check the task's last error and the test output settings before creating a new, explicitly authorized task; do not delete the original workspace or disable safety limits just to force it to pass.
