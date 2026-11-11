@@ -1674,3 +1674,13 @@ A hosted Windows CI runner is not physical target acceptance. The recorder now s
 ### Hosted frozen acceptance contract follows explicit-target semantics
 
 The frozen launcher and PowerShell packaging gate were updated with the new acceptance semantics before the next validation run: CI requires Windows host evidence but explicitly requires `physical_windows_target_asserted == false`. This prevents a hosted runner from ever satisfying the physical-machine gate by accident.
+
+
+## 2026-11-11 — managed llama.cpp shutdown cleanup hardening
+
+- Source commit `74fb7c2`: `ManagedLlamaServer.stop()` now closes native process handles even if process polling, waiting, termination or Job Object cleanup raises; ephemeral session credentials and identity are cleared even if temporary-directory cleanup raises. Reuses the existing controller, without new services or dependencies.
+- Regression commit `9686a6a`: two targeted tests cover failing process polling and failing temporary-directory cleanup.
+- GitHub source re-read: **PASS**; expected shutdown/finally structure confirmed.
+- Automated regression tests: **NOT RUN / UNVERIFIED**. The available container could not resolve github.com to check out the repository; connected GitHub commit workflow lookup returned no PR-triggered runs for `9686a6a`, which does not establish a push-CI result.
+- Real Windows native process/llama.cpp acceptance: **UNVERIFIED**.
+- Next: obtain Linux/Windows CI results for the new head, fix any failures, then run native Windows start/infer/stop/crash acceptance with RAM telemetry. Do not mark #53 or #56 complete based on these mocked tests.
