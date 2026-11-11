@@ -39,6 +39,36 @@ class TaskActionsTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute(
             "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
 
+    def test_replanning_clears_prior_plan_before_model_runs(self):
+        self.store.update(self.task, "planned", result="prior unverified plan")
+        def observe(description):
+            self.assertEqual(self.store.get(self.task)["status"], "planning")
+            self.assertEqual(self.store.get(self.task)["result"], "")
+            return "new bounded plan"
+        self.assertEqual(
+            plan_task(self.store, self.task, model=Mock(plan=observe)),
+            "new bounded plan")
+        self.assertEqual(self.store.get(self.task)["result"], "new bounded plan")
+
+    def test_retest_clears_prior_failure_and_does_not_restore_on_error(self):
+        self.store.update(self.task, "failed",
+                          result='{"passed":false,"output":"old failure"}')
+        def fail(path, preset):
+            record = self.store.get(self.task)
+            self.assertEqual(record["status"], "testing")
+            self.assertEqual(record["result"], "")
+            raise RuntimeError("new runner failed")
+        with patch("forgeos.task_actions._run_workspace_tests", side_effect=fail):
+            with self.assertRaisesRegex(RuntimeError, "new runner failed"):
+                test_task(self.store, self.task, "python-unittest",
+                          allow_host_tests=True)
+        record = self.store.get(self.task)
+        self.assertEqual(record["status"], "blocked")
+        self.assertEqual(record["result"], "")
+        self.assertIn("new runner failed", record["last_error"])
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+
     def test_planning_result_limit_blocks_oversized_output(self):
         from forgeos.core import MAX_CHECKPOINT_BYTES
         for oversized in ("x" * (MAX_CHECKPOINT_BYTES + 1),
