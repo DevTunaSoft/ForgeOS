@@ -596,15 +596,25 @@ class ManagedLlamaServer:
                         _terminate_posix_group(process.pid, signal.SIGKILL)
                     process.kill()
                     process.wait(timeout=4)
-            if hasattr(process, "close"):
-                process.close()
             if job_error is not None:
                 raise job_error
         finally:
-            temporary = self._secrets
-            self._secrets = None
+            # Native Windows process handles must close even when poll(),
+            # wait(), termination, or Job Object cleanup raises.
+            try:
+                if hasattr(process, "close"):
+                    process.close()
+            finally:
+                self._clear_managed_session()
+
+    def _clear_managed_session(self) -> None:
+        """Release ephemeral credentials and reset lifecycle state on all paths."""
+        temporary = self._secrets
+        self._secrets = None
+        try:
             if temporary is not None:
                 temporary.cleanup()
+        finally:
             self.api_key = None
             self.endpoint = None
             self.model_name = None
