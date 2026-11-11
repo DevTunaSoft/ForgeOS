@@ -120,6 +120,15 @@ def test_task(store: Store, task_id: int, preset: str, *,
             if not isinstance(outcome, dict) or type(outcome.get("passed")) is not bool:
                 raise RuntimeError("Test runner returned an invalid outcome")
             if outcome.get("capture_complete") is False:
+                reason = outcome.get("capture_error")
+                # Preserve a short structured reason without copying or
+                # persisting untrusted diagnostic output or arbitrary fields.
+                if (isinstance(reason, str) and 0 < len(reason) <= 80
+                        and reason.isascii()
+                        and all(char.isalnum() or char in "-_" for char in reason)):
+                    raise RuntimeError(
+                        f"Test evidence was incomplete ({reason}); "
+                        "automatic approval is blocked")
                 raise RuntimeError(
                     "Test evidence was incomplete; automatic approval is blocked")
             _heartbeat(store, task_id, owner)
