@@ -39,6 +39,45 @@ class TaskActionsTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute(
             "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
 
+    def test_planning_result_limit_blocks_oversized_output(self):
+        from forgeos.core import MAX_CHECKPOINT_BYTES
+        for oversized in ("x" * (MAX_CHECKPOINT_BYTES + 1),
+                          "界" * (MAX_CHECKPOINT_BYTES // 3 + 1)):
+            with self.subTest(bytes=len(oversized.encode("utf-8"))):
+                with self.assertRaisesRegex(RuntimeError, "storage budget"):
+                    plan_task(self.store, self.task,
+                              model=Mock(plan=Mock(return_value=oversized)))
+                record = self.store.get(self.task)
+                self.assertEqual(record["status"], "blocked")
+                self.assertEqual(record["result"], "")
+                self.assertLess(len(record["last_error"]), 200)
+                self.assertEqual(self.store.db.execute(
+                    "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+                self.store.update(self.task, "queued")
+
+    def test_planning_result_at_exact_budget_is_preserved(self):
+        from forgeos.core import MAX_CHECKPOINT_BYTES
+        plan = "a" * MAX_CHECKPOINT_BYTES
+        self.assertEqual(
+            plan_task(self.store, self.task,
+                      model=Mock(plan=Mock(return_value=plan))),
+            plan)
+        self.assertEqual(self.store.get(self.task)["result"], plan)
+
+    def test_planning_rejects_invalid_legacy_description_without_model(self):
+        from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE tasks SET description=? WHERE id=?",
+                ("x" * (MAX_TASK_DESCRIPTION_BYTES + 1), self.task))
+        model = Mock()
+        with self.assertRaisesRegex(ValueError, "16 KiB"):
+            plan_task(self.store, self.task, model=model)
+        model.plan.assert_not_called()
+        self.assertEqual(self.store.get(self.task)["status"], "queued")
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+
     def test_completed_task_skips_model_factory_before_lease(self):
         self.store.update(self.task, "passed", result="previous success")
         factory = Mock()
@@ -148,6 +187,33 @@ class TaskActionsTests(unittest.TestCase):
                 test_task(self.store, self.task, "python-unittest",
                           allow_host_tests=True)
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
+
+    def test_manual_tests_reject_large_result_and_release_lease(self):
+        from forgeos.core import MAX_CHECKPOINT_BYTES
+        oversized = {"passed": True, "returncode": 0,
+                     "output": "x" * (MAX_CHECKPOINT_BYTES + 1)}
+        with patch("forgeos.task_actions._run_workspace_tests",
+                   return_value=oversized):
+            with self.assertRaisesRegex(RuntimeError, "storage budget"):
+                test_task(self.store, self.task, "python-unittest",
+                          allow_host_tests=True)
+        record = self.store.get(self.task)
+        self.assertEqual(record["status"], "blocked")
+        self.assertIn("storage budget", record["last_error"])
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+
+    def test_manual_failure_last_error_is_bounded(self):
+        output = "x" * 10000 + "FINAL-FAILURE"
+        outcome = {"passed": False, "returncode": 3, "output": output}
+        with patch("forgeos.task_actions._run_workspace_tests",
+                   return_value=outcome):
+            test_task(self.store, self.task, "python-unittest",
+                      allow_host_tests=True)
+        record = self.store.get(self.task)
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["last_error"], output[-4000:])
+        self.assertEqual(json.loads(record["result"])["output"], output)
 
     def test_completed_or_blocked_task_cannot_be_retested(self):
         self.store.update(self.task, "passed", result="verified")
