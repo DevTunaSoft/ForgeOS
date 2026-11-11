@@ -83,6 +83,13 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
         kwargs["watched_extra_outputs"] = extra_outputs
     result = run_secure_appcontainer(
         argv, runtime.path, env, **kwargs)
+    # The AppContainer's native stdout capture is independent of the child
+    # test-output file. A complete child file cannot erase earlier evidence
+    # of a failed/oversized native capture.
+    native_incomplete = result.get("capture_complete") is False
+    native_preview = (
+        result.get("output", "")[-2000:] if native_incomplete
+        and isinstance(result.get("output"), str) else "")
     try:
         # Revalidate after the child exits: a successful exit without its
         # ForgeOS-owned output file is not sufficient test evidence.
@@ -108,4 +115,15 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
                 + "\nSecure test output unavailable: " + str(exc)[-2000:]
             )[-16000:],
         )
+    if native_incomplete:
+        result["passed"] = False
+        result["capture_complete"] = False
+        if not result.get("capture_error"):
+            result["capture_error"] = "secure-native-output-incomplete"
+        result["output"] = (
+            native_preview
+            + "\n[ForgeOS warning: native runner output evidence incomplete]\n"
+            + (result.get("output", "")[-12000:]
+               if isinstance(result.get("output"), str) else "")
+        )[-16000:]
     return result
