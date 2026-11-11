@@ -304,6 +304,30 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
                     wait_object_0=0, watched_files=(file,))
         self.assertTrue(kernel.killed)
 
+    @unittest.skipIf(os.name == "nt", "POSIX process-group containment")
+    def test_timeout_kills_grandchild_without_orphaned_side_effects(self):
+        # A helper inherits the test subprocess's session but outlives its
+        # parent. Its delayed write must never occur after timeout.
+        marker = self.root / "orphan-marker.txt"
+        helper = (
+            "import pathlib,time,sys; "
+            "time.sleep(1.5); pathlib.Path(sys.argv[1]).write_text('orphan')"
+        )
+        parent = (
+            "import subprocess,sys,time; "
+            "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]], "
+            "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL); "
+            "print('helper started',flush=True); time.sleep(20)"
+        )
+        with self.assertRaises(subprocess.TimeoutExpired):
+            run_streamed_process(
+                [sys.executable, "-c", parent, helper, str(marker)],
+                self.root, timeout=0.5)
+        import time
+        time.sleep(1.7)
+        self.assertFalse(marker.exists(), "Timed-out test left a live child")
+
     def test_timeout_terminates_process(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             run_streamed_process(
