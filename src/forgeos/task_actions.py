@@ -11,11 +11,32 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from .core import LeaseLostError, Ollama, Store
+from .core import (
+    MAX_CHECKPOINT_BYTES, LeaseLostError, Ollama, Store,
+    validate_task_description,
+)
 from .engine import _run_workspace_tests
 
 PLAN_STATUSES = frozenset({"queued", "planned"})
 TEST_STATUSES = frozenset({"queued", "planned", "failed"})
+# Plan/manual-test results share SQLite storage with recovery checkpoints.
+# Keep each new task-action result within that established storage budget.
+MAX_TASK_ACTION_RESULT_BYTES = MAX_CHECKPOINT_BYTES
+
+
+def _bounded_result_text(value: str) -> str:
+    """Reject oversized or malformed task-action output before SQLite writes."""
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError("Task action returned no usable text")
+    if len(value) > MAX_TASK_ACTION_RESULT_BYTES:
+        raise RuntimeError("Task action result exceeds 64 KiB storage budget")
+    try:
+        size = len(value.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise RuntimeError("Task action result contains invalid Unicode") from exc
+    if size > MAX_TASK_ACTION_RESULT_BYTES:
+        raise RuntimeError("Task action result exceeds 64 KiB storage budget")
+    return value
 
 
 @contextmanager
@@ -51,6 +72,7 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
     task = store.get(task_id)
     if task["status"] not in PLAN_STATUSES:
         raise ValueError("Task is not eligible for planning")
+    description = validate_task_description(task["description"])
     with _owned_task(store, task_id) as owner:
         _publish(store, task_id, owner, PLAN_STATUSES, "planning", increment=True)
         try:
@@ -62,7 +84,7 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
                 resolve_qualified_managed_model(
                     chosen_model, role="planning",
                     directory=qualification_directory)
-            output = chosen_model.plan(task["description"])
+            output = _bounded_result_text(chosen_model.plan(description))
             _heartbeat(store, task_id, owner)
             _publish(store, task_id, owner, {"planning"}, "planned",
                      result=output)
@@ -97,12 +119,19 @@ def test_task(store: Store, task_id: int, preset: str, *,
                 raise RuntimeError(
                     "Test evidence was incomplete; automatic approval is blocked")
             _heartbeat(store, task_id, owner)
-            result_text = json.dumps(outcome)
+            output_text = outcome.get("output")
+            if isinstance(output_text, str) and len(output_text) > MAX_TASK_ACTION_RESULT_BYTES:
+                raise RuntimeError("Task action result exceeds 64 KiB storage budget")
+            try:
+                result_text = json.dumps(outcome)
+            except (TypeError, ValueError, UnicodeEncodeError) as exc:
+                raise RuntimeError("Test runner returned an invalid result") from exc
+            _bounded_result_text(result_text)
             _publish(
                 store, task_id, owner, {"testing"},
                 "passed" if outcome["passed"] else "failed",
                 result=result_text,
-                error="" if outcome["passed"] else str(outcome.get("output", "")),
+                error="" if outcome["passed"] else str(outcome.get("output", ""))[-4000:],
             )
             return outcome
         except Exception as exc:
