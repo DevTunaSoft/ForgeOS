@@ -99,6 +99,21 @@ def _generate(model: Ollama, prompt: str) -> str:
     return model.generate_edits(prompt)
 
 
+def _require_test_outcome(outcome: object) -> dict:
+    """Validate test-runner evidence before any approval or automatic repair.
+
+    Omitted legacy capture_complete is accepted for compatible callers, but
+    an explicitly supplied value must be a real bool, never a truthy string.
+    """
+    if (not isinstance(outcome, dict)
+            or type(outcome.get("passed")) is not bool
+            or not isinstance(outcome.get("output"), str)
+            or ("capture_complete" in outcome
+                and type(outcome["capture_complete"]) is not bool)):
+        raise RuntimeError("Test runner returned an invalid outcome")
+    return outcome
+
+
 def _run_workspace_tests(workspace: Path, preset: str) -> dict:
     """Run tests against a disposable execution snapshot.
 
@@ -326,15 +341,14 @@ def _execute_task(
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
-            if (not isinstance(outcome, dict)
-                    or type(outcome.get("passed")) is not bool
-                    or not isinstance(outcome.get("output"), str)):
-                # A malformed test result cannot prove successful execution,
-                # even if its "passed" field is a truthy string or integer.
+            try:
+                _require_test_outcome(outcome)
+            except RuntimeError:
+                # Malformed result cannot prove a test ran or passed; repeated
+                # automatic replays would have the same untrusted evidence.
                 incomplete_test_evidence = True
                 capture_failure = "invalid-test-outcome"
-                raise RuntimeError(
-                    "Test runner returned an invalid outcome; manual review required")
+                raise
             if outcome.get("capture_complete") is False:
                 # Incomplete diagnostics cannot support automated repair or
                 # acceptance. Mark this checkpoint non-resumable so repeated
