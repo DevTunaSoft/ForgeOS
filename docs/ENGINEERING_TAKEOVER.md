@@ -584,3 +584,33 @@ The GitHub Actions workflow runs the validator and its unit tests on documentati
 | Is this release ready? | Explicit release gate and real hardware results | No unsupported extrapolation from hosted CI |
 
 The handoff is successful only when these sources agree. If they conflict, do not average claims; investigate the live implementation and record a correction with evidence.
+
+
+---
+
+## 31. Read-only live Git snapshot — initial implementation (2026-11-11)
+
+The repository now includes `scripts/handoff_snapshot.py` and `tests/test_handoff_snapshot.py`. The snapshot utility reads the current local Git repository state and emits a machine-readable JSON object containing the exact HEAD SHA, branch/detached state, whether the checkout is dirty, number of changed entries, whether an origin remote is configured, and explicit `UNVERIFIED` markers for CI, live GitHub issues/PRs, physical Windows tests and real model inference.
+
+The utility deliberately does **not** print remote URLs, modified filenames, Git status content, tokens or environment variables. It requires the supplied path to be the exact repository root. By default it writes JSON to stdout, leaving the working tree unchanged. Optional `--output` refuses to overwrite an existing file or write inside the checkout. This is an intentional privacy and source-integrity boundary.
+
+### Usage
+
+```powershell
+py scripts/handoff_snapshot.py
+py scripts/handoff_snapshot.py --output "$env:TEMP\forgeos-handoff-snapshot.json"
+py -m unittest discover -s tests -p "test_handoff_snapshot.py" -v
+```
+
+The handoff-integrity GitHub Actions workflow now also runs snapshot regression tests and a snapshot smoke command. The snapshot is a *fact collector*, not a fabricated project readiness score. Live GitHub reconciliation, actual CI outcomes, model performance and release evidence require separate verified data sources.
+
+**Status:** scripts, tests and workflow edits committed to `main`. Execution of the committed workflow and real Windows acceptance remain **UNVERIFIED** at the time of this entry. No 35-page PDF export or independent takeover simulation has been completed. Future changes should not convert the snapshot's `UNVERIFIED` fields to `PASS` without collecting matching revision-specific evidence.
+
+### Deepening priorities after snapshot implementation
+
+1. Observe exact-commit GitHub Actions results; fix confirmed errors before requiring branch protection.
+2. Expand the validator to parse heading anchors and structured evidence records without false positives on legitimate Markdown.
+3. Build a deterministic, offline master-handoff exporter that assembles canonical documents without copying stale duplicate status; count and inspect the resulting PDF's substantive pages.
+4. Introduce an explicit evidence index linking tests to source SHA, environment and output hash.
+5. Rehearse a clean-room takeover using only repository files and record each PASS/FAIL/NOT RUN criterion.
+6. Add periodic/manual checks only when they offer measurable benefit and cannot produce recursive workflow triggers.
