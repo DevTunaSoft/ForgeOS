@@ -677,3 +677,22 @@ The master handoff exporter now uses two independent safeguards for code example
 **Status:** implementation and regression tests committed to `main`. Exact-commit GitHub workflow execution, rendered PDF page inspection, and independent takeover remain **UNVERIFIED / NOT RUN**. The user's earlier green workflow report predates this correction and must not be reused as proof for the new commit.
 
 **Release rule:** only mark PDF publication PASS when the master-handoff workflow has completed on the current SHA, the artifact is downloadable, the page-count JSON gate passed, and representative pages have been inspected for clipped content. The original Markdown sources remain the lossless reference for code, tables and historical records.
+
+
+---
+
+## 36. Independently retrieved GitHub publication evidence (2026-11-11)
+
+Using the connected GitHub Actions API, the original publication run was located and its actual job log and artifact listing inspected, rather than relying solely on a user-reported green checkmark.
+
+- **Run:** https://github.com/DevTunaSoft/ForgeOS/actions/runs/43157367629
+- **Source revision:** `50e2df4542bc8eef72f0eb9f7f20ef7705c0e867`
+- **Workflow/job:** Master handoff publication / export, **success**
+- **Exporter log:** `status: PASS`, **133 total pages**, **131 body pages**, **52,297 source words**, **9 chapters**
+- **PDF SHA-256 (exporter log):** `75f3f219f8aca340aa8359b174b9db4a17098f22932a088f086dfabeceb195a3`
+- **Artifact:** `ForgeOS-Master-Handoff-50e2df4542bc8eef72f0eb9f7f20ef7705c0e867`, ID `13916491387`, 259,934 bytes, `expired: false`
+- **Artifact URL:** https://github.com/DevTunaSoft/ForgeOS/actions/runs/43157367629/artifacts/13916491387
+- **Artifact ZIP SHA-256 (upload log):** `704abf1608de4135aacaa2c06eb51768d5377c6544489a06c7ea5dd6bfbbd0fd`
+- **Related handoff integrity:** https://github.com/DevTunaSoft/ForgeOS/actions/runs/43159441184, success at `9018d75b15ad569825522fadfe920ce6db0f2ad6`
+
+**Evidence boundary:** These numbers validate the original published artifact, not later exporter fixes committed after that SHA. The actual PDF pages have not been rendered and visually reviewed here. The corrected exporter still needs a new exact-commit publication run and independent takeover rehearsal. Do not claim these tasks passed based on this earlier evidence.
