@@ -2014,3 +2014,40 @@ and handoff workflows, then test on real Windows NTFS, disk full, permission
 denial, interruption and restore offline with operator approval. Backup files
 are unencrypted, and do not include evidence archives or Git worktrees.
 Issue #4 remains open; do not claim disaster recovery or release readiness.
+
+## 2026-11-11 — issue #4: safe verification and offline restore copy
+
+**Before change:** `Store.backup_to()` created a consistent verified SQLite
+snapshot, but no restore-copy command existed. Original task stores and active
+Git worktrees must never be overwritten in pursuit of recovery.
+
+**Implementation:** `Store.restore_backup_to(source,destination)` opens
+the source SQLite database read-only via the URI interface, checks the first
+SQLite integrity error and validates essential ForgeOS task/lease schema
+columns. It streams a consistent 64-page backup into a same-directory staging
+file, verifies that new copy, flushes it, and publishes with exclusive
+no-overwrite `os.link`. Staging is cleaned on exceptions. A symlinked
+source, missing source or directory, incompatible schema, corrupt DB, or
+occupied destination fails closed. The CLI command `db-restore-copy` dispatches
+before `Store(args.db)`, so it cannot silently create or change the user's
+active database. It is a *separate copy*, not activation or destructive
+replacement.
+
+**Tests:** `tests/test_db_restore.py` adds six tests, covering task/status
+round-trip and retained originals, URI special-character filename, occupied
+destination, unrelated schema, corrupt source, failed publication and symlink
+rejection. `tests/test_cli_database.py` adds CLI restore integration with
+`Store.__init__` mocked to prove no active database is opened.
+
+**Executed local evidence:** a faithful standalone Python/SQLite 3
+implementation ran 6/6 focused tests PASS (valid restore, no overwrite,
+corruption and schema checks, failed publication cleanup, read-only source).
+This is **not** the actual ForgeOS repository test suite. On this commit,
+Linux/Windows GitHub tests, Windows EXE and handoff integrity must be checked
+before calling them PASS; physical Windows disk-full, open-WAL, permission,
+power-loss and restore acceptance remain UNVERIFIED.
+
+**Limitations/next:** no automated activation, no rollback of an existing live
+database, no encryption, no retention, no bundled evidence/worktrees and no
+new daemon. Keep issue #4 open. Next check exact-head CI and expand targeted
+fault injection, then physical Windows verification.

@@ -43,14 +43,38 @@ before the subcommand:
 py -m forgeos --db "C:\\MyFolder\\tasks.sqlite3" db-check
 ```
 
+## Inspect a saved backup without overwriting anything
+
+The following creates a **new, separately named** SQLite database copy:
+
+```powershell
+py -m forgeos db-restore-copy "C:\\ForgeOS-backups\\tasks-backup-2026-11-11.sqlite3" "C:\\ForgeOS-backups\\restored-check.sqlite3"
+py -m forgeos --db "C:\\ForgeOS-backups\\restored-check.sqlite3" db-check
+```
+
+Both files are preserved. The restore-copy command opens the source read-only,
+checks SQLite integrity and the required ForgeOS task/lease schema, then uses
+SQLite's online snapshot API to write a staged copy. It verifies that copy
+and publishes it only if its destination is new and no other process already
+created the file. Wrong-schema and corrupt sources fail closed without a
+partial output. File paths containing spaces or special URI characters are
+supported.
+
+**This is a verified offline copy, not automatic activation.** It does not
+stop ForgeOS, switch the GUI's active database, merge task histories, or
+replace an existing database. The new copy is for inspection or a deliberately
+separate ForgeOS launch. If you need to replace your active database, do not
+overwrite files while ForgeOS is running; the safe guided replacement workflow
+is not yet implemented.
+
 ## Security and recovery limitations
 
 - Backups are **not encrypted**. Task text, diagnostics or project paths may
   be sensitive. Use access-controlled, encrypted storage and handle exports
   as confidential.
-- The command does **not** restore, merge or overwrite a running database.
-  Never replace `tasks.sqlite3` while ForgeOS is open. Offline restore
-  verification and user-friendly restore flows remain planned.
+- The restore-copy operation does **not** merge, activate, or overwrite a running database.
+  Never replace `tasks.sqlite3` while ForgeOS is open. A guided activation
+  and restoration workflow remains planned.
 - This task database does **not** contain all external evidence archives,
   Git worktrees, model weights or your original project repository. Those
   must be backed up separately if needed for complete disaster recovery.

@@ -154,3 +154,20 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Not complete:** full backup/restore workflow, encryption, retention,
   crash/power-loss and physical Windows media tests. Keep issue #4 open.
   See [database backup instructions](DATABASE_BACKUP.md).
+
+### 2026-11-11 — verified, non-destructive SQLite restore copy
+
+- **Implemented (experimental):** the existing Store gains an explicit
+  read-only-source `restore_backup_to()`, which checks the source SQLite
+  integrity and ForgeOS task/lease schema, copies using 64-page native
+  SQLite backup batches, verifies the staged copy, and exclusively publishes
+  it to a new destination. CLI `db-restore-copy` works without opening or
+  creating the active application database.
+- **Regressions added:** WAL backup round trip with a URI-special-character
+  filename, existing-destination protection, corrupt and incompatible DB
+  rejection, failed publication cleanup, symlink source refusal and isolated
+  CLI dispatch. No new dependencies, threads, model loading or polling.
+- **Still outstanding (#4):** authenticated/guided active-database replacement,
+  encryption, backup bundle for worktrees/evidence, power-loss and physical
+  Windows disk/permission acceptance. Do not confuse a verified copy with a
+  certified disaster-recovery procedure.

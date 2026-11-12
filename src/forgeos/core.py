@@ -121,6 +121,65 @@ class Store:
         finally:
             staging.unlink(missing_ok=True)
 
+    @staticmethod
+    def restore_backup_to(source: str | Path, destination: str | Path) -> Path:
+        """Verify a ForgeOS SQLite database and copy it to a new file only.
+
+        The old database, backup and active ForgeOS database are never
+        overwritten. This is not an automatic activation or data merge.
+        """
+        import tempfile
+        from contextlib import closing
+
+        src = Path(source).expanduser().absolute()
+        target = Path(destination).expanduser().absolute()
+        if src.is_symlink() or not src.is_file():
+            raise ValueError("Restore source must be a regular SQLite database file")
+        if (src == target or not target.parent.is_dir()
+                or target.parent.is_symlink() or target.is_symlink()
+                or target.exists()):
+            raise ValueError(
+                "Restore destination must be a new file in an existing directory")
+        required = {
+            "tasks": {"id", "project", "description", "status", "attempts",
+                      "created", "updated", "last_error", "result"},
+            "task_leases": {"task_id", "owner", "acquired", "heartbeat"},
+        }
+        fd, name = tempfile.mkstemp(
+            prefix=".forgeos-restore-", suffix=".tmp", dir=target.parent)
+        os.close(fd)
+        staged = Path(name)
+        try:
+            # mode=ro protects the input from SQLite writes. The online
+            # backup API reads a consistent snapshot, including live WAL.
+            with closing(sqlite3.connect(src.as_uri() + "?mode=ro", uri=True)) as original:
+                original.execute("PRAGMA query_only=ON")
+                check = original.execute("PRAGMA integrity_check(1)").fetchone()
+                if check is None or check[0] != "ok":
+                    raise RuntimeError(
+                        "Restore source failed SQLite integrity verification")
+                for table, columns in required.items():
+                    existing = {
+                        row[1] for row in original.execute(
+                            f"PRAGMA table_info({table})")
+                    }
+                    if not columns.issubset(existing):
+                        raise ValueError(
+                            "Restore source is not a compatible ForgeOS task database")
+                with closing(sqlite3.connect(staged)) as restored:
+                    original.backup(restored, pages=64, sleep=0.05)
+                    check = restored.execute("PRAGMA integrity_check(1)").fetchone()
+                    if check is None or check[0] != "ok":
+                        raise RuntimeError(
+                            "Restored task database failed integrity verification")
+            with staged.open("rb+") as stream:
+                os.fsync(stream.fileno())
+            # No-overwrite publication also protects concurrent users.
+            os.link(staged, target)
+            return target
+        finally:
+            staged.unlink(missing_ok=True)
+
     def add(self, project: str, description: str) -> int:
         project_path = Path(project).expanduser().resolve(strict=True)
         if not project_path.is_dir() or not (project_path / '.git').exists():

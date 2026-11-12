@@ -24,6 +24,11 @@ def main(argv=None):
     sub.add_parser('db-check', help='Run an explicit SQLite database integrity check')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
+    restore_copy=sub.add_parser(
+        'db-restore-copy',
+        help='Validate an SQLite task backup and restore only to a brand-new file')
+    restore_copy.add_argument('source', help='Existing SQLite task backup file')
+    restore_copy.add_argument('destination', help='New database path; never overwrites')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
     models=sub.add_parser('models',help='List models reported by one local runtime')
@@ -148,6 +153,10 @@ def main(argv=None):
         values = (search_gguf(args.query) if args.operation == 'search'
                   else list_gguf_files(args.query))
         print(json.dumps(values, indent=2))
+        return 0
+    if args.action == 'db-restore-copy':
+        # Do not open or initialize the active task database for a restore copy.
+        print(f'Verified restore copy: {Store.restore_backup_to(args.source, args.destination)}')
         return 0
     if args.action == 'memory':
         from .model_routing import memory_report
