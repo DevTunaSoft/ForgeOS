@@ -614,3 +614,30 @@ The handoff-integrity GitHub Actions workflow now also runs snapshot regression 
 4. Introduce an explicit evidence index linking tests to source SHA, environment and output hash.
 5. Rehearse a clean-room takeover using only repository files and record each PASS/FAIL/NOT RUN criterion.
 6. Add periodic/manual checks only when they offer measurable benefit and cannot produce recursive workflow triggers.
+
+
+---
+
+## 32. Master handoff PDF export — implementation and release gate (2026-11-11)
+
+The repository includes `scripts/export_master_handoff.py` and `.github/workflows/master-handoff.yml`. The exporter uses the **actual canonical repository Markdown** in a fixed, mission-first order, labels the output with the exact Git HEAD, and renders a searchable PDF using ReportLab. It then reopens the PDF with pypdf to check total and body page counts, source word count and near-empty body pages. The script reports a SHA-256 digest for the completed file. The workflow publishes an artifact only after the validation command succeeds.
+
+**Why on-demand rather than every commit:** a large cumulative history can make PDF generation and storage costly. The manual workflow avoids creating an artifact on every documentation edit and does not introduce recursive workflows. The always-on lightweight integrity workflow remains separate.
+
+**To run:** Open [Master handoff publication](https://github.com/DevTunaSoft/ForgeOS/actions/workflows/master-handoff.yml), select **Run workflow** on `main`, and inspect the completed job. On PASS, download the `ForgeOS-Master-Handoff-<SHA>` artifact and check the JSON output for the actual body page count, source SHA and PDF SHA-256. The artifact is a dated snapshot, not live project status.
+
+**Local reproduction:**
+
+```powershell
+py -m pip install "reportlab>=4,<5" "pypdf>=5,<7"
+py scripts/check_handoff.py --json
+py scripts/export_master_handoff.py --output "$env:TEMP\ForgeOS-Master-Handoff.pdf" --min-body-pages 35
+```
+
+**Evidence status:** exporter and workflow source committed; actual GitHub PDF build, rendered page count, visual page inspection and downloadable artifact are **NOT RUN / UNVERIFIED** until a workflow executes. The exporter must not be described as proven until its output is checked. Future work should add automatic internal PDF bookmarks, actual page-number table of contents, robust handling of very long Markdown table rows, and a release-time screenshot/render inspection.
+
+## 33. Independent takeover exercise — acceptance script
+
+Use a fresh checkout with no access to this conversation. Have a reviewer locate the original mission, explain the architecture, identify exact HEAD and open PRs, identify unverified Windows/model acceptance, run the documented validation commands, recover a disposable interrupted task and select a nonduplicative next engineering task. Score each action PASS/FAIL/NOT RUN with links to output. A passing PDF gate is **not** a passing takeover rehearsal.
+
+**Current rehearsal status:** NOT RUN. Do not report it as completed based on the existence of this procedure.
