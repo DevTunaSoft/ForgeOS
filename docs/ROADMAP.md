@@ -140,3 +140,17 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Implemented on main:** generate repository file context only immediately before a needed AI edit or repair. Test-only resume, malformed checkpoint rejection, and exhausted repair loops do not build extra unused contexts.
 - **Regression coverage:** existing test-pending and invalid-resume flows now assert no context scan, with a new final-failure test asserting exactly one context construction. No extra agent, service or dependency.
 - **Acceptance:** verify exact-head Linux/Windows tests and hosted Windows packaging. Measured full-process memory, actual local-model sessions and Windows laptop crash recovery remain unverified.
+
+### 2026-11-11 — verified online SQLite database backups (issue #4)
+
+- **Experimental implementation on main:** the existing task Store provides an
+  explicit SQLite integrity check and 64-page online backup of committed WAL
+  state, with exclusive non-overwriting atomic publication. CLI commands
+  `db-check` and `db-backup` expose the feature without new dependencies.
+- **Added regression tests:** WAL-preserving snapshot, saved task round trip,
+  no-overwrite, interrupted publication cleanup, transaction refusal and CLI
+  integration. A local isolated Python smoke passed; the new exact-head
+  cross-platform CI remains the source of truth for repository tests.
+- **Not complete:** full backup/restore workflow, encryption, retention,
+  crash/power-loss and physical Windows media tests. Keep issue #4 open.
+  See [database backup instructions](DATABASE_BACKUP.md).
