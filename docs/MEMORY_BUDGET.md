@@ -247,3 +247,12 @@ verified checkpoint can run tests or reject invalid metadata without an extra
 source scan or model prompt allocation. Exhausted repair loops also avoid a
 final unused context scan. This is an allocation/wasted-work reduction, not a
 claim that overall ForgeOS or model peak memory has been benchmarked.
+
+## On-demand SQLite backup allocation boundary
+
+Explicit SQLite `Connection.backup(pages=64)` copies pages in native code
+rather than collecting task rows or result blobs into Python lists. The
+integrity check requests only the first reported fault. This reduces
+application-level temporary allocations but does not cap disk consumption,
+SQLite's native page cache, system filesystem cache or elapsed backup time.
+No scheduled backup polling or extra worker process is installed.
