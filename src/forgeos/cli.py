@@ -21,6 +21,9 @@ def main(argv=None):
     parser.add_argument('--db',default=str(default_db()))
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
+    sub.add_parser('db-check', help='Run an explicit SQLite database integrity check')
+    db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
+    db_backup.add_argument('destination', help='New file inside an existing folder')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
     models=sub.add_parser('models',help='List models reported by one local runtime')
@@ -189,6 +192,11 @@ def main(argv=None):
                 json.dump(task, sys.stdout)
                 first = False
             sys.stdout.write("\n]\n" if not first else "]\n")
+        elif args.action=='db-check':
+            store.check_integrity()
+            print('SQLite integrity: ok')
+        elif args.action=='db-backup':
+            print(f'Verified backup: {store.backup_to(args.destination)}')
         elif args.action=='recover':
             print(f'Inspected {store.recover()} interrupted tasks; editing/testing tasks blocked for inspection')
         elif args.action=='recover-edits':
