@@ -643,6 +643,15 @@ ForgeOS applies a 180-second monotonic response deadline to its built-in Ollama 
 ForgeOS checks for `git` on PATH first. If Git is not on PATH, the Windows workspace engine also looks for GitHub Desktop's bundled `git.exe` under `%LOCALAPPDATA%\\GitHubDesktop\\app-*\\resources\\app\\git\\cmd\\git.exe`. Versioned application folders are detected automatically after GitHub Desktop updates. Restart ForgeOS after installing or updating GitHub Desktop. If the executable is missing, install Git for Windows or GitHub Desktop. This does not bypass the requirement that the selected project be an initialized Git repository.
 
 
+### Saved desktop preferences
+
+ForgeOS saves local project, workspace, model and task-role preferences in
+`~/.forgeos/desktop-settings.json`. A saved value containing a NUL control
+character is discarded on both save and reload; this prevents malformed
+paths or identifiers from reaching the task workflow. If a preference does
+not reappear after a restart, reselect it. ForgeOS does not alter the project
+files or start background services as part of this validation.
+
 ### Startup readiness (experimental)
 
 When a saved project is selected, ForgeOS performs a nonblocking, local-only startup check and displays **Ready** or **Setup needs attention** in the window status. Click **Check readiness** next to the inference backend to see specific results and corrective instructions. Checks cover executable Git discovery (including GitHub Desktop), project Git metadata, an existing workspace folder outside the project tree, and the local Ollama model catalog when Ollama is selected. The Ollama probe uses the loopback-only `/api/tags` endpoint with a three-second timeout and a one-MiB response cap. Other local backends currently report that connectivity remains unverified until task start. The check does not execute generated code, install dependencies, or bypass host-execution permissions. A green readiness status does **not** guarantee that generated code or tests will succeed.

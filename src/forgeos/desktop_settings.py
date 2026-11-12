@@ -21,14 +21,14 @@ def _sanitize(values):
     cleaned = {}
     for key in ("project", "model", "endpoint", "workspaces"):
         value = values.get(key)
-        if isinstance(value, str) and len(value) <= 2048 and "\\x00" not in value:
+        if isinstance(value, str) and len(value) <= 2048 and "\x00" not in value:
             cleaned[key] = value
     for key, choices in (("backend", ALLOWED_BACKENDS),
                          ("preset", ALLOWED_PRESETS)):
         if values.get(key) in choices:
             cleaned[key] = values[key]
     role = values.get("task_role")
-    if isinstance(role, str) and len(role) <= 64:
+    if isinstance(role, str) and len(role) <= 64 and "\x00" not in role:
         cleaned["task_role"] = role
     retries = values.get("repair_count")
     if type(retries) is int and 0 <= retries <= 5:

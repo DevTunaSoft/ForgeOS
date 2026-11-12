@@ -27,6 +27,20 @@ class DesktopSettingsTests(unittest.TestCase):
             path.write_text("x" * 16385, encoding="utf-8")
             self.assertEqual(load_settings(path), {})
 
+    def test_embedded_nul_is_never_saved_or_restored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            for key in ("project", "model", "endpoint", "workspaces", "task_role"):
+                with self.subTest(setting=key):
+                    save_settings(path, {key: "before\x00after"})
+                    self.assertNotIn(key, load_settings(path))
+                    # Also reject settings written by older versions.
+                    path.write_text(json.dumps({key: "before\x00after"}), encoding="utf-8")
+                    self.assertNotIn(key, load_settings(path))
+            # Printable backslash-x text is not a NUL control character.
+            save_settings(path, {"project": r"literal\x00text"})
+            self.assertEqual(load_settings(path)["project"], r"literal\x00text")
+
     def test_invalid_values_not_restored(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.json"

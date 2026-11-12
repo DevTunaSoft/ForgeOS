@@ -1955,3 +1955,10 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 **Regression tests:** `tests/test_recovery.py` exercises both streaming and collected modes with a 100,000-character runner error and a succeeding second task; `tests/test_gui_contract.py` verifies GUI recovery actually opts into bounded event collection. No new external dependency, service, GUI widget, polling loop or model inference allocation. The report shape for existing CLI/default callers is unchanged except bounded reason strings.
 
 **Acceptance:** Source + tests + docs are committed as one scoped change. Before claiming verified, require the new HEAD's Linux/Windows Foundation matrix, 12 MiB memory benchmark and Windows EXE packaging checks. Physical Windows real-Ollama/managed-GGUF end-to-end recovery still remains **UNVERIFIED**.
+
+## 2026-11-11 — reject NUL control characters in desktop preferences
+
+- **Baseline:** `src/forgeos/desktop_settings.py` checked the printable four-character sequence `\\x00` instead of the actual NUL character. Values with embedded NUL could be saved and restored into the project/workspace/model/endpoint fields. Task role strings did not reject NUL either.
+- **Correction:** fix the existing sanitizer's actual NUL check for all bounded string preferences, including role. No API or persistence schema changes, background workers, dependencies, or unbounded allocations.
+- **Regression:** add a test covering both saves and loads of legacy malformed settings across five keys, and preservation of printable backslash-x text. A corresponding isolated Linux unittest reproduction passed (1 method, all subtests); this is **not** a claim about the whole repository test suite.
+- **Next:** confirm GitHub Actions Linux/Windows test results at the exact commit, then exercise save/restart/reload in the packaged Windows GUI. Physical Windows acceptance, local-model end-to-end operation and measured process-tree memory remain **UNVERIFIED**.
