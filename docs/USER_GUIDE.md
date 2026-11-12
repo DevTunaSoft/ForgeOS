@@ -670,3 +670,12 @@ not proof of complete crash recovery on physical Windows machines.
 ### Startup readiness (experimental)
 
 When a saved project is selected, ForgeOS performs a nonblocking, local-only startup check and displays **Ready** or **Setup needs attention** in the window status. Click **Check readiness** next to the inference backend to see specific results and corrective instructions. Checks cover executable Git discovery (including GitHub Desktop), project Git metadata, an existing workspace folder outside the project tree, and the local Ollama model catalog when Ollama is selected. The Ollama probe uses the loopback-only `/api/tags` endpoint with a three-second timeout and a one-MiB response cap. Other local backends currently report that connectivity remains unverified until task start. The check does not execute generated code, install dependencies, or bypass host-execution permissions. A green readiness status does **not** guarantee that generated code or tests will succeed.
+
+### Context scanning during Safe Resume
+
+If an interrupted task already has a verified test-pending checkpoint,
+ForgeOS reruns its selected tests without regenerating code or building an
+unneeded repository inventory for the AI. If tests fail and a repair is
+still allowed, it then assembles a bounded context for that repair. When the
+final permitted attempt fails, it reports failure without building an unused
+next-repair prompt. Nothing is merged or published automatically.

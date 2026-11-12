@@ -134,3 +134,9 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Implemented in source on main:** malformed checkpoint workspace paths are skipped individually, including embedded-NUL paths, path resolution failures and symlinked task roots. The direct execution path also refuses live/dangling symlinks before inspecting a task workspace.
 - **Regression coverage committed:** a malformed checkpoint followed by a valid checkpoint must still resume the valid task; symlinked saved workspaces must be skipped; direct execution must reject a symlink without modifying the original repo or leaving a task lease. No new dependency, service or scan loop.
 - **Acceptance:** hosted Linux/Windows tests and Windows EXE are pending this commit's actual Actions results; physical Windows restart, multi-process concurrency and model memory remain unverified. Continue issue #4 integrity, backup and interruption work.
+
+### 2026-11-11 — avoid unnecessary AI context scans on recovery
+
+- **Implemented on main:** generate repository file context only immediately before a needed AI edit or repair. Test-only resume, malformed checkpoint rejection, and exhausted repair loops do not build extra unused contexts.
+- **Regression coverage:** existing test-pending and invalid-resume flows now assert no context scan, with a new final-failure test asserting exactly one context construction. No extra agent, service or dependency.
+- **Acceptance:** verify exact-head Linux/Windows tests and hosted Windows packaging. Measured full-process memory, actual local-model sessions and Windows laptop crash recovery remain unverified.

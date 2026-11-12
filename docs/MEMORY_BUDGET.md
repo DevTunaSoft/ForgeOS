@@ -238,3 +238,12 @@ optional user maximum. Values below 512 MiB are refused. A requested cap is
 intersected with the automatic safe ceiling, so it can reduce native model
 memory but can never override current system headroom. The same value is
 passed into the existing Windows Job Object limit before process resume.
+ 
+## Lazy source-context construction during resumed tests
+
+The autonomous engine now postpones the bounded repository-context inventory
+until it is about to request code generation. Test-pending recovery with a
+verified checkpoint can run tests or reject invalid metadata without an extra
+source scan or model prompt allocation. Exhausted repair loops also avoid a
+final unused context scan. This is an allocation/wasted-work reduction, not a
+claim that overall ForgeOS or model peak memory has been benchmarked.

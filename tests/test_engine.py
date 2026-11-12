@@ -121,6 +121,20 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(self.store.get(self.task)["status"], "passed")
 
+    def test_final_test_failure_does_not_allocate_unused_repair_context(self):
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [{"path": "app.py",
+                              "content": "def value():\n return 0\n"}]})
+        with (patch("forgeos.engine._context", return_value="bounded") as context,
+              patch("forgeos.engine._run_workspace_tests", return_value={
+                  "passed": False, "output": "test failed", "returncode": 1})):
+            result = execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                max_repairs=0, generate=lambda model, prompt: manifest)
+        self.assertFalse(result["passed"])
+        self.assertEqual(self.store.get(self.task)["status"], "failed")
+        context.assert_called_once()
+
     def test_direct_resume_rejects_large_checkpoint_before_workspace_access(self):
         from unittest.mock import patch, Mock
         from forgeos.core import MAX_CHECKPOINT_BYTES
@@ -787,7 +801,10 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.assertEqual(self.store.get(self.task)["status"], "testing")
         self.store.recover()
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
-        with patch("forgeos.engine.run_test", return_value={"passed": True, "returncode": 0, "output": "ok"}):
+        with (patch("forgeos.engine._context", side_effect=AssertionError(
+                    "Test-only resume must not scan repository context")),
+              patch("forgeos.engine.run_test", return_value={
+                  "passed": True, "returncode": 0, "output": "ok"})):
             result = execute_task(self.store, self.task, self.root,
                                   allow_host_tests=True, resume=True,
                                   generate=lambda model, prompt: (_ for _ in ()).throw(
@@ -817,9 +834,11 @@ class CheckpointResumeTests(EngineIntegrationTests):
             "workspace": str(self.root / f"task-{self.task}"),
             "branch": f"forgeos/task-{self.task}", "phase": "generating",
             "edited": ["app.py"]}))
-        with self.assertRaisesRegex(ValueError, "test-pending checkpoint"):
-            execute_task(self.store, self.task, self.root, resume=True,
-                         allow_host_tests=True)
+        with patch("forgeos.engine._context", side_effect=AssertionError(
+                "Invalid checkpoint must not scan repository context")):
+            with self.assertRaisesRegex(ValueError, "test-pending checkpoint"):
+                execute_task(self.store, self.task, self.root, resume=True,
+                             allow_host_tests=True)
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
 
     def test_malformed_checkpoint_shape_does_not_mask_original_resume_error(self):

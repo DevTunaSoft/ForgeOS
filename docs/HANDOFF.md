@@ -1972,3 +1972,13 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 **Regressions:** tests/test_recovery.py contains an embedded-NUL checkpoint followed by an independently resumable task and a symlinked-workspace skip; tests/test_engine.py verifies direct resume refuses a task-root symlink, preserves original source and releases its lease. Platform symlink privileges may cause the symlink fixtures to skip on Windows. Full CI and EXE checks on the exact new commit are required before claiming PASS.
 
 **Status / next:** source and tests committed; workflow checks pending at writing. Physical Windows restart, interruption and local-model acceptance are UNVERIFIED. Next resume issue #4 with narrow, crash-safe SQLite backup/integrity work after verifying repository tests. Preserve complete development history in the existing handoff.
+
+## 2026-11-11 — lazy context generation in the canonical task engine
+
+**Baseline:** recovery workspace-path hardening 83cac28 passed four hosted Linux/Windows Python 3.10/3.12 jobs, Windows frozen packaging and handoff integrity. The original engine built a source inventory prompt before validating resumed checkpoint metadata; it also built another repair prompt after the final failed attempt, where no more generation could occur. This wasted bounded but potentially expensive file scanning and allocations in recovery.
+
+**Correction:** replace eager prompt construction with a sentinel, creating the identical original prompt only immediately before generation. Preserve the repair-pending resumed prompt and model selection semantics. On final test failure, skip unused repair-context generation but still publish the original final failure record. No new components, dependencies or background activity.
+
+**Tests:** tests/test_engine.py strengthens test-pending resume to reject unexpected context scanning, strengthens malformed-checkpoint rejection similarly, and asserts an exhausted single-attempt failure scans context only once. Other existing edit/repair/checkpoint tests cover unchanged behavior.
+
+**Verification:** code and regression committed to main; new-head CI must run before marking PASS. Exact machine process-tree RAM, real on-device inference and physical Windows interrupted-task recovery are UNVERIFIED. The next priority in issue #4 is on-demand crash-consistent SQLite backup/integrity and fault injection without unbounded buffering.
