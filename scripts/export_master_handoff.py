@@ -129,8 +129,8 @@ def build(root: Path, destination: Path, minimum: int) -> dict:
                     # preserved but wrapped to avoid spilling beyond margins.
                     for chunk_start in range(0, len(code_lines), 12):
                         chunk = code_lines[chunk_start:chunk_start + 12]
-                        safe = [line.expandtabs(2)[:110] for line in chunk]
-                        story.append(Preformatted("\n".join(safe), code, maxLineLength=100, splitChars=" /"))
+                        safe = [part for line in chunk for part in wrap_code_line(line)]
+                        story.append(Preformatted("\n".join(safe), code, maxLineLength=92, splitChars=" /"))
                     code_lines = []
                 fenced = not fenced
                 continue
