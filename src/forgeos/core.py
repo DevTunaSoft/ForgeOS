@@ -81,6 +81,46 @@ class Store:
         self.db.execute(ACTIVE_TASK_LOOKUP_INDEX)
         self.db.commit()
 
+    def check_integrity(self) -> None:
+        """Run a requested SQLite integrity check without collecting error lists."""
+        try:
+            result = self.db.execute("PRAGMA integrity_check(1)").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise RuntimeError("SQLite integrity check could not complete") from exc
+        if result is None or result[0] != "ok":
+            raise RuntimeError("SQLite database integrity check failed")
+
+    def backup_to(self, destination: str | Path) -> Path:
+        """Publish an integrity-checked, non-overwriting SQLite online backup."""
+        import tempfile
+        from contextlib import closing
+
+        target = Path(destination).expanduser().absolute()
+        if (target == self.path or not target.parent.is_dir()
+                or target.parent.is_symlink() or target.is_symlink()
+                or target.exists()):
+            raise ValueError("Backup destination must be a new file in an existing directory")
+        if self.db.in_transaction:
+            raise RuntimeError("Finish the active task transaction before backup")
+        self.check_integrity()
+        fd, name = tempfile.mkstemp(
+            prefix=".forgeos-backup-", suffix=".tmp", dir=target.parent)
+        os.close(fd)
+        staging = Path(name)
+        try:
+            with closing(sqlite3.connect(staging)) as snapshot:
+                self.db.backup(snapshot, pages=64, sleep=0.05)
+                checked = snapshot.execute("PRAGMA integrity_check(1)").fetchone()
+                if checked is None or checked[0] != "ok":
+                    raise RuntimeError("Backup integrity verification failed")
+            with staging.open("rb+") as stream:
+                os.fsync(stream.fileno())
+            # Exclusive atomic publication; never replace another backup.
+            os.link(staging, target)
+            return target
+        finally:
+            staging.unlink(missing_ok=True)
+
     def add(self, project: str, description: str) -> int:
         project_path = Path(project).expanduser().resolve(strict=True)
         if not project_path.is_dir() or not (project_path / '.git').exists():
