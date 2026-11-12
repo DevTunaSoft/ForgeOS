@@ -2077,3 +2077,30 @@ paths. This does not add a new daemon, cache, dependency, or recovery engine.
 remain required; local standalone restore smoke is prior-component evidence,
 not a substitute. Follow-up: real Windows fault injection and monitored
 restore activation design; issue #4 remains OPEN.
+
+## 2026-11-11 — root-cause correction for Windows backup tests
+
+**Evidence:** hosted Foundation run
+[43160440376](https://github.com/DevTunaSoft/ForgeOS/actions/runs/43160440376)
+for `79321b8` passed both Linux 3.10/3.12 jobs and failed Windows
+3.10/3.12. The actual GitHub job logs show **WinError 123**, stemming
+from the test-only filename `saved backup #1?.sqlite3`, invalid on
+NTFS/Windows, and **WinError 32**, stemming from test cases using
+`with sqlite3.connect(...)` assuming that commits/rollbacks also
+close the handle. They do not. This was not evidence of data corruption
+or a defective SQLite snapshot API.
+
+**Fix:** tests/test_db_restore.py changes the fixture filename to
+`saved backup #1.sqlite3` (still tests spaces and a URI-reserved `#`
+character, both supported on Windows). All new SQLite test fixtures in
+tests/test_db_restore.py, tests/test_db_backup.py and
+tests/test_cli_database.py now use `contextlib.closing` around ephemeral
+read connections; test DDL writes explicitly commit before close.
+No production permission relaxation, new dependencies or test suppression.
+
+**Status:** previous exact-head Windows CI FAIL and Linux CI PASS;
+corrected-head CI required. Windows packaged EXE and handoff checks
+were PASS for `79321b8`. Physical Windows deployment, RAM and full
+disaster recovery acceptance remain UNVERIFIED. Next prioritize clean
+cross-platform CI evidence, then fault injection on database backup
+and restore under constrained filesystems.

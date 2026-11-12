@@ -1,4 +1,5 @@
 """Fail-closed, on-demand SQLite task backup restoration tests."""
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -21,13 +22,13 @@ class RestoreBackupTests(unittest.TestCase):
         self.addCleanup(self.store.close)
         self.task = self.store.add(str(self.repo), "Restore source")
         self.store.update(self.task, "blocked", result="saved checkpoint")
-        self.backup = self.root / "saved backup #1?.sqlite3"
+        self.backup = self.root / "saved backup #1.sqlite3"
         self.store.backup_to(self.backup)
 
     def test_verified_restore_copy_keeps_records_and_originals(self):
         output = self.root / "safe-restored.sqlite3"
         self.assertEqual(Store.restore_backup_to(self.backup, output), output)
-        with sqlite3.connect(output) as db:
+        with closing(sqlite3.connect(output)) as db:
             self.assertEqual(db.execute("PRAGMA integrity_check(1)").fetchone()[0],
                              "ok")
             record = db.execute(
@@ -51,8 +52,9 @@ class RestoreBackupTests(unittest.TestCase):
 
     def test_incompatible_schema_rejected_without_published_file(self):
         other = self.root / "unrelated.sqlite3"
-        with sqlite3.connect(other) as db:
+        with closing(sqlite3.connect(other)) as db:
             db.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+            db.commit()
         destination = self.root / "not-restored.sqlite3"
         with self.assertRaisesRegex(ValueError, "compatible ForgeOS"):
             Store.restore_backup_to(other, destination)

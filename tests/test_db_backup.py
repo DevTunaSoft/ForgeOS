@@ -1,4 +1,5 @@
 """SQLite online backup regressions. No network, models or user projects."""
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -24,7 +25,7 @@ class OnlineBackupTests(unittest.TestCase):
         self.store.update(task, "planned", result="checkpoint")
         target = self.root / "task-copy.sqlite3"
         self.assertEqual(self.store.backup_to(target), target)
-        with sqlite3.connect(target) as copy:
+        with closing(sqlite3.connect(target)) as copy:
             self.assertEqual(
                 copy.execute("PRAGMA integrity_check(1)").fetchone()[0], "ok")
             self.assertEqual(

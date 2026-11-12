@@ -103,3 +103,13 @@ refused rather than silently initialized as an empty task database.
 Unrelated SQLite databases cannot be migrated just by running a check or
 backup. The checks use read-only SQLite, without creating Python copies of
 task rows. Database creation for normal first-time ForgeOS use is unchanged.
+
+## Cross-platform test fixture hardening
+
+Database regression tests use filenames legal on both NTFS and POSIX.
+A filename containing `#` or spaces is a useful SQLite URI-escaping test,
+but `?` is a forbidden Windows filename character and must not be used
+for an actual test file. Python's `with sqlite3.connect(...) as db`
+commits/rolls back a transaction but **does not close the connection**.
+The test suite now explicitly closes all of its temporary SQLite
+connections so Windows can delete the test directory reliably.

@@ -185,3 +185,17 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   command. No extra process or polling and no new dependencies.
 - **Status:** source and regression committed, exact-head CI required;
   physical Windows/other-volume acceptance remains unverified.
+
+### 2026-11-11 — Windows regression-harness correction
+
+- GitHub Foundation at `79321b8` **FAILED on Windows Python 3.10 and
+  3.12**, while both hosted Linux jobs passed. Actual Windows logs showed
+  `WinError 123` because a test backup filename contained the invalid
+  Windows character `?`, and `WinError 32` during temporary-directory
+  cleanup because test SQLite connections were not explicitly closed.
+- Corrected all three new database test modules to use legal URI-special
+  filenames (`#`) and close SQLite connections. This is a cross-platform
+  test-fixture fix, not a reason to weaken or bypass any assertions.
+- Require a fresh full Windows/Linux matrix on the corrected head before
+  claiming the backup and restore regressions pass. Real physical Windows
+  recovery remains UNVERIFIED.

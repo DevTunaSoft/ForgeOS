@@ -1,6 +1,6 @@
 """CLI integration for explicit SQLite verification and backup."""
 import io
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -32,7 +32,7 @@ class DatabaseCommandsTests(unittest.TestCase):
                 self.assertEqual(main([
                     "db-restore-copy", str(source), str(destination)]), 0)
             self.assertIn("Verified restore copy:", output.getvalue())
-            with sqlite3.connect(destination) as restored:
+            with closing(sqlite3.connect(destination)) as restored:
                 self.assertEqual(restored.execute(
                     "SELECT description FROM tasks").fetchone()[0], "safe restore")
             with self.assertRaisesRegex(ValueError, "new file"):
@@ -56,14 +56,15 @@ class DatabaseCommandsTests(unittest.TestCase):
             root = Path(directory)
             incompatible = root / "unrelated.sqlite3"
             destination = root / "no-backup.sqlite3"
-            with sqlite3.connect(incompatible) as db:
+            with closing(sqlite3.connect(incompatible)) as db:
                 db.execute("CREATE TABLE unrelated (value INTEGER)")
+                db.commit()
             for operation in (
                     ["db-check"], ["db-backup", str(destination)]):
                 with self.subTest(operation=operation):
                     with self.assertRaisesRegex(ValueError, "compatible ForgeOS"):
                         main(["--db", str(incompatible), *operation])
-            with sqlite3.connect(incompatible) as db:
+            with closing(sqlite3.connect(incompatible)) as db:
                 tables = {r[0] for r in db.execute(
                     "SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertEqual(tables, {"unrelated"})
@@ -91,7 +92,7 @@ class DatabaseCommandsTests(unittest.TestCase):
                 self.assertEqual(main([
                     "--db", str(db_path), "db-backup", str(target)]), 0)
             self.assertIn("Verified backup:", output.getvalue())
-            with sqlite3.connect(target) as copied:
+            with closing(sqlite3.connect(target)) as copied:
                 self.assertEqual(
                     copied.execute("SELECT description FROM tasks").fetchone()[0],
                     "backup cli test")
