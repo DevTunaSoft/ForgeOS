@@ -679,3 +679,19 @@ unneeded repository inventory for the AI. If tests fail and a repair is
 still allowed, it then assembles a bounded context for that repair. When the
 final permitted attempt fails, it reports failure without building an unused
 next-repair prompt. Nothing is merged or published automatically.
+
+### Task database integrity and backup (experimental)
+
+Create a trusted folder for backups first, then use these PowerShell commands:
+
+```powershell
+py -m forgeos db-check
+py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup.sqlite3"
+```
+
+Always supply a **new filename**. An existing backup is never overwritten.
+ForgeOS includes committed SQLite WAL changes and checks the completed
+snapshot before making it visible. No background backup process is started.
+The backup is **not encrypted** and does not include external evidence archives,
+Git worktrees or model weights. Do not attempt a live database overwrite to
+restore. Read [database backup limitations](DATABASE_BACKUP.md) first.
