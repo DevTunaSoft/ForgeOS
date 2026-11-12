@@ -641,3 +641,28 @@ py scripts/export_master_handoff.py --output "$env:TEMP\ForgeOS-Master-Handoff.p
 Use a fresh checkout with no access to this conversation. Have a reviewer locate the original mission, explain the architecture, identify exact HEAD and open PRs, identify unverified Windows/model acceptance, run the documented validation commands, recover a disposable interrupted task and select a nonduplicative next engineering task. Score each action PASS/FAIL/NOT RUN with links to output. A passing PDF gate is **not** a passing takeover rehearsal.
 
 **Current rehearsal status:** NOT RUN. Do not report it as completed based on the existence of this procedure.
+
+
+---
+
+## 34. Repository-only takeover audit and remaining acceptance (2026-11-11)
+
+A new standard-library tool, `scripts/audit_handoff_takeover.py`, checks the presence of the canonical mission, architecture, roadmap, operational history, manuals, PDF exporter, snapshot tooling, and their test sources. It emits JSON with the source SHA where available. Its output distinguishes **PASS** for narrow file-presence checks from **NOT RUN** for manual or external acceptance. An overall **INCOMPLETE** is expected until those manual gates are independently evidenced. The GitHub handoff-integrity workflow now executes this audit and its regression tests.
+
+```powershell
+py scripts/audit_handoff_takeover.py
+py -m unittest discover -s tests -p "test_handoff_takeover.py" -v
+```
+
+The user reported a green GitHub master-handoff workflow. That report is encouraging, but the exact run ID, PDF artifact SHA, page count and rendered-page inspection have not been independently obtained in this engineering checkpoint. Do not copy an earlier green run status onto later source commits without confirming the SHA.
+
+### Remaining non-automatable evidence
+
+1. **Published PDF inspection:** download the artifact for the exact run, verify the PDF checksum and actual pages, and render a representative sample including the first page, a long table, a code example and final pages. Look for clipped lines, truncated code, broken characters and empty content. The current exporter intentionally truncates some code-example lines, so the PDF is not a lossless archive of source Markdown; preserve the original repository files in the handoff.
+2. **Independent takeover rehearsal:** a reviewer with only a clean checkout must identify the current commit and priorities, run the documented tests, explain the mission and constraints, and demonstrate safe recovery on disposable fixtures. Record failures and corrections.
+3. **Real Windows acceptance:** confirm GUI startup, local-model execution, task edits, test isolation, restart recovery, resource usage and packaging on target hardware. This is application release acceptance, separate from dossier completion.
+4. **CI and status reconciliation:** compare each latest-commit workflow result and active PR/issue with the dossier before claiming an exact state.
+
+### Decision
+
+The dossier has substantive depth, an on-demand publication path, lightweight consistency checks, a local Git snapshot and a takeover readiness audit. **The engineering handoff publication is implemented; final independent acceptance remains INCOMPLETE.** This explicit boundary protects future maintainers from confusing documentation existence with actual tested continuity.
