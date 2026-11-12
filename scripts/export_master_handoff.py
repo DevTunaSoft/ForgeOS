@@ -20,8 +20,8 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import (
-    BaseDocTemplate, Frame, KeepTogether, NextPageTemplate, PageBreak,
-    PageTemplate, Paragraph, Preformatted, Spacer, Table, TableStyle,
+    BaseDocTemplate, Frame, PageBreak, PageTemplate, Paragraph,
+    Preformatted, Spacer,
 )
 
 # Mission first, then current takeover and technical reference, finally the
@@ -72,6 +72,14 @@ class HandoffDoc(BaseDocTemplate):
         canvas.drawString(55, 35, "ForgeOS | source " + self.revision[:12])
         canvas.drawRightString(letter[0] - 55, 35, "Page " + str(doc.page))
         canvas.restoreState()
+
+
+def wrap_code_line(line: str, width: int = 92) -> list[str]:
+    """Wrap long code lines without discarding any characters."""
+    expanded = line.expandtabs(2)
+    if not expanded:
+        return [""]
+    return [expanded[i:i + width] for i in range(0, len(expanded), width)]
 
 
 def build(root: Path, destination: Path, minimum: int) -> dict:
