@@ -547,3 +547,40 @@ The mission is comparatively stable. Architecture changes when component boundar
 The dossier is complete as a *knowledge artifact* only when an independent reader can understand the mission, identify source responsibilities, assess current readiness, reproduce the development baseline, avoid known failed approaches and safely take the next action. A minimum page count is a separate publication gate.
 
 **Verification for this extension:** documentation authored and committed to GitHub; source code tests **NOT RUN**; Windows physical tests **NOT RUN**; PDF page count **NOT RUN**; independent takeover rehearsal **NOT RUN**. No claim of production readiness is made.
+
+
+---
+
+## 29. Handoff automation — initial implemented controls (2026-11-11)
+
+The repository now contains `scripts/check_handoff.py`, `tests/test_handoff_check.py` and `.github/workflows/handoff-integrity.yml`. The checker uses the Python standard library and does not start an AI model, browser, database or resident service. It checks that the canonical mission, handoff, architecture, roadmap and user guide documents exist and contain minimum expected topics. It scans relative Markdown links under `docs/` for missing targets and paths that escape the repository. Markdown fenced-code examples are excluded from the link scan.
+
+**Local usage:**
+
+```powershell
+py scripts/check_handoff.py --json
+py -m unittest discover -s tests -p "test_handoff_check.py" -v
+```
+
+The GitHub Actions workflow runs the validator and its unit tests on documentation, checker, test or workflow changes; it can also be manually dispatched. It uses a five-minute timeout, read-only repository permissions and per-ref concurrency cancellation. It does not trigger a second workflow, push commits, or rewrite historical records.
+
+**Verification boundary:** five equivalent unit tests passed in the isolated authoring environment before repository publication. The actual committed GitHub files and their workflow have **NOT YET** been verified by a completed GitHub Actions run in this checkpoint. The validator does not yet check Markdown heading anchors, compare statements with source code, prove that a historical test passed, measure PDF pages, or generate a current-state snapshot. Those require distinct, evidence-backed implementations.
+
+**Next implementation priorities:** (1) inspect the first GitHub workflow outcome and correct any real link or validator failures; (2) add a deterministic read-only snapshot generator that records branch, SHA, clean/dirty status and available CI metadata without inventing readiness; (3) add a reproducible PDF export with an actual 35-substantive-page gate; (4) perform an independent repository-only takeover rehearsal and record failures; (5) only then consider blocking branch protection on the check. Do not make a newly introduced unverified check mandatory before observing its results.
+
+## 30. Deeper operational continuity — source of truth by question
+
+| Question | Primary source | Evidence requirement |
+| --- | --- | --- |
+| Why does ForgeOS exist? | `PRODUCT_VISION.md`, `REQUIREMENTS.md` | Stable original requirements and recorded change decisions |
+| What code exists? | Live source tree at exact SHA | Actual module inspection and executed tests |
+| What changed and why? | Git commit graph, PR discussion, `HANDOFF.md` | Traceable commit and decision rationale |
+| What is being worked on? | Live GitHub issues/PRs plus current snapshot | Checked timestamp, issue/PR identity, branch |
+| What passed? | CI run or local evidence record | Exact revision, command, environment and output |
+| What fails or remains blocked? | Latest verified diagnostics and issue state | Repro steps, failure category and next safe action |
+| How do I operate the app? | `USER_GUIDE.md` | Instructions verified against current GUI |
+| How do I rebuild the app? | `WINDOWS_BUILD.md` and workflows | Toolchain, commands, artifacts, hashes |
+| How do I recover interrupted work? | `HANDOFF.md`, recovery code and CLI help | Journal and lease validation on disposable fixture |
+| Is this release ready? | Explicit release gate and real hardware results | No unsupported extrapolation from hosted CI |
+
+The handoff is successful only when these sources agree. If they conflict, do not average claims; investigate the live implementation and record a correction with evidence.
