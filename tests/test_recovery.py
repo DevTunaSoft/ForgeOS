@@ -209,6 +209,48 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(runner.call_count, 1)
         self.assertTrue(runner.call_args.kwargs["resume"])
 
+    def test_bad_workspace_path_does_not_abort_later_recovery(self):
+        malformed = self.task(1, {
+            "phase": "test_pending",
+            "workspace": str(self.parent / "task-1") + "\x00unexpected",
+            "contract": self.contract(),
+        })
+        valid = self.task(2, {
+            "phase": "test_pending",
+            "workspace": str(self.parent / "task-2"),
+            "contract": self.contract(),
+        })
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(
+            FakeStore([malformed, valid]), self.parent,
+            allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [2])
+        self.assertEqual(report["skipped"], [
+            {"id": 1, "reason": "Workspace location mismatch"}])
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[1], 2)
+
+    def test_symlinked_workspace_is_not_resumed(self):
+        target = self.parent / "real-workspace"
+        target.mkdir()
+        linked = self.parent / "task-10"
+        try:
+            linked.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Directory symlinks unavailable")
+        checkpoint = {
+            "phase": "test_pending",
+            "workspace": str(linked),
+            "contract": self.contract(),
+        }
+        runner = Mock()
+        report = resume_safe(
+            FakeStore([self.task(10, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [])
+        self.assertEqual(report["skipped"][0]["reason"], "Workspace location mismatch")
+        runner.assert_not_called()
+
     def test_failure_is_isolated_per_task(self):
         tasks = [
             self.task(i, {"phase": "test_pending",

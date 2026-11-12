@@ -1962,3 +1962,13 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 - **Correction:** fix the existing sanitizer's actual NUL check for all bounded string preferences, including role. No API or persistence schema changes, background workers, dependencies, or unbounded allocations.
 - **Regression:** add a test covering both saves and loads of legacy malformed settings across five keys, and preservation of printable backslash-x text. A corresponding isolated Linux unittest reproduction passed (1 method, all subtests); this is **not** a claim about the whole repository test suite.
 - **Next:** confirm GitHub Actions Linux/Windows test results at the exact commit, then exercise save/restart/reload in the packaged Windows GUI. Physical Windows acceptance, local-model end-to-end operation and measured process-tree memory remain **UNVERIFIED**.
+
+## 2026-11-11 — workspace path corruption must not halt all Safe Resume tasks
+
+**Baseline:** ForgeOS main 50e2df4 (Foundation, Windows EXE, handoff integrity and master handoff publication CI workflows PASS). Issue #4 is still open. Recovery already pages 16 rows and refuses oversized checkpoint blobs, but resolved saved workspace paths outside any exception guard. A NUL path or symlink loop could raise during Path.resolve, abort the entire scanner, and prevent later valid checkpoints from resuming. Direct engine resume trusted destination.is_dir(), which follows symlinks.
+
+**Fix:** validate each saved path with a bounded, guarded resolution inside resume_safe, skip invalid/mismatched or symlinked task roots and continue other tasks. Reject live and dangling task-root symlinks in engine before Git/worktree activity or task state mutation. Keep existing recovery scanner and task lease; no workers, polling, new stores, dependencies or permission changes.
+
+**Regressions:** tests/test_recovery.py contains an embedded-NUL checkpoint followed by an independently resumable task and a symlinked-workspace skip; tests/test_engine.py verifies direct resume refuses a task-root symlink, preserves original source and releases its lease. Platform symlink privileges may cause the symlink fixtures to skip on Windows. Full CI and EXE checks on the exact new commit are required before claiming PASS.
+
+**Status / next:** source and tests committed; workflow checks pending at writing. Physical Windows restart, interruption and local-model acceptance are UNVERIFIED. Next resume issue #4 with narrow, crash-safe SQLite backup/integrity work after verifying repository tests. Preserve complete development history in the existing handoff.

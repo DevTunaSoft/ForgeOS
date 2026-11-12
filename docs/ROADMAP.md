@@ -128,3 +128,9 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 
 - **Implemented on `main`:** fix the existing desktop preference sanitizer to reject actual NUL control characters instead of mistakenly rejecting the printable backslash-x00 sequence. Validate the task role as well as project, workspace, endpoint and model values, on both save and reload. This is an on-demand string check, with no new dependencies, workers or polling.
 - **Verification:** one isolated Linux unittest regression covering save, legacy restore and safe printable text passed prior to commit; full repository CI and physical Windows GUI verification require the resulting commit's checks. This is a reliability fix, not a completed release milestone.
+
+### 2026-11-11 — fail-closed workspace-path recovery
+
+- **Implemented in source on main:** malformed checkpoint workspace paths are skipped individually, including embedded-NUL paths, path resolution failures and symlinked task roots. The direct execution path also refuses live/dangling symlinks before inspecting a task workspace.
+- **Regression coverage committed:** a malformed checkpoint followed by a valid checkpoint must still resume the valid task; symlinked saved workspaces must be skipped; direct execution must reject a symlink without modifying the original repo or leaving a task lease. No new dependency, service or scan loop.
+- **Acceptance:** hosted Linux/Windows tests and Windows EXE are pending this commit's actual Actions results; physical Windows restart, multi-process concurrency and model memory remain unverified. Continue issue #4 integrity, backup and interruption work.

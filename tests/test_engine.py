@@ -160,6 +160,26 @@ class EngineIntegrationTests(unittest.TestCase):
             self.store.db.execute("SELECT COUNT(*) FROM task_leases").fetchone()[0],
             0)
 
+    def test_direct_resume_rejects_workspace_symlink_before_code_execution(self):
+        from unittest.mock import Mock
+        destination = self.root / f"task-{self.task}"
+        try:
+            destination.symlink_to(self.repo, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Directory symlinks unavailable")
+        self.store.update(self.task, "blocked")
+        generator = Mock()
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            execute_task(
+                self.store, self.task, self.root,
+                allow_host_tests=True, resume=True, generate=generator)
+        generator.assert_not_called()
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM task_leases").fetchone()[0], 0)
+        self.assertEqual((self.repo / "app.py").read_text(),
+                         "def value():\n return 42\n")
+
     def test_generation_failure_keeps_engine_task_record_bounded(self):
         from unittest.mock import patch
         error = "X" * 120000 + "MODEL-FAILED"

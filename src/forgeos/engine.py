@@ -189,6 +189,10 @@ def _execute_task(
     # A prior interrupted run can leave a registered worktree and branch.
     # Refuse to overwrite it or silently re-run a completed/failed task.
     destination = parent / f"task-{task_id}"
+    # Path.is_dir() follows links. Refuse live and dangling links before
+    # Git/worktree access, including direct resume outside Safe Resume.
+    if destination.is_symlink():
+        raise ValueError("Task workspace must not be a symlink")
     if destination.exists() and not resume:
         raise ValueError(f"Existing task workspace requires inspection: {destination}")
     if resume and not destination.is_dir():

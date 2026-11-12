@@ -652,6 +652,21 @@ paths or identifiers from reaching the task workflow. If a preference does
 not reappear after a restart, reselect it. ForgeOS does not alter the project
 files or start background services as part of this validation.
 
+### Safe Resume: damaged or moved task workspaces
+
+Safe Resume processes valid blocked-task checkpoints independently. If a
+saved workspace path is malformed, too long, caught in a symlink loop, or
+points to a symlinked task folder, ForgeOS skips that task and reports
+"Workspace location mismatch" while continuing to inspect the remaining
+checkpoints. It does not follow or delete the suspicious workspace and does
+not start an AI model or run tests for that task.
+
+Inspect the original task and its Git worktree before attempting another
+run. Do not manually move, relink, or overwrite a worktree just to clear the
+warning; preserve source and journal for diagnosis. A direct task resume
+also rejects linked task workspaces. These are fail-closed recovery checks,
+not proof of complete crash recovery on physical Windows machines.
+
 ### Startup readiness (experimental)
 
 When a saved project is selected, ForgeOS performs a nonblocking, local-only startup check and displays **Ready** or **Setup needs attention** in the window status. Click **Check readiness** next to the inference backend to see specific results and corrective instructions. Checks cover executable Git discovery (including GitHub Desktop), project Git metadata, an existing workspace folder outside the project tree, and the local Ollama model catalog when Ollama is selected. The Ollama probe uses the loopback-only `/api/tags` endpoint with a three-second timeout and a one-MiB response cap. Other local backends currently report that connectivity remains unverified until task start. The check does not execute generated code, install dependencies, or bypass host-execution permissions. A green readiness status does **not** guarantee that generated code or tests will succeed.

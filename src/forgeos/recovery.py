@@ -164,9 +164,22 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 or checkpoint.get("phase") not in {"test_pending", "repair_pending"}):
             record("skipped", {"id": task["id"], "reason": "No resumable checkpoint"})
             continue
-        if (not isinstance(checkpoint.get("workspace"), str) or
-                Path(checkpoint["workspace"]).resolve() !=
-                (parent / f"task-{task['id']}").resolve()):
+        # A corrupt, moved or symlinked workspace must not abort recovery
+        # of unrelated tasks. Do not follow a task-root symlink.
+        saved_workspace = checkpoint.get("workspace")
+        expected_workspace = parent / f"task-{task['id']}"
+        workspace_matches = False
+        if isinstance(saved_workspace, str):
+            try:
+                workspace_matches = (
+                    not expected_workspace.is_symlink()
+                    and Path(saved_workspace).resolve() == expected_workspace.resolve()
+                )
+            except (OSError, ValueError, RuntimeError):
+                # NUL, path-too-long, and symlink-loop inputs are invalid
+                # checkpoints, not global recovery failures.
+                pass
+        if not workspace_matches:
             record("skipped", {"id": task["id"], "reason": "Workspace location mismatch"})
             continue
         try:
