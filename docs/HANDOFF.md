@@ -1982,3 +1982,35 @@ The frozen launcher and PowerShell packaging gate were updated with the new acce
 **Tests:** tests/test_engine.py strengthens test-pending resume to reject unexpected context scanning, strengthens malformed-checkpoint rejection similarly, and asserts an exhausted single-attempt failure scans context only once. Other existing edit/repair/checkpoint tests cover unchanged behavior.
 
 **Verification:** code and regression committed to main; new-head CI must run before marking PASS. Exact machine process-tree RAM, real on-device inference and physical Windows interrupted-task recovery are UNVERIFIED. The next priority in issue #4 is on-demand crash-consistent SQLite backup/integrity and fault injection without unbounded buffering.
+
+## 2026-11-11 — SQLite WAL-safe online backup, issue #4 increment
+
+**Baseline:** before implementation, `main` provided persistent SQLite tasks,
+leases and checkpoint recovery but no user-initiated, verified database backup.
+The live database runs in WAL mode; copying only the main database file could
+omit recent committed transactions. Existing Store ownership was retained.
+
+**Source:** `src/forgeos/core.py` adds `Store.check_integrity()` using
+`PRAGMA integrity_check(1)`, and `Store.backup_to(destination)` using native
+SQLite 64-page online backup to a same-directory temporary file. After checking
+the staged snapshot and flushing it, the implementation uses exclusive
+`os.link` publication to avoid overwriting an existing backup. An in-flight
+local transaction, existing filename, unsafe directory or failed publication
+stops without deleting any prior backup; the staging file is removed.
+`src/forgeos/cli.py` exposes `db-check` and `db-backup`.
+
+**Tests:** `tests/test_db_backup.py` and `tests/test_cli_database.py`
+exercise WAL snapshot round-trip, no-overwrite, failed publication cleanup,
+transaction refusal and command routing. A standalone Python 3 copy of the
+backup technique passed its WAL/exclusive/transaction/cleanup smoke. This
+is **not** an executed claim about the actual in-repository test suites.
+
+**Docs:** [DATABASE_BACKUP.md](DATABASE_BACKUP.md) contains click-by-click
+PowerShell usage, security concerns, why raw WAL copying is unsafe and the
+explicit limits of backup/restore. README, user manual and roadmap updated.
+
+**Next:** verify the latest `main` SHA's Linux/Windows CI, Windows packaging
+and handoff workflows, then test on real Windows NTFS, disk full, permission
+denial, interruption and restore offline with operator approval. Backup files
+are unencrypted, and do not include evidence archives or Git worktrees.
+Issue #4 remains open; do not claim disaster recovery or release readiness.
