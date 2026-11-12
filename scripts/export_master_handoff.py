@@ -82,6 +82,23 @@ def wrap_code_line(line: str, width: int = 92) -> list[str]:
     return [expanded[i:i + width] for i in range(0, len(expanded), width)]
 
 
+def code_chunks(lines: list[str], width: int = 92, max_lines: int = 36) -> list[list[str]]:
+    """Bound rendered code blocks by *wrapped* line count, not source lines."""
+    if width < 1 or max_lines < 1:
+        raise ValueError("width and max_lines must be positive")
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    for line in lines:
+        for part in wrap_code_line(line, width):
+            if len(current) >= max_lines:
+                chunks.append(current)
+                current = []
+            current.append(part)
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def build(root: Path, destination: Path, minimum: int) -> dict:
     revision = git_sha(root)
     styles = getSampleStyleSheet()
@@ -127,9 +144,7 @@ def build(root: Path, destination: Path, minimum: int) -> dict:
                 if fenced and code_lines:
                     # Use bounded preformatted lines; long source examples are
                     # preserved but wrapped to avoid spilling beyond margins.
-                    for chunk_start in range(0, len(code_lines), 12):
-                        chunk = code_lines[chunk_start:chunk_start + 12]
-                        safe = [part for line in chunk for part in wrap_code_line(line)]
+                    for safe in code_chunks(code_lines):
                         story.append(Preformatted("\n".join(safe), code, maxLineLength=92, splitChars=" /"))
                     code_lines = []
                 fenced = not fenced
