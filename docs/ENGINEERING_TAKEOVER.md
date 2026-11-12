@@ -666,3 +666,14 @@ The user reported a green GitHub master-handoff workflow. That report is encoura
 ### Decision
 
 The dossier has substantive depth, an on-demand publication path, lightweight consistency checks, a local Git snapshot and a takeover readiness audit. **The engineering handoff publication is implemented; final independent acceptance remains INCOMPLETE.** This explicit boundary protects future maintainers from confusing documentation existence with actual tested continuity.
+
+
+---
+
+## 35. PDF exporter hardening checkpoint (2026-11-11)
+
+The master handoff exporter now uses two independent safeguards for code examples: `wrap_code_line` preserves the complete expanded text rather than slicing at a fixed character count, and `code_chunks` bounds each `Preformatted` flowable to 36 rendered lines rather than counting original source lines. This prevents a single unusually long source line from producing an oversized unsplittable flowable. Regression coverage includes a 12,000-character line, multiple blocks, empty lines, invalid chunk limits and reconstruction of the original expanded text.
+
+**Status:** implementation and regression tests committed to `main`. Exact-commit GitHub workflow execution, rendered PDF page inspection, and independent takeover remain **UNVERIFIED / NOT RUN**. The user's earlier green workflow report predates this correction and must not be reused as proof for the new commit.
+
+**Release rule:** only mark PDF publication PASS when the master-handoff workflow has completed on the current SHA, the artifact is downloadable, the page-count JSON gate passed, and representative pages have been inspected for clipped content. The original Markdown sources remain the lossless reference for code, tables and historical records.
