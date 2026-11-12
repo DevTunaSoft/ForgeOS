@@ -191,3 +191,359 @@ The cumulative handoff is a chronological engineering ledger. This dossier is a 
 ## 12. Principles for the next engineer
 
 Never confuse historical intention with implemented behavior. Never confuse a merged PR with physical-machine acceptance. Never confuse a model response with a successful software build. Preserve user work. Prefer one well-tested implementation over two competing ones. Measure resource usage instead of guessing. Do not restart already completed tasks. Record why an approach failed and switch strategy when it stops producing progress. Keep the original mission visible: **ForgeOS exists to make reliable AI-driven software development accessible through one local-first, efficient Windows application.**
+
+
+---
+
+# Part II — Deep engineering dossier and institutional knowledge
+
+> **Evidence boundary:** The sections below describe engineering intent, design invariants, investigation protocols and proposed acceptance gates. They do not certify that the corresponding implementation exists or has passed tests. For current behavior, inspect source, exact-commit CI and the latest cumulative handoff. This part was added to preserve decisions and avoid costly rediscovery.
+
+## 13. Foundational design decisions and tradeoffs
+
+### 13.1 Why a Windows desktop GUI rather than a command-line-only tool
+
+The target user should be able to create and supervise software without memorizing CLI syntax or understanding Git internals. The GUI is therefore not a thin decoration over an otherwise inaccessible tool; it is the primary operating environment. CLI entry points remain valuable for deterministic testing, automation and recovery. They should share the same core task and persistence logic rather than create competing behavior.
+
+**Tradeoff:** Tkinter is comparatively lightweight and widely available, but it requires strict UI-thread ownership, disciplined event queues and accessibility validation. A richer framework is not justified solely by visual polish if it adds significant RAM, packaging size and complexity. Evaluate any replacement using measured cold-start time, idle RSS, peak RSS, keyboard navigation, screen-reader behavior, frozen EXE size and regression cost.
+
+**Design rule:** A worker may perform blocking inference, filesystem operations or tests, but must not directly mutate Tk widgets. GUI event reporting must be bounded and must not poll at excessive frequency.
+
+### 13.2 Why Git worktrees
+
+A per-task worktree separates model edits from the user's primary checkout, enabling inspection, diffing and controlled rollback. It also supports tracing a change to a task and branch. A worktree does not protect the operating system against malicious build scripts or tests.
+
+**Tradeoff:** Worktrees require Git and introduce ownership/cleanup complexity. An abandoned worktree may contain important user changes. Cleanup must inspect tracked and untracked state, refuse destructive removal, and provide an actionable explanation.
+
+**Invariant:** No automatic cleanup may destroy user-authored or externally modified content.
+
+### 13.3 Why SQLite and bounded local records
+
+A local SQLite store can preserve tasks, leases and checkpoints without running a separate database service. This aligns with offline operation, low resource overhead and simple installation.
+
+**Tradeoff:** Schema changes, concurrent writers, disk-full conditions, corrupted databases and abrupt shutdowns require explicit handling. A backup must use a consistent SQLite backup mechanism rather than blindly copying an active database file.
+
+**Invariant:** A task's durable status must never claim success merely because a worker returned without throwing; success requires the intended acceptance evidence.
+
+### 13.4 Why structured edits instead of unrestricted model-generated shell commands
+
+Language-model output is untrusted. Structured edit manifests make it possible to validate destination paths, sizes, duplicate targets and expected ownership before changing files.
+
+**Tradeoff:** A constrained edit protocol is less flexible than allowing the model to run arbitrary shell commands. This restriction is deliberate until the system has a tested permissioned execution model.
+
+**Invariant:** Validation must precede side effects, and a partially completed multi-file operation must have an inspectable recovery path.
+
+### 13.5 Why local-first and CPU-first inference
+
+Local inference offers control over privacy, recurring costs and offline operation. The project must remain useful on conventional Windows hardware without a dedicated GPU. Smaller coding models can respond quickly, but quality varies by task and model.
+
+**Tradeoff:** The smallest model is not necessarily the cheapest end-to-end if poor edits trigger many retries. Qualification must include test success and total wall time, not model parameter count alone.
+
+**Invariant:** Model choice should optimize verified task success within resource budgets, not merely maximize token throughput.
+
+## 14. System contracts and state ownership
+
+### 14.1 Task identity
+
+Each task needs a durable identifier, requested outcome, repository identity, execution policy, creation time and lifecycle state. The same active request should not create uncontrolled duplicate jobs. The exact deduplication key and database constraints must be inspected in source before changing them.
+
+**Expected transitions:** created/queued → claimed/running → checkpointed → tested → completed or blocked/failed. This is a conceptual model, not an assertion of the exact implemented enum. Compare actual transitions to the code and tests.
+
+**Failure questions:** What if two workers claim the same task? What if a worker dies after writing files but before updating SQLite? What if a stale worker tries to publish a result after its lease expires? What if a user presses retry twice? What if a task is re-opened after an application restart?
+
+### 14.2 Workspace identity
+
+Workspace ownership must be tied to a task, source repository and expected branch/worktree registration. Reusing a directory solely because its name matches is unsafe. A recovered task should verify Git metadata, expected branch and edit hashes before proceeding.
+
+**Failure questions:** What if the source repository was moved? The branch was deleted? The worktree contains untracked files? The source commit changed? The user edited generated files between runs?
+
+### 14.3 Model session identity
+
+A model session must identify the backend, endpoint, model name or immutable identity where possible, runtime configuration, context budget and task owner. For managed processes, record PID/ownership information only when it can be safely validated; a stale PID must not authorize killing an unrelated process.
+
+**Failure questions:** What if a local server is already listening on the expected port? What if the model changes under the same display name? What if a download is truncated? What if the backend hangs after accepting a request? What if a server returns malformed JSON or a giant response?
+
+### 14.4 Test evidence identity
+
+Every test outcome should be associated with a specific task, code revision or worktree state, command/preset, platform, runtime version, start/end time, exit status and bounded evidence location. SHA-256 can establish file integrity but not that a test was meaningful or that a result applies to a newer commit.
+
+**Invariant:** A test result for one source state must not silently authorize a different state.
+
+## 15. Failure-mode and effects analysis
+
+The table below is a **design review checklist**, not a list of confirmed defects.
+
+| Failure mode | Potential impact | Detection | Required safe response |
+| --- | --- | --- | --- |
+| Model request times out | Task stalls; GUI appears frozen | Monotonic elapsed time and timeout record | Cancel/terminate safely where supported; retain checkpoint |
+| Model produces invalid edit manifest | Unsafe or unusable edit | Strict schema/path/size validation | Reject before filesystem changes |
+| Crash during multi-file replacement | Inconsistent source tree | Journal state and file hashes | Recover or block without clobbering external edits |
+| SQLite locked/corrupted | Task state inaccessible | Transaction failure/integrity check | Stop writes; preserve database and diagnostics |
+| Disk becomes full | Incomplete logs, edits or model downloads | OS error, space check, failed atomic publish | Fail closed; retain recoverable partials |
+| Two workers claim one task | Duplicate edits, racing results | Lease/token fencing and DB constraints | Reject stale publisher |
+| Generated test escapes containment | Data disclosure or host compromise | Adversarial security tests | Block unsupported execution, investigate immediately |
+| Child model process survives shutdown | Memory leak and port conflict | Process ownership and lifecycle checks | Terminate only verified owned child |
+| Runtime uses excessive RAM | Thrashing, OOM or machine instability | Whole-process-tree RSS/commit tracking | Limit concurrency, unload or block safely |
+| Log output grows indefinitely | Disk/RAM exhaustion | Per-record and total size caps | Truncate with explicit marker, retain evidence metadata |
+| Download hash mismatch | Untrusted executable/model | SHA-256 against pinned expected digest | Quarantine/delete safely; never execute |
+| Stale GitHub status | Duplicate or conflicting work | Refresh branch/PR/issue before edits | Reconcile; do not open duplicate PR |
+| CI passes but real PC fails | False readiness claim | Hardware acceptance matrix | Mark release blocked until real acceptance |
+| User edits a generated worktree | Potential data loss | Dirty/untracked inspection and hashes | Preserve and require explicit resolution |
+| Remote provider selected accidentally | Privacy or cost exposure | Explicit opt-in and endpoint audit | Block network disclosure without consent |
+| AI repeats identical failed repair | Wasted time, compute and tokens | Attempt signatures and progress deltas | Stop after bounded attempts; change strategy |
+
+### Fault-injection methodology
+
+Use disposable repositories and synthetic data. Inject failures at pre-write validation, staging, first replacement, later replacement, journal finalization, checkpoint publication, test startup, test timeout and restart. Record the exact interruption point and expected recoverable state. Validate both data integrity and absence of unwanted side effects. A recovery test that merely returns a success code without comparing files and journals is insufficient.
+
+## 16. Performance engineering and resource-accounting plan
+
+Resource efficiency is a product requirement, not a late-stage optimization. Measurements should include the desktop process, model server, helper processes, test subprocesses and transient build processes.
+
+### Measurement definitions
+
+- **Idle baseline:** app opened, no task running, after startup stabilization; record private bytes/RSS and CPU.
+- **Task peak:** maximum total process-tree committed memory during plan/edit/test/repair.
+- **Cold-start latency:** time from process launch to responsive GUI.
+- **First useful output:** time from task submission to first meaningful progress or result.
+- **Sustained task throughput:** verified completed tasks per hour, not generated tokens per second alone.
+- **Memory growth:** idle memory after repeated tasks compared with initial idle state.
+- **Storage growth:** database, logs, caches, model weights, worktrees and artifacts.
+- **Recovery cost:** time and memory needed to restore a checkpoint after an interruption.
+
+### Hardware acceptance matrix
+
+| Environment | Purpose | Current proof status |
+| --- | --- | --- |
+| Windows 11, 16 GiB RAM, CPU-first | Practical baseline | Physical end-to-end evidence not established in this dossier |
+| Windows 11, 32 GiB RAM, CPU-first | Broader model and multitask capacity | Physical end-to-end evidence not established in this dossier |
+| Windows 11, 8 GiB RAM | Stretch target for limited workloads | Not a promised supported configuration |
+| Windows 11, 4 GiB RAM | Research only unless proven feasible | No support claim |
+| Hosted Windows runner | Regression, frozen build and containment smoke | Does not substitute for real hardware |
+
+**Proposed benchmark acceptance criteria:** no unbounded queue or log growth; no unexplained persistent process after shutdown; stable task state after restart; no user-visible GUI freeze during a model timeout; and reproducible peak process-tree memory. Numerical thresholds should be set from measured baselines, not invented in this dossier. If issue #55 specifies contradictory RAM targets, reconcile them before using the issue as a release gate.
+
+### Model comparison protocol
+
+Hold prompt/task set, context size, quantization class and hardware conditions as consistent as possible. Run a fixed set of representative tasks: small bug fix, multi-file change, test generation, failure diagnosis, API integration and simple app scaffold. Capture syntax validity, accepted edit rate, test pass rate, repair count, wall time, prompt/completion tokens where available, memory peak and task-level success. A fast response that never produces a valid tested change should not be preferred.
+
+## 17. Observability and forensic diagnostics
+
+A useful diagnostic event should answer: *what operation was attempted, by which task and revision, on what backend, under which policy, what happened, and what should happen next?*
+
+### Suggested event fields
+
+```json
+{
+  "schema_version": 1,
+  "timestamp_utc": "YYYY-MM-DDTHH:MM:SS.sssZ",
+  "monotonic_ms": 0,
+  "task_id": "example-task",
+  "run_id": "example-run",
+  "phase": "test",
+  "operation": "execute_preset",
+  "result": "UNVERIFIED",
+  "duration_ms": 0,
+  "backend": "local",
+  "code_revision": "example-sha",
+  "error_category": null,
+  "evidence_sha256": null,
+  "recovery_hint": "inspect the recorded test output"
+}
+```
+
+This is a proposed event contract; it is not proof that the current application emits this exact schema. Any implementation must keep event fields bounded, avoid logging secrets, and define compatibility and retention behavior.
+
+### Diagnostic quality tests
+
+A developer should be able to distinguish a missing Git executable from an invalid Git repository; an Ollama connection refusal from a model inference timeout; malformed model JSON from a valid but unsafe edit; a failed test from an unsupported test preset; and a recoverable journal from an externally modified worktree.
+
+Every blocked state should expose an actionable reason and the exact next safe step. Do not report a generic `TimeoutError` when the operation, timeout budget, backend and last progress event are known.
+
+## 18. Security threat model and permission matrix
+
+### Assets to protect
+
+Source repositories, local credentials, SSH keys, cloud tokens, user documents, browser sessions, local AI model files, task history, diagnostics, Windows host integrity and network access.
+
+### Threat actors and mistakes
+
+Untrusted repository code, malicious dependency scripts, prompt-injected model context, compromised model downloads, accidental user approvals, stale process ownership, overly permissive filesystem access and leaked diagnostic archives.
+
+### Permission principles
+
+| Operation | Intended policy |
+| --- | --- |
+| Read source files for planning | Only authorized project scope; bounded collection |
+| Write source files | Validated paths inside owned worktree; journaled changes |
+| Execute tests/build scripts | Supported containment or explicit trusted-host authorization |
+| Access network during generated-code execution | Deny by default unless explicitly authorized and safely implemented |
+| Send source to remote AI | Separate informed opt-in, credential and cost controls |
+| Delete/overwrite user changes | Never silently; require explicit consequential approval |
+| Commit/push/merge | Controlled workflow with source and review protections |
+| Install model binaries | Verify source, immutable version/digest and dependencies |
+
+A security review must test both expected success and denial of forbidden actions. A test that verifies only the happy path is not sufficient evidence of containment.
+
+## 19. Reproducible release and supply-chain record
+
+For each proposed release, retain:
+
+1. Source repository, exact commit and dirty-tree status.
+2. Build OS, architecture, Python version, dependency versions and toolchain hashes where available.
+3. Build commands, environment variables excluding secrets, and packaging configuration.
+4. Executable filename, size, SHA-256, signing status and provenance.
+5. CI workflow URL, run ID, commit SHA, job outcomes and artifact retention deadline.
+6. Frozen startup/import, GUI lifecycle, supported test-containment and recovery evidence.
+7. Physical Windows acceptance: machine class, RAM, OS build, model/backend, observed failures and successful tasks.
+8. Installation, upgrade, rollback and uninstall instructions.
+9. Security exceptions, known defects and release decision with approver.
+10. Source, documentation, test evidence and handoff export bundled or linked by immutable revision.
+
+A successful PyInstaller workflow proves that an artifact was built in that environment. It does not prove the installer is signed, the application is self-contained with model weights, or the user can build arbitrary software without dependencies.
+
+## 20. Open-source reuse and architecture compatibility
+
+Before borrowing from external projects, record the precise problem, current ForgeOS implementation, the candidate repository and pinned upstream revision, its license and obligations, its security posture, integration cost, runtime footprint and whether it replaces or duplicates existing logic.
+
+Use a decision record:
+
+```text
+Candidate and upstream commit:
+License / attribution:
+Specific capability to reuse:
+Existing ForgeOS equivalent:
+Measured benefit expected:
+New dependencies / processes:
+RAM, CPU, disk and network impact:
+Security boundary:
+Adopt / adapt / reject:
+Reason and evidence:
+Rollback path:
+```
+
+This applies particularly to browser-agent libraries, token-efficient observation techniques, local model managers and multi-agent frameworks. Avoid importing a heavyweight stack when a small audited adapter achieves the same measurable outcome.
+
+## 21. Human-facing user experience and accessibility acceptance
+
+A first-time user should understand the difference between **Create task**, **Generate plan**, **Run**, **Retry**, **Recover**, **View diagnostics**, and **Export results** without reading source code. Errors should explain what failed, whether anything was modified, and what the user can safely do next.
+
+**Scenario A — missing Git:** startup readiness should identify the missing prerequisite and explain installation without creating duplicate tasks.
+
+**Scenario B — model unavailable:** GUI remains responsive, task state remains durable, and the user sees the selected backend and connection failure rather than a silent hang.
+
+**Scenario C — repair blocked:** display the last verified source state, tests that ran, reason retries stopped and whether the worktree is safe to inspect.
+
+**Scenario D — crash/restart:** the user sees recoverable tasks and a safe, explicit recovery action, not a false success or an endless spinner.
+
+**Scenario E — resource pressure:** indicate when a model exceeds the practical RAM budget and offer a smaller qualified model or sequential execution; do not silently kill unrelated processes.
+
+**Scenario F — accessibility:** keyboard navigation, visible focus, readable contrast, high-DPI scaling and screen-reader behavior require real testing; screenshots alone are not sufficient.
+
+## 22. Autonomous development and multi-agent governance
+
+Multiple agents are useful only when their responsibilities and write boundaries are clear. Parallelize independent research, testing and code review where possible. Avoid concurrent edits to the same files, simultaneous migrations of one SQLite schema or competing PRs for the same requirement.
+
+A task assignment should include: objective, owner, base SHA, permitted paths, forbidden paths, dependencies, acceptance criteria, test plan, expected resource impact and integration owner. Before integration, reconcile all agent outputs against the current branch and rerun affected tests.
+
+**Progress measurement:** a cycle counts as progress only when it produces a verified code change, a newly identified root cause, a resolved blocker, a meaningful new regression test or a concrete reduction in risk. Repeating an unchanged test or generating another status report is not progress.
+
+**Anti-loop rule:** after two substantially identical failures, stop the failing approach, inspect evidence and previous attempts, change strategy and verify. After two cycles without measurable progress, document the blocker and move to independent work when available.
+
+## 23. Decision records and change rationale
+
+An architecture decision record (ADR) should be short but complete:
+
+```text
+ADR identifier / date / author:
+Problem and constraints:
+Options considered:
+Chosen approach:
+Why chosen:
+Alternatives rejected:
+Security and resource tradeoffs:
+Implementation location:
+Evidence / benchmarks:
+Known risks:
+Revisit trigger:
+Supersedes / superseded by:
+```
+
+Recommended initial ADR subjects include Windows/Tkinter versus heavier GUI stacks, SQLite versus service database, worktrees versus direct edits, structured edit manifests, local-first model routing, fail-closed test containment, bounded logs and event queues, transactional journaling, and explicit cloud consent.
+
+Do not rewrite a historical ADR merely because the implementation later changed. Add a superseding decision and retain the reasoning.
+
+## 24. Detailed takeover rehearsal
+
+A second engineer or AI should be given **only** a clean repository checkout and ordinary GitHub access, not the conversation that produced it. The rehearsal should measure whether they can:
+
+1. Explain ForgeOS's mission and non-negotiable constraints accurately.
+2. Distinguish current implemented prototypes from future promises.
+3. Identify the default branch, exact current HEAD and relevant open PRs/issues.
+4. Locate the GUI, task engine, persistence, transactions, recovery and security modules.
+5. Describe why generated code must not run unrestricted on the host.
+6. Find and run a documented test command without damaging user work.
+7. Identify the highest-priority unblocked engineering task without duplicating work.
+8. Explain which Windows and local-model acceptance tests remain unverified.
+9. Recover a disposable interrupted task using documented safe procedures.
+10. Record a new checkpoint with evidence, rollback and exact next steps.
+
+**Scoring proposal:** each criterion PASS/FAIL/NOT RUN, with direct evidence. A rehearsal cannot pass solely because the reviewer says the documentation is good. Any failed criterion should produce a targeted documentation or implementation fix and a repeat of the failed step.
+
+## 25. Project continuity and knowledge retention
+
+### What must survive an assistant change
+
+- The complete original purpose and design constraints.
+- A canonical inventory of modules and responsibility boundaries.
+- Exact GitHub state, relevant branches, commits, PRs and issues.
+- The latest verified test and release evidence, with environment and SHA.
+- Current blockers and their root causes, including abandoned approaches.
+- Safety constraints and permission requirements.
+- Resource budgets and measurement methodology.
+- The next task, acceptance criteria, exact commands and rollback plan.
+
+### What must not be stored in the dossier
+
+API keys, personal credentials, access tokens, private customer records, raw confidential transcripts, device secrets, copied proprietary code without authorization or unverifiable claims presented as fact. Store references to protected evidence, not sensitive payloads.
+
+### Freshness model
+
+The mission is comparatively stable. Architecture changes when component boundaries change. The cumulative ledger changes after meaningful engineering checkpoints. The operational snapshot changes whenever branch, blockers, priorities or verification status changes. A PDF export is a dated immutable snapshot and should never masquerade as live state.
+
+## 26. Practical readiness rubric
+
+| Dimension | Prototype evidence | Production acceptance needed |
+| --- | --- | --- |
+| GUI | Existing Tkinter interface and hosted smoke described in docs | Real-user Windows workflow, accessibility and restart |
+| AI | Ollama integration and experimental local adapters | Real models, sustained workloads, correct failures and fallback |
+| Editing | Bounded manifests, worktrees, journals | Broad fault injection and real Windows crash recovery |
+| Testing | Selected presets and packaged containment smoke | Multi-framework coverage and adversarial isolation |
+| Memory | Bounded internal structures and some CI measurements | Whole process-tree 16/32 GiB workload measurements |
+| Diagnostics | Bounded archives and summaries | Privacy-safe retention, export, actionable incident reconstruction |
+| Autonomy | Limited plan/edit/test/repair cycle | Reliable end-to-end software delivery with independent QA |
+| Packaging | Development Windows EXE workflow | Signed/verified distribution and installation/rollback |
+| Backup | Partial persistence/recovery features | Tested versioned backup and full restore |
+| Handoff | Cumulative history and takeover dossier | Automated drift checks, verified 35+ substantive-page export and independent takeover rehearsal |
+
+**No aggregate percentage of completion should be invented.** Readiness must be evaluated against explicit acceptance criteria and actual evidence for the target release.
+
+## 27. First-week plan for a new lead engineer
+
+**Day 1 — reality reconciliation:** verify branch, HEAD, PRs, issues, CI and documentation. Identify stale or contradictory status statements. Do not modify core code before understanding the baseline.
+
+**Day 2 — reproducible local setup:** create a disposable test repository, run the documented suite, exercise GUI startup and verify installed local model connectivity if hardware is available. Record environmental differences.
+
+**Day 3 — critical safety audit:** inspect worktree ownership, journal recovery, task lease fencing and test containment. Confirm no unbounded input or output path has been introduced.
+
+**Day 4 — resource and model baseline:** capture idle and task process-tree memory, backend latency and model identity. Compare against realistic hardware targets.
+
+**Day 5 — highest-priority scoped correction:** implement one unblocked improvement, add regression coverage and document exact results.
+
+**Days 6–7 — integrated acceptance and handoff:** run affected Windows and Linux CI, reconcile outstanding issues, update the cumulative ledger and prepare a verified handoff export. This is an illustrative sequencing plan, not a claim that work will occur on a calendar schedule.
+
+## 28. Final acceptance for this deep dossier
+
+The dossier is complete as a *knowledge artifact* only when an independent reader can understand the mission, identify source responsibilities, assess current readiness, reproduce the development baseline, avoid known failed approaches and safely take the next action. A minimum page count is a separate publication gate.
+
+**Verification for this extension:** documentation authored and committed to GitHub; source code tests **NOT RUN**; Windows physical tests **NOT RUN**; PDF page count **NOT RUN**; independent takeover rehearsal **NOT RUN**. No claim of production readiness is made.
