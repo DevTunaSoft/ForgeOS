@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 import sys
 import time
 from pathlib import Path
@@ -438,11 +439,17 @@ def launch(db_path, *, acceptance: bool = False):
                     instance.managed_runtime_sha256 = active_manager.runtime_sha256
                     return instance
 
+                # Recover without accumulating one result object per task.
+                # Keep only a bounded Activity preview and exact totals.
+                recent_events = deque(maxlen=12)
                 report = resume_safe(
                     worker_store, chosen_workspace,
                     allow_host_tests=True,
                     managed_model_factory=(
-                        managed_factory if active_manager is not None else None))
+                        managed_factory if active_manager is not None else None),
+                    on_event=recent_events.append,
+                    collect_results=False)
+                report["recent_events"] = list(recent_events)
                 recovery_events.put((report, None))
             except Exception as exc:
                 recovery_events.put(

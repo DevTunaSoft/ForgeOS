@@ -318,6 +318,40 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(report["skipped"], [])
         self.assertEqual(runner.call_count, 41)
 
+    def test_large_exception_reasons_are_bounded_for_gui_and_cli(self):
+        message = "initial error: " + "x" * 100000 + " / final cause"
+        tasks = [
+            self.task(i, {"phase": "test_pending",
+                          "workspace": str(self.parent / f"task-{i}"),
+                          "contract": self.contract()})
+            for i in (1, 2)
+        ]
+        from forgeos.recovery import MAX_RECOVERY_REASON_CHARS
+        for collect_results in (True, False):
+            with self.subTest(collect_results=collect_results):
+                events = []
+                execute = Mock(side_effect=[
+                    RuntimeError(message), {"passed": True}])
+                report = resume_safe(
+                    FakeStore(tasks), self.parent, allow_host_tests=True,
+                    execute=execute, on_event=events.append,
+                    collect_results=collect_results)
+                self.assertEqual(execute.call_count, 2)
+                self.assertEqual(len(events), 2)
+                reason = events[0]["reason"]
+                self.assertLessEqual(len(reason), MAX_RECOVERY_REASON_CHARS)
+                self.assertTrue(reason.startswith("initial error: "))
+                self.assertTrue(reason.endswith(" / final cause"))
+                self.assertIn("[middle omitted]", reason)
+                if collect_results:
+                    self.assertEqual(report["failed"][0]["reason"], reason)
+                    self.assertEqual(report["resumed"], [2])
+                else:
+                    self.assertEqual(report["failed"], [])
+                    self.assertEqual(report["resumed"], [])
+                    self.assertEqual(report["counts"],
+                                     {"resumed": 1, "skipped": 0, "failed": 1})
+
     def test_streaming_results_keep_constant_size_and_all_event_reasons(self):
         tasks = []
         for index in range(60):

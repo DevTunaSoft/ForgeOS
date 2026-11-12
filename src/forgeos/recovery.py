@@ -15,6 +15,7 @@ from .engine import execute_task
 
 PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
            "go-test", "dotnet-test"}
+MAX_RECOVERY_REASON_CHARS = 400
 
 
 def _checkpoint_contract(checkpoint):
@@ -122,6 +123,13 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
     counts = {"resumed": 0, "skipped": 0, "failed": 0}
 
     def record(kind, value):
+        # Failed runners may include arbitrary model/test output in their
+        # exception text. Bound both the collected report and event stream.
+        if kind != "resumed":
+            reason = value["reason"]
+            if len(reason) > MAX_RECOVERY_REASON_CHARS:
+                reason = reason[:150] + " [middle omitted] " + reason[-230:]
+                value = {"id": value["id"], "reason": reason}
         counts[kind] += 1
         if collect_results:
             report[kind].append(value)

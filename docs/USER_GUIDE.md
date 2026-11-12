@@ -300,6 +300,15 @@ the usual complete JSON report remains the default. Streaming does not relax
 checkpoint checks, sandbox permissions, model selection or the need to inspect
 a workspace before recovery.
 
+**GUI recovery memory limits:** The **Resume safe blocked tasks** action now
+uses the same streaming recovery path automatically. The Activity tab shows
+the interrupted-task count, totals of resumed/skipped/failed tasks, and only
+the **12 most recent events**; older individual event messages are not kept
+in the GUI report. Failure explanations are limited to 400 characters per
+event, preserving the beginning and end. The task database and individual
+workspaces retain their existing evidence; the GUI summary is not the full
+audit log. No additional service or background polling is started.
+
 **File transaction limits:** ForgeOS now streams backup copies instead of loading an existing source file fully into RAM. Existing files larger than 8 MiB are rejected for automated replacement, and edit journals larger than 32 KiB are preserved for manual inspection. Do not delete the journal or original workspace to bypass a safety check. These are transaction limits, separate from the 64 KiB task-checkpoint limit.
 
 **Expired or replaced worker:** ForgeOS now rejects a stale worker's attempt to publish a test result, checkpoint or failure after its task lease expires or is reclaimed. The workspace may still contain edits from the interrupted run. Inspect it and any journal before using guarded recovery; do not delete or automatically overwrite files just because the status says Blocked.
