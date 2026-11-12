@@ -2051,3 +2051,29 @@ power-loss and restore acceptance remain UNVERIFIED.
 database, no encryption, no retention, no bundled evidence/worktrees and no
 new daemon. Keep issue #4 open. Next check exact-head CI and expand targeted
 fault injection, then physical Windows verification.
+
+## 2026-11-11 — read-only preflight before task database checks
+
+**Defect:** both `db-check` and `db-backup` previously called
+`Store(args.db)` first. `Store.__init__` deliberately creates a missing
+database and its base tables for normal first-run use; for backup/verification
+operations, that could produce a false `ok` result or mutate an unrelated
+existing SQLite file by adding ForgeOS tables.
+
+**Correction:** one `_verify_task_database_connection` helper checks
+`PRAGMA integrity_check(1)` and the required task/lease columns. The restore
+source and restored copy reuse this helper. `Store.inspect_existing_database`
+opens a real existing regular path using SQLite `mode=ro` and query-only
+mode. The CLI calls it before the normal Store initializer for both commands;
+`db-check` returns directly, and `db-backup` proceeds only after read-only
+inspection. First-run GUI database initialization is unaffected.
+
+**Regressions:** two additional CLI tests ensure a nonexistent task DB
+is not created and an unrelated SQLite file is not modified or copied.
+Existing real-WAL backup and restore regressions still cover the supported
+paths. This does not add a new daemon, cache, dependency, or recovery engine.
+
+**Verification:** exact-head Linux/Windows GitHub Actions and Windows EXE
+remain required; local standalone restore smoke is prior-component evidence,
+not a substitute. Follow-up: real Windows fault injection and monitored
+restore activation design; issue #4 remains OPEN.

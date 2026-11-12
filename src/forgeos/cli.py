@@ -187,6 +187,13 @@ def main(argv=None):
         print(profile.status() if args.operation == 'status' else
               'Trusted filter SHA-256: ' + profile.trust_config())
         return 0
+    if args.action in ('db-check', 'db-backup'):
+        # Store.__init__ creates tables and even missing databases. Do not
+        # initialize or migrate anything until a read-only preflight passes.
+        Store.inspect_existing_database(args.db)
+        if args.action == 'db-check':
+            print('SQLite integrity: ok')
+            return 0
     store=Store(args.db)
     try:
         if args.action=='add':
@@ -201,9 +208,6 @@ def main(argv=None):
                 json.dump(task, sys.stdout)
                 first = False
             sys.stdout.write("\n]\n" if not first else "]\n")
-        elif args.action=='db-check':
-            store.check_integrity()
-            print('SQLite integrity: ok')
         elif args.action=='db-backup':
             print(f'Verified backup: {store.backup_to(args.destination)}')
         elif args.action=='recover':

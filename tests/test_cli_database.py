@@ -38,6 +38,37 @@ class DatabaseCommandsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "new file"):
                 main(["db-restore-copy", str(source), str(destination)])
 
+    def test_database_commands_never_initialize_a_missing_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            missing = root / "nonexistent.sqlite3"
+            destination = root / "no-backup.sqlite3"
+            with self.assertRaisesRegex(ValueError, "existing regular file"):
+                main(["--db", str(missing), "db-check"])
+            self.assertFalse(missing.exists())
+            with self.assertRaisesRegex(ValueError, "existing regular file"):
+                main(["--db", str(missing), "db-backup", str(destination)])
+            self.assertFalse(missing.exists())
+            self.assertFalse(destination.exists())
+
+    def test_database_commands_refuse_incompatible_schema_without_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            incompatible = root / "unrelated.sqlite3"
+            destination = root / "no-backup.sqlite3"
+            with sqlite3.connect(incompatible) as db:
+                db.execute("CREATE TABLE unrelated (value INTEGER)")
+            for operation in (
+                    ["db-check"], ["db-backup", str(destination)]):
+                with self.subTest(operation=operation):
+                    with self.assertRaisesRegex(ValueError, "compatible ForgeOS"):
+                        main(["--db", str(incompatible), *operation])
+            with sqlite3.connect(incompatible) as db:
+                tables = {r[0] for r in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertEqual(tables, {"unrelated"})
+            self.assertFalse(destination.exists())
+
     def test_check_and_backup_using_explicit_db_path(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

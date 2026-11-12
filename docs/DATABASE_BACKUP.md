@@ -93,3 +93,13 @@ The actual repository has automated regressions in
 `tests/test_db_backup.py`; only its exact-commit GitHub CI status can
 establish whether those tests pass across Linux and Windows. A CI green
 result does not replace full physical Windows/restore testing.
+
+## Read-only preflight: missing or incompatible task databases
+
+`db-check` and `db-backup` now validate that the source is an existing,
+regular (not symlinked) SQLite file with the essential ForgeOS task and
+lease schema **before opening the normal Store**. A missing `--db` path is
+refused rather than silently initialized as an empty task database.
+Unrelated SQLite databases cannot be migrated just by running a check or
+backup. The checks use read-only SQLite, without creating Python copies of
+task rows. Database creation for normal first-time ForgeOS use is unchanged.

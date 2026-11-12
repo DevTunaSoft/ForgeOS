@@ -171,3 +171,17 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   encryption, backup bundle for worktrees/evidence, power-loss and physical
   Windows disk/permission acceptance. Do not confuse a verified copy with a
   certified disaster-recovery procedure.
+
+### 2026-11-11 — read-only database inspection before backup/check
+
+- **Implemented:** `db-check` and `db-backup` verify an existing SQLite
+  file and ForgeOS schema in read-only mode before the canonical task Store
+  is initialized. Missing, symlinked and incompatible databases are refused
+  rather than silently created or migrated. Restore and check/backup now
+  share one bounded-result integrity/schema verifier; restored copies are
+  checked after copying as well.
+- **Regression coverage:** missing-path check/backup do not create files;
+  unrelated SQLite database cannot be mutated or backed up through either
+  command. No extra process or polling and no new dependencies.
+- **Status:** source and regression committed, exact-head CI required;
+  physical Windows/other-volume acceptance remains unverified.

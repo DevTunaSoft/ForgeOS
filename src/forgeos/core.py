@@ -69,6 +69,22 @@ def validate_local_prompt(prompt: str) -> str:
     return prompt
 
 
+def _verify_task_database_connection(db: sqlite3.Connection) -> None:
+    """Check SQLite structure and essential ForgeOS schema without row loads."""
+    result = db.execute("PRAGMA integrity_check(1)").fetchone()
+    if result is None or result[0] != "ok":
+        raise RuntimeError("SQLite database integrity check failed")
+    required = {
+        "tasks": {"id", "project", "description", "status", "attempts",
+                  "created", "updated", "last_error", "result"},
+        "task_leases": {"task_id", "owner", "acquired", "heartbeat"},
+    }
+    for table, columns in required.items():
+        actual = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+        if not columns.issubset(actual):
+            raise ValueError("Not a compatible ForgeOS task database")
+
+
 class Store:
     def __init__(self, path: str | Path):
         self.path = Path(path).expanduser().resolve()
@@ -82,13 +98,23 @@ class Store:
         self.db.commit()
 
     def check_integrity(self) -> None:
-        """Run a requested SQLite integrity check without collecting error lists."""
+        """Explicitly check SQLite integrity and ForgeOS task schema."""
         try:
-            result = self.db.execute("PRAGMA integrity_check(1)").fetchone()
+            _verify_task_database_connection(self.db)
         except sqlite3.DatabaseError as exc:
             raise RuntimeError("SQLite integrity check could not complete") from exc
-        if result is None or result[0] != "ok":
-            raise RuntimeError("SQLite database integrity check failed")
+
+    @staticmethod
+    def inspect_existing_database(path: str | Path) -> None:
+        """Validate an existing database read-only; never create/migrate it."""
+        from contextlib import closing
+
+        source = Path(path).expanduser().absolute()
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("Task database must be an existing regular file")
+        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as db:
+            db.execute("PRAGMA query_only=ON")
+            _verify_task_database_connection(db)
 
     def backup_to(self, destination: str | Path) -> Path:
         """Publish an integrity-checked, non-overwriting SQLite online backup."""
@@ -140,11 +166,6 @@ class Store:
                 or target.exists()):
             raise ValueError(
                 "Restore destination must be a new file in an existing directory")
-        required = {
-            "tasks": {"id", "project", "description", "status", "attempts",
-                      "created", "updated", "last_error", "result"},
-            "task_leases": {"task_id", "owner", "acquired", "heartbeat"},
-        }
         fd, name = tempfile.mkstemp(
             prefix=".forgeos-restore-", suffix=".tmp", dir=target.parent)
         os.close(fd)
@@ -154,24 +175,12 @@ class Store:
             # backup API reads a consistent snapshot, including live WAL.
             with closing(sqlite3.connect(src.as_uri() + "?mode=ro", uri=True)) as original:
                 original.execute("PRAGMA query_only=ON")
-                check = original.execute("PRAGMA integrity_check(1)").fetchone()
-                if check is None or check[0] != "ok":
-                    raise RuntimeError(
-                        "Restore source failed SQLite integrity verification")
-                for table, columns in required.items():
-                    existing = {
-                        row[1] for row in original.execute(
-                            f"PRAGMA table_info({table})")
-                    }
-                    if not columns.issubset(existing):
-                        raise ValueError(
-                            "Restore source is not a compatible ForgeOS task database")
+                _verify_task_database_connection(original)
                 with closing(sqlite3.connect(staged)) as restored:
                     original.backup(restored, pages=64, sleep=0.05)
-                    check = restored.execute("PRAGMA integrity_check(1)").fetchone()
-                    if check is None or check[0] != "ok":
-                        raise RuntimeError(
-                            "Restored task database failed integrity verification")
+                    # Protect against concurrent source-schema changes while
+                    # copying, and reject a corrupt or incompatible result.
+                    _verify_task_database_connection(restored)
             with staged.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # No-overwrite publication also protects concurrent users.
