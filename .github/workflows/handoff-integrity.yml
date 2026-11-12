@@ -4,7 +4,9 @@ on:
     paths:
       - 'docs/**'
       - 'scripts/check_handoff.py'
+      - 'scripts/handoff_snapshot.py'
       - 'tests/test_handoff_check.py'
+      - 'tests/test_handoff_snapshot.py'
       - '.github/workflows/handoff-integrity.yml'
   pull_request:
     paths:
@@ -29,5 +31,9 @@ jobs:
           python-version: '3.12'
       - name: Unit tests
         run: python -m unittest discover -s tests -p 'test_handoff_check.py' -v
+      - name: Snapshot unit tests
+        run: python -m unittest discover -s tests -p 'test_handoff_snapshot.py' -v
+      - name: Snapshot smoke
+        run: python scripts/handoff_snapshot.py
       - name: Handoff integrity
         run: python scripts/check_handoff.py --json
