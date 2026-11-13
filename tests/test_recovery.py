@@ -23,9 +23,10 @@ class FakeStore:
             if task["status"] != "blocked":
                 continue
             payload = task["result"]
-            size = len(payload.encode("utf-8"))
-            yield {**task, "result": payload if size <= MAX_CHECKPOINT_BYTES else None,
-                   "checkpoint_bytes": size}
+            size = len(payload.encode("utf-8")) if payload is not None else None
+            if size is not None and size > MAX_CHECKPOINT_BYTES:
+                payload = None
+            yield {**task, "result": payload, "checkpoint_bytes": size}
 
 
 class RecoveryTests(unittest.TestCase):
@@ -253,6 +254,7 @@ class RecoveryTests(unittest.TestCase):
                 "contract": self.contract(preset={}),
             }),
             {**self.task(3, None), "result": "[" * 12000 + "]" * 12000},
+            {**self.task(5, None), "result": None},
             self.task(4, {
                 "phase": "test_pending",
                 "workspace": str(self.parent / "task-4"),
@@ -266,10 +268,12 @@ class RecoveryTests(unittest.TestCase):
             {"id": 1, "reason": "No resumable checkpoint"},
             {"id": 2, "reason": "Invalid checkpoint test preset"},
         ])
-        self.assertEqual(len(report["skipped"]), 3)
+        self.assertEqual(len(report["skipped"]), 4)
         self.assertEqual(report["skipped"][2]["id"], 3)
         self.assertIn(report["skipped"][2]["reason"],
                       ("No structured checkpoint", "No resumable checkpoint"))
+        self.assertEqual(report["skipped"][3],
+                         {"id": 5, "reason": "No structured checkpoint"})
         self.assertEqual(report["resumed"], [4])
         runner.assert_called_once()
         self.assertEqual(runner.call_args.args[1], 4)

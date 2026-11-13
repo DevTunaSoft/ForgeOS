@@ -2160,3 +2160,5 @@ and restore under constrained filesystems.
 - PASS: `py -m compileall -q src tests forgeos_build` and `py -m unittest test_build_info test_launcher test_acceptance test_cli_acceptance -q` on Windows 11 / Python 3.15.2. The tests had 12 passes and one skip.
 - PASS: `py -m forgeos acceptance` with the isolated Windows profile wrote a source-mode snapshot with commit `2ce399f97a686dfebb1f47daba86c604dc276b1f`. The report did not assert a physical release target and recorded no frozen executable hash or managed-model evidence.
 - BLOCKED: Local packaging lacks the workflow's Python 3.12 and PyInstaller. `ollama list` encountered a loopback socket permission denial, so live Ollama acceptance is UNVERIFIED. Frozen executable smoke and physical Windows release acceptance are UNVERIFIED.
+
+- Safe Resume treats missing checkpoint payloads from nullable legacy rows as invalid per task. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.

@@ -143,7 +143,8 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
     for task in store.iter_blocked_checkpoints():
         if task["status"] != "blocked":
             continue
-        if task["checkpoint_bytes"] > MAX_CHECKPOINT_BYTES:
+        checkpoint_bytes = task["checkpoint_bytes"]
+        if checkpoint_bytes is not None and checkpoint_bytes > MAX_CHECKPOINT_BYTES:
             record("skipped", {
                 "id": task["id"],
                 "reason": f"Checkpoint exceeds {MAX_CHECKPOINT_BYTES}-byte safety limit",
