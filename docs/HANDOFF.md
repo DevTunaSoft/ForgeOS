@@ -2431,3 +2431,8 @@ and restore under constrained filesystems.
 
 - Qualification records now require an integer schema value (so JSON `true` cannot alias version 1) and a finite, nonnegative numeric latency. Overflowing integer latency values are rejected before evidence hashing.
 - Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 89 tests (one platform skip); compilation and `git diff --check` passed. Real model qualification remains unverified on target Windows.
+
+### Follow-up — reject boolean schema aliases and non-finite latency
+
+- The final-evidence validator now rejects JSON `true` as schema version 1, boolean latency, `NaN`, infinities, negative values and integers that overflow when normalized to the measured floating-point latency field.
+- Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 89 tests (one platform skip); `python -m compileall -q src/forgeos` and `git diff --check` passed. This is record validation evidence only; model quality and target-Windows qualification remain open.
