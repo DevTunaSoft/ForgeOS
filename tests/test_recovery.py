@@ -209,6 +209,31 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(runner.call_count, 1)
         self.assertTrue(runner.call_args.kwargs["resume"])
 
+    def test_invalid_checkpoint_fields_do_not_abort_later_recovery(self):
+        tasks = [
+            self.task(1, {"phase": []}),
+            self.task(2, {
+                "phase": "test_pending",
+                "workspace": str(self.parent / "task-2"),
+                "contract": self.contract(preset={}),
+            }),
+            self.task(3, {
+                "phase": "test_pending",
+                "workspace": str(self.parent / "task-3"),
+                "contract": self.contract(),
+            }),
+        ]
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(
+            FakeStore(tasks), self.parent, allow_host_tests=True, execute=runner)
+        self.assertEqual(report["skipped"], [
+            {"id": 1, "reason": "No resumable checkpoint"},
+            {"id": 2, "reason": "Invalid checkpoint test preset"},
+        ])
+        self.assertEqual(report["resumed"], [3])
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[1], 3)
+
     def test_bad_workspace_path_does_not_abort_later_recovery(self):
         malformed = self.task(1, {
             "phase": "test_pending",

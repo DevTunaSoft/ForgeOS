@@ -2104,3 +2104,9 @@ were PASS for `79321b8`. Physical Windows deployment, RAM and full
 disaster recovery acceptance remain UNVERIFIED. Next prioritize clean
 cross-platform CI evidence, then fault injection on database backup
 and restore under constrained filesystems.
+
+## 2026-11-12 — malformed checkpoint fields must not halt Safe Resume
+
+- Baseline: `4a247990b42082f56e302cb86133f1b139aea214`. The existing recovery scanner skipped malformed workspace paths, but a JSON array or object in the phase or test preset could raise `TypeError` during set membership and abort the scan.
+- Fix: reuse the existing per-task skip paths for invalid phases and presets. Regression coverage puts two malformed checkpoints ahead of an eligible checkpoint and asserts only the eligible task reaches execution.
+- Evidence: FAIL before the fix with `TypeError` in the new regression. PASS after the fix with `py -m unittest test_recovery test_local_resume -q` on Windows/Python 3.15 (29 tests, one skip), with `PYTHONPATH=src;tests` and workspace-local temporary files. Full-suite and physical Windows acceptance remain UNVERIFIED.

@@ -33,7 +33,7 @@ def _checkpoint_contract(checkpoint):
     preset = contract["preset"]
     repairs = contract["max_repairs"]
     model = contract["model"]
-    if preset not in PRESETS:
+    if not isinstance(preset, str) or preset not in PRESETS:
         raise ValueError("Invalid checkpoint test preset")
     if (not isinstance(repairs, int) or isinstance(repairs, bool)
             or not 0 <= repairs <= 5):
@@ -154,14 +154,14 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         except (ValueError, TypeError):
             record("skipped", {"id": task["id"], "reason": "No structured checkpoint"})
             continue
-        if isinstance(checkpoint, dict) and checkpoint.get("phase") == "manual_review_required":
+        phase = checkpoint.get("phase") if isinstance(checkpoint, dict) else None
+        if phase == "manual_review_required":
             record("skipped", {
                 "id": task["id"],
                 "reason": "Incomplete test evidence requires manual review; automatic retry disabled",
             })
             continue
-        if (not isinstance(checkpoint, dict)
-                or checkpoint.get("phase") not in {"test_pending", "repair_pending"}):
+        if phase not in ("test_pending", "repair_pending"):
             record("skipped", {"id": task["id"], "reason": "No resumable checkpoint"})
             continue
         # A corrupt, moved or symlinked workspace must not abort recovery
