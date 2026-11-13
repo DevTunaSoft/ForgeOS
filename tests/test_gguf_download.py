@@ -43,7 +43,7 @@ class GGUFDownloadTests(unittest.TestCase):
         self.mock_catalog = patch("forgeos.gguf_download.list_gguf_files",
                                   return_value=[{"path": FILE, "bytes": len(BODY),
                                                  "sha256": DIGEST}])
-        self.mock_revision.start()
+        self.revision_mock = self.mock_revision.start()
         self.mock_catalog.start()
         self.addCleanup(self.mock_revision.stop)
         self.addCleanup(self.mock_catalog.stop)
@@ -69,6 +69,21 @@ class GGUFDownloadTests(unittest.TestCase):
             cached = self.download()
             self.assertEqual(cached["status"], "already_verified")
             no_network.assert_not_called()
+
+    def test_explicit_inspected_revision_is_used_without_re_resolving_head(self):
+        revision = "b" * 40
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            result = self.download(revision=revision)
+        self.revision_mock.assert_not_called()
+        self.assertIn("/" + revision + "/", result["path"].replace("\\", "/"))
+        self.assertEqual(result["revision"], revision)
+
+    def test_invalid_explicit_revision_rejected_before_metadata_or_disk(self):
+        with self.assertRaisesRegex(ValueError, "full pinned revision"):
+            self.download(revision="main")
+        self.revision_mock.assert_not_called()
+        self.assertEqual(list(self.root.iterdir()), [])
 
     def test_pre_cancelled_request_stops_before_metadata_or_disk(self):
         paused = Event()

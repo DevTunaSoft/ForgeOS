@@ -2261,3 +2261,9 @@ and restore under constrained filesystems.
 - Repository inspection now requires the Hub response to provide a full immutable commit SHA and uses that exact revision for its GGUF tree request. The UI displays the inspected revision. The card-field allowlist also includes optional author-provided model-size, parameter-count, quantization, context-length, chat-template, tool-use and structured-output claims; values remain clipped and explicitly unverified.
 - Verification: the same focused catalog suite passed all nine tests after adding assertions that the file-list URL uses the pinned SHA and malformed revision metadata is rejected. Source compilation and `git diff --check` passed.
 - This pins the inspected metadata/tree snapshot only. The later downloader still independently resolves and verifies its own download revision; full end-to-end provenance binding remains a release gap.
+
+### Follow-up — download the inspected snapshot
+
+- The GUI now preserves the inspected repository commit through file selection and passes it to the existing downloader. The downloader validates a supplied full commit SHA and uses it for the pinned tree lookup, resolve URL, partial journal and installed manifest; command-line callers retain the existing resolve-current-revision default.
+- Verification: `python -m unittest tests.test_gguf_download tests.test_huggingface_catalog -q` passed 32 tests (one platform skip), and `python -m unittest test_gui_contract -q` passed all 36 tests. Coverage proves the GUI-selected revision bypasses a fresh HEAD lookup, is retained in the verified path/result, and malformed explicit revisions fail before metadata or disk work. Compilation and `git diff --check` passed.
+- Remaining gates: real CDN redirects and Windows transfer/resume behavior remain unverified. This change does not make the CLI choose a previously inspected snapshot; it still explicitly resolves the current repository revision at download time.

@@ -183,7 +183,8 @@ def _write_json_atomic(destination: Path, value: dict):
         temporary.unlink(missing_ok=True)
 
 
-def download_gguf(repo: str, filename: str, *, directory: Path | str | None = None,
+def download_gguf(repo: str, filename: str, *, revision: str | None = None,
+                  directory: Path | str | None = None,
                   max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60,
                   cancel_event: Event | None = None,
                   progress_callback=None) -> dict:
@@ -205,7 +206,11 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable")
     _check_cancelled(cancel_event)
-    revision = model_revision(repo)
+    if revision is None:
+        revision = model_revision(repo)
+    elif not isinstance(revision, str) or not re.fullmatch(r"[a-fA-F0-9]{40}", revision):
+        raise ValueError("Model download requires a full pinned revision")
+    revision = revision.lower()
     _check_cancelled(cancel_event)
     matches = [record for record in list_gguf_files(repo, revision=revision)
                if record["path"] == filename]

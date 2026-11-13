@@ -1470,6 +1470,7 @@ def launch(db_path, *, acceptance: bool = False):
         ttk.Label(frame, textvariable=transfer_status, wraplength=740).pack(
             anchor="w", pady=(6, 0))
         state = {"busy": False, "catalog": [], "inspected_repo": None,
+                 "inspected_revision": None,
                  "action": None, "cancel": None, "close_after": False}
 
         def report_transfer(stage, current, total):
@@ -1527,7 +1528,8 @@ def launch(db_path, *, acceptance: bool = False):
                         "The download will not load or execute the model.",
                         parent=popup):
                     return
-                term = (state["inspected_repo"], file_choice.get())
+                term = (state["inspected_repo"], file_choice.get(),
+                        state["inspected_revision"])
             else:
                 term = query.get().strip()
             state["busy"] = True
@@ -1560,7 +1562,8 @@ def launch(db_path, *, acceptance: bool = False):
                     else:
                         from .gguf_download import download_gguf
                         data = download_gguf(
-                            term[0], term[1], cancel_event=state["cancel"],
+                            term[0], term[1], revision=term[2],
+                            cancel_event=state["cancel"],
                             progress_callback=report_transfer)
                     hub_events.put((action, data, None))
                 except Exception as exc:
@@ -1619,6 +1622,7 @@ def launch(db_path, *, acceptance: bool = False):
                 elif action == "search":
                     state["catalog"] = data
                     state["inspected_repo"] = None
+                    state["inspected_revision"] = None
                     file_choice.set("")
                     file_picker.configure(values=())
                     download_btn.configure(state="disabled")
@@ -1637,6 +1641,7 @@ def launch(db_path, *, acceptance: bool = False):
                     state["inspected_repo"] = (
                         state["catalog"][int(selected[0])]["repo"]
                         if selected else None)
+                    state["inspected_revision"] = repo_info["revision"]
                     choices = [item["path"] for item in data if item["sha256"]]
                     file_picker.configure(values=choices)
                     file_choice.set(choices[0] if choices else "")
