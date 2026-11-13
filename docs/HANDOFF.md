@@ -2574,3 +2574,15 @@ and restore under constrained filesystems.
   inventory, import, retirement, GUI contract, documentation and roadmap suites
   passed 174 tests (7 platform skips); compilation and `git diff --check`
   passed. Live Hub redirects and CDN behavior remain unverified.
+
+- Full local Windows/Python 3.15.2 discovery at `647cae3` completed 719 tests:
+  5 failures, 8 errors and 34 skips. AppContainer and low-integrity setup hit
+  `icacls` Access Denied in this managed session; real loopback tests were
+  denied; and existing subprocess output-capture/test-runner assertions failed
+  under the restricted host. The focused model/catalog/download and recent
+  purge suites passed independently. This full run is not green and is not a
+  substitute for hosted matrix execution.
+- Exact-head GitHub diagnostics for `647cae3`: both eligible handoff-integrity
+  checks succeeded; unit tests, documentation and Windows packaging were
+  skipped because PR #68 remains draft. No hosted test matrix or packaged EXE
+  pass is claimed.
