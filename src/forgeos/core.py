@@ -85,6 +85,14 @@ def _verify_task_database_connection(db: sqlite3.Connection) -> None:
             raise ValueError("Not a compatible ForgeOS task database")
 
 
+def _publish_database_copy(staging: Path, target: Path) -> None:
+    # Windows rename is exclusive, unlike POSIX rename.
+    if os.name == "nt":
+        os.rename(staging, target)
+    else:
+        os.link(staging, target)
+
+
 class Store:
     def __init__(self, path: str | Path):
         self.path = Path(path).expanduser().resolve()
@@ -142,7 +150,7 @@ class Store:
             with staging.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # Exclusive atomic publication; never replace another backup.
-            os.link(staging, target)
+            _publish_database_copy(staging, target)
             return target
         finally:
             staging.unlink(missing_ok=True)
@@ -184,7 +192,7 @@ class Store:
             with staged.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # No-overwrite publication also protects concurrent users.
-            os.link(staged, target)
+            _publish_database_copy(staged, target)
             return target
         finally:
             staged.unlink(missing_ok=True)

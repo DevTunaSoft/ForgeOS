@@ -46,7 +46,8 @@ class OnlineBackupTests(unittest.TestCase):
 
     def test_failed_publication_cleans_temporary_file(self):
         target = self.root / "not-published.sqlite3"
-        with patch("forgeos.core.os.link", side_effect=OSError("disk unavailable")):
+        with patch("forgeos.core._publish_database_copy",
+                   side_effect=OSError("disk unavailable")):
             with self.assertRaisesRegex(OSError, "disk unavailable"):
                 self.store.backup_to(target)
         self.assertFalse(target.exists())

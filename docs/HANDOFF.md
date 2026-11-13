@@ -2112,3 +2112,9 @@ and restore under constrained filesystems.
 - Evidence: FAIL before the fix with `TypeError` in the new regression. PASS after the fix with `py -m unittest test_recovery test_local_resume -q` on Windows/Python 3.15 (29 tests, one skip), with `PYTHONPATH=src;tests` and workspace-local temporary files. Full-suite and physical Windows acceptance remain UNVERIFIED.
 
 - Follow-up: direct engine resume also rejects an array or object phase through its normal invalid-checkpoint error and keeps the task blocked. The new engine regression plus recovery and local-resume suites passed on Windows/Python 3.15 (30 tests, one skip) with temp files outside OneDrive. The first run under OneDrive hit a temporary Git repository cleanup lock.
+
+## 2026-11-12 — Windows backup and restore publication
+
+- Baseline `5658b70`: the verbose Windows run progressed past the apparent stall. Focused reproduction showed backup publication failing at `os.link` with WinError 5. A separate subprocess test ran successfully inside the child but ForgeOS rejected the result because diagnostic archival failed.
+- Backup and restore now publish the flushed sibling file using exclusive rename on Windows. POSIX keeps hard-link publication. Existing publication-failure tests inject errors at the shared publication function and still check cleanup.
+- PASS on Windows/Python 3.15: `py -m unittest test_db_backup test_db_restore test_cli_database -q` (14 tests, one skip), with `PYTHONPATH=src;tests` and temporary files outside OneDrive. Full-suite and physical Windows acceptance remain UNVERIFIED. Next priority: diagnose the separate diagnostic archive failure.
