@@ -2146,3 +2146,5 @@ and restore under constrained filesystems.
 - Direct resume now validates checkpoint UTF-8 after a bounded byte read and reports a clear validation error for damaged rows. The SQLite regression covers both direct reads and recovery scans. PASS on Windows/Python 3.15: 30 tests in test_recovery and test_local_resume, one skip.
 
 - Safe Resume skips a qualified-model checkpoint when the evidence directory cannot resolve, including older Python symlink-loop errors. Fault injection verified that a later eligible task still executes. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
+
+- Safe Resume delivers managed-runtime skip events outside the execution error handler, so a broken progress stream propagates once instead of being reclassified as a task failure. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.

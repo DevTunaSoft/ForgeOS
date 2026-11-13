@@ -147,6 +147,13 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("authenticated", report["skipped"][0]["reason"].lower())
         runner.assert_not_called()
 
+        sink = Mock(side_effect=BrokenPipeError("closed output"))
+        with self.assertRaisesRegex(BrokenPipeError, "closed output"):
+            resume_safe(FakeStore([self.task(70, checkpoint)]), self.parent,
+                        allow_host_tests=True, execute=runner, on_event=sink)
+        sink.assert_called_once()
+        self.assertEqual(sink.call_args.args[0]["event"], "skipped")
+
     def test_managed_checkpoint_resumes_only_with_exact_attested_identity(self):
         contract = self.managed_contract()
         checkpoint = {

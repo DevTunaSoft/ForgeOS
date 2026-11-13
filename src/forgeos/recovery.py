@@ -196,16 +196,17 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         if max_repairs is not None and max_repairs != contract["max_repairs"]:
             record("skipped", {"id": task["id"], "reason": "Repair budget override mismatch"})
             continue
+        managed = "managed_model_sha256" in contract
+        if managed and managed_model_factory is None:
+            record("skipped", {
+                "id": task["id"],
+                "reason": (
+                    "Managed GGUF checkpoint requires an authenticated "
+                    "currently running ForgeOS-managed runtime"),
+            })
+            continue
         try:
-            if "managed_model_sha256" in contract:
-                if managed_model_factory is None:
-                    record("skipped", {
-                        "id": task["id"],
-                        "reason": (
-                            "Managed GGUF checkpoint requires an authenticated "
-                            "currently running ForgeOS-managed runtime"),
-                    })
-                    continue
+            if managed:
                 model = managed_model_factory(contract)
                 expected = {
                     "backend": "llama.cpp",
