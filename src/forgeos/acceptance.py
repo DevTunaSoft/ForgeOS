@@ -185,7 +185,7 @@ def collect_acceptance_snapshot(controller=None, *, physical_target: bool = Fals
         },
         "limitations": [
             "This snapshot is evidence from the current machine, not a release sign-off.",
-            "A source commit is absent when ForgeOS is not running from a Git checkout.",
+            "Source commit identity requires a verifiable Git checkout with unchanged tracked files.",
             "A frozen executable SHA-256 is absent for source-mode execution.",
             "Managed-model evidence is absent unless a verified ForgeOS-managed model is running.",
             "LM Studio/Ollama/other backend acceptance requires separate real-runtime exercises.",
