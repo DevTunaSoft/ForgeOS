@@ -274,7 +274,7 @@ class Store:
             rows = self.db.execute(
                 "SELECT id,status, "
                 "CASE WHEN length(CAST(result AS BLOB)) <= ? "
-                "THEN result ELSE NULL END AS result, "
+                "THEN CAST(result AS BLOB) ELSE NULL END AS result, "
                 "length(CAST(result AS BLOB)) AS checkpoint_bytes "
                 "FROM tasks WHERE status='blocked' AND id<=? "
                 "ORDER BY id DESC LIMIT ?",

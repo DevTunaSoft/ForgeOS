@@ -383,11 +383,17 @@ class RecoveryTests(unittest.TestCase):
             eligible.append(task_id)
             history_id = store.add(str(repo), f"completed task {index}")
             store.update(history_id, "passed", result="P" * (80 * 1024))
+        damaged = store.add(str(repo), "damaged checkpoint encoding")
+        with store.db:
+            store.db.execute(
+                "UPDATE tasks SET status='blocked', result=CAST(? AS TEXT) WHERE id=?",
+                (b'\xff', damaged))
         runner = Mock(return_value={"passed": True})
         report = resume_safe(store, self.parent, allow_host_tests=True,
                              execute=runner)
         self.assertEqual(report["resumed"], list(reversed(eligible)))
-        self.assertEqual(report["skipped"], [])
+        self.assertEqual(report["skipped"], [
+            {"id": damaged, "reason": "No structured checkpoint"}])
         self.assertEqual(runner.call_count, 41)
 
     def test_large_exception_reasons_are_bounded_for_gui_and_cli(self):
