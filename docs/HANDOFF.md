@@ -2168,3 +2168,5 @@ and restore under constrained filesystems.
 - Source acceptance reports omit the commit when tracked checkout changes are present or Git cannot verify them. PASS on Windows: 10 acceptance tests passed and one skipped. Frozen build acceptance remains UNVERIFIED.
 
 - The clean checkout at 043c32e reported its exact source commit on Windows. The snapshot now explains that source identity requires verifiable Git metadata and unchanged tracked files. Acceptance and CLI acceptance tests: 10 passed, one skip.
+
+- Frozen acceptance now bounds its embedded metadata read to 4 KiB and validates the source SHA as hexadecimal. Windows acceptance tests: 10 passed, one skip. Real frozen execution remains UNVERIFIED.

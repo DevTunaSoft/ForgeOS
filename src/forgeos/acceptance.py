@@ -14,6 +14,7 @@ import uuid
 
 SCHEMA_VERSION = 1
 MAX_RECORD_BYTES = 128 * 1024
+MAX_BUILD_INFO_BYTES = 4096
 HASH_CHUNK_BYTES = 1024 * 1024
 
 
@@ -75,16 +76,18 @@ def _embedded_build_commit() -> str | None:
         return None
     path = Path(bundle) / "forgeos" / "build_info.json"
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError, TypeError):
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_BUILD_INFO_BYTES + 1)
+        if len(raw) > MAX_BUILD_INFO_BYTES:
+            return None
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError):
         return None
     value = payload.get("source_commit") if isinstance(payload, dict) else None
     if not isinstance(value, str) or len(value) != 40:
         return None
     value = value.lower()
-    try:
-        int(value, 16)
-    except ValueError:
+    if any(character not in "0123456789abcdef" for character in value):
         return None
     return value
 
