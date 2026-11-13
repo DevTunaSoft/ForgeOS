@@ -2164,3 +2164,5 @@ and restore under constrained filesystems.
 - Safe Resume treats missing checkpoint payloads from nullable legacy rows as invalid per task. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
 
 - Acceptance evidence derives source-mode Git identity from the module checkout. Frozen builds use embedded artifact identity and skip source checkout lookup. PASS on Windows/Python 3.15: test_acceptance and test_cli_acceptance, 9 passed and one skip. Actual frozen execution remains UNVERIFIED.
+
+- Source acceptance reports omit the commit when tracked checkout changes are present or Git cannot verify them. PASS on Windows: 10 acceptance tests passed and one skipped. Frozen build acceptance remains UNVERIFIED.

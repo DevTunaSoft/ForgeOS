@@ -29,7 +29,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def _source_commit() -> str | None:
-    """Return exact Git HEAD only for a real source checkout; never invoke a shell."""
+    """Return Git HEAD only when tracked checkout content matches it."""
     if getattr(sys, "frozen", False):
         return None
     source = Path(__file__).resolve()
@@ -56,7 +56,15 @@ def _source_commit() -> str | None:
                 int(value, 16)
             except ValueError:
                 continue
-            return value
+            try:
+                clean = subprocess.run(
+                    ["git", "-C", str(resolved), "diff", "--quiet",
+                     "--no-ext-diff", value, "--"],
+                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=5, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                return None
+            return value if clean.returncode == 0 else None
     return None
 
 
