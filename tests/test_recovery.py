@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from forgeos.core import MAX_CHECKPOINT_BYTES, Store
 from forgeos.recovery import resume_safe
@@ -104,6 +104,34 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(report["resumed"], [])
         self.assertIn("qualified-model", report["skipped"][0]["reason"])
         runner.assert_not_called()
+
+    def test_qualification_path_resolution_failure_skips_only_damaged_task(self):
+        directory = self.parent / "qualification"
+        contract = self.qualified_managed_contract()
+        contract["qualification_directory"] = str(directory)
+        tasks = [
+            self.task(1, {"phase": "test_pending",
+                          "workspace": str(self.parent / "task-1"),
+                          "contract": contract}),
+            self.task(2, {"phase": "test_pending",
+                          "workspace": str(self.parent / "task-2"),
+                          "contract": self.contract()}),
+        ]
+        resolve = Path.resolve
+
+        def resolve_path(path, *args, **kwargs):
+            if path == directory:
+                raise RuntimeError("Symlink loop")
+            return resolve(path, *args, **kwargs)
+
+        runner = Mock(return_value={"passed": True})
+        with patch.object(Path, "resolve", resolve_path):
+            report = resume_safe(FakeStore(tasks), self.parent,
+                                 allow_host_tests=True, execute=runner)
+        self.assertEqual(report["skipped"], [
+            {"id": 1, "reason": "Qualification evidence directory is unavailable"}])
+        self.assertEqual(report["resumed"], [2])
+        runner.assert_called_once()
 
     def test_managed_checkpoint_requires_authenticated_runtime_factory(self):
         checkpoint = {

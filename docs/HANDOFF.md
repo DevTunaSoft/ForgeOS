@@ -2144,3 +2144,5 @@ and restore under constrained filesystems.
 - Expanded verification on `b5c7e1e`: all ten changed `CheckpointResumeTests` passed on Windows/Python 3.15 with `PYTHONPATH=src;tests` and writable temporary storage outside OneDrive. The set covers lease release, pending-test and pending-repair interruption, missing hashes, malformed payloads and phases, changed contracts, and tampered or oversized files. Branch-wide documentation coverage passed with `py tools/check_documentation.py --links --base origin/main --head HEAD`.
 
 - Direct resume now validates checkpoint UTF-8 after a bounded byte read and reports a clear validation error for damaged rows. The SQLite regression covers both direct reads and recovery scans. PASS on Windows/Python 3.15: 30 tests in test_recovery and test_local_resume, one skip.
+
+- Safe Resume skips a qualified-model checkpoint when the evidence directory cannot resolve, including older Python symlink-loop errors. Fault injection verified that a later eligible task still executes. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.

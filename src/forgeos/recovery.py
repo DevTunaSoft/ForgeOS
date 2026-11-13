@@ -72,7 +72,7 @@ def _checkpoint_contract(checkpoint):
                     try:
                         root = Path(directory)
                         resolved = root.resolve(strict=True)
-                    except OSError as exc:
+                    except (OSError, ValueError, RuntimeError) as exc:
                         raise ValueError(
                             "Qualification evidence directory is unavailable") from exc
                     if (not root.is_absolute() or root.is_symlink()
