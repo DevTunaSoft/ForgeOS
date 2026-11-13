@@ -2204,3 +2204,5 @@ and restore under constrained filesystems.
 - Snapshot cleanup bounds ownership marker reads and preserves the snapshot if the marker exceeds the limit. PASS on Windows: all eight test_runtime tests, including oversized marker rejection.
 
 - Snapshot setup and cleanup now recognize dangling symlinks at runtime and marker paths as invalid existing state. Windows test_runtime: eight passed. Native dangling-link coverage remains UNVERIFIED in this session.
+
+- Added native dangling-link coverage for both snapshot paths, exercising setup and cleanup and checking that the links are preserved. Windows test_runtime: eight tests passed; both link subtests skipped because the session cannot create symlinks. Native link behavior remains UNVERIFIED here.

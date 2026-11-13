@@ -104,6 +104,24 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertTrue(
             runtime.path.with_name(runtime.path.name + MARKER).exists())
 
+    def test_dangling_ownership_paths_are_preserved(self):
+        runtime = self.root / f".forgeos-exec-{self.workspace.name}"
+        marker = runtime.with_name(runtime.name + MARKER)
+        for path in (runtime, marker):
+            with self.subTest(path=path.name):
+                try:
+                    path.symlink_to(self.root / "missing",
+                                    target_is_directory=path == runtime)
+                except OSError:
+                    self.skipTest("Symlinks unavailable")
+                try:
+                    for operation in (create_test_snapshot, remove_test_snapshot):
+                        with self.assertRaises(ValueError):
+                            operation(self.workspace)
+                    self.assertTrue(path.is_symlink())
+                finally:
+                    path.unlink()
+
     def test_oversized_ownership_marker_preserves_snapshot(self):
         runtime = create_test_snapshot(self.workspace)
         marker = runtime.path.with_name(runtime.path.name + MARKER)
