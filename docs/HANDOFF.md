@@ -2287,3 +2287,8 @@ and restore under constrained filesystems.
 
 - Renamed the Hub search result column to **Hub license (unverified)** so a repository tag cannot be mistaken for a legal review before the user inspects the repository.
 - Verification: Windows GUI contract tests passed all 37 tests, including the explicit column label assertion; compilation and `git diff --check` passed.
+
+### Follow-up — explicitly request expanded Hub card data
+
+- `inspect_gguf_repo` now requests `expand=cardData,sha,tags,author` from the fixed Hub model endpoint. This is required for the structured card fields; author also falls back to the separately expanded API property when absent from card metadata. The Hub's [official API reference](https://huggingface.co/docs/huggingface_hub/main/en/package_reference/hf_api) documents `cardData` and `author` as explicit expansion properties.
+- Verification: all ten Hugging Face catalog unit tests passed. They assert the exact expansion query and author fallback, in addition to the existing bounds and pinned tree behavior. Compilation and `git diff --check` passed.

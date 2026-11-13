@@ -2,6 +2,7 @@
 import io
 import json
 import unittest
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 from forgeos.huggingface_catalog import (
     MAX_HUB_JSON_BYTES, list_gguf_files, search_gguf,
@@ -114,6 +115,17 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         self.assertNotIn("unsafe_unknown_field", result["claims"])
         self.assertEqual(len(result["files"]), 1)
         self.assertIn("/tree/" + "d" * 40, opened.call_args.args[0].full_url)
+        details_url = opened.call_args_list[0].args[0].full_url
+        self.assertEqual(parse_qs(urlsplit(details_url).query)["expand"],
+                         ["cardData,sha,tags,author"])
+
+    def test_repo_inspection_uses_expanded_author_when_card_data_omits_it(self):
+        from forgeos.huggingface_catalog import inspect_gguf_repo
+        metadata = {"author": "  Qwen  ", "sha": "e" * 40}
+        with patch("forgeos.huggingface_catalog.urlopen", side_effect=[
+                Response(json.dumps(metadata).encode()), Response(b"[]")]):
+            result = inspect_gguf_repo("Qwen/model-GGUF")
+        self.assertEqual(result["claims"]["author"], "Qwen")
 
     def test_repo_inspection_rejects_private_or_gated_repo_before_file_lookup(self):
         from forgeos.huggingface_catalog import inspect_gguf_repo

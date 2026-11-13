@@ -99,7 +99,8 @@ def inspect_gguf_repo(repo: str) -> dict:
     if not isinstance(repo, str) or not REPO_ID.fullmatch(repo):
         raise ValueError("Invalid Hugging Face repository identifier")
     url = ("https://huggingface.co/api/models/" +
-           "/".join(quote(part, safe="") for part in repo.split("/")))
+           "/".join(quote(part, safe="") for part in repo.split("/")) +
+           "?expand=cardData,sha,tags,author")
     item = _hub_json(url)
     if not isinstance(item, dict) or item.get("gated") or item.get("private"):
         raise RuntimeError("Public Hugging Face repository metadata unavailable")
@@ -120,6 +121,10 @@ def inspect_gguf_repo(repo: str) -> dict:
                            if isinstance(v, str) and v.strip()]
                 if cleaned:
                     claims[key] = cleaned[:12]
+    if "author" not in claims and isinstance(item.get("author"), str):
+        author = " ".join(item["author"].split())[:240]
+        if author:
+            claims["author"] = author
     tags = item.get("tags")
     if "license" not in claims and isinstance(tags, list):
         license_tags = [t.split(":", 1)[1] for t in tags
