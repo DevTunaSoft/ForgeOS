@@ -2357,4 +2357,4 @@ and restore under constrained filesystems.
 
 - Added a third tab to the existing GUI with a five-step first-task workflow, keyboard navigation instructions, and plain-language advice for readiness, local endpoint, token parameter, Hub network/hash and memory failures. Buttons take users to repository selection, setup readiness, model discovery or the development tab.
 - The guide does not grant host-test authorization or perform hidden model downloads; it explains that generated tests run on the computer and that local inference does not fall back to cloud.
-- Updated the user guide and marked the roadmap item partial: real desktop screenshots and interactive guided recovery remain outstanding. Static GUI contract verification is pending.
+- Updated the user guide and marked the roadmap item partial: real desktop screenshots and interactive guided recovery remain outstanding. Verification: `test_gui_acceptance`, GUI contract, documentation and roadmap suites passed 60 tests; compileall and `git diff --check` passed. Frozen GUI rendering and visual/keyboard interaction on target Windows remain unverified.

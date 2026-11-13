@@ -12,6 +12,7 @@ class DashboardContractTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] /
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertIn('text="Getting started & help"', source)
+        self.assertIn('"Getting started & help"]', source)
         self.assertIn('text="Choose Git repository"', source)
         self.assertIn('text="Check setup"', source)
         self.assertIn('text="Find a local model"', source)
