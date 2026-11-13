@@ -77,6 +77,15 @@ def _verified_model(path: str | Path) -> tuple[Path, dict]:
         raise ValueError("Invalid GGUF verification manifest") from exc
     if not isinstance(info, dict):
         raise ValueError("Invalid GGUF verification manifest format")
+    if info.get("format") == "forgeos-local-import-v1":
+        if (set(info) != {"format", "source_path", "file", "bytes",
+                          "sha256", "provenance"}
+                or info.get("source_path") != str(target.resolve(strict=True))
+                or info.get("file") != target.name
+                or info.get("provenance") != "unknown"):
+            raise ValueError("Local GGUF import identity does not match its file")
+    elif "format" in info:
+        raise ValueError("Unsupported GGUF manifest format")
     expected = info.get("sha256")
     size = info.get("bytes")
     if (not isinstance(expected, str) or not SHA256.fullmatch(expected)

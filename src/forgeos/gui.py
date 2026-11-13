@@ -615,6 +615,7 @@ def launch(db_path, *, acceptance: bool = False):
         exe_path = tk.StringVar()
         expected_hash = tk.StringVar()
         gguf_path = tk.StringVar()
+        import_status = tk.StringVar(value="Import records a local SHA-256 without copying the GGUF.")
         memory_cap_mib = tk.StringVar()
         screening_role = tk.StringVar(value=MODEL_ROLES[0])
         screening_status = tk.StringVar(
@@ -637,6 +638,47 @@ def launch(db_path, *, acceptance: bool = False):
                 side="left", fill="x", expand=True, padx=(0, 6))
             ttk.Button(line, text="Browse", command=lambda v=variable, f=selector:
                        v.set(f() or v.get())).pack(side="left")
+
+        def import_existing_gguf():
+            if managed["busy"] or busy["value"]:
+                messagebox.showinfo(
+                    "Model operation in progress",
+                    "Wait for the current task or local model operation to finish.",
+                    parent=popup)
+                return
+            selected = filedialog.askopenfilename(
+                parent=popup, title="Import existing GGUF without copying",
+                filetypes=[("GGUF model", "*.gguf")])
+            if not selected:
+                return
+            if not messagebox.askyesno(
+                    "Record local model identity",
+                    "ForgeOS will not copy or upload this model. It will hash "
+                    "the file and create a .forgeos.json identity sidecar next "
+                    "to it. Source, revision and license provenance remain "
+                    "unknown unless you verify them separately. Continue?",
+                    parent=popup):
+                return
+            managed["busy"] = True
+            import_status.set("Hashing the existing GGUF; large files may take a while...")
+
+            def worker():
+                try:
+                    from .model_import import import_local_gguf
+                    outcome = import_local_gguf(selected)
+                    managed_events.put((
+                        "import", (popup, import_status), outcome, None))
+                except Exception as exc:
+                    managed_events.put((
+                        "import", (popup, import_status), None,
+                        f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+
+        ttk.Button(
+            panel, text="Import existing GGUF without copying…",
+            command=import_existing_gguf).pack(anchor="w", pady=(0, 4))
+        ttk.Label(panel, textvariable=import_status, wraplength=820).pack(
+            anchor="w", pady=(0, 8))
         hash_line = ttk.Frame(panel)
         hash_line.pack(fill="x", pady=(0, 7))
         ttk.Label(hash_line, text="Trusted binary SHA-256", width=23).pack(side="left")
@@ -1848,6 +1890,8 @@ def launch(db_path, *, acceptance: bool = False):
                             managed["qualification_cancel"] = None
                         if action == "install" and controller[0].winfo_exists():
                             controller[1].set("CPU runtime installation failed: " + error)
+                        if action == "import" and controller[0].winfo_exists():
+                            controller[1].set("Model import failed: " + error)
                         status.set("Managed llama.cpp operation failed")
                         log("Managed local model: " + error)
                         tabs.select(activity)
@@ -1860,6 +1904,18 @@ def launch(db_path, *, acceptance: bool = False):
                         log("Pinned CPU runtime installed: release " + outcome["tag"]
                             + ", ZIP SHA-256 " + outcome["asset_sha256"]
                             + ". Select a GGUF and Start installed CPU runtime.")
+                    elif action == "import":
+                        if controller[0].winfo_exists():
+                            gguf_path.set(outcome["path"])
+                            controller[1].set(
+                                "Imported without copying. SHA-256 "
+                                + outcome["sha256"]
+                                + ". Source/revision/license are unknown.")
+                        status.set("Local GGUF imported and SHA-256 recorded")
+                        log("Imported local GGUF without copying: "
+                            + outcome["path"] + "\nSHA-256: "
+                            + outcome["sha256"]
+                            + "\nProvenance: unknown; no source or license claim was made.")
                     elif action == "screening":
                         managed["last_used"] = time.monotonic()
                         record = outcome["record"]

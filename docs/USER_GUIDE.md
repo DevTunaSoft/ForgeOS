@@ -467,6 +467,11 @@ Pausing is cooperative, not instantaneous while a network socket read is blocked
 ForgeOS chooses a conservative default context based on available system RAM. If a manually entered context exceeds the current RAM profile, startup is refused rather than risking a large llama.cpp KV-cache allocation. The app also checks available RAM again just before launching the local server, because memory may have changed while verifying the model's large SHA-256. Close competing applications, select a smaller GGUF, or use a smaller context within the suggested memory profile, then retry. A passed check cannot promise there will never be a later out-of-memory failure.
 
 
+### Import an existing GGUF without copying
+
+In **Managed local GGUF**, select **Import existing GGUF without copying** and choose a local `.gguf` file. ForgeOS explicitly asks before hashing the selected file. It leaves the model bytes in place and writes a small `.forgeos.json` identity sidecar beside them; the containing directory must allow that sidecar to be created. ForgeOS rehashes the model before each managed inference session. This records integrity only: source repository, revision and license remain **unknown** unless you independently verify them. Do not treat the SHA-256 as proof that the model is trustworthy or licensed for your use.
+
+
 ### Recoverable GGUF retirement and restoration
 
 When you no longer want a local downloaded GGUF in the active inventory, first stop any llama.cpp server using it. The experimental CLI-only retirement feature moves the selected file and its pinned manifest into local, same-volume recovery storage. This is a reversible removal from the active list, **not disk space reclamation**. No cloud calls, inference, or deletion occur.

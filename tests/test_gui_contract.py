@@ -27,6 +27,17 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('if not startup and not allow_host_tests.get():', source)
         self.assertIn('if not acceptance and startup_resume_workspace:', source)
 
+    def test_local_gguf_import_is_explicit_and_does_not_copy_or_claim_provenance(self):
+        source = (Path(__file__).resolve().parents[1] /
+                 "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Import existing GGUF without copying…"', source)
+        self.assertIn("import_local_gguf(selected)", source)
+        self.assertIn('"provenance": "unknown"',
+                      (Path(__file__).resolve().parents[1] /
+                       "src" / "forgeos" / "model_import.py").read_text(encoding="utf-8"))
+        self.assertIn("Source/revision/license are unknown.", source)
+        self.assertIn('managed_events.put((\n                        "import"', source)
+
     def test_primary_actions_precede_expanding_queue(self):
         source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertLess(source.index('actions = ttk.Frame(dashboard)'),
