@@ -2213,3 +2213,9 @@ and restore under constrained filesystems.
 - Updated the user guide to explain the host-test impact and workspace authorization.
 - Regression evidence: Windows/Python 3.15 `py -m unittest test_desktop_settings test_gui_contract -q` passed all 39 tests; `git diff --check` passed. GUI startup behavior is also asserted in the GUI contract suite.
 - Real startup recovery on an installed Windows build remains unverified. Continue with the next highest-priority unblocked roadmap item; full release acceptance is still open.
+
+## 2026-11-13 — protect GGUFs required by blocked checkpoints
+
+- The desktop's recoverable GGUF retirement now scans blocked checkpoints using the existing bounded SQLite iterator before moving a model. A checkpoint whose managed-model SHA matches the selected GGUF prevents retirement. Oversized, unreadable, invalid-shape, or unidentified managed-model checkpoints also fail closed because their references cannot be ruled out. The scan and full model verification stay off the Tk event thread.
+- Regression evidence: Windows/Python 3.15 `py -m unittest test_recovery test_gui_contract test_model_retirement -q` passed 81 tests (five platform skips); `git diff --check` passed. Tests cover exact SHA match, unrelated model identity, and unreadable/oversized checkpoint refusal.
+- Remaining gate: no transaction spans task checkpoint creation and the retirement scan, so a separate ForgeOS process could race this check. Native Windows task/model lifecycle and external llama-server acceptance remain outstanding.

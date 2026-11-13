@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from forgeos.core import MAX_CHECKPOINT_BYTES, Store
-from forgeos.recovery import resume_safe
+from forgeos.recovery import checkpoint_references_managed_model, resume_safe
 
 
 class FakeStore:
@@ -23,7 +23,8 @@ class FakeStore:
             if task["status"] != "blocked":
                 continue
             payload = task["result"]
-            size = len(payload.encode("utf-8")) if payload is not None else None
+            size = (len(payload.encode("utf-8")) if isinstance(payload, str)
+                    else len(payload) if payload is not None else None)
             if size is not None and size > MAX_CHECKPOINT_BYTES:
                 payload = None
             yield {**task, "result": payload, "checkpoint_bytes": size}
@@ -59,6 +60,29 @@ class RecoveryTests(unittest.TestCase):
             qualification_evidence_sha256="c" * 64,
             qualification_directory="")
         return value
+
+    def test_retirement_protects_models_referenced_by_blocked_checkpoints(self):
+        contract = self.managed_contract()
+        payload = json.dumps({"phase": "test_pending", "contract": contract})
+        row = {"status": "blocked", "result": payload,
+               "checkpoint_bytes": len(payload.encode("utf-8"))}
+        self.assertTrue(checkpoint_references_managed_model(
+            FakeStore([row]), "a" * 64))
+        self.assertFalse(checkpoint_references_managed_model(
+            FakeStore([row]), "e" * 64))
+
+    def test_retirement_fails_closed_when_checkpoint_identity_is_unreadable(self):
+        for row in (
+                {"status": "blocked",
+                 "result": "x" * (MAX_CHECKPOINT_BYTES + 1)},
+                {"status": "blocked", "result": b"not json",
+                 "checkpoint_bytes": 8},
+                {"status": "blocked", "result": b"[]",
+                 "checkpoint_bytes": 2}):
+            with self.subTest(row=row):
+                with self.assertRaises(RuntimeError):
+                    checkpoint_references_managed_model(
+                        FakeStore([row]), "a" * 64)
 
     def test_qualified_managed_checkpoint_replays_exact_evidence(self):
         contract = self.qualified_managed_contract()

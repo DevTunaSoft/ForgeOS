@@ -92,6 +92,51 @@ def _checkpoint_contract(checkpoint):
     return result
 
 
+def checkpoint_references_managed_model(store, model_sha256: str) -> bool:
+    """Return whether a blocked checkpoint still needs this verified GGUF.
+
+    An unreadable or oversized checkpoint makes the answer uncertain, so model
+    retirement fails closed instead of freeing a dependency it cannot inspect.
+    The Store iterator transfers at most one bounded checkpoint page at a time.
+    """
+    if (not isinstance(model_sha256, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", model_sha256)):
+        raise ValueError("Invalid managed model SHA-256")
+    for task in store.iter_blocked_checkpoints():
+        payload = task.get("result")
+        size = task.get("checkpoint_bytes")
+        if payload is None:
+            if size is not None:
+                raise RuntimeError(
+                    "A blocked checkpoint is too large to verify model references")
+            continue
+        try:
+            if isinstance(payload, str):
+                payload = payload.encode("utf-8")
+            checkpoint = json.loads(payload.decode("utf-8"))
+        except (AttributeError, UnicodeError, ValueError) as exc:
+            raise RuntimeError(
+                "A blocked checkpoint is unreadable; model retirement is unsafe") from exc
+        if not isinstance(checkpoint, dict):
+            raise RuntimeError(
+                "A blocked checkpoint has an invalid shape; model retirement is unsafe")
+        contract = checkpoint.get("contract")
+        if contract is None:
+            continue
+        if not isinstance(contract, dict):
+            raise RuntimeError(
+                "A blocked checkpoint contract is unreadable; model retirement is unsafe")
+        if "managed_model_sha256" in contract:
+            identity = contract["managed_model_sha256"]
+            if not isinstance(identity, str) or not re.fullmatch(
+                    r"[a-f0-9]{64}", identity):
+                raise RuntimeError(
+                    "A checkpoint has an untrustworthy managed-model identity")
+            if identity == model_sha256:
+                return True
+    return False
+
+
 def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 allow_host_tests=False, execute=execute_task,
                 model_factory=Ollama, managed_model_factory=None,

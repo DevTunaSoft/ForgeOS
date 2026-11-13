@@ -790,13 +790,25 @@ def launch(db_path, *, acceptance: bool = False):
                 status.set("Retiring local GGUF after full SHA-256 verification...")
 
                 def worker():
+                    worker_store = None
                     try:
+                        from .recovery import checkpoint_references_managed_model
+                        worker_store = Store(db_path)
+                        if checkpoint_references_managed_model(
+                                worker_store, entry["sha256"]):
+                            raise RuntimeError(
+                                "A blocked task checkpoint still depends on this "
+                                "GGUF. Resume or remove that checkpoint before "
+                                "retiring the model.")
                         from .model_retirement import retire_download
                         outcome = retire_download(entry["path"])
                         retirement_events.put((index, outcome, None))
                     except Exception as exc:
                         retirement_events.put((
                             index, None, f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if worker_store is not None:
+                            worker_store.close()
                 threading.Thread(target=worker, daemon=True).start()
                 chooser.after(200, poll_retirement)
 

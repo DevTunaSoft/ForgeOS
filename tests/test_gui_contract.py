@@ -254,6 +254,9 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('if retirement["busy"]:', source)
         self.assertIn("this DOES NOT free storage space", source)
         self.assertIn('gguf_path.set("")', source)
+        self.assertIn("checkpoint_references_managed_model(", source)
+        self.assertIn('entry["sha256"]', source)
+        self.assertIn("worker_store = Store(db_path)", source)
 
     def test_restore_gui_reuses_existing_retirement_journal_and_worker(self):
         from pathlib import Path
