@@ -1430,7 +1430,7 @@ def launch(db_path, *, acceptance: bool = False):
 
     def browse_hub_models():
         """Opt-in GGUF browser and verified downloader without Tk thread blocking."""
-        from .huggingface_catalog import search_gguf, list_gguf_files
+        from .huggingface_catalog import search_gguf, inspect_gguf_repo
 
         popup = tk.Toplevel(root)
         popup.title("ForgeOS | Hugging Face GGUF catalog and downloads")
@@ -1556,7 +1556,7 @@ def launch(db_path, *, acceptance: bool = False):
                     if action == "search":
                         data = search_gguf(term)
                     elif action == "files":
-                        data = list_gguf_files(term)
+                        data = inspect_gguf_repo(term)
                     else:
                         from .gguf_download import download_gguf
                         data = download_gguf(
@@ -1631,6 +1631,8 @@ def launch(db_path, *, acceptance: bool = False):
                         "A repository listing is not a license or compatibility "
                         "verification. Select one and inspect its GGUF files.")
                 elif action == "files":
+                    repo_info = data
+                    data = repo_info["files"]
                     selected = results.selection()
                     state["inspected_repo"] = (
                         state["catalog"][int(selected[0])]["repo"]
@@ -1639,6 +1641,15 @@ def launch(db_path, *, acceptance: bool = False):
                     file_picker.configure(values=choices)
                     file_choice.set(choices[0] if choices else "")
                     download_btn.configure(state="normal" if choices else "disabled")
+                    info.insert("end", "Repository supplied card claims (unverified):\n")
+                    claims = repo_info["claims"]
+                    if claims:
+                        for key, value in claims.items():
+                            rendered = ", ".join(value) if isinstance(value, list) else value
+                            info.insert("end", f"{key}: {rendered}\n")
+                    else:
+                        info.insert("end", "No supported card fields were provided.\n")
+                    info.insert("end", "\nGGUF files (Hub-reported sizes and hashes):\n")
                     for item in data[:30]:
                         size = item["bytes"] / (1024 ** 3)
                         verified = "LFS SHA-256 provided" if item["sha256"] else "Hash unavailable"

@@ -82,6 +82,49 @@ def model_revision(repo: str) -> str:
     return item["sha"].lower()
 
 
+_CARD_FIELDS = (
+    "license", "author", "model_name", "model_type", "pipeline_tag",
+    "library_name", "base_model", "language", "datasets", "tags",
+)
+
+
+def inspect_gguf_repo(repo: str) -> dict:
+    """Return bounded Hub card claims and GGUF file metadata for a public repo.
+
+    Card values are untrusted author-supplied claims, not compatibility,
+    licensing, or safety verification.
+    """
+    if not isinstance(repo, str) or not REPO_ID.fullmatch(repo):
+        raise ValueError("Invalid Hugging Face repository identifier")
+    url = ("https://huggingface.co/api/models/" +
+           "/".join(quote(part, safe="") for part in repo.split("/")))
+    item = _hub_json(url)
+    if not isinstance(item, dict) or item.get("gated") or item.get("private"):
+        raise RuntimeError("Public Hugging Face repository metadata unavailable")
+    card = item.get("cardData")
+    claims = {}
+    if isinstance(card, dict):
+        for key in _CARD_FIELDS:
+            value = card.get(key)
+            if isinstance(value, str):
+                value = " ".join(value.split())[:240]
+                if value:
+                    claims[key] = value
+            elif isinstance(value, list):
+                cleaned = [" ".join(v.split())[:100] for v in value
+                           if isinstance(v, str) and v.strip()]
+                if cleaned:
+                    claims[key] = cleaned[:12]
+    tags = item.get("tags")
+    if "license" not in claims and isinstance(tags, list):
+        license_tags = [t.split(":", 1)[1] for t in tags
+                        if isinstance(t, str) and t.startswith("license:")]
+        if license_tags:
+            claims["license"] = license_tags[0][:100]
+    files = list_gguf_files(repo)
+    return {"repo": repo, "claims": claims, "files": files}
+
+
 def list_gguf_files(repo: str, *, revision: str = "main") -> list[dict]:
     """Inspect one repository's GGUF weights and trusted LFS hashes if exposed."""
     if not isinstance(repo, str) or not REPO_ID.fullmatch(repo):

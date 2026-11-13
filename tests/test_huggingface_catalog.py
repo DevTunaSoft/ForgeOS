@@ -92,6 +92,34 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             list_gguf_files("Qwen/Coder-GGUF", revision="../main")
 
+    def test_repo_inspection_returns_bounded_unverified_card_claims_and_files(self):
+        from forgeos.huggingface_catalog import inspect_gguf_repo
+        metadata = {"id": "Qwen/model-GGUF", "cardData": {
+            "license": "apache-2.0", "model_type": " decoder-only  ",
+            "author": "A" * 300, "unsafe_unknown_field": "ignored",
+            "language": ["en", 42, " zh "],
+        }}
+        files = [{"type": "file", "path": "model.Q4_K_M.gguf",
+                  "size": 100, "lfs": {"oid": "a" * 64}}]
+        with patch("forgeos.huggingface_catalog.urlopen", side_effect=[
+                Response(json.dumps(metadata).encode()),
+                Response(json.dumps(files).encode())]):
+            result = inspect_gguf_repo("Qwen/model-GGUF")
+        self.assertEqual(result["claims"]["model_type"], "decoder-only")
+        self.assertEqual(len(result["claims"]["author"]), 240)
+        self.assertEqual(result["claims"]["language"], ["en", "zh"])
+        self.assertNotIn("unsafe_unknown_field", result["claims"])
+        self.assertEqual(len(result["files"]), 1)
+
+    def test_repo_inspection_rejects_private_or_gated_repo_before_file_lookup(self):
+        from forgeos.huggingface_catalog import inspect_gguf_repo
+        for flags in ({"private": True}, {"gated": True}):
+            with patch("forgeos.huggingface_catalog.urlopen", return_value=
+                       Response(json.dumps(flags).encode())) as opened:
+                with self.assertRaisesRegex(RuntimeError, "Public"):
+                    inspect_gguf_repo("Qwen/model-GGUF")
+                self.assertEqual(opened.call_count, 1)
+
     def test_invalid_file_response_and_path(self):
         for repo in ("../../passwd", "https://example.org/model", "name"):
             with self.assertRaises(ValueError):
