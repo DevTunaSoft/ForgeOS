@@ -2561,3 +2561,16 @@ and restore under constrained filesystems.
   both model files have been deleted. The test confirms the old registry
   identity survives and a subsequent purge retry removes it successfully; the
   imported-model suite now passes 20 tests (1 platform skip).
+
+### Follow-up — constrain Hugging Face metadata redirects
+
+- Public Hub JSON metadata requests now use an opener with ambient proxies
+  disabled and permit redirects only to literal HTTPS `huggingface.co` on its
+  default port. Cross-origin, downgrade, deceptive-host and credential-bearing
+  redirect targets fail closed. This is limited to the opt-in metadata client;
+  the separate weight downloader retains its own pinned revision, LFS digest
+  and redirect policy.
+- Added redirect and proxy-opener regressions. Verification: catalog, download,
+  inventory, import, retirement, GUI contract, documentation and roadmap suites
+  passed 174 tests (7 platform skips); compilation and `git diff --check`
+  passed. Live Hub redirects and CDN behavior remain unverified.

@@ -12,7 +12,9 @@ import time
 import unicodedata
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import (
+    HTTPRedirectHandler, ProxyHandler, Request, build_opener,
+)
 
 MAX_HUB_JSON_BYTES = 2 * 1024 * 1024
 MAX_HUB_RESPONSE_SECONDS = 30
@@ -28,6 +30,31 @@ WINDOWS_RESERVED_NAMES = frozenset({
 
 
 COMMIT_SHA = re.compile(r"[a-fA-F0-9]{40}\Z")
+
+
+class _HubRedirectHandler(HTTPRedirectHandler):
+    """Allow only same-origin HTTPS redirects for public Hub metadata."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            origin = urlsplit(req.full_url)
+            target = urlsplit(newurl)
+            target_port = target.port
+        except ValueError as exc:
+            raise RuntimeError("Hugging Face returned an invalid redirect") from exc
+        if (origin.scheme != "https" or origin.hostname != "huggingface.co"
+                or target.scheme != "https" or target.hostname != "huggingface.co"
+                or target_port not in (None, 443)
+                or target.username is not None or target.password is not None):
+            raise RuntimeError(
+                "Hugging Face metadata redirected outside its trusted HTTPS origin")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open_hub(request: Request, *, timeout: float):
+    """Open Hub metadata without ambient proxies or cross-origin redirects."""
+    opener = build_opener(ProxyHandler({}), _HubRedirectHandler())
+    return opener.open(request, timeout=timeout)
 
 
 def _clean_claim(value: str, limit: int) -> str:
@@ -88,7 +115,7 @@ def _hub_json_response(url: str) -> tuple[object, str | None]:
                                 "User-Agent": "ForgeOS-model-catalog/0.1"})
     deadline = time.monotonic() + MAX_HUB_RESPONSE_SECONDS
     content = bytearray()
-    with urlopen(req, timeout=15) as response:
+    with _open_hub(req, timeout=15) as response:
         link_header = getattr(response, "headers", {}).get("Link")
         reader = getattr(response, "read1", response.read)
         while True:
