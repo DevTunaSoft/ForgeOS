@@ -74,6 +74,14 @@ loading remain outside these adapters, so there is no claimed full
 resource governor or native GGUF execution. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
+Managed llama.cpp startup additionally verifies that the loopback listener PID
+matches ForgeOS's child before authenticated model discovery. The catalog
+request checks ownership immediately before and after the HTTP exchange and
+startup checks once more before reporting readiness. This narrows the
+port-rebinding window; it does not bind the TCP connection atomically to a
+process. Target-host Windows IP Helper access and real server identity still
+need acceptance.
+
 ## Low-memory SQLite read boundary
 
 The persistent `Store.get()` API remains available for explicit detailed history and evidence inspection, but **regular development, planning and manual test actions** use the narrower `Store.get_task_inputs()` projection. Its normal path selects only the project, status and bounded UTF-8 task description, without fetching historical result/error data. Direct resumption uses the same bounded projection but requests an existing checkpoint only when at most 64 KiB. Oversized legacy description/checkpoint values are rejected within the SQLite projection before Python materializes them; the original stored rows are not modified.

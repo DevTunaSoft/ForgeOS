@@ -2730,3 +2730,34 @@ and restore under constrained filesystems.
   (51 passed, 1 platform skip). `py -m compileall -q src tests`,
   `git diff --check`, and `py scripts/check_handoff.py --json` passed.
   Hosted CI and physical Windows acceptance remain open.
+
+### 2026-11-13 — close the managed-startup catalog ownership window
+
+- **Objective and rationale:** continue roadmap work package B / issue #53 by
+  ensuring that the authenticated model-catalog request used during startup
+  checks the managed child PID before and after the HTTP exchange. Previously,
+  startup checked listener ownership before constructing the client but did
+  not attach the ownership callback to that catalog request.
+- **Changed paths:** `src/forgeos/managed_llama.py`,
+  `tests/test_managed_llama.py`, `docs/ARCHITECTURE.md`,
+  `docs/MULTI_LLM_ROADMAP.md`, and this handoff.
+- **Verification:** `py -m unittest tests.test_managed_llama tests.test_documentation -v`
+  passed 54 tests with 7 platform/environment skips. Five focused listener
+  ownership regressions also passed. A combined run including
+  `tests.test_local_models` had one host restriction: its live loopback HTTP
+  trickle test could not bind/connect in this managed Windows session
+  (WinError 10013 surfaced through the adapter). The separate selected
+  ownership-before/after request tests passed. Compilation and diff checks
+  passed.
+- **Limits / security:** this narrows but does not eliminate TOCTOU; a TCP
+  connection is still not atomically bound to a PID. The direct Windows
+  IP Helper listener probe remains denied (error 5), and actual llama.cpp
+  install, inference, restart and target-hardware memory acceptance remain
+  unverified. No benchmark or production-readiness claim follows from these
+  mocked ownership checks. No measurable resource impact is expected; no
+  memory benchmark was run.
+- **Branch:** `fix/safe-resume-malformed-checkpoints`; base
+  `b961a5e5424d0482713d52307fb955de05e5eb4e`. Implementation commit and
+  PR head will be recorded after push. Next: continue issue #53 with process
+  identity and crash/rapid-restart fault injection; retain real Windows
+  acceptance gate.

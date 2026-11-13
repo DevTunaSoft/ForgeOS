@@ -753,6 +753,10 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         def read_health(request, *, timeout):
             open_calls.append(request)
             return _Response(b'{"status":"ok"}')
+        def authenticated_catalog(client):
+            client._verify_listener_owner()
+            client._verify_listener_owner()
+            return [{"name": ALIAS}]
         with (patch("forgeos.managed_llama._verified_model",
                     return_value=(self.model, {"sha256": self.model_sha})),
               patch("forgeos.managed_llama._verified_runtime",
@@ -763,7 +767,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value=12345) as listener_owner,
               patch("forgeos.managed_llama._open", side_effect=read_health),
               patch("forgeos.managed_llama.LocalChatModel.installed",
-                    return_value=[{"name": ALIAS}]),
+                    autospec=True, side_effect=authenticated_catalog),
               patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
                     return_value=2 * 1024**3) as memory_ceiling,
               patch("forgeos.managed_llama.subprocess.Popen",
@@ -780,7 +784,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(info["model"], ALIAS)
             self.assertEqual(info["sha256"], self.model_sha)
             self.assertEqual(info["runtime_sha256"], self.exe_sha)
-            listener_owner.assert_called_once_with(17089)
+            self.assertEqual(listener_owner.call_count, 4)
+            listener_owner.assert_called_with(17089)
             self.assertEqual(info["memory_ceiling_bytes"], 2 * 1024**3)
             memory_ceiling.assert_called_once()
             self.assertEqual(
@@ -861,6 +866,50 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     executable=self.exe, executable_sha256=self.exe_sha,
                     model_path=self.model, timeout=1, context=512, threads=1)
         installed.assert_not_called()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+
+    def test_managed_start_rechecks_owner_before_authenticated_catalog_request(self):
+        proc = Mock()
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+        proc.pid = 12345
+        controller = ManagedLlamaServer()
+        health_calls = []
+
+        def read_health(request, *, timeout):
+            health_calls.append(request.full_url)
+            return _Response(b'{"status":"ok"}')
+
+        with (patch("forgeos.managed_llama._verified_model",
+                    return_value=(self.model, {"sha256": self.model_sha})),
+              patch("forgeos.managed_llama._verified_runtime",
+                    return_value=self.exe),
+              patch("forgeos.managed_llama._unused_loopback_port",
+                    return_value=17091),
+              patch("forgeos.managed_llama._listener_owner_pid",
+                    side_effect=[12345, 54321]) as owner_pid,
+              patch("forgeos.managed_llama.local_memory_settings",
+                    return_value={"num_ctx": 1024}),
+              patch("forgeos.managed_llama.safe_model_file_budget",
+                    return_value=1024),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
+              patch("forgeos.managed_llama.subprocess.Popen",
+                    return_value=proc),
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)),
+              patch("forgeos.managed_llama._release_windows_job"),
+              patch("forgeos.managed_llama._open", side_effect=read_health),
+              patch("forgeos.local_models._open") as catalog_open,
+              patch("forgeos.managed_llama._terminate_posix_group")):
+            with self.assertRaisesRegex(RuntimeError, "ownership changed"):
+                controller.start(
+                    executable=self.exe, executable_sha256=self.exe_sha,
+                    model_path=self.model, timeout=1, context=512, threads=1)
+        self.assertEqual(health_calls, ["http://127.0.0.1:17091/health"])
+        self.assertEqual(owner_pid.call_count, 2)
+        catalog_open.assert_not_called()
         self.assertIsNone(controller.process)
         self.assertIsNone(controller.api_key)
 

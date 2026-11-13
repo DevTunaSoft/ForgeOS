@@ -873,9 +873,15 @@ class ManagedLlamaServer:
                         raise RuntimeError(
                             "Loopback listener is not owned by the launched "
                             "llama-server process; refusing to send model prompts")
-                    models = LocalChatModel(
+                    client = LocalChatModel(
                         backend="llama.cpp", model=ALIAS,
-                        endpoint=self.endpoint, api_key=key).installed()
+                        endpoint=self.endpoint, api_key=key)
+                    # Bind both sides of the authenticated catalog exchange
+                    # to the child PID. The earlier readiness PID check alone
+                    # left a rebinding window before/during the request.
+                    client._listener_owner_check = self.verify_listener_ownership
+                    models = client.installed()
+                    self.verify_listener_ownership()
                     if not any(item["name"] == ALIAS for item in models):
                         raise RuntimeError("Managed server reported the wrong model")
                     self.model_identity = dict(manifest)
