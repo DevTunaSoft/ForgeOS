@@ -354,7 +354,11 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                          or int(content_length) != remaining)):
                     raise RuntimeError("Model download content length mismatch")
                 try:
-                    with partial.open("ab") as output:
+                    # Unbuffered writes make completed chunks visible if the
+                    # process is terminated between progress callbacks. The
+                    # OS cache is sufficient for process-crash recovery; the
+                    # finally block still fsyncs on ordinary exits.
+                    with partial.open("ab", buffering=0) as output:
                         try:
                             while position < size:
                                 _check_cancelled(cancel_event)

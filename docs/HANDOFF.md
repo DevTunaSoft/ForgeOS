@@ -2436,3 +2436,8 @@ and restore under constrained filesystems.
 
 - The final-evidence validator now rejects JSON `true` as schema version 1, boolean latency, `NaN`, infinities, negative values and integers that overflow when normalized to the measured floating-point latency field.
 - Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 89 tests (one platform skip); `python -m compileall -q src/forgeos` and `git diff --check` passed. This is record validation evidence only; model quality and target-Windows qualification remain open.
+
+### Follow-up — verify GGUF resume after abrupt process termination
+
+- GGUF transfer chunks now use unbuffered file writes so bytes reported complete by the worker are visible after a hard process exit. Added a subprocess regression that exits immediately after the first 1 MiB chunk, verifies the retained bytes, then resumes using the exact HTTP range and pinned SHA before publication.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 139 tests (6 platform skips); compilation and `git diff --check` passed. This proves local process-crash resume with a deterministic fake HTTP response; real CDN failures and physical Windows power-loss durability remain unverified.

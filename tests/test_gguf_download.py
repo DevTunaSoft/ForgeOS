@@ -3,6 +3,10 @@ import hashlib
 import io
 import json
 import errno
+import os
+import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 from pathlib import Path
 from threading import Event
@@ -145,6 +149,53 @@ class GGUFDownloadTests(unittest.TestCase):
             result = self.download(cancel_event=paused)
             network.assert_not_called()
         self.assertEqual(result["status"], "verified")
+
+    def test_process_crash_after_chunk_resumes_exact_pinned_range(self):
+        body = b"GGUF" + b"x" * (2 * 1024 * 1024)
+        digest = hashlib.sha256(body).hexdigest()
+        child = textwrap.dedent("""
+            import hashlib, io, os, sys
+            from forgeos import gguf_download as gd
+            body = b"GGUF" + b"x" * (2 * 1024 * 1024)
+            class Response(io.BytesIO):
+                def getcode(self): return 200
+                def __enter__(self): return self
+                def __exit__(self, *args): self.close()
+                @property
+                def headers(self): return {"Content-Length": str(len(body))}
+            gd.list_gguf_files = lambda repo, revision=None: [{
+                "path": "coder-Q4_K_M.gguf", "bytes": len(body),
+                "sha256": hashlib.sha256(body).hexdigest()}]
+            gd._open_weight = lambda request, timeout: Response(body)
+            def progress(stage, count, total):
+                if stage == "download" and count >= gd.CHUNK_BYTES:
+                    os._exit(73)
+            gd.download_gguf(
+                "Qwen/Coder-GGUF", "coder-Q4_K_M.gguf",
+                revision="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                directory=sys.argv[1], progress_callback=progress)
+        """)
+        child_env = os.environ.copy()
+        result = subprocess.run(
+            [sys.executable, "-c", child, str(self.root)],
+            cwd=Path(__file__).resolve().parents[1], env=child_env,
+            capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 73, result.stderr.decode(errors="replace"))
+        partial = next(self.root.rglob("*.part"))
+        self.assertEqual(partial.stat().st_size, 1024 * 1024)
+        self.assertEqual(partial.read_bytes()[:4], b"GGUF")
+
+        with patch("forgeos.gguf_download.list_gguf_files", return_value=[{
+                "path": FILE, "bytes": len(body), "sha256": digest}]), \
+             patch("forgeos.gguf_download._open_weight", return_value=Response(
+                 body[1024 * 1024:], status=206, headers={
+                     "Content-Length": str(len(body) - 1024 * 1024),
+                     "Content-Range": (
+                         f"bytes {1024 * 1024}-{len(body)-1}/{len(body)}")})) as opened:
+            restored = self.download(revision=REVISION)
+        self.assertEqual(opened.call_args.args[0].get_header("Range"),
+                         "bytes=1048576-")
+        self.assertEqual(Path(restored["path"]).read_bytes(), body)
 
     def test_invalid_pause_control_rejected_before_metadata(self):
         with patch("forgeos.gguf_download.model_revision") as revision:
