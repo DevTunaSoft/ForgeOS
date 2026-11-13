@@ -10,6 +10,14 @@ from forgeos.acceptance import (
 
 
 class AcceptanceSnapshotTests(unittest.TestCase):
+    def test_frozen_report_does_not_inspect_the_current_checkout(self):
+        from forgeos.acceptance import _source_commit
+
+        with patch("forgeos.acceptance.sys.frozen", True, create=True), \
+             patch("forgeos.acceptance.subprocess.run") as git:
+            self.assertIsNone(_source_commit())
+        git.assert_not_called()
+
     def test_host_snapshot_is_bounded_and_secret_free(self):
         with patch("forgeos.acceptance.platform.system", return_value="Windows"), \
              patch("forgeos.acceptance._source_commit", return_value="a" * 40), \

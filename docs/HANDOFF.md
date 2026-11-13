@@ -2162,3 +2162,5 @@ and restore under constrained filesystems.
 - BLOCKED: Local packaging lacks the workflow's Python 3.12 and PyInstaller. `ollama list` encountered a loopback socket permission denial, so live Ollama acceptance is UNVERIFIED. Frozen executable smoke and physical Windows release acceptance are UNVERIFIED.
 
 - Safe Resume treats missing checkpoint payloads from nullable legacy rows as invalid per task. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
+
+- Acceptance evidence derives source-mode Git identity from the module checkout. Frozen builds use embedded artifact identity and skip source checkout lookup. PASS on Windows/Python 3.15: test_acceptance and test_cli_acceptance, 9 passed and one skip. Actual frozen execution remains UNVERIFIED.

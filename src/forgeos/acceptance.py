@@ -30,13 +30,11 @@ def _sha256_file(path: Path) -> str:
 
 def _source_commit() -> str | None:
     """Return exact Git HEAD only for a real source checkout; never invoke a shell."""
-    roots = []
-    cwd = Path.cwd()
-    roots.append(cwd)
+    if getattr(sys, "frozen", False):
+        return None
     source = Path(__file__).resolve()
-    roots.extend(source.parents[:4])
     seen = set()
-    for root in roots:
+    for root in source.parents[:4]:
         try:
             resolved = root.resolve()
         except OSError:
