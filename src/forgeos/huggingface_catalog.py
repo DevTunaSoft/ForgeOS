@@ -8,16 +8,43 @@ from __future__ import annotations
 import json
 import re
 import socket
+import unicodedata
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MAX_HUB_JSON_BYTES = 2 * 1024 * 1024
+MAX_GGUF_BYTES = 16 * 1024 ** 3
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
 SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
+SAFE_FILE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
+WINDOWS_RESERVED_NAMES = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{x}" for x in range(1, 10)),
+    *(f"LPT{x}" for x in range(1, 10)),
+})
 
 
 COMMIT_SHA = re.compile(r"[a-fA-F0-9]{40}\Z")
+
+
+def _clean_claim(value: str, limit: int) -> str:
+    """Normalize untrusted card text and remove Unicode control/format chars."""
+    visible = "".join(" " if unicodedata.category(char).startswith("C") else char
+                      for char in value)
+    return " ".join(visible.split())[:limit]
+
+
+def _safe_hub_gguf_path(name: object) -> bool:
+    if (not isinstance(name, str) or len(name) > 320
+            or not name.lower().endswith(".gguf") or "\\" in name
+            or ":" in name):
+        return False
+    segments = name.split("/")
+    return (len(segments) <= 8 and all(
+        SAFE_FILE_PART.fullmatch(part) and part not in (".", "..")
+        and part.split(".", 1)[0].upper() not in WINDOWS_RESERVED_NAMES
+        for part in segments))
 
 
 def catalog_error_message(exc: Exception) -> str:
@@ -130,8 +157,9 @@ def search_gguf_page(query: str, *, limit: int = 15,
         if not ("gguf" in name.lower() or
                 any(isinstance(t, str) and "gguf" in t.lower() for t in tags)):
             continue
-        license_tags = [t.split(":", 1)[1] for t in tags
+        license_tags = [_clean_claim(t.split(":", 1)[1], 100) for t in tags
                         if isinstance(t, str) and t.startswith("license:")]
+        license_tags = [tag for tag in license_tags if tag]
         result.append({
             "repo": name, "downloads": entry.get("downloads", 0)
             if type(entry.get("downloads")) is int else 0,
@@ -193,26 +221,28 @@ def inspect_gguf_repo(repo: str) -> dict:
         for key in _CARD_FIELDS:
             value = card.get(key)
             if isinstance(value, str):
-                value = " ".join(value.split())[:240]
+                value = _clean_claim(value, 240)
                 if value:
                     claims[key] = value
             elif type(value) is int and 0 <= value <= 10**15:
                 claims[key] = str(value)
             elif isinstance(value, list):
-                cleaned = [" ".join(v.split())[:100] for v in value
+                cleaned = [_clean_claim(v, 100) for v in value
                            if isinstance(v, str) and v.strip()]
+                cleaned = [v for v in cleaned if v]
                 if cleaned:
                     claims[key] = cleaned[:12]
     if "author" not in claims and isinstance(item.get("author"), str):
-        author = " ".join(item["author"].split())[:240]
+        author = _clean_claim(item["author"], 240)
         if author:
             claims["author"] = author
     tags = item.get("tags")
     if "license" not in claims and isinstance(tags, list):
-        license_tags = [t.split(":", 1)[1] for t in tags
+        license_tags = [_clean_claim(t.split(":", 1)[1], 100) for t in tags
                         if isinstance(t, str) and t.startswith("license:")]
+        license_tags = [tag for tag in license_tags if tag]
         if license_tags:
-            claims["license"] = license_tags[0][:100]
+            claims["license"] = license_tags[0]
     files = list_gguf_files(repo, revision=revision.lower())
     return {"repo": repo, "revision": revision.lower(),
             "claims": claims, "files": files}
@@ -237,9 +267,8 @@ def list_gguf_files(repo: str, *, revision: str = "main") -> list[dict]:
             continue
         name = item.get("path")
         size = item.get("size")
-        if (not isinstance(name, str) or not name.lower().endswith(".gguf")
-                or type(size) is not int or size <= 0
-                or ".." in name.split("/") or name.startswith("/")):
+        if (not _safe_hub_gguf_path(name) or type(size) is not int
+                or not 0 < size <= MAX_GGUF_BYTES):
             continue
         lfs = item.get("lfs")
         oid = lfs.get("oid") if isinstance(lfs, dict) else None

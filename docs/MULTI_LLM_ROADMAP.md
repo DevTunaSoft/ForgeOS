@@ -95,7 +95,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [x] **Partial inventory baseline:** bounded offline inventory and explicit streaming re-verification exist in `model_inventory.py`; downloaded weights can be classified as missing, size-mismatch or present-not-reverified without an always-running database. Imported/loaded/unsupported state coverage remains open.
 - [x] **Partial lifecycle baseline:** reversible explicit retirement/restore with recovery journal exists in `model_retirement.py` and the existing GUI/CLI. Update, repair, imported-weight handling, active/checkpoint protection and final atomic no-clobber Windows semantics remain open.
 - [ ] Support model revision pinning, storage quotas, resume limits, deduplicated file references and readable diagnosis of failed operations.
-- [ ] Test malicious Hub metadata, invalid names, bad file sizes, missing license, model-card changes and model disappearance.
+- [ ] Complete malicious Hub metadata, invalid-name, missing-license, model-card-change and model-disappearance coverage. **Partial adversarial metadata coverage:** card strings remove Unicode control/format characters; catalog file paths reject Windows-reserved/device names, control characters and unsafe traversal; GGUF sizes above ForgeOS's 16 GiB downloader cap are ignored. Real Hub mutation/disappearance behavior remains unverified.
 
 **Exit:** browse → examine terms/hardware → download/recover → verify → use with managed runtime → stop → update/remove safely, all in ForgeOS.
 

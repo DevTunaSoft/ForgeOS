@@ -2342,3 +2342,8 @@ and restore under constrained filesystems.
 
 - The local OpenAI-compatible request adapter now translates common HTTP statuses and connection/timeout errors into plain-language guidance without exposing the local URL or raw response body. HTTP error responses are always closed. Model/server log details remain the user's local diagnostic source.
 - Added regression cases for HTTP response closure, unsupported token parameter guidance, and redaction of URLs and raw networking messages. Updated the compatibility guide and roadmap; target-runtime diagnostics remain open.
+
+### Follow-up — harden untrusted Hugging Face metadata display
+
+- Card text now replaces Unicode control/format characters with normalized spaces and clips supported claims; license tags receive the same cleanup. GGUF file rows are excluded when their paths contain traversal, invalid characters, Windows device names or exceed the downloader's 16 GiB per-file cap. This also prevents extreme metadata integers from causing GUI size conversion errors.
+- Added adversarial tests for bidi/NUL/newline text, unsafe file paths, Windows reserved names and oversized file claims. Roadmap coverage remains partial because live model-card mutation/disappearance and other Hub edge cases still require network acceptance.

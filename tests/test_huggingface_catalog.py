@@ -182,6 +182,37 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         self.assertEqual(parse_qs(urlsplit(details_url).query)["expand"],
                          ["cardData,sha,tags,author"])
 
+    def test_untrusted_card_control_characters_are_normalized(self):
+        from forgeos.huggingface_catalog import inspect_gguf_repo
+        metadata = {
+            "cardData": {"model_name": "safe\u202e\x00 name",
+                         "language": ["en\nUS", "\x00"]},
+            "tags": ["license:apache-2.0\u202e\nspoof"],
+            "sha": "f" * 40,
+        }
+        with patch("forgeos.huggingface_catalog.urlopen", side_effect=[
+                Response(json.dumps(metadata).encode()), Response(b"[]")]):
+            result = inspect_gguf_repo("Qwen/model-GGUF")
+        self.assertEqual(result["claims"]["model_name"], "safe name")
+        self.assertEqual(result["claims"]["language"], ["en US"])
+        self.assertEqual(result["claims"]["license"], "apache-2.0 spoof")
+
+    def test_gguf_file_listing_rejects_unsafe_paths_and_oversized_sizes(self):
+        from forgeos.huggingface_catalog import list_gguf_files
+        payload = [
+            {"type": "file", "path": "good/model-Q4_K_M.gguf", "size": 1024,
+             "lfs": {"oid": "a" * 64}},
+            {"type": "file", "path": "../escape.gguf", "size": 1024},
+            {"type": "file", "path": "line\nbreak.gguf", "size": 1024},
+            {"type": "file", "path": "CON.gguf", "size": 1024},
+            {"type": "file", "path": "huge.gguf", "size": 16 * 1024**3 + 1},
+        ]
+        with patch("forgeos.huggingface_catalog.urlopen",
+                   return_value=Response(json.dumps(payload).encode())):
+            result = list_gguf_files("Qwen/model-GGUF", revision="a" * 40)
+        self.assertEqual([row["path"] for row in result],
+                         ["good/model-Q4_K_M.gguf"])
+
     def test_repo_inspection_uses_expanded_author_when_card_data_omits_it(self):
         from forgeos.huggingface_catalog import inspect_gguf_repo
         metadata = {"author": "  Qwen  ", "sha": "e" * 40}
