@@ -329,7 +329,7 @@ class Store:
             sql = (
                 f"SELECT {fields},"
                 "CASE WHEN length(CAST(result AS BLOB)) <= ? "
-                "THEN result ELSE NULL END AS result,"
+                "THEN CAST(result AS BLOB) ELSE NULL END AS result,"
                 "length(CAST(result AS BLOB)) AS checkpoint_bytes "
                 "FROM tasks WHERE id=?"
             )
@@ -345,7 +345,13 @@ class Store:
         if resume and (row["checkpoint_bytes"] is None
                        or row["checkpoint_bytes"] > MAX_CHECKPOINT_BYTES):
             raise ValueError("Resume checkpoint exceeds 64 KiB safety limit")
-        return dict(row)
+        task = dict(row)
+        if resume:
+            try:
+                task["result"] = task["result"].decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("Resume checkpoint is not valid UTF-8") from exc
+        return task
 
     def update(self, task_id: int, status: str, *, error: str = '',
                result: str = '', increment: bool = False):

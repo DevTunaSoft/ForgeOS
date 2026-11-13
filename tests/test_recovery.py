@@ -388,6 +388,8 @@ class RecoveryTests(unittest.TestCase):
             store.db.execute(
                 "UPDATE tasks SET status='blocked', result=CAST(? AS TEXT) WHERE id=?",
                 (b'\xff', damaged))
+        with self.assertRaisesRegex(ValueError, "checkpoint is not valid UTF-8"):
+            store.get_task_inputs(damaged, resume=True)
         runner = Mock(return_value={"passed": True})
         report = resume_safe(store, self.parent, allow_host_tests=True,
                              execute=runner)
