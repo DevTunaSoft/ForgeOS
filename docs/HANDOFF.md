@@ -2329,3 +2329,4 @@ and restore under constrained filesystems.
 
 - The actual ForgeOS catalog UI rendered the new pagination controls, but a user-triggered live search in this sandbox returned `URLError` with Windows DNS error 11001. Added catalog error translation for DNS/connectivity/timeouts and Hub 401/403/404/429/5xx responses, with guidance that does not expose request URLs or low-level resolver text.
 - Verification: the final combined catalog, GUI contract, docs/roadmap, inventory, downloader and CLI run passed 101 tests (two platform skips). This includes DNS redaction and common HTTP cases. Source compilation and `git diff --check` passed. The live UI failure was reproduced; target network/API success remains unverified.
+- The HTTP error translator now closes the response object after extracting its status. Focused catalog tests assert closure and still pass all 13 cases without `ResourceWarning`.

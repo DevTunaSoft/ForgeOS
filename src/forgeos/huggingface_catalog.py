@@ -23,16 +23,20 @@ COMMIT_SHA = re.compile(r"[a-fA-F0-9]{40}\Z")
 def catalog_error_message(exc: Exception) -> str:
     """Convert common Hub HTTP/network failures to actionable UI text."""
     if isinstance(exc, HTTPError):
-        if exc.code in (401, 403):
-            return ("Hugging Face denied access. The repository may be private "
-                    "or gated; inspect its access requirements in a browser.")
-        if exc.code == 404:
-            return "Hugging Face could not find this repository, file, or revision."
-        if exc.code == 429:
-            return "Hugging Face is rate limiting requests. Wait briefly, then retry."
-        if 500 <= exc.code <= 599:
-            return f"Hugging Face is temporarily unavailable (HTTP {exc.code})."
-        return f"Hugging Face returned HTTP {exc.code}. Check the repository and retry."
+        try:
+            if exc.code in (401, 403):
+                return ("Hugging Face denied access. The repository may be private "
+                        "or gated; inspect its access requirements in a browser.")
+            if exc.code == 404:
+                return "Hugging Face could not find this repository, file, or revision."
+            if exc.code == 429:
+                return "Hugging Face is rate limiting requests. Wait briefly, then retry."
+            if 500 <= exc.code <= 599:
+                return f"Hugging Face is temporarily unavailable (HTTP {exc.code})."
+            return (f"Hugging Face returned HTTP {exc.code}. "
+                    "Check the repository and retry.")
+        finally:
+            exc.close()
     if isinstance(exc, URLError):
         reason = exc.reason
         if isinstance(reason, socket.gaierror):

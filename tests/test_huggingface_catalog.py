@@ -26,10 +26,9 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         from forgeos.huggingface_catalog import catalog_error_message
         def http_message(code):
             error = HTTPError("https://huggingface.co", code, "test", {}, None)
-            try:
-                return catalog_error_message(error)
-            finally:
-                error.close()
+            message = catalog_error_message(error)
+            self.assertTrue(error.closed)
+            return message
         dns = catalog_error_message(URLError(socket.gaierror(11001, "no host")))
         self.assertIn("DNS lookup failed", dns)
         self.assertNotIn("no host", dns)
