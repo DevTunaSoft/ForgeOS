@@ -276,5 +276,5 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   marked output, hard cap failure and limit validation. All 12 workspace tests
   passed; after the hard-cap regression was added, the two affected workspace
   cases plus documentation, roadmap and handoff checks passed 23 tests.
-  Compilation and diff checks passed. Exact revision will be recorded in the
-  cumulative handoff. Hosted CI remains skipped for the draft PR.
+  Compilation and diff checks passed. Implementation commit is recorded in
+  the cumulative handoff. Hosted CI remains skipped for the draft PR.

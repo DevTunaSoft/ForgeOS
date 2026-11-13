@@ -2652,6 +2652,8 @@ and restore under constrained filesystems.
 
 ### Follow-up — bound Git workspace output
 
+- **Implementation commit:** `369884155795ac955b678ca143c0c4ecccefbd78` on
+  `fix/safe-resume-malformed-checkpoints`.
 - Extended the canonical `workspace.py` Git wrapper to drain merged command
   output incrementally, enforce a 1 MiB cap, and terminate an overflowing
   command. The workspace diff API returns at most a configurable (default
