@@ -79,6 +79,15 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("PRODUCT_VISION.md", policy)
         self.assertIn("[step-by-step user manual](USER_GUIDE.md)", vision)
 
+    def test_model_compatibility_guide_tracks_implemented_source_state(self):
+        guide = (docs.ROOT / "docs" / "MODEL_COMPATIBILITY.md").read_text(
+            encoding="utf-8")
+        self.assertIn("integrated on", guide)
+        self.assertNotIn("proposed multi-model feature branch", guide)
+        self.assertIn("Focused unit coverage exists", guide)
+        self.assertIn("Imported files are rehashed before managed use", guide)
+        self.assertIn("model-catalog inspect", guide)
+
     def test_relative_links_in_repository(self):
         self.assertEqual(docs.check_links(), [])
 

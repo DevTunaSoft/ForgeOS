@@ -2308,3 +2308,8 @@ and restore under constrained filesystems.
 
 - When Hub metadata matches an imported registry SHA, the catalog status now incorporates the import's current metadata-only state. It distinguishes an intact-size-but-unreverified record from a missing file, size mismatch or entry needing inspection; a saved registry hash alone is never presented as proof of current local bytes.
 - Verification: model inventory and GUI contract suites passed 47 tests (one platform skip). Added cases cover imported missing and size-mismatch records. Compilation and `git diff --check` passed.
+
+## 2026-11-13 — refresh the model compatibility guide against current source
+
+- Replaced the stale proposed-branch introduction and capability table with the current status: experimental implementation on main, exact remaining real-runtime gates, current listener-owner checks and their Windows limitation, reversible model retirement/import lifecycle, and current HF inspect/pinned-download/local-inventory workflow. Replaced proposed-test/future-phase language with existing focused coverage and actual remaining release phases; updated external-model status to avoid implying model updates or verified local bytes.
+- Verification: `python -m unittest test_documentation test_multillm_roadmap -q` passed all 15 tests. Added a documentation regression preventing reintroduction of the old branch status and ensuring current pinned-inspect/import behavior remains documented. `git diff --check` passed.
