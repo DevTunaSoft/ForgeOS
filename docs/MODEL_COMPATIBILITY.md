@@ -24,6 +24,18 @@
 | Managed-model memory evidence and idle unload | Experimental one-shot memory reporting and idle unload exist; no continuous governor | Real process-tree/RAM acceptance unverified |
 | Automatic OOM recovery | **Not implemented** | — |
 
+### Adapter capability matrix (source-level contract)
+
+| Adapter | Requests ForgeOS sends | Tools / structured output | Context and output limits | Model files / license | Version identity |
+| --- | --- | --- | --- | --- | --- |
+| Ollama | Local `/api/generate`; non-streaming; edits request JSON mode | No tool calls. JSON mode is requested for edits, then ForgeOS validates the edit manifest | ForgeOS sends bounded `num_ctx` and `num_predict` options from its memory profile | Ollama-managed model formats; ForgeOS does not verify the model license | Server version is not queried by the adapter |
+| Managed llama.cpp | Local `/v1/models` and `/v1/chat/completions`; non-streaming; sends `temperature=0` and `max_tokens` | ForgeOS sends no tool definitions or JSON-schema/response-format parameter; edit JSON is validated afterward | Output budget is sent; context ceiling remains server/model configuration and is not attested in the request | Managed path loads verified GGUF bytes; license remains a Hub/author claim requiring user review | Installed official runtime bundle and GGUF hashes are checked; live server version and physical Windows identity acceptance remain open |
+| User-managed llama.cpp, LM Studio, other loopback OpenAI-compatible | Same local `/v1/models` and non-streaming `/v1/chat/completions` request contract | No tool calls or schema parameter; ForgeOS validates the returned edit manifest | Output budget is sent; server/model context support is unknown to ForgeOS | Runtime-supported formats and model licenses are provider/user supplied and not verified by the adapter | Server version, binary provenance and model identity are not attested by generic adapters |
+
+This matrix records ForgeOS source behavior, not a guarantee that every server
+accepts the same parameters. Real backend/version compatibility profiles and
+measured context limits remain open release work.
+
 ForgeOS has one GUI and no extra Python dependencies for these adapters.
 The external endpoint adapters talk only to a server on **the same machine**.
 The **optional experimental managed GGUF control** in the existing GUI now

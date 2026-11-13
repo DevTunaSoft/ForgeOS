@@ -87,6 +87,8 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("Focused unit coverage exists", guide)
         self.assertIn("Imported files are rehashed before managed use", guide)
         self.assertIn("model-catalog inspect", guide)
+        self.assertIn("Adapter capability matrix (source-level contract)", guide)
+        self.assertIn("ForgeOS sends no tool definitions", guide)
 
     def test_relative_links_in_repository(self):
         self.assertEqual(docs.check_links(), [])

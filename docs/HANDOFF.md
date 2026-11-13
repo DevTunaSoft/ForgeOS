@@ -2313,3 +2313,8 @@ and restore under constrained filesystems.
 
 - Replaced the stale proposed-branch introduction and capability table with the current status: experimental implementation on main, exact remaining real-runtime gates, current listener-owner checks and their Windows limitation, reversible model retirement/import lifecycle, and current HF inspect/pinned-download/local-inventory workflow. Replaced proposed-test/future-phase language with existing focused coverage and actual remaining release phases; updated external-model status to avoid implying model updates or verified local bytes.
 - Verification: `python -m unittest test_documentation test_multillm_roadmap -q` passed all 15 tests. Added a documentation regression preventing reintroduction of the old branch status and ensuring current pinned-inspect/import behavior remains documented. `git diff --check` passed.
+
+### Follow-up — document adapter capability boundaries
+
+- Added a source-level matrix for Ollama, managed llama.cpp and generic local OpenAI-compatible endpoints. It records request paths/parameters, tools and schema behavior, ForgeOS versus server-controlled context limits, model/license provenance, and available runtime version identity. The roadmap marks this as partial; real compatibility profiles and measured runtime limits remain open.
+- Verification: documentation and roadmap contract suites passed all 15 tests; the documentation test checks the matrix and no-tool contract language. `git diff --check` passed.
