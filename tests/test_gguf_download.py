@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import errno
 from types import SimpleNamespace
 from pathlib import Path
 from threading import Event
@@ -395,6 +396,55 @@ class GGUFDownloadTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Insufficient disk"):
                 self.download()
             network.assert_not_called()
+
+    def test_mid_transfer_disk_full_retains_partial_and_resumes(self):
+        original_open = Path.open
+
+        class DiskFullWriter:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+
+            def write(self, data):
+                self.stream.write(data[:5])
+                raise OSError(errno.ENOSPC, "No space left on device")
+
+            def flush(self):
+                return self.stream.flush()
+
+            def fileno(self):
+                return self.stream.fileno()
+
+        def open_with_disk_full(path, mode="r", *args, **kwargs):
+            stream = original_open(path, mode, *args, **kwargs)
+            if mode == "ab" and str(path).endswith(".gguf.part"):
+                return DiskFullWriter(stream)
+            return stream
+
+        with patch.object(Path, "open", new=open_with_disk_full), \
+             patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            with self.assertRaisesRegex(RuntimeError, "Disk space ran out"):
+                self.download()
+        partial = next(self.root.rglob("*.gguf.part"))
+        self.assertEqual(partial.read_bytes(), BODY[:5])
+        self.assertTrue(partial.with_name(partial.name + ".json").is_file())
+        self.assertFalse(partial.with_name(partial.name.removesuffix(".part")).exists())
+
+        remaining = BODY[5:]
+        resumed = Response(remaining, status=206, headers={
+            "Content-Length": str(len(remaining)),
+            "Content-Range": f"bytes 5-{len(BODY)-1}/{len(BODY)}"})
+        with patch("forgeos.gguf_download._open_weight", return_value=resumed) as opened:
+            result = self.download()
+        self.assertEqual(Path(result["path"]).read_bytes(), BODY)
+        self.assertEqual(opened.call_args.args[0].get_header("Range"), "bytes=5-")
 
 
 if __name__ == "__main__":

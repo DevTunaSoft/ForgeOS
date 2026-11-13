@@ -7,6 +7,7 @@ private .part files until verified and atomically published.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import errno
 import hashlib
 import json
 import os
@@ -327,27 +328,36 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
                         (not content_length.isdecimal()
                          or int(content_length) != remaining)):
                     raise RuntimeError("Model download content length mismatch")
-                with partial.open("ab") as output:
-                    try:
-                        while position < size:
+                try:
+                    with partial.open("ab") as output:
+                        try:
+                            while position < size:
+                                _check_cancelled(cancel_event)
+                                block = response.read(min(CHUNK_BYTES, size - position + 1))
+                                _check_cancelled(cancel_event)
+                                if not block:
+                                    break
+                                position += len(block)
+                                if position > size:
+                                    raise RuntimeError("Download exceeded declared model file size")
+                                output.write(block)
+                                _emit_progress(progress_callback, "download", position, size)
                             _check_cancelled(cancel_event)
-                            block = response.read(min(CHUNK_BYTES, size - position + 1))
-                            _check_cancelled(cancel_event)
-                            if not block:
-                                break
-                            position += len(block)
-                            if position > size:
-                                raise RuntimeError("Download exceeded declared model file size")
-                            output.write(block)
-                            _emit_progress(progress_callback, "download", position, size)
-                        _check_cancelled(cancel_event)
-                        if response.read(1):
-                            raise RuntimeError("Unexpected additional model bytes")
-                    finally:
-                        # Durable partial on pause, network failure, or
-                        # progress callback exception; never publish it.
-                        output.flush()
-                        os.fsync(output.fileno())
+                            if response.read(1):
+                                raise RuntimeError("Unexpected additional model bytes")
+                        finally:
+                            # Durable partial on pause, network failure, or
+                            # progress callback exception; never publish it.
+                            output.flush()
+                            os.fsync(output.fileno())
+                except OSError as exc:
+                    if (exc.errno == errno.ENOSPC
+                            or getattr(exc, "winerror", None) == 112):
+                        raise RuntimeError(
+                            "Disk space ran out during the GGUF download. "
+                            "Free space, then retry the same model and revision; "
+                            "ForgeOS retained the partial download for resume.") from exc
+                    raise
         _check_cancelled(cancel_event)
         if position != size:
             raise RuntimeError("Model download interrupted; partial bytes retained for resumption")

@@ -2368,3 +2368,8 @@ and restore under constrained filesystems.
 
 - Compared the checkout with Git refs: `origin/main` (`4a24799`) is an ancestor of feature branch `fix/safe-resume-malformed-checkpoints`, currently at `f6a0e32` and 72 commits ahead. The overall roadmap, multi-LLM roadmap and compatibility guide now state which claims describe mainline and which additional follow-ups are branch-only.
 - No merge into `main` is claimed. GitHub contains the pushed feature branch; the full repository review/merge and release acceptance remain outstanding. Documentation and roadmap contract suites passed 16 tests, including a regression against confusing feature-branch changes with mainline status; `git diff --check` passed.
+
+### Follow-up — recover from disk exhaustion during a GGUF transfer
+
+- The downloader now translates Windows error 112 and POSIX `ENOSPC` raised while opening, writing, flushing or syncing a partial GGUF into clear recovery guidance. It retains the partial file and identity journal for retry; the destination remains unpublished.
+- Added a regression that injects a mid-write ENOSPC, verifies only the written prefix and journal remain, then resumes with the exact HTTP Range and pinned digest to publish the verified model. This is mocked fault injection; physical full-disk and process-kill acceptance remain outstanding.
