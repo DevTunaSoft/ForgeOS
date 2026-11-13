@@ -4,6 +4,7 @@ import json
 import tempfile
 import os
 import unittest
+from unittest.mock import patch
 
 from forgeos.test_runtime import (
     MARKER, create_test_snapshot, remove_test_snapshot,
@@ -24,6 +25,20 @@ class TestRuntimeTests(unittest.TestCase):
         internal = self.workspace / ".forgeos"
         internal.mkdir()
         (internal / "secret-journal").write_text("do-not-copy")
+
+    def test_marker_write_failure_allows_snapshot_retry(self):
+        def fail_write(value, stream, **kwargs):
+            stream.write("{")
+            raise OSError("marker write failed")
+
+        with patch("forgeos.test_runtime.json.dump", side_effect=fail_write):
+            with self.assertRaisesRegex(OSError, "marker write failed"):
+                create_test_snapshot(self.workspace)
+        self.assertEqual(list(self.root.iterdir()), [self.workspace])
+
+        runtime = create_test_snapshot(self.workspace)
+        self.assertTrue((runtime.path / "app.py").is_file())
+        remove_test_snapshot(self.workspace)
 
     def test_snapshot_is_outside_workspace_and_excludes_internal_journal(self):
         runtime = create_test_snapshot(self.workspace)

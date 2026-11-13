@@ -152,11 +152,21 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     if runtime.exists() or marker.exists():
         remove_test_snapshot(source)
     runtime.mkdir(parents=False)
-    marker.write_text(json.dumps({
-        "version": VERSION,
-        "workspace": str(source),
-        "runtime": str(runtime),
-    }, sort_keys=True), encoding="utf-8")
+    try:
+        stream = marker.open("x", encoding="utf-8")
+        try:
+            with stream:
+                json.dump({
+                    "version": VERSION,
+                    "workspace": str(source),
+                    "runtime": str(runtime),
+                }, stream, sort_keys=True)
+        except BaseException:
+            marker.unlink(missing_ok=True)
+            raise
+    except BaseException:
+        runtime.rmdir()
+        raise
     try:
         shutil.copytree(
             source, runtime, dirs_exist_ok=True, symlinks=True,

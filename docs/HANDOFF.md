@@ -2196,3 +2196,5 @@ and restore under constrained filesystems.
 - The full `python -m unittest discover -s tests -v` run is still in progress. A focused `test_engine.CheckpointResumeTests.test_exhausted_repairs` rerun failed before the repair loop because icacls was denied permission to label the disposable workspace. Frozen packaging is still BLOCKED locally by missing PyInstaller and pytest. Physical Windows acceptance remains UNVERIFIED.
 
 - Added a regression for denied Windows test snapshot setup. Neither test runner is invoked. Both FrozenSecureRoutingTests passed on Windows/Python 3.12.14. Real containment remains UNVERIFIED.
+
+- Snapshot setup removes its partial ownership marker and empty runtime directory when marker writing fails. Windows test_runtime suite: seven passed, including a successful retry after injected failure. Windows containment acceptance remains open.
