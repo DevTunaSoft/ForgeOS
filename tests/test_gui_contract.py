@@ -50,6 +50,15 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('storage_quota_bytes=state["storage_quota_bytes"]', source)
         self.assertIn('"model_storage_quota_gib": model_storage_quota_gib.get()', source)
 
+    def test_model_picker_exposes_damaged_inventory_without_allowing_use_or_retire(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('entry for entry in list_downloads()', source)
+        self.assertIn('Missing, changed-size or unsafe entries', source)
+        self.assertIn('entry["status"] not in selectable_statuses', source)
+        self.assertIn('listing.bind("<<TreeviewSelect>>", update_selection_controls)', source)
+        self.assertIn('retire_btn.configure(state="disabled")', source)
+
     def test_startup_recovery_is_scoped_to_an_explicitly_authorized_workspace(self):
         source = (Path(__file__).resolve().parents[1] /
                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")

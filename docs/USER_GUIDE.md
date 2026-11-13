@@ -484,7 +484,7 @@ In **Managed local GGUF**, select **Import existing GGUF without copying** and c
 
 ### Recoverable GGUF retirement and restoration
 
-When you no longer want a local downloaded GGUF in the active inventory, first stop any llama.cpp server using it. The experimental CLI-only retirement feature moves the selected file and its pinned manifest into local, same-volume recovery storage. This is a reversible removal from the active list, **not disk space reclamation**. No cloud calls, inference, or deletion occur.
+When you no longer want a local downloaded GGUF in the active inventory, first stop any llama.cpp server using it. The experimental retirement feature moves the selected file and its pinned manifest into local, same-volume recovery storage. This is a reversible removal from the active list, **not disk space reclamation**. No cloud calls, inference, or deletion occur.
 
 1. Inspect active models using: python -m forgeos models-local
 2. Optionally recheck the weights with: python -m forgeos model-verify-local "ABSOLUTE_PATH.gguf"

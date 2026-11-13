@@ -833,9 +833,7 @@ def launch(db_path, *, acceptance: bool = False):
             from .model_inventory import list_downloads
             try:
                 records = [
-                    entry for entry in list_downloads()
-                    if entry["status"] in (
-                        "present_not_reverified", "imported_not_reverified")]
+                    entry for entry in list_downloads()]
             except (OSError, RuntimeError, ValueError) as exc:
                 messagebox.showerror(
                     "Cannot list local GGUF files", str(exc), parent=popup)
@@ -848,20 +846,22 @@ def launch(db_path, *, acceptance: bool = False):
                 return
             chooser = tk.Toplevel(popup)
             chooser.title("ForgeOS | Downloaded GGUF weights")
-            chooser.geometry("795x400")
+            chooser.geometry("900x430")
             body = ttk.Frame(chooser, padding=12)
             body.pack(fill="both", expand=True)
             ttk.Label(
-                body, wraplength=760,
+                body, wraplength=860,
                 text="Metadata-only inventory (no large file is rehashed "
-                     "in this view). ForgeOS verifies SHA-256 again "
-                     "when you start the model. Imported files have unknown "
-                     "source and license provenance.").pack(anchor="w", pady=(0, 8))
+                     "in this view). Missing, changed-size or unsafe entries "
+                     "are shown for diagnosis but cannot be selected for use "
+                     "or retirement. ForgeOS checks SHA-256 when you start "
+                     "a model. Imported files have unknown source and license."
+            ).pack(anchor="w", pady=(0, 8))
             listing = ttk.Treeview(
                 body, columns=("model", "size", "source", "status"),
                 show="headings", selectmode="browse")
-            for key, width in (("model", 330), ("size", 100),
-                               ("source", 230), ("status", 130)):
+            for key, width in (("model", 290), ("size", 100),
+                               ("source", 280), ("status", 190)):
                 listing.heading(key, text=key.title())
                 listing.column(key, width=width, stretch=key == "model")
             listing.pack(fill="both", expand=True)
@@ -870,10 +870,21 @@ def launch(db_path, *, acceptance: bool = False):
                                values=(entry["file"],
                                        f'{entry["bytes"]/(1024**3):.2f} GiB',
                                        entry["repo"], entry["status"]))
+            selectable_statuses = {
+                "present_not_reverified", "imported_not_reverified"}
+
             def select_local():
                 chosen = listing.selection()
                 if chosen:
-                    gguf_path.set(records[int(chosen[0])]["path"])
+                    entry = records[int(chosen[0])]
+                    if entry["status"] not in selectable_statuses:
+                        messagebox.showerror(
+                            "Model needs inspection",
+                            "This inventory entry is missing, changed or unsafe. "
+                            "ForgeOS will not select it for inference.",
+                            parent=chooser)
+                        return
+                    gguf_path.set(entry["path"])
                     chooser.destroy()
                 else:
                     messagebox.showinfo(
@@ -884,6 +895,15 @@ def launch(db_path, *, acceptance: bool = False):
             use_btn = ttk.Button(controls, text="Use selected GGUF",
                                  command=select_local)
             use_btn.pack(side="right")
+
+            def update_selection_controls(_event=None):
+                chosen = listing.selection()
+                eligible = bool(chosen) and records[
+                    int(chosen[0])]["status"] in selectable_statuses
+                use_btn.configure(state="normal" if eligible else "disabled")
+                retire_btn.configure(state="normal" if eligible else "disabled")
+
+            listing.bind("<<TreeviewSelect>>", update_selection_controls)
             retirement_events = Queue(maxsize=1)
             retirement = {"busy": False}
             retirement_status = tk.StringVar(value="")
@@ -910,6 +930,13 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 index = selection[0]
                 entry = records[int(index)]
+                if entry["status"] not in selectable_statuses:
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "ForgeOS only retires entries with a regular, matching-size "
+                        "weight and a valid identity record. Reverify or repair "
+                        "this entry before trying again.", parent=chooser)
+                    return
                 imported = entry.get("kind") == "imported"
                 title = ("Remove imported model from active inventory" if imported
                          else "Retire verified model")
@@ -1019,6 +1046,8 @@ def launch(db_path, *, acceptance: bool = False):
                 controls, text="Retire selected GGUF (recoverable)",
                 command=retire_selected)
             retire_btn.pack(side="right", padx=8)
+            retire_btn.configure(state="disabled")
+            use_btn.configure(state="disabled")
 
         ttk.Button(
             panel, text="Choose from ForgeOS downloads",
