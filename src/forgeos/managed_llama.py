@@ -70,7 +70,7 @@ def estimate_gguf_kv_cache_bytes(path: str | Path,
         raise ValueError("Context must be between 1 and 8192 tokens")
     try:
         with Path(path).open("rb") as stream:
-            data = stream.read(MAX_GGUF_METADATA_PREFIX + 1)
+            data = stream.read(MAX_GGUF_METADATA_PREFIX)
         if len(data) < 24 or data[:4] != b"GGUF":
             return None
         position = 4

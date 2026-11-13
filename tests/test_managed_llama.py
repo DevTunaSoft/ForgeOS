@@ -280,6 +280,10 @@ class ManagedLlamaTests(unittest.TestCase):
             estimate_gguf_kv_cache_bytes(path, 1024), 128 * 1024 * 1024)
         self.assertEqual(
             estimate_gguf_kv_cache_bytes(path, 512), 64 * 1024 * 1024)
+        # A truncated header must fail closed without inventing dimensions.
+        truncated = self.root / "truncated.gguf"
+        truncated.write_bytes(metadata[:32])
+        self.assertIsNone(estimate_gguf_kv_cache_bytes(truncated, 1024))
         with self.assertRaisesRegex(ValueError, "Context"):
             estimate_gguf_kv_cache_bytes(path, 8192 + 1)
 
