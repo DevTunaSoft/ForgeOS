@@ -397,6 +397,31 @@ class GGUFDownloadTests(unittest.TestCase):
                 self.download()
             network.assert_not_called()
 
+    def test_storage_quota_counts_existing_weights_and_can_resume_after_raising_cap(self):
+        existing = self.root / "existing.gguf"
+        existing.write_bytes(b"old-model")
+        quota = existing.stat().st_size + len(BODY) - 1
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "storage cap reached"):
+                self.download(storage_quota_bytes=quota)
+            network.assert_not_called()
+        partial = next(self.root.rglob("*.gguf.part"))
+        self.assertEqual(partial.stat().st_size, 0)
+        self.assertTrue(partial.with_name(partial.name + ".json").is_file())
+
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)) as network:
+            result = self.download(storage_quota_bytes=quota + 1)
+        self.assertEqual(Path(result["path"]).read_bytes(), BODY)
+        network.assert_called_once()
+
+    def test_invalid_storage_quota_is_rejected_before_catalog_or_disk(self):
+        with patch("forgeos.gguf_download.list_gguf_files") as catalog:
+            for quota in (0, -1, True, "10", 16 * 1024**4 + 1):
+                with self.subTest(quota=quota), self.assertRaises(ValueError):
+                    self.download(storage_quota_bytes=quota)
+            catalog.assert_not_called()
+
     def test_mid_transfer_disk_full_retains_partial_and_resumes(self):
         original_open = Path.open
 

@@ -8,6 +8,7 @@ DEFAULTS = {
     "project": "", "model": "auto", "task_role": "implementation",
     "backend": "ollama", "endpoint": "", "preset": "python-unittest",
     "token_parameter": "max_tokens",
+    "model_storage_quota_gib": 0,
     "workspaces": "", "repair_count": 2, "startup_resume_workspace": "",
 }
 ALLOWED_BACKENDS = ("ollama", "llama.cpp", "lm-studio", "openai-local")
@@ -36,6 +37,9 @@ def _sanitize(values):
     retries = values.get("repair_count")
     if type(retries) is int and 0 <= retries <= 5:
         cleaned["repair_count"] = retries
+    quota = values.get("model_storage_quota_gib")
+    if type(quota) is int and quota in (0, 16, 32, 64, 128, 256, 512):
+        cleaned["model_storage_quota_gib"] = quota
     return cleaned
 
 

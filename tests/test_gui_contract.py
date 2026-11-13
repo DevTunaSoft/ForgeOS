@@ -42,6 +42,14 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("if not acceptance:", source)
         self.assertNotIn('"allow_host_tests": allow_host_tests.get()', source)
 
+    def test_model_storage_cap_is_configurable_and_forwarded_to_download(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Model store cap (GiB; 0 = no extra cap)"', source)
+        self.assertIn('"storage_quota_bytes": None', source)
+        self.assertIn('storage_quota_bytes=state["storage_quota_bytes"]', source)
+        self.assertIn('"model_storage_quota_gib": model_storage_quota_gib.get()', source)
+
     def test_startup_recovery_is_scoped_to_an_explicitly_authorized_workspace(self):
         source = (Path(__file__).resolve().parents[1] /
                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")

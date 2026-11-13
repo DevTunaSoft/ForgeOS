@@ -2373,3 +2373,9 @@ and restore under constrained filesystems.
 
 - The downloader now translates Windows error 112 and POSIX `ENOSPC` raised while opening, writing, flushing or syncing a partial GGUF into clear recovery guidance. It retains the partial file and identity journal for retry; the destination remains unpublished.
 - Added a regression that injects a mid-write ENOSPC, verifies only the written prefix and journal remain, then resumes with the exact HTTP Range and pinned digest to publish the verified model. This is mocked fault injection; physical full-disk and process-kill acceptance remain outstanding.
+
+### Follow-up — optional model storage cap and usage report
+
+- Added bounded offline GGUF storage accounting for active revisioned weights, retired weights, resumable partials and quarantined files. The scan rejects symlinks/non-regular entries, caps traversal at 4,096 entries and depth 12, de-duplicates hard links where the platform exposes inode identity, and does not hash weights. Imported references outside this managed root are excluded.
+- Added an optional desktop setting (0/off or 16–512 GiB) and `model-download --storage-quota-gib N`. Cap-checked transfers hold a store-wide OS lock so concurrent ForgeOS downloads do not each spend the same remaining quota. A blocked transfer retains its exact partial and journal; raising the cap permits exact-revision resume. `models-storage` reports counted bytes/files.
+- Verification: the focused inventory, downloader, CLI, settings, GUI contract, documentation and roadmap suites passed 102 tests (2 platform skips). The default sandbox temp location denied test fixture writes, so the successful run set `TMP` and `TEMP` to the writable checkout. Physical Windows quota behavior, large files, cross-process lock behavior and reparse-point races remain unverified.

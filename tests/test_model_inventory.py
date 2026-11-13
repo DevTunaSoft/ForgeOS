@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from forgeos.model_inventory import (
-    catalog_file_status, list_downloads, verify_download,
+    catalog_file_status, list_downloads, storage_usage, verify_download,
 )
 
 
@@ -64,6 +64,26 @@ class GGUFInventoryTests(unittest.TestCase):
         self.assertEqual(items[0]["status"], "present_not_reverified")
         self.assertEqual(items[0]["repo"], "Owner/CodeModel")
         self.assertEqual(items[0]["sha256"], self.sha)
+
+    def test_storage_usage_counts_active_partial_retired_and_quarantined_weights(self):
+        partial = self.parent / "next.gguf.part"
+        partial.write_bytes(b"partial")
+        quarantine = self.parent / "bad.gguf.part.corrupt-123"
+        quarantine.write_bytes(b"bad")
+        retired_dir = self.root / ".forgeos-retired" / ("b" * 32)
+        retired_dir.mkdir(parents=True)
+        retired = retired_dir / "weights.gguf"
+        retired.write_bytes(b"retired")
+        (self.parent / "notes.txt").write_bytes(b"ignored")
+
+        with patch("forgeos.model_inventory._digest") as hashing:
+            usage = storage_usage(self.root)
+        hashing.assert_not_called()
+        self.assertEqual(usage, {
+            "bytes": (len(self.content) + len(b"partial") + len(b"bad")
+                      + len(b"retired")),
+            "files": 4,
+        })
 
     def test_explicit_verify_streams_bytes_and_detects_corruption(self):
         proof = verify_download(self.path, directory=self.root)

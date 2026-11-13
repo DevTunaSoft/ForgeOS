@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 from threading import Event
 import shutil
+import time
 import uuid
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -25,6 +26,7 @@ from .huggingface_catalog import (
 
 GIB = 1024 ** 3
 MAX_MODEL_BYTES = MAX_GGUF_BYTES
+MAX_MODEL_STORAGE_QUOTA_BYTES = 16 * 1024 ** 4
 CHUNK_BYTES = 1024 * 1024
 RESERVED_DISK_BYTES = GIB
 SAFE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
@@ -74,7 +76,7 @@ def _reject_existing_link(target: Path, root: Path) -> None:
 
 
 @contextmanager
-def _exclusive_download_lock(lock_path: Path):
+def _exclusive_download_lock(lock_path: Path, *, blocking: bool = False):
     """Kernel-held lock releases on process exit without permanent stale locks."""
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     with os.fdopen(descriptor, "r+b") as fd:
@@ -84,10 +86,18 @@ def _exclusive_download_lock(lock_path: Path):
         fd.seek(0)
         if os.name == "nt":
             import msvcrt
-            try:
-                msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
-            except OSError as exc:
-                raise RuntimeError("This GGUF download is active elsewhere") from exc
+            mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+            while True:
+                try:
+                    msvcrt.locking(fd.fileno(), mode, 1)
+                    break
+                except OSError as exc:
+                    if not blocking:
+                        raise RuntimeError(
+                            "This GGUF download is active elsewhere") from exc
+                    # LK_LOCK itself stops retrying after a finite interval;
+                    # keep waiting so quota locks serialize full transfers.
+                    time.sleep(0.1)
             try:
                 yield
             finally:
@@ -96,7 +106,8 @@ def _exclusive_download_lock(lock_path: Path):
         else:
             import fcntl
             try:
-                fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                mode = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+                fcntl.flock(fd.fileno(), mode)
             except OSError as exc:
                 raise RuntimeError("This GGUF download is active elsewhere") from exc
             try:
@@ -186,11 +197,12 @@ def _write_json_atomic(destination: Path, value: dict):
         temporary.unlink(missing_ok=True)
 
 
-def download_gguf(repo: str, filename: str, *, revision: str | None = None,
-                  directory: Path | str | None = None,
-                  max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60,
-                  cancel_event: Event | None = None,
-                  progress_callback=None) -> dict:
+def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = None,
+                            directory: Path | str | None = None,
+                            max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60,
+                            cancel_event: Event | None = None,
+                            progress_callback=None,
+                            storage_quota_bytes: int | None = None) -> dict:
     """Fetch one explicitly chosen GGUF with revision and SHA-256 verification.
 
     A failure never publishes an incomplete file. Interrupted partial bytes
@@ -202,7 +214,10 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
         raise ValueError("Invalid Hugging Face repository identifier")
     path_parts = _safe_name(filename)
     if (type(max_bytes) is not int or not 1 <= max_bytes <= MAX_MODEL_BYTES
-            or type(timeout) is not int or not 1 <= timeout <= 180):
+            or type(timeout) is not int or not 1 <= timeout <= 180
+            or (storage_quota_bytes is not None
+                and (type(storage_quota_bytes) is not int
+                     or not 1 <= storage_quota_bytes <= MAX_MODEL_STORAGE_QUOTA_BYTES))):
         raise ValueError("Invalid model download size or timeout")
     if cancel_event is not None and not isinstance(cancel_event, Event):
         raise TypeError("cancel_event must be a threading.Event")
@@ -301,6 +316,16 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
         _check_cancelled(cancel_event)
         _emit_progress(progress_callback, "download", position, size)
         remaining = size - position
+        if remaining and storage_quota_bytes is not None:
+            from .model_inventory import storage_usage
+            used = storage_usage(root)["bytes"]
+            if used + remaining > storage_quota_bytes:
+                raise RuntimeError(
+                    "ForgeOS model storage cap reached "
+                    f"({used / GIB:.2f} GiB used; "
+                    f"{storage_quota_bytes / GIB:.0f} GiB limit). "
+                    "Free space or raise the cap, then retry this same model "
+                    "and revision; any partial download is retained.")
         if remaining and shutil.disk_usage(root).free < remaining + RESERVED_DISK_BYTES:
             raise RuntimeError("Insufficient disk space for model and safety reserve")
         if remaining:
@@ -378,3 +403,38 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
         _write_json_atomic(manifest, expected)
         metadata.unlink(missing_ok=True)
         return {"status": "verified", "path": str(destination), **expected}
+
+
+def download_gguf(repo: str, filename: str, *, revision: str | None = None,
+                  directory: Path | str | None = None,
+                  max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60,
+                  cancel_event: Event | None = None,
+                  progress_callback=None,
+                  storage_quota_bytes: int | None = None) -> dict:
+    """Download one verified GGUF, optionally enforcing a whole-store quota.
+
+    Quota-checked transfers take a blocking per-store lock, measure existing
+    active/retired/partial/quarantined weight bytes, then hold the lock until
+    completion or pause. This prevents simultaneous capped downloads from
+    oversubscribing the same store allowance.
+    """
+    if storage_quota_bytes is None:
+        return _download_gguf_unlocked(
+            repo, filename, revision=revision, directory=directory,
+            max_bytes=max_bytes, timeout=timeout, cancel_event=cancel_event,
+            progress_callback=progress_callback)
+    if (type(storage_quota_bytes) is not int
+            or not 1 <= storage_quota_bytes <= MAX_MODEL_STORAGE_QUOTA_BYTES):
+        raise ValueError("Invalid model storage quota")
+    root = _safe_storage_root(directory)
+    quota_lock = root / ".forgeos-storage-quota.lock"
+    _reject_existing_link(quota_lock, root)
+    if quota_lock.exists() and (not quota_lock.is_file()
+                                or quota_lock.stat().st_nlink != 1):
+        raise ValueError("Model storage quota lock is not a safe regular file")
+    with _exclusive_download_lock(quota_lock, blocking=True):
+        return _download_gguf_unlocked(
+            repo, filename, revision=revision, directory=root,
+            max_bytes=max_bytes, timeout=timeout, cancel_event=cancel_event,
+            progress_callback=progress_callback,
+            storage_quota_bytes=storage_quota_bytes)

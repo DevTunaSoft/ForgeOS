@@ -62,6 +62,12 @@ def main(argv=None):
     download.add_argument('--directory',default='',help='Optional local model folder')
     download.add_argument('--revision',default=None,
                           help='Optional full repository commit SHA from model-catalog')
+    download.add_argument(
+        '--storage-quota-gib', type=int,
+        help='Optional total ForgeOS model-store cap in GiB (1–16384)')
+    storage=sub.add_parser(
+        'models-storage', help='Report bounded local GGUF weight storage use')
+    storage.add_argument('--directory', default='')
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
     evidence.add_argument('operation',choices=['show','stats'])
     evidence.add_argument('reference',nargs='?')
@@ -128,6 +134,10 @@ def main(argv=None):
         from .model_inventory import list_downloads
         print(json.dumps(list_downloads(directory=args.directory or None), indent=2))
         return 0
+    if args.action == 'models-storage':
+        from .model_inventory import storage_usage
+        print(json.dumps(storage_usage(directory=args.directory or None), indent=2))
+        return 0
     if args.action == 'model-verify-local':
         from .model_inventory import verify_download
         result = verify_download(args.filename, directory=args.directory or None)
@@ -154,7 +164,9 @@ def main(argv=None):
         result = download_gguf(
             args.repository, args.filename,
             revision=args.revision,
-            directory=args.directory or None)
+            directory=args.directory or None,
+            storage_quota_bytes=(args.storage_quota_gib * 1024**3
+                                 if args.storage_quota_gib is not None else None))
         print(json.dumps(result, indent=2))
         return 0
     if args.action == 'model-catalog':

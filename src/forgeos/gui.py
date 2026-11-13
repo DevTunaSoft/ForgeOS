@@ -133,6 +133,8 @@ def launch(db_path, *, acceptance: bool = False):
     backend = tk.StringVar(value=setting("backend", "ollama"))
     endpoint = tk.StringVar(value=setting("endpoint", ""))
     token_parameter = tk.StringVar(value=setting("token_parameter", "max_tokens"))
+    model_storage_quota_gib = tk.IntVar(
+        value=setting("model_storage_quota_gib", 0))
     preset = tk.StringVar(value=setting("preset", "python-unittest"))
     workspaces = tk.StringVar(value=setting("workspaces", str(Path.home() / ".forgeos" / "workspaces")))
     allow_host_tests = tk.BooleanVar(value=False)
@@ -289,6 +291,18 @@ def launch(db_path, *, acceptance: bool = False):
         text="Experimental CPU llama.cpp: user-provided trusted executable + "
              "SHA-256, downloaded verified GGUF; unloads after 5m idle; no Docker",
         foreground="#52647b").pack(side="left", padx=(9, 0))
+    storage_row = ttk.Frame(options)
+    storage_row.pack(fill="x", pady=(6, 0))
+    ttk.Label(storage_row, text="Model store cap (GiB; 0 = no extra cap)").pack(
+        side="left")
+    ttk.Combobox(
+        storage_row, textvariable=model_storage_quota_gib,
+        values=(0, 16, 32, 64, 128, 256, 512),
+        state="readonly", width=9).pack(side="left", padx=6)
+    ttk.Label(
+        storage_row,
+        text="Counts active, retired and partial ForgeOS weights; does not hash files.",
+        foreground="#52647b").pack(side="left", padx=6)
     second = ttk.Frame(options)
     second.pack(fill="x", pady=(8, 0))
     ttk.Label(second, text="Workspace folder").pack(side="left")
@@ -1562,7 +1576,8 @@ def launch(db_path, *, acceptance: bool = False):
                  "inspected_revision": None,
                  "search_query": "", "pending_query": "",
                  "next_page_url": None, "search_pages": 0,
-                 "action": None, "cancel": None, "close_after": False}
+                 "action": None, "cancel": None, "close_after": False,
+                 "storage_quota_bytes": None}
 
         def report_transfer(stage, current, total):
             # Worker threads never touch Tk. Drop stale progress events
@@ -1619,6 +1634,20 @@ def launch(db_path, *, acceptance: bool = False):
                         "The download will not load or execute the model.",
                         parent=popup):
                     return
+                try:
+                    quota_gib = model_storage_quota_gib.get()
+                except tk.TclError:
+                    messagebox.showerror(
+                        "Invalid model storage cap", "Choose a listed storage cap.",
+                        parent=popup)
+                    return
+                if quota_gib not in (0, 16, 32, 64, 128, 256, 512):
+                    messagebox.showerror(
+                        "Invalid model storage cap", "Choose a listed storage cap.",
+                        parent=popup)
+                    return
+                state["storage_quota_bytes"] = (
+                    quota_gib * 1024 ** 3 if quota_gib else None)
                 term = (state["inspected_repo"], file_choice.get(),
                         state["inspected_revision"])
             elif action == "more":
@@ -1676,7 +1705,8 @@ def launch(db_path, *, acceptance: bool = False):
                         data = download_gguf(
                             term[0], term[1], revision=term[2],
                             cancel_event=state["cancel"],
-                            progress_callback=report_transfer)
+                            progress_callback=report_transfer,
+                            storage_quota_bytes=state["storage_quota_bytes"])
                     hub_events.put((action, data, None))
                 except Exception as exc:
                     hub_events.put((action, None, catalog_error_message(exc)))
@@ -2257,6 +2287,7 @@ def launch(db_path, *, acceptance: bool = False):
                     "task_role": task_role.get(), "backend": backend.get(),
                     "endpoint": endpoint.get(),
                     "token_parameter": token_parameter.get(),
+                    "model_storage_quota_gib": model_storage_quota_gib.get(),
                     "preset": preset.get(),
                     "workspaces": workspaces.get(),
                     "repair_count": repair_count.get(),

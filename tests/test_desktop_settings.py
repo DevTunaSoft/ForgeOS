@@ -51,6 +51,16 @@ class DesktopSettingsTests(unittest.TestCase):
                                  "model": "ok"})
             self.assertEqual(load_settings(path), {"model": "ok"})
 
+    def test_model_storage_quota_setting_is_bounded_and_round_trips(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            save_settings(path, {"model_storage_quota_gib": 64})
+            self.assertEqual(load_settings(path)["model_storage_quota_gib"], 64)
+            for invalid in (True, -1, 1, 1024):
+                with self.subTest(invalid=invalid):
+                    save_settings(path, {"model_storage_quota_gib": invalid})
+                    self.assertNotIn("model_storage_quota_gib", load_settings(path))
+
 
 if __name__ == "__main__":
     unittest.main()

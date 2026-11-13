@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 
 from .gguf_download import (
     MAX_MODEL_BYTES, _digest, _reject_existing_link,
@@ -204,6 +205,52 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
         raise RuntimeError("GGUF inventory exceeds model count limit")
     results.sort(key=lambda x: (x["repo"].lower(), x["file"].lower()))
     return results
+
+
+def storage_usage(directory: str | Path | None = None) -> dict:
+    """Count managed GGUF weight bytes without hashing; bounded and offline.
+
+    Active, retired, partial, and quarantined GGUFs count toward the quota.
+    Imported paths outside ForgeOS storage are references and do not count.
+    Hard links are counted once by file identity. Unsafe/unreadable oversized
+    trees fail closed so a quota check never treats unknown usage as zero.
+    """
+    root = _safe_storage_root(directory)
+    pending = [(root, 0)]
+    examined = 0
+    total = 0
+    files = 0
+    seen = set()
+    while pending:
+        folder, depth = pending.pop()
+        if depth > 12:
+            raise RuntimeError("GGUF storage nesting exceeds usage scan limit")
+        with os.scandir(folder) as contents:
+            for item in contents:
+                examined += 1
+                if examined > MAX_SCAN_ENTRIES:
+                    raise RuntimeError("GGUF storage exceeds bounded usage scan limit")
+                if item.is_symlink():
+                    continue
+                if item.is_dir(follow_symlinks=False):
+                    pending.append((Path(item.path), depth + 1))
+                    continue
+                name = item.name.lower()
+                is_weight = (name.endswith(".gguf") or name.endswith(".gguf.part")
+                             or ".gguf.part.corrupt-" in name)
+                if not is_weight or not item.is_file(follow_symlinks=False):
+                    continue
+                info = item.stat(follow_symlinks=False)
+                if not stat.S_ISREG(info.st_mode) or info.st_size < 0:
+                    raise RuntimeError("GGUF storage contains an unsafe weight entry")
+                identity = ((info.st_dev, info.st_ino) if info.st_ino else
+                            os.path.normcase(os.path.abspath(item.path)))
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                total += info.st_size
+                files += 1
+    return {"bytes": total, "files": files}
 
 
 def catalog_file_status(repo: str, revision: str, file_info: dict,

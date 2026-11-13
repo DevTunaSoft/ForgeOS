@@ -467,6 +467,11 @@ If ForgeOS reports a conflicting manifest, an inconsistent download journal or a
 Pausing is cooperative, not instantaneous while a network socket read is blocked (up to the configured timeout). Closing the entire ForgeOS process forcibly is not equivalent to using Pause. Verification itself may also be paused before final publication. This feature has simulated transfer tests; real multi-gigabyte Windows download, pause, resume and power-loss testing remain pending.
 
 
+### Check and limit model storage
+
+Use `python -m forgeos models-storage` to report ForgeOS-managed GGUF weight bytes. The bounded offline scan includes active downloads, retired weights, resumable `.part` files and quarantined corrupt files; it does not hash model contents. Imported models referenced outside the managed model directory are not included. In the desktop **Execution** settings, choose a model store cap (0 disables the extra cap; available values are 16–512 GiB). The CLI can set a per-download cap with `python -m forgeos model-download OWNER/REPOSITORY MODEL.gguf --storage-quota-gib 64`. Quota-checked downloads serialize within one store; if a limit is reached, free space or raise it and retry the same model and revision to resume. This accounting is separate from the operating system's free-disk safety reserve. Physical quota behavior on Windows still needs acceptance testing.
+
+
 ### Memory warning when starting a local GGUF model
 
 ForgeOS chooses a conservative default context based on available system RAM. If a manually entered context exceeds the current RAM profile, startup is refused rather than risking a large llama.cpp KV-cache allocation. The app also checks available RAM again just before launching the local server, because memory may have changed while verifying the model's large SHA-256. Close competing applications, select a smaller GGUF, or use a smaller context within the suggested memory profile, then retry. A passed check cannot promise there will never be a later out-of-memory failure.
