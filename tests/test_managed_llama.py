@@ -287,6 +287,26 @@ class ManagedLlamaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Context"):
             estimate_gguf_kv_cache_bytes(path, 8192 + 1)
 
+        # Some architectures explicitly provide key/value head widths.
+        dimensions = [
+            ("general.architecture", 8, "llama"),
+            ("llama.block_count", 4, 32),
+            ("llama.attention.head_count", 4, 32),
+            ("llama.attention.head_count_kv", 4, 8),
+            ("llama.embedding_length", 4, 4096),
+            ("llama.attention.key_length", 4, 128),
+            ("llama.attention.value_length", 4, 96),
+        ]
+        encoded = bytearray(b"GGUF" + struct.pack("<IQQ", 3, 1, len(dimensions)))
+        for key, kind, value in dimensions:
+            encoded.extend(gguf_string(key))
+            encoded.extend(struct.pack("<I", kind))
+            encoded.extend(gguf_string(value) if kind == 8
+                           else struct.pack("<I", value))
+        path.write_bytes(encoded)
+        self.assertEqual(
+            estimate_gguf_kv_cache_bytes(path, 1024), 112 * 1024 * 1024)
+
     def test_memory_admission_includes_known_kv_cache_estimate(self):
         def gguf_string(value):
             encoded = value.encode("utf-8")

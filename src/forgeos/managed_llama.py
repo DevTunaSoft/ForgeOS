@@ -133,6 +133,10 @@ def estimate_gguf_kv_cache_bytes(path: str | Path,
                                 ".attention.head_count_kv", ".embedding_length"))
                     and type(value) is int and 0 < value <= 1_000_000):
                 values[key] = value
+            elif (key.endswith((".attention.key_length",
+                                ".attention.value_length"))
+                    and type(value) is int and 0 < value <= 1_000_000):
+                values[key] = value
 
         architecture = values.get("general.architecture")
         if not isinstance(architecture, str) or not re.fullmatch(
@@ -149,7 +153,14 @@ def estimate_gguf_kv_cache_bytes(path: str | Path,
                 or embedding % heads):
             return None
         head_dimension = embedding // heads
-        estimate = context_tokens * layers * kv_heads * head_dimension * 4
+        key_dimension = values.get(prefix + "attention.key_length", head_dimension)
+        value_dimension = values.get(prefix + "attention.value_length", head_dimension)
+        if (type(key_dimension) is not int or type(value_dimension) is not int
+                or not 1 <= key_dimension <= 1_000_000
+                or not 1 <= value_dimension <= 1_000_000):
+            return None
+        estimate = (context_tokens * layers * kv_heads
+                    * (key_dimension + value_dimension) * 2)
         return estimate if estimate <= (1 << 63) - 1 else None
     except (OSError, UnicodeError, ValueError, OverflowError, struct.error):
         return None
