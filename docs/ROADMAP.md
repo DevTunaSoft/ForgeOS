@@ -233,3 +233,17 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   suites passed locally. PyInstaller is not installed in this environment, and
   the draft-PR Windows packaging workflow remains skipped; executable icon
   appearance still needs hosted build and real Windows desktop confirmation.
+
+### 2026-11-13 — adaptive local repair context budgets
+
+- **Implemented experimentally on the feature branch:** the existing engine
+  scales repository metadata and repair-failure excerpts against its current
+  local memory context profile and the task framing. Fresh repair and resumed
+  repair checkpoints use the same builder; failure excerpts retain both ends,
+  while the original diagnostic remains in the existing evidence archive.
+- **Evidence and limits:** 44 focused engine-budget, diagnostics and model
+  memory-profile tests passed (2 platform skips); `compileall` passed. The
+  budget uses a conservative character heuristic because backend tokenizers
+  and advertised context windows are not reliably exposed. The existing 64 KiB
+  UTF-8 request bound remains authoritative; no exact-token guarantee is made.
+  Real backend behavior and a full current-head CI run remain UNVERIFIED.

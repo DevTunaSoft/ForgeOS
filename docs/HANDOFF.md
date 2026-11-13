@@ -2613,3 +2613,20 @@ and restore under constrained filesystems.
   roadmap suites passed 169 tests (13 platform skips); compilation and
   `git diff --check` passed. Actual read-only removable media, Windows ACLs,
   reparse points and power-loss behavior remain unverified.
+
+### Follow-up — adapt local repair context to memory profiles
+
+- Repository metadata budgets in the existing task engine now scale with its
+  local `num_ctx` profile and task framing. Fresh failure-repair requests and
+  resumed `repair_pending` checkpoints share one builder; long diagnostics are
+  reduced to head/tail excerpts while their original evidence remains in the
+  SHA-256-addressed archive. The ordinary initial edit inventory also uses a
+  profile-aware bound. The 64 KiB UTF-8 model request validator remains the
+  hard request limit.
+- Added budget monotonicity/bounds and repair excerpt fidelity regressions.
+  Verification: engine-budget, diagnostics and model-memory-profile tests
+  passed (44 tests, 2 platform skips); compilation passed. An attempted real
+  engine integration run was blocked by Windows low-integrity ACL setup
+  (`Access is denied`) in this managed session; local loopback adapter testing
+  is similarly blocked by host socket permissions. No live backend behavior,
+  tokenizer-accurate budget or physical Windows acceptance is claimed.

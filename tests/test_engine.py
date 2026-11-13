@@ -7,7 +7,10 @@ import tempfile
 import unittest
 
 from forgeos.core import Store
-from forgeos.engine import EditError, apply_edits, execute_task, parse_edits
+from forgeos.engine import (
+    EditError, _context_char_budget, _repair_prompt, apply_edits, execute_task,
+    parse_edits,
+)
 
 
 class EditManifestTests(unittest.TestCase):
@@ -59,6 +62,28 @@ class EditManifestTests(unittest.TestCase):
             {"path": "src/hello.py", "content": "print('ok')\n"}]}))
         self.assertEqual(paths, ["src/hello.py"])
         self.assertEqual((self.root / "src/hello.py").read_text(), "print('ok')\n")
+
+    def test_context_budget_adapts_and_stays_within_index_bounds(self):
+        small = _context_char_budget(num_ctx=1024)
+        large = _context_char_budget(num_ctx=4096)
+        longer_task = _context_char_budget(num_ctx=4096, prompt_chars=6000)
+        self.assertGreaterEqual(small, 512)
+        self.assertLessEqual(large, 8000)
+        self.assertLessEqual(large, 4096)
+        self.assertGreater(large, small)
+        self.assertLess(longer_task, large)
+
+    def test_repair_prompt_keeps_failure_edges_and_clips_middle(self):
+        from unittest.mock import patch
+        failure = "BEGIN FAILURE\n" + "x" * 5000 + "\nEND FAILURE"
+        with patch("forgeos.engine._context", return_value="bounded inventory"):
+            prompt = _repair_prompt(self.root, "Fix the test", failure)
+        self.assertIn("BEGIN FAILURE", prompt)
+        self.assertIn("END FAILURE", prompt)
+        self.assertIn("diagnostic excerpt clipped", prompt)
+        self.assertIn("Original request:\nFix the test", prompt)
+        self.assertIn("bounded inventory", prompt)
+        self.assertLess(len(prompt), len(failure))
 
 
 @unittest.skipUnless(shutil.which("git"), "Git required")

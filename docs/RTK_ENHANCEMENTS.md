@@ -10,7 +10,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Optimized Git command output
 - [x] Relevant source code reading (bounded AST metadata prototype)
 - [ ] Optimized project search
-- [ ] Adaptive context budgets
+- [x] Adaptive context budgets (experimental character-budget heuristic in the existing task engine; exact model tokenization/window still unverified)
 - [ ] Context-aware compression
 - [x] Repeated log deduplication (noncritical run collapse)
 - [x] Configurable rules (optional pinned JSON literal rules)
