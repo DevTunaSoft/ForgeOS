@@ -31,7 +31,7 @@ Do not introduce second copies of `model_routing.py`, `Store`, `engine.py`, outp
 | Offline local GGUF inventory | **Implemented experimental on `main` (merged PR #51):** bounded existing-manifest scan, no large-file hash on list; explicit full SHA-256 verification; selection in current GUI | Import, update/remove, live model use and installed-model lifecycle acceptance |
 | Optional cloud LLM adapters | **Planned / not implemented:** user-authorized ChatGPT/OpenAI, Claude/Anthropic and compatible services | Consent per disclosure, credential isolation, spending limits, no default cloud/API or required subscription |
 | Safe Git workspaces | **Implemented prototype:** per-task worktrees, path/budget validation, transactional edits | Broader recovery fault injection, demonstrated end-to-end rollback on Windows |
-| Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints, `resume-safe`, GUI constant-size recovery summaries (12 recent outcomes and totals), 400-character recovery reason caps, lease-fenced engine state publication, bounded streamed checkpoint hashing, fail-closed timeout/runtime errors and strict test outcome validation | Resume additional phases safely, long-run crash/restart and concurrent worker acceptance |
+| Resumable autonomous cycle | **Implemented prototype:** bounded pre-edit generation retry plus test/repair checkpoints, `resume-safe`, GUI constant-size recovery summaries (12 recent outcomes and totals), 400-character recovery reason caps, lease-fenced engine state publication, bounded streamed checkpoint hashing, fail-closed timeout/runtime errors and strict test outcome validation | Long-run crash/restart and concurrent worker acceptance; broader phase fault injection |
 | Execution isolation | **Implemented prototype:** packaged Windows `unittest` AppContainer path; fail closed on unsupported presets, missing/unreadable evidence, combined 32 MiB output cap, and a 1–3600 second test timeout budget | Secure coverage for additional frameworks, adversarial Windows acceptance |
 | Python `pytest` packaged isolation | **Implemented experimental (PR #43):** rebased successor to [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29), avoids Windows NUL logging denial | Hosted frozen Windows pytest AppContainer smoke and regression suite passed; still needs actual end-user Windows acceptance |
 | Diagnostics and repair learning | **Implemented experimental:** SHA-256 evidence, bounded summaries, fail-closed archival errors, 64 KiB task-action result storage and 4,000-character failure diagnostics, aggregate learning | Encrypted retention, broader structured parsers, verified learning decisions |
@@ -105,6 +105,19 @@ The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issu
 | Packaging | Clean Windows install/uninstall, EXE behavior, release and supply-chain review |
 | Usability | Click-by-click manual, real screenshots only, accessible understandable error messages, nontechnical recovery |
 | Documentation | Current feature states, tests and known limits in README, user manual, architecture, roadmap and handoff |
+
+### 2026-11-13 — guarded pre-edit generation recovery
+
+- **Implemented on the feature branch:** the engine persists a `generation_pending`
+  checkpoint immediately before the first model edit call, including the saved
+  execution contract and starting Git HEAD. Recovery retries only while that
+  HEAD is unchanged, the worktree is clean, and no edit journal remains.
+- **Bound:** at most three pre-edit generation calls per task; exhausted or
+  malformed checkpoints are skipped by Safe Resume. An interruption after
+  edits have reached disk but before the test checkpoint is intentionally
+  blocked because the worktree is no longer clean.
+- **Acceptance:** focused retry, tamper rejection and recovery regressions
+  passed locally. Hosted checks and physical Windows acceptance remain open.
 
 ## The 52 RTK-inspired improvements
 

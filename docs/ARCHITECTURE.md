@@ -93,7 +93,7 @@ The Tkinter Live Activity Monitor uses `Store.get_status()` to select one scalar
 
 The task engine does not hold an operating-system filesystem lock while generating/editing: a lease may expire during a long-running external call. Lease fencing prevents stale *database publications*, but a worktree touched before detecting the expired lease still requires careful inspection; recovery must not silently overwrite it.
 
-Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, branch and saved execution parameters must match. Not all interrupted phases can resume. `resume-safe` reads only blocked checkpoint fields through SQLite keyset pages of 16 records; any checkpoint over 64 KiB is reported as skipped without loading its payload into Python. It does not scan completed-task test output or bypass execution leases.
+Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, branch and saved execution parameters must match. Pre-edit generation retries are bound to the original Git HEAD and require a clean worktree without a pending edit journal; generation calls are capped at three. Test-pending and repair-pending checkpoints retain their existing file-hash checks. Other interrupted phases remain ineligible. `resume-safe` reads only blocked checkpoint fields through SQLite keyset pages of 16 records; any checkpoint over 64 KiB is reported as skipped without loading its payload into Python. It does not scan completed-task test output or bypass execution leases.
 
 ## Execution security: differentiate the environments
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .core import MAX_CHECKPOINT_BYTES, Ollama
 from .local_models import DEFAULT_ENDPOINTS, create_model, validate_endpoint
-from .engine import execute_task
+from .engine import execute_task, MAX_PRE_EDIT_GENERATIONS
 
 PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
            "go-test", "dotnet-test"}
@@ -219,9 +219,18 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 "reason": "Incomplete test evidence requires manual review; automatic retry disabled",
             })
             continue
-        if phase not in ("test_pending", "repair_pending"):
+        if phase not in ("generation_pending", "test_pending", "repair_pending"):
             record("skipped", {"id": task["id"], "reason": "No resumable checkpoint"})
             continue
+        if phase == "generation_pending":
+            generations = checkpoint.get("generation_attempts")
+            if (type(generations) is not int
+                    or not 1 <= generations < MAX_PRE_EDIT_GENERATIONS):
+                record("skipped", {
+                    "id": task["id"],
+                    "reason": "Pre-edit generation retry limit reached or invalid",
+                })
+                continue
         # A corrupt, moved or symlinked workspace must not abort recovery
         # of unrelated tasks. Do not follow a task-root symlink.
         saved_workspace = checkpoint.get("workspace")

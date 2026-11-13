@@ -2706,3 +2706,23 @@ and restore under constrained filesystems.
   index, CLI, documentation, roadmap and handoff suites passed 30 tests (1
   platform skip); compilation and `git diff --check` passed. Exact
   implementation SHA will follow after commit.
+
+### Follow-up — guarded pre-edit generation recovery
+
+- The engine now persists a `generation_pending` checkpoint immediately
+  before its first edit-generation call. The record binds the retry to the
+  original worktree, branch, saved execution contract and starting Git HEAD.
+- Safe Resume admits the new phase with a maximum of three generation calls.
+  Before retry, the engine checks that HEAD is unchanged, the worktree has no
+  tracked or untracked changes, and no transaction journal remains. A dirty
+  workspace after a crash between edit application and test checkpoint blocks
+  automatic resume to protect the generated or user-modified files.
+- Regressions cover a generation exception followed by a successful retry
+  and refusal after workspace tampering, exhaustion at three attempts, and
+  Safe Resume eligibility/skipping at the budget boundary. Commands:
+  `py -m unittest tests.test_engine.EngineIntegrationTests.test_first_generation_failure_can_resume_from_clean_pre_edit_checkpoint tests.test_engine.EngineIntegrationTests.test_pre_edit_resume_refuses_changed_workspace_before_model_call tests.test_engine.EngineIntegrationTests.test_pre_edit_generation_retry_budget_is_bounded -v`
+  (3 passed) and
+  `py -m unittest tests.test_recovery tests.test_handoff_check tests.test_multillm_roadmap tests.test_documentation -v`
+  (51 passed, 1 platform skip). `py -m compileall -q src tests`,
+  `git diff --check`, and `py scripts/check_handoff.py --json` passed.
+  Hosted CI and physical Windows acceptance remain open.

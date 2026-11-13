@@ -377,6 +377,35 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(report["skipped"], [])
         self.assertEqual(runner.call_count, 1)
 
+    def test_generation_pending_checkpoint_is_eligible_with_remaining_budget(self):
+        checkpoint = {
+            "phase": "generation_pending",
+            "generation_attempts": 1,
+            "workspace": str(self.parent / "task-12"),
+            "contract": self.contract(),
+        }
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(
+            FakeStore([self.task(12, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [12])
+        self.assertTrue(runner.call_args.kwargs["resume"])
+
+    def test_exhausted_generation_checkpoint_is_skipped(self):
+        checkpoint = {
+            "phase": "generation_pending",
+            "generation_attempts": 3,
+            "workspace": str(self.parent / "task-13"),
+            "contract": self.contract(),
+        }
+        runner = Mock()
+        report = resume_safe(
+            FakeStore([self.task(13, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [])
+        self.assertIn("retry limit", report["skipped"][0]["reason"])
+        runner.assert_not_called()
+
     def test_replays_saved_contract_per_task(self):
         tasks = [
             self.task(5, {"phase": "test_pending",

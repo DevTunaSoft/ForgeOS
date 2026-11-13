@@ -273,7 +273,7 @@ The existing managed GGUF window can now **restore a retired model** using the s
 
 The **Activity & diagnostics** tab now shows the active task ID, operation, elapsed seconds, and current persisted task stage (planning, editing, testing, blocked, passed, or failed). Stage changes are appended to the bounded diagnostic log. The monitor reuses the GUI's existing event loop and reads the task database at most once per second; it does not start a second polling worker. **Editing** includes both workspace setup and waiting for model output: token-level model progress and subprocess output are not yet streamed. Test results and errors appear when the worker finishes. The monitor does not continue execution after ForgeOS exits.
 
-**Recovery limitation:** The existing **Resume safe blocked tasks** action handles structured test/repair checkpoints, not early model-generation timeouts. Do not create duplicate tasks or delete workspaces to work around a blocked generation task. A guarded pre-edit retry path remains planned and is not yet implemented.
+**Recovery limitation:** The existing **Resume safe blocked tasks** action can retry early generation from a structured pre-edit checkpoint, as well as continue test/repair checkpoints. Pre-edit generation is capped at three calls. Resume requires the same saved execution contract, original Git HEAD and a clean workspace; changed files or a pending transaction require manual inspection. Other interruptions may still need manual recovery.
 
 ### Verified task database backups (experimental)
 

@@ -179,6 +179,61 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.task)["status"], "failed")
         context.assert_called_once()
 
+    def test_first_generation_failure_can_resume_from_clean_pre_edit_checkpoint(self):
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        with patch("forgeos.engine._run_workspace_tests", return_value={
+                "passed": True, "output": "ok", "returncode": 0}):
+            with self.assertRaisesRegex(RuntimeError, "model timeout"):
+                execute_task(
+                    self.store, self.task, self.root, allow_host_tests=True,
+                    generate=lambda model, prompt: (_ for _ in ()).throw(
+                        RuntimeError("model timeout")))
+            saved = json.loads(self.store.get(self.task)["result"])
+            self.assertEqual(saved["phase"], "generation_pending")
+            self.assertEqual(saved["generation_attempts"], 1)
+            result = execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                resume=True, generate=lambda model, prompt: manifest)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["edited"], ["app.py"])
+
+    def test_pre_edit_resume_refuses_changed_workspace_before_model_call(self):
+        from unittest.mock import Mock
+        with self.assertRaisesRegex(RuntimeError, "model timeout"):
+            execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                generate=lambda model, prompt: (_ for _ in ()).throw(
+                    RuntimeError("model timeout")))
+        checkpoint = json.loads(self.store.get(self.task)["result"])
+        (Path(checkpoint["workspace"]) / "user.py").write_text("user work\n")
+        generator = Mock(side_effect=AssertionError("model must not run"))
+        with self.assertRaisesRegex(ValueError, "Workspace changed"):
+            execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                resume=True, generate=generator)
+        generator.assert_not_called()
+
+    def test_pre_edit_generation_retry_budget_is_bounded(self):
+        from unittest.mock import Mock
+        def timeout(model, prompt):
+            raise RuntimeError("model timeout")
+        for _ in range(3):
+            with self.assertRaisesRegex(RuntimeError, "model timeout"):
+                execute_task(
+                    self.store, self.task, self.root, allow_host_tests=True,
+                    resume=self.store.get(self.task)["status"] == "blocked",
+                    generate=timeout)
+        saved = json.loads(self.store.get(self.task)["result"])
+        self.assertEqual(saved["generation_attempts"], 3)
+        generator = Mock(side_effect=AssertionError("retry budget exhausted"))
+        with self.assertRaisesRegex(ValueError, "retry budget or HEAD"):
+            execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                resume=True, generate=generator)
+        generator.assert_not_called()
+
     def test_direct_resume_rejects_large_checkpoint_before_workspace_access(self):
         from unittest.mock import patch, Mock
         from forgeos.core import MAX_CHECKPOINT_BYTES

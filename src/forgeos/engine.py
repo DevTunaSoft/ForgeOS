@@ -14,7 +14,7 @@ from typing import Callable
 
 from .core import LeaseLostError, Ollama, Store, run_test, validate_task_description
 from .workspace import Workspace, create_workspace
-from .transactions import apply_transaction, recover_edits, _hash_file
+from .transactions import apply_transaction, recover_edits, _hash_file, _journal
 
 MAX_FILES = 8
 MAX_FILE_BYTES = 128_000
@@ -23,6 +23,7 @@ EXTENSIONS = {".py", ".md", ".txt", ".json", ".toml", ".yaml", ".yml",
               ".js", ".ts", ".tsx", ".jsx", ".css", ".html", ".xml", ".sh"}
 FORBIDDEN = {".git", ".github", ".env", "node_modules", ".venv", "venv",
              "__pycache__", ".forgeos"}
+MAX_PRE_EDIT_GENERATIONS = 3
 
 
 class EditError(ValueError):
@@ -377,24 +378,39 @@ def _execute_task(
             if (not isinstance(saved_workspace, str)
                     or Path(saved_workspace).resolve() != ws.path.resolve()
                     or checkpoint.get("branch") != ws.branch
-                    or phase not in ("test_pending", "repair_pending")):
-                raise ValueError("No valid test-pending checkpoint or repair-pending checkpoint")
+                    or phase not in ("generation_pending", "test_pending", "repair_pending")):
+                raise ValueError("No valid pre-edit, test-pending or repair-pending checkpoint")
             saved_contract = checkpoint.get("contract")
             if saved_contract != contract:
                 raise ValueError("Checkpoint execution contract mismatch")
-            paths_saved = checkpoint.get("edited")
-            hashes = checkpoint.get("sha256")
-            if (not isinstance(paths_saved, list) or not paths_saved
-                    or any(not isinstance(name, str) for name in paths_saved)
-                    or len(set(paths_saved)) != len(paths_saved)
-                    or not isinstance(hashes, dict) or set(hashes) != set(paths_saved)):
-                raise ValueError("Invalid checkpoint integrity hashes or metadata")
-            for name, digest in hashes.items():
-                target = _validate_path(ws.path, name)
-                if (not isinstance(digest, str) or len(digest) != 64
-                        or not target.is_file()
-                        or _checkpoint_file_hash(target) != digest):
-                    raise ValueError("Checkpoint file changed since interruption")
+            if phase == "generation_pending":
+                from .workspace import _git
+                generations = checkpoint.get("generation_attempts")
+                head = checkpoint.get("head")
+                if (type(generations) is not int
+                        or not 1 <= generations < MAX_PRE_EDIT_GENERATIONS
+                        or not isinstance(head, str) or not re.fullmatch(r"[a-f0-9]{40,64}", head)):
+                    raise ValueError("Pre-edit generation retry budget or HEAD is invalid")
+                if _git(ws.path, "rev-parse", "HEAD") != head:
+                    raise ValueError("Workspace HEAD changed since generation interruption")
+                if _git(ws.path, "status", "--porcelain", "--untracked-files=all"):
+                    raise ValueError("Workspace changed since generation interruption")
+                if _journal(ws.path).exists():
+                    raise ValueError("Pending edit journal requires manual recovery")
+            else:
+                paths_saved = checkpoint.get("edited")
+                hashes = checkpoint.get("sha256")
+                if (not isinstance(paths_saved, list) or not paths_saved
+                        or any(not isinstance(name, str) for name in paths_saved)
+                        or len(set(paths_saved)) != len(paths_saved)
+                        or not isinstance(hashes, dict) or set(hashes) != set(paths_saved)):
+                    raise ValueError("Invalid checkpoint integrity hashes or metadata")
+                for name, digest in hashes.items():
+                    target = _validate_path(ws.path, name)
+                    if (not isinstance(digest, str) or len(digest) != 64
+                            or not target.is_file()
+                            or _checkpoint_file_hash(target) != digest):
+                        raise ValueError("Checkpoint file changed since interruption")
         start_attempt = checkpoint.get("attempt", 1) if resume else 1
         if (not isinstance(start_attempt, int) or isinstance(start_attempt, bool)
                 or not 1 <= start_attempt <= max_repairs + 1):
@@ -409,6 +425,9 @@ def _execute_task(
                 # copied into SQLite, before a recovered model repair prompt.
                 last_output = _checkpoint_evidence_preview(evidence_reference)
             prompt = _repair_prompt(ws.path, task["description"], last_output)
+        generation_attempts = (
+            checkpoint.get("generation_attempts", 0)
+            if resume and phase == "generation_pending" else 0)
         for attempt in range(start_attempt - 1, max_repairs + 1):
             if resume and phase == "test_pending" and attempt == start_attempt - 1:
                 paths = checkpoint["edited"]
@@ -427,6 +446,20 @@ def _execute_task(
                         f"Request:\n{task['description']}\nRepository file inventory:\n"
                         f"{_context(ws.path, task['description'], max_chars=inventory_budget)}"
                     )
+                if attempt == 0:
+                    from .workspace import _git
+                    generation_attempts += 1
+                    if generation_attempts > MAX_PRE_EDIT_GENERATIONS:
+                        raise ValueError("Pre-edit generation retry limit reached")
+                    pre_edit_checkpoint = {
+                        "workspace": str(ws.path), "branch": ws.branch,
+                        "phase": "generation_pending", "attempt": 1,
+                        "generation_attempts": generation_attempts,
+                        "head": _git(ws.path, "rev-parse", "HEAD"),
+                        "contract": contract,
+                    }
+                    publish({"editing"}, "editing",
+                            result=json.dumps(pre_edit_checkpoint))
                 manifest = generate(model, prompt)
                 heartbeat()
                 paths = apply_edits(ws.path, manifest)
@@ -543,7 +576,8 @@ def _execute_task(
             saved = json.loads(previous)
             if (isinstance(saved, dict)
                     and saved.get("phase") in (
-                        "test_pending", "repair_pending", "manual_review_required"
+                        "generation_pending", "test_pending", "repair_pending",
+                        "manual_review_required"
                     )):
                 details = saved
         except (ValueError, TypeError, RecursionError):
