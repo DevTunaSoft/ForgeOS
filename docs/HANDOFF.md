@@ -2467,3 +2467,8 @@ and restore under constrained filesystems.
 
 - Added an injected CDN HTTP 429 regression after a partial download. It confirms partial bytes and their pinned transfer journal survive the failure, the response body is closed, the UI error guidance contains no signed URL/token, and a later request uses the exact byte range to complete SHA-verified publication.
 - Verification: downloader, catalog, inventory, retirement, CLI, GUI contract, documentation and roadmap suites passed 144 tests (6 platform skips); compilation and `git diff --check` passed. This does not establish live Hub/CDN behavior.
+
+### Follow-up — bound total GGUF transfer duration
+
+- Added a validated maximum total duration of 24 hours (caller may request a shorter 1–86400 second limit) in addition to the existing per-socket timeout. The absolute deadline is checked around blocking reads, before/after opening the response, and while hashing; expiry preserves the last completed partial chunk and journal for retry. The GUI inherits the 24-hour bound without extra configuration.
+- Verification: focused deadline tests prove a simulated slow-trickle transfer times out after preserving one completed chunk, resumes at its exact offset, and rejects invalid duration values before metadata or storage access. Downloader, catalog, inventory, retirement, CLI, GUI contract, documentation and roadmap suites passed 146 tests (6 platform skips); compilation and `git diff --check` passed. Live socket timeout and multi-GiB throughput remain unverified.

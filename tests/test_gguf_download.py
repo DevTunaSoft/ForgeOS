@@ -616,6 +616,47 @@ class GGUFDownloadTests(unittest.TestCase):
         self.assertEqual(opened.call_args.args[0].get_header("Range"), "bytes=12-")
         self.assertEqual(Path(result["path"]).read_bytes(), BODY)
 
+    def test_total_download_deadline_retains_partial_then_allows_resume(self):
+        class SlowResponse(Response):
+            def __init__(self, data):
+                super().__init__(data)
+                self.read_count = 0
+            def read(self, size=-1):
+                self.read_count += 1
+                if self.read_count > 1:
+                    time.sleep(1.05)
+                return super().read(min(size, 7))
+
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=SlowResponse(BODY)):
+            with self.assertRaisesRegex(TimeoutError, "total time limit"):
+                self.download(revision=REVISION, max_duration_seconds=1)
+        partial = next(self.root.rglob("*.part"))
+        self.assertEqual(partial.read_bytes(), BODY[:7])
+
+        remaining = BODY[7:]
+        with patch("forgeos.gguf_download._open_weight", return_value=Response(
+                remaining, status=206, headers={
+                    "Content-Length": str(len(remaining)),
+                    "Content-Range": f"bytes 7-{len(BODY)-1}/{len(BODY)}"})) as opened:
+            result = self.download(
+                revision=REVISION, max_duration_seconds=10)
+        self.assertEqual(opened.call_args.args[0].get_header("Range"), "bytes=7-")
+        self.assertEqual(Path(result["path"]).read_bytes(), BODY)
+
+    def test_total_download_deadline_is_bounded_and_validated_before_io(self):
+        from forgeos.gguf_download import MAX_DOWNLOAD_DURATION_SECONDS
+        with patch("forgeos.gguf_download.model_revision") as revision, \
+             patch("forgeos.gguf_download.list_gguf_files") as catalog:
+            for invalid in (0, -1, True, 1.5,
+                            MAX_DOWNLOAD_DURATION_SECONDS + 1):
+                with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                        ValueError, "total model download time limit"):
+                    self.download(max_duration_seconds=invalid)
+            revision.assert_not_called()
+            catalog.assert_not_called()
+        self.assertEqual(list(self.root.iterdir()), [])
+
     def test_hash_mismatch_is_quarantined_without_publishing(self):
         with patch("forgeos.gguf_download._open_weight",
                    return_value=Response(b"x" * len(BODY))):

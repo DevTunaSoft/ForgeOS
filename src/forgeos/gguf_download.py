@@ -27,6 +27,7 @@ from .huggingface_catalog import (
 GIB = 1024 ** 3
 MAX_MODEL_BYTES = MAX_GGUF_BYTES
 MAX_MODEL_STORAGE_QUOTA_BYTES = 16 * 1024 ** 4
+MAX_DOWNLOAD_DURATION_SECONDS = 24 * 60 * 60
 CHUNK_BYTES = 1024 * 1024
 RESERVED_DISK_BYTES = GIB
 SAFE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
@@ -155,13 +156,20 @@ def _check_cancelled(cancel_event: Event | None) -> None:
             "GGUF download paused; partial bytes retained for resumption")
 
 
+def _check_deadline(deadline: float | None) -> None:
+    if deadline is not None and time.monotonic() >= deadline:
+        raise TimeoutError(
+            "GGUF download exceeded its total time limit; partial bytes "
+            "were retained for resumption")
+
+
 def _emit_progress(callback, stage: str, count: int, total: int) -> None:
     if callback is not None:
         callback(stage, count, total)
 
 
 def _digest(path: Path, *, cancel_event: Event | None = None,
-            progress_callback=None) -> str:
+            progress_callback=None, deadline: float | None = None) -> str:
     """Stream SHA-256 in bounded chunks, with optional cooperative pause."""
     checksum = hashlib.sha256()
     verified = 0
@@ -169,8 +177,10 @@ def _digest(path: Path, *, cancel_event: Event | None = None,
     with path.open("rb") as source:
         while True:
             _check_cancelled(cancel_event)
+            _check_deadline(deadline)
             block = source.read(CHUNK_BYTES)
             _check_cancelled(cancel_event)
+            _check_deadline(deadline)
             if not block:
                 break
             checksum.update(block)
@@ -202,7 +212,8 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                             max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60,
                             cancel_event: Event | None = None,
                             progress_callback=None,
-                            storage_quota_bytes: int | None = None) -> dict:
+                            storage_quota_bytes: int | None = None,
+                            deadline: float | None = None) -> dict:
     """Fetch one explicitly chosen GGUF with revision and SHA-256 verification.
 
     A failure never publishes an incomplete file. Interrupted partial bytes
@@ -224,17 +235,20 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable")
     _check_cancelled(cancel_event)
+    _check_deadline(deadline)
     if revision is None:
         revision = model_revision(repo)
     elif not isinstance(revision, str) or not re.fullmatch(r"[a-fA-F0-9]{40}", revision):
         raise ValueError("Model download requires a full pinned revision")
     revision = revision.lower()
     _check_cancelled(cancel_event)
+    _check_deadline(deadline)
     matches = [record for record in list_gguf_files(repo, revision=revision)
                if record["path"] == filename]
     if len(matches) != 1:
         raise ValueError("Selected GGUF file not found in pinned repository")
     _check_cancelled(cancel_event)
+    _check_deadline(deadline)
     info = matches[0]
     size, checksum = info["bytes"], info["sha256"]
     if (size > max_bytes or not isinstance(checksum, str)
@@ -255,11 +269,13 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                 "bytes": size, "sha256": checksum}
     with _exclusive_download_lock(lock):
         _check_cancelled(cancel_event)
+        _check_deadline(deadline)
         if destination.exists():
             if (not destination.is_file() or destination.stat().st_size != size
                     or _digest(
                         destination, cancel_event=cancel_event,
-                        progress_callback=progress_callback) != checksum):
+                        progress_callback=progress_callback,
+                        deadline=deadline) != checksum):
                 raise RuntimeError("Existing GGUF does not match the pinned checksum")
             if not _gguf_header(destination):
                 raise RuntimeError("Existing GGUF is missing the GGUF header")
@@ -286,6 +302,7 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
             if partial.exists():
                 raise RuntimeError("Published GGUF has unresolved partial download")
             _check_cancelled(cancel_event)
+            _check_deadline(deadline)
             if not manifest.exists():
                 _write_json_atomic(manifest, expected)
             if metadata.exists():
@@ -340,7 +357,9 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
             if position:
                 headers["Range"] = f"bytes={position}-"
             req = Request(url, headers=headers)
+            _check_deadline(deadline)
             with _open_weight(req, timeout=timeout) as response:
+                _check_deadline(deadline)
                 code = response.getcode()
                 if position:
                     expected_range = f"bytes {position}-{size - 1}/{size}"
@@ -362,8 +381,10 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                         try:
                             while position < size:
                                 _check_cancelled(cancel_event)
+                                _check_deadline(deadline)
                                 block = response.read(min(CHUNK_BYTES, size - position + 1))
                                 _check_cancelled(cancel_event)
+                                _check_deadline(deadline)
                                 if not block:
                                     break
                                 position += len(block)
@@ -372,6 +393,7 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                                 output.write(block)
                                 _emit_progress(progress_callback, "download", position, size)
                             _check_cancelled(cancel_event)
+                            _check_deadline(deadline)
                             if response.read(1):
                                 raise RuntimeError("Unexpected additional model bytes")
                         finally:
@@ -388,12 +410,14 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                             "ForgeOS retained the partial download for resume.") from exc
                     raise
         _check_cancelled(cancel_event)
+        _check_deadline(deadline)
         if position != size:
             raise RuntimeError("Model download interrupted; partial bytes retained for resumption")
         error = None
         if _digest(
                 partial, cancel_event=cancel_event,
-                progress_callback=progress_callback) != checksum:
+                progress_callback=progress_callback,
+                deadline=deadline) != checksum:
             error = "Downloaded GGUF failed SHA-256; corrupt file quarantined"
         elif not _gguf_header(partial):
             error = "Downloaded model lacks GGUF header; file quarantined"
@@ -403,6 +427,7 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
             metadata.unlink(missing_ok=True)
             raise RuntimeError(error)
         _check_cancelled(cancel_event)
+        _check_deadline(deadline)
         os.replace(partial, destination)
         _write_json_atomic(manifest, expected)
         metadata.unlink(missing_ok=True)
@@ -414,19 +439,25 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
                   max_bytes: int = MAX_MODEL_BYTES, timeout: int = 60,
                   cancel_event: Event | None = None,
                   progress_callback=None,
-                  storage_quota_bytes: int | None = None) -> dict:
+                  storage_quota_bytes: int | None = None,
+                  max_duration_seconds: int = MAX_DOWNLOAD_DURATION_SECONDS) -> dict:
     """Download one verified GGUF, optionally enforcing a whole-store quota.
 
     Quota-checked transfers take a blocking per-store lock, measure existing
     active/retired/partial/quarantined weight bytes, then hold the lock until
     completion or pause. This prevents simultaneous capped downloads from
-    oversubscribing the same store allowance.
+    oversubscribing the same store allowance. A total-duration limit bounds
+    slow-trickle transfers in addition to the per-socket timeout.
     """
+    if (type(max_duration_seconds) is not int
+            or not 1 <= max_duration_seconds <= MAX_DOWNLOAD_DURATION_SECONDS):
+        raise ValueError("Invalid total model download time limit")
+    deadline = time.monotonic() + max_duration_seconds
     if storage_quota_bytes is None:
         return _download_gguf_unlocked(
             repo, filename, revision=revision, directory=directory,
             max_bytes=max_bytes, timeout=timeout, cancel_event=cancel_event,
-            progress_callback=progress_callback)
+            progress_callback=progress_callback, deadline=deadline)
     if (type(storage_quota_bytes) is not int
             or not 1 <= storage_quota_bytes <= MAX_MODEL_STORAGE_QUOTA_BYTES):
         raise ValueError("Invalid model storage quota")
@@ -441,4 +472,4 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
             repo, filename, revision=revision, directory=root,
             max_bytes=max_bytes, timeout=timeout, cancel_event=cancel_event,
             progress_callback=progress_callback,
-            storage_quota_bytes=storage_quota_bytes)
+            storage_quota_bytes=storage_quota_bytes, deadline=deadline)
