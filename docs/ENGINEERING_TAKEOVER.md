@@ -696,3 +696,23 @@ Using the connected GitHub Actions API, the original publication run was located
 - **Related handoff integrity:** https://github.com/DevTunaSoft/ForgeOS/actions/runs/43159441184, success at `9018d75b15ad569825522fadfe920ce6db0f2ad6`
 
 **Evidence boundary:** These numbers validate the original published artifact, not later exporter fixes committed after that SHA. The actual PDF pages have not been rendered and visually reviewed here. The corrected exporter still needs a new exact-commit publication run and independent takeover rehearsal. Do not claim these tasks passed based on this earlier evidence.
+
+
+---
+
+## 37. Portable recovery package (2026-11-13)
+
+To avoid duplicate ledgers, the recovery ZIP is a **distribution artifact**, not a new source of truth. The canonical Markdown documents and tools remain authoritative in Git. The new `scripts/package_handoff.py` builds a compact, source-revision-labelled archive containing nine existing canonical documents, four handoff utilities, a `START_HERE.txt` recovery sequence and `MANIFEST.json` with SHA-256 and byte count for each included file.
+
+Security and operational limits: Python standard library only; no API calls or credentials; rejects dirty repositories, missing files, symlinks, oversized source documents, outputs within the checkout and overwrites. This is deliberately **not a source-code backup** and never implies physical Windows acceptance or CI success. The package manifest marks those items unverified.
+
+The existing manual `Master handoff publication` workflow now tests the package and publishes a second artifact `ForgeOS-Recovery-<source SHA>` alongside the PDF. The two artifacts share a revision. Regression tests cover manifest checksums, overwrite protection, dirty checkouts and output path restrictions.
+
+Run from a clean checkout:
+
+```powershell
+py -m unittest discover -s tests -p "test_package_handoff.py" -v
+py scripts/package_handoff.py --output "$env:TEMP/ForgeOS-Recovery.zip"
+```
+
+**Status:** implementation and tests committed; latest-commit CI and artifact publication **UNVERIFIED**. The previous successful 133-page PDF belongs to an earlier revision. The remaining acceptance criteria are a successful latest-revision workflow, artifact download/checksum verification, visual PDF inspection, and an independent clean-room takeover exercise. Do not declare these gates passed without actual evidence.
