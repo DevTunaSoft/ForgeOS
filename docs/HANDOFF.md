@@ -2180,3 +2180,8 @@ and restore under constrained filesystems.
 - Recovery ZIP packaging enforces its per-file read limit during I/O and streams the final archive checksum in 64 KiB chunks. PASS on Windows: all six test_package_handoff tests.
 
 - Added a regression confirming an oversized tracked handoff input is rejected before publishing a ZIP. PASS on Windows: all seven test_package_handoff tests.
+
+### Local master handoff PDF verification
+
+- PASS: `scripts/export_master_handoff.py --output <path> --min-body-pages 35` at `a6ec9881c5e1b919019d4b1488f8b63b45abb27e` produced 144 pages, including 142 body pages. Independently verified SHA-256 `38935a8649d3405a0b2a4a1a0fb73f02352db92f18661d0f7e71d9ba24253ca7`.
+- UNVERIFIED: Visual inspection sampled pages 1, 2, 72 and 144. They were legible without visible clipping or overlap. Poppler reported missing Symbol and ArialUnicode display fonts. Complete page review, cross-viewer fidelity, and exact-commit hosted publication remain open.
