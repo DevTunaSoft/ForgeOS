@@ -82,6 +82,21 @@ class AcceptanceSnapshotTests(unittest.TestCase):
                        str(Path(temp)), create=True):
                 self.assertIsNone(_embedded_build_commit())
 
+    def test_embedded_metadata_size_boundary(self):
+        from forgeos.acceptance import MAX_BUILD_INFO_BYTES, _embedded_build_commit
+
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp) / "forgeos"
+            bundle.mkdir()
+            metadata = bundle / "build_info.json"
+            payload = json.dumps({"source_commit": "a" * 40}).encode("utf-8")
+            padded = payload.ljust(MAX_BUILD_INFO_BYTES)
+            with patch("forgeos.acceptance.sys._MEIPASS", temp, create=True):
+                metadata.write_bytes(padded)
+                self.assertEqual(_embedded_build_commit(), "a" * 40)
+                metadata.write_bytes(padded + b" ")
+                self.assertIsNone(_embedded_build_commit())
+
     def test_physical_target_cannot_be_claimed_on_non_windows(self):
         with patch("forgeos.acceptance.platform.system", return_value="Linux"), \
              patch("forgeos.acceptance._frozen_identity",

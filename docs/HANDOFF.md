@@ -2170,3 +2170,5 @@ and restore under constrained filesystems.
 - The clean checkout at 043c32e reported its exact source commit on Windows. The snapshot now explains that source identity requires verifiable Git metadata and unchanged tracked files. Acceptance and CLI acceptance tests: 10 passed, one skip.
 
 - Frozen acceptance now bounds its embedded metadata read to 4 KiB and validates the source SHA as hexadecimal. Windows acceptance tests: 10 passed, one skip. Real frozen execution remains UNVERIFIED.
+
+- Regression coverage verifies that packaged acceptance metadata is accepted at 4 KiB and rejected one byte above it. Windows acceptance suites: 11 passed, one skipped.
