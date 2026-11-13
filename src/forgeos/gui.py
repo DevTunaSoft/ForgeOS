@@ -992,6 +992,10 @@ def launch(db_path, *, acceptance: bool = False):
                     state="normal" if eligible else "disabled")
                 use_btn.configure(state="normal" if eligible else "disabled")
                 retire_btn.configure(state="normal" if eligible else "disabled")
+                imported_eligible = (eligible and
+                    records[int(chosen[0])].get("kind") == "imported")
+                purge_imported_btn.configure(
+                    state="normal" if imported_eligible else "disabled")
 
             listing.bind("<<TreeviewSelect>>", update_selection_controls)
             retirement_events = Queue(maxsize=1)
@@ -1293,6 +1297,67 @@ def launch(db_path, *, acceptance: bool = False):
                 threading.Thread(target=worker, daemon=True).start()
                 chooser.after(200, poll_retirement)
 
+            def purge_imported_selected():
+                if retirement["busy"] or estimate_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if entry.get("kind") != "imported" or entry["status"] not in selectable_statuses:
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"], operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Cannot delete imported model",
+                        "Finish the current task and stop managed inference first.",
+                        parent=chooser)
+                    return
+                if not messagebox.askyesno(
+                        "Permanently delete imported GGUF",
+                        "Delete this imported GGUF and its ForgeOS identity sidecar? "
+                        "This cannot be undone. ForgeOS will refuse while a saved "
+                        "task checkpoint references the model and will verify its "
+                        "full SHA-256 before deleting. Stop any separate runtime "
+                        "using this file first.", parent=chooser):
+                    return
+                retirement["busy"] = True
+                cancel_event = threading.Event()
+                retirement["cancel_event"] = cancel_event
+                managed["busy"] = True
+                use_btn.configure(state="disabled")
+                retire_btn.configure(state="disabled")
+                purge_imported_btn.configure(state="disabled")
+                cancel_retire_btn.configure(state="normal")
+                retirement_status.set("Checking checkpoint references and verifying imported GGUF...")
+
+                def worker():
+                    worker_store = None
+                    try:
+                        from .model_import import purge_imported_gguf
+                        from .recovery import checkpoint_references_managed_model
+                        worker_store = Store(db_path)
+                        outcome = purge_imported_gguf(
+                            entry["path"], confirm=True,
+                            checkpoint_check=lambda digest:
+                            checkpoint_references_managed_model(worker_store, digest),
+                            cancel_event=cancel_event,
+                            progress_callback=lambda stage, done, total:
+                            post_retirement_event((
+                                "progress", index, stage, done, total)))
+                        post_retirement_event(("purged", index, outcome, None))
+                    except Exception as exc:
+                        post_retirement_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if worker_store is not None:
+                            worker_store.close()
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(200, poll_retirement)
+
             def post_retirement_event(event):
                 try:
                     retirement_events.put_nowait(event)
@@ -1338,6 +1403,7 @@ def launch(db_path, *, acceptance: bool = False):
                 cancel_retire_btn.configure(state="disabled")
                 use_btn.configure(state="normal")
                 retire_btn.configure(state="normal")
+                purge_imported_btn.configure(state="disabled")
                 if error is not None:
                     if "Cancelled" in error:
                         retirement_status.set(
@@ -1352,6 +1418,19 @@ def launch(db_path, *, acceptance: bool = False):
                         "Could not retire local model", error, parent=chooser)
                     return
                 imported = records[int(index)].get("kind") == "imported"
+                purged = event[0] == "purged"
+                if purged:
+                    retirement_status.set("Imported GGUF and identity removed permanently.")
+                    status.set("Imported GGUF permanently deleted")
+                    if gguf_path.get() == records[int(index)]["path"]:
+                        gguf_path.set("")
+                    listing.delete(index)
+                    messagebox.showinfo(
+                        "Imported GGUF deleted",
+                        "The selected model and its ForgeOS identity sidecar were deleted.",
+                        parent=chooser)
+                    update_selection_controls()
+                    return
                 if imported:
                     retirement_status.set(
                         "Import removed from active inventory; model file and "
@@ -1402,6 +1481,10 @@ def launch(db_path, *, acceptance: bool = False):
                 controls, text="Retire selected GGUF (recoverable)",
                 command=retire_selected)
             retire_btn.pack(side="right", padx=8)
+            purge_imported_btn = ttk.Button(
+                controls, text="Delete imported permanently",
+                command=purge_imported_selected, state="disabled")
+            purge_imported_btn.pack(side="right", padx=8)
             cancel_retire_btn = ttk.Button(
                 controls, text="Cancel verification",
                 command=cancel_retirement, state="disabled")

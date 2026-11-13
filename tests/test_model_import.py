@@ -3,11 +3,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from forgeos.gguf_download import _exclusive_download_lock
 from forgeos.managed_llama import _verified_model
 from forgeos.model_inventory import list_downloads, verify_download
-from forgeos.model_import import import_local_gguf, unregister_imported_gguf
+from forgeos.model_import import (
+    import_local_gguf, purge_imported_gguf, unregister_imported_gguf,
+)
 
 
 class LocalModelImportTests(unittest.TestCase):
@@ -127,6 +130,35 @@ class LocalModelImportTests(unittest.TestCase):
                 "--directory", str(self.models)]), 0)
         self.assertEqual(json.loads(output.getvalue())["provenance"], "unknown")
 
+    def test_cli_purges_imported_model_only_with_confirm_and_existing_database(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from forgeos.cli import main
+        import_local_gguf(self.model, directory=self.models)
+        database = self.root / "tasks.sqlite3"
+        from forgeos.core import Store
+        store = Store(database)
+        store.close()
+        with self.assertRaisesRegex(ValueError, "Explicit --confirm"):
+            main(["--db", str(database), "model-purge-imported", str(self.model),
+                  "--directory", str(self.models)])
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main([
+                "--db", str(database), "model-purge-imported", str(self.model),
+                "--directory", str(self.models), "--confirm"]), 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "purged")
+        self.assertFalse(self.model.exists())
+        self.assertEqual(list_downloads(self.models), [])
+
+    def test_import_purge_refuses_missing_or_unreadable_task_database(self):
+        from forgeos.cli import main
+        import_local_gguf(self.model, directory=self.models)
+        with self.assertRaises((FileNotFoundError, ValueError)):
+            main(["--db", str(self.root / "missing.sqlite3"),
+                  "model-purge-imported", str(self.model), "--confirm"])
+        self.assertTrue(self.model.exists())
+
     def test_unregister_preserves_file_and_sidecar_and_reimport_restores_inventory(self):
         import_local_gguf(self.model, directory=self.models)
         sidecar = self.model.with_name(self.model.name + ".forgeos.json")
@@ -172,6 +204,94 @@ class LocalModelImportTests(unittest.TestCase):
         self.model.write_bytes(self.data + b"changed")
         with self.assertRaisesRegex(RuntimeError, "changed"):
             unregister_imported_gguf(self.model, directory=self.models)
+        self.assertEqual(len(list_downloads(self.models)), 1)
+
+    def test_import_purge_requires_confirmation_and_checkpoint_clearance(self):
+        import_local_gguf(self.model, directory=self.models)
+        for kwargs in (
+                {"confirm": False, "checkpoint_check": lambda _sha: False},
+                {"confirm": True, "checkpoint_check": lambda _sha: True},
+                {"confirm": True, "checkpoint_check": lambda _sha: None}):
+            with self.subTest(kwargs=kwargs), self.assertRaises((ValueError, RuntimeError)):
+                purge_imported_gguf(
+                    self.model, directory=self.models, **kwargs)
+        self.assertTrue(self.model.exists())
+        self.assertTrue(self.model.with_name(
+            self.model.name + ".forgeos.json").exists())
+        self.assertEqual(len(list_downloads(self.models)), 1)
+
+    def test_confirmed_import_purge_deletes_only_selected_import(self):
+        sibling = self.root / "sibling.gguf"
+        sibling.write_bytes(b"GGUF" + b"s" * 32)
+        import_local_gguf(self.model, directory=self.models)
+        import_local_gguf(sibling, directory=self.models)
+        result = purge_imported_gguf(
+            self.model, directory=self.models, confirm=True,
+            checkpoint_check=lambda digest: digest == "unrelated")
+        self.assertEqual(result["status"], "purged")
+        self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
+        self.assertFalse(self.model.exists())
+        self.assertFalse(self.model.with_name(
+            self.model.name + ".forgeos.json").exists())
+        self.assertTrue(sibling.exists())
+        self.assertEqual([row["path"] for row in list_downloads(self.models)],
+                         [str(sibling.resolve())])
+
+    def test_import_purge_refuses_checkpoint_and_active_lock(self):
+        import_local_gguf(self.model, directory=self.models)
+        with self.assertRaisesRegex(RuntimeError, "checkpoint references"):
+            purge_imported_gguf(
+                self.model, directory=self.models, confirm=True,
+                checkpoint_check=lambda _sha: True)
+        lock = self.model.with_name(self.model.name + ".lock")
+        with _exclusive_download_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                purge_imported_gguf(
+                    self.model, directory=self.models, confirm=True,
+                    checkpoint_check=lambda _sha: False)
+        self.assertTrue(self.model.exists())
+
+    def test_import_purge_retries_after_sidecar_or_model_removal(self):
+        import_local_gguf(self.model, directory=self.models)
+        sidecar = self.model.with_name(self.model.name + ".forgeos.json")
+        unlink = Path.unlink
+
+        def fail_model_once(path, *args, **kwargs):
+            if path == self.model:
+                raise OSError("injected model unlink failure")
+            return unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", fail_model_once):
+            with self.assertRaisesRegex(OSError, "injected"):
+                purge_imported_gguf(
+                    self.model, directory=self.models, confirm=True,
+                    checkpoint_check=lambda _sha: False)
+        self.assertFalse(sidecar.exists())
+        self.assertTrue(self.model.exists())
+        result = purge_imported_gguf(
+            self.model, directory=self.models, confirm=True,
+            checkpoint_check=lambda _sha: False)
+        self.assertEqual(result["status"], "purged")
+        self.assertFalse(self.model.exists())
+        self.assertEqual(list_downloads(self.models), [])
+
+    def test_import_purge_cancellation_preserves_all_import_files(self):
+        from threading import Event
+        from forgeos.model_import import ImportPurgeCancelled
+        import_local_gguf(self.model, directory=self.models)
+        event = Event()
+
+        def cancel_after_hash(_stage, _completed, _total):
+            event.set()
+
+        with self.assertRaises(ImportPurgeCancelled):
+            purge_imported_gguf(
+                self.model, directory=self.models, confirm=True,
+                checkpoint_check=lambda _sha: False, cancel_event=event,
+                progress_callback=cancel_after_hash)
+        self.assertTrue(self.model.exists())
+        self.assertTrue(self.model.with_name(
+            self.model.name + ".forgeos.json").exists())
         self.assertEqual(len(list_downloads(self.models)), 1)
 
     def test_reverify_refuses_active_managed_runtime_lock(self):

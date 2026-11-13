@@ -61,6 +61,12 @@ def main(argv=None):
     purge.add_argument('identifier')
     purge.add_argument('--directory',default='')
     purge.add_argument('--confirm',action='store_true')
+    imported_purge=sub.add_parser(
+        'model-purge-imported',
+        help='Permanently delete one registered imported GGUF after safety checks')
+    imported_purge.add_argument('path', help='Exact imported GGUF path')
+    imported_purge.add_argument('--directory',default='')
+    imported_purge.add_argument('--confirm',action='store_true')
     download=sub.add_parser('model-download',
                             help='Explicitly download one GGUF with pinned SHA-256')
     download.add_argument('repository',help='Public Hugging Face owner/model')
@@ -175,6 +181,22 @@ def main(argv=None):
         try:
             result = purge_retired_download(
                 args.identifier, directory=args.directory or None, confirm=True,
+                checkpoint_check=lambda digest:
+                checkpoint_references_managed_model(store, digest))
+        finally:
+            store.close()
+        print(json.dumps(result, indent=2))
+        return 0
+    if args.action == 'model-purge-imported':
+        if not args.confirm:
+            raise ValueError('Explicit --confirm required to permanently purge imported GGUF')
+        Store.inspect_existing_database(args.db)
+        from .model_import import purge_imported_gguf
+        from .recovery import checkpoint_references_managed_model
+        store = Store(args.db)
+        try:
+            result = purge_imported_gguf(
+                args.path, directory=args.directory or None, confirm=True,
                 checkpoint_check=lambda digest:
                 checkpoint_references_managed_model(store, digest))
         finally:

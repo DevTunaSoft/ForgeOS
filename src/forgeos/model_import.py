@@ -32,6 +32,10 @@ class ImportUnregisterCancelled(RuntimeError):
     """The user cancelled verification before an import was unregistered."""
 
 
+class ImportPurgeCancelled(RuntimeError):
+    """The user cancelled verification before imported bytes were deleted."""
+
+
 def _check_import_cancelled(cancel_event: Event | None) -> None:
     if cancel_event is not None and cancel_event.is_set():
         raise ImportCancelled("GGUF import cancelled; no identity was published")
@@ -309,3 +313,148 @@ def unregister_imported_gguf(path: str | Path, *,
     return {"status": "unregistered", "path": str(target),
             "sha256": identity["sha256"], "bytes": identity["bytes"],
             "weights_preserved": True, "sidecar_preserved": True}
+
+
+def purge_imported_gguf(path: str | Path, *, checkpoint_check,
+                        directory: str | Path | None = None,
+                        confirm: bool = False, cancel_event=None,
+                        progress_callback=None) -> dict:
+    """Permanently delete one explicitly confirmed imported model.
+
+    The registry SHA-256 is the identity source, so interrupted deletion can
+    be retried after either the sidecar or model bytes are already gone. The
+    registry entry is atomically removed last. No other imported paths change.
+    """
+    if cancel_event is not None and not isinstance(cancel_event, Event):
+        raise TypeError("cancel_event must be a threading.Event")
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable")
+    if confirm is not True:
+        raise ValueError("Explicit confirm=True required to permanently purge imported GGUF")
+    if not callable(checkpoint_check):
+        raise TypeError("checkpoint_check must be callable")
+    target = Path(path).expanduser().absolute()
+    if any(item.is_symlink() for item in (target, *target.parents)):
+        raise ValueError("Imported model path contains a symbolic link")
+    target = target.resolve(strict=False)
+    if target.suffix.lower() != ".gguf":
+        raise ValueError("Select an imported .gguf file")
+    root = _safe_storage_root(directory)
+    index = root / IMPORT_INDEX
+    index_lock = root / (IMPORT_INDEX + ".lock")
+    lock_path = target.with_name(target.name + ".lock")
+    sidecar = target.with_name(target.name + ".forgeos.json")
+    for item in (index, index_lock, lock_path, sidecar):
+        if item.is_symlink():
+            raise ValueError("Refusing symbolic-link imported model metadata or lock")
+
+    with _exclusive_download_lock(lock_path):
+        with _exclusive_download_lock(index_lock):
+            for item in (index, index_lock, lock_path, sidecar, target):
+                if item.is_symlink():
+                    raise ValueError("Imported model path changed into a symbolic link")
+            if not index.is_file() or index.stat().st_size > MAX_IMPORT_INDEX_BYTES:
+                raise ValueError("Local import inventory is missing or oversized")
+            try:
+                data = json.loads(index.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise ValueError("Local import inventory is unreadable") from exc
+            if (not isinstance(data, dict) or set(data) != {"version", "imports"}
+                    or type(data["version"]) is not int or data["version"] != 1
+                    or not isinstance(data["imports"], list)
+                    or len(data["imports"]) > MAX_IMPORTED_MODELS):
+                raise ValueError("Local import inventory has an invalid shape")
+            entries = data["imports"]
+            seen_paths = set()
+            for item in entries:
+                if (not isinstance(item, dict) or set(item) != {"path", "sha256"}
+                        or not isinstance(item["path"], str)
+                        or len(item["path"]) > 32768
+                        or not Path(item["path"]).is_absolute()
+                        or not isinstance(item["sha256"], str)
+                        or not re.fullmatch(r"[a-f0-9]{64}", item["sha256"])):
+                    raise ValueError("Local import inventory contains an invalid entry")
+                if item["path"] in seen_paths:
+                    raise ValueError("Local import inventory has duplicate model paths")
+                seen_paths.add(item["path"])
+            matches = [item for item in entries if item["path"] == str(target)]
+            if len(matches) > 1:
+                raise ValueError("Local import inventory has duplicate model paths")
+            if not matches:
+                if not target.exists() and not sidecar.exists():
+                    return {"status": "already_purged", "path": str(target)}
+                raise ValueError("GGUF is not registered in ForgeOS imported inventory")
+            expected_sha = matches[0]["sha256"]
+            if checkpoint_check(expected_sha) is not False:
+                raise RuntimeError(
+                    "A blocked task checkpoint references this GGUF; purge refused")
+
+            identity = None
+            if sidecar.exists():
+                if (not sidecar.is_file() or sidecar.stat().st_nlink != 1
+                        or sidecar.stat().st_size > 4096):
+                    raise ValueError("Imported model sidecar is missing or unsafe")
+                try:
+                    identity = json.loads(sidecar.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError, ValueError) as exc:
+                    raise ValueError("Imported model sidecar is unreadable") from exc
+                if (not isinstance(identity, dict)
+                        or set(identity) != {"format", "source_path", "file", "bytes",
+                                             "sha256", "provenance"}
+                        or identity.get("format") != IMPORT_FORMAT
+                        or identity.get("source_path") != str(target)
+                        or identity.get("file") != target.name
+                        or identity.get("provenance") != "unknown"
+                        or type(identity.get("bytes")) is not int
+                        or not MIN_MODEL_BYTES <= identity["bytes"] <= MAX_MODEL_BYTES
+                        or identity.get("sha256") != expected_sha):
+                    raise ValueError("Imported model sidecar disagrees with registry")
+
+            if target.exists():
+                before = target.stat()
+                if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                        or not MIN_MODEL_BYTES <= before.st_size <= MAX_MODEL_BYTES
+                        or identity is not None and before.st_size != identity["bytes"]):
+                    raise RuntimeError("Imported GGUF file identity changed")
+                with target.open("rb") as source:
+                    if source.read(4) != b"GGUF":
+                        raise ValueError("Imported model no longer has a GGUF header")
+                try:
+                    actual_sha = _digest(
+                        target, cancel_event=cancel_event,
+                        progress_callback=progress_callback)
+                except DownloadCancelled:
+                    raise ImportPurgeCancelled(
+                        "Imported GGUF purge cancelled; no files were deleted") from None
+                after = target.stat()
+                if (actual_sha != expected_sha or
+                        (before.st_size, before.st_mtime_ns, before.st_ino,
+                         before.st_nlink) !=
+                        (after.st_size, after.st_mtime_ns, after.st_ino,
+                         after.st_nlink)):
+                    raise RuntimeError("Imported GGUF changed during purge verification")
+
+            if cancel_event is not None and cancel_event.is_set():
+                raise ImportPurgeCancelled(
+                    "Imported GGUF purge cancelled; no files were deleted")
+            if sidecar.exists():
+                sidecar.unlink()
+            if target.exists():
+                target.unlink()
+            retained = [item for item in entries if item["path"] != str(target)]
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=".forgeos-import-index-", suffix=".tmp", dir=root)
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                    json.dump({"version": 1, "imports": retained}, output,
+                              sort_keys=True)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary_name, index)
+            finally:
+                if os.path.exists(temporary_name):
+                    os.unlink(temporary_name)
+    return {"status": "purged", "path": str(target),
+            "sha256": expected_sha,
+            "bytes": identity["bytes"] if identity is not None else 0,
+            "weights_deleted": True, "sidecar_deleted": True}

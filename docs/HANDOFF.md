@@ -2540,3 +2540,19 @@ and restore under constrained filesystems.
   roadmap suites passed 97 tests (4 platform skips); compilation and
   `git diff --check` passed. Real native Windows file-lock behavior and
   recovery from physical power loss during deletion remain unverified.
+
+### Follow-up — add retryable permanent cleanup for imported GGUFs
+
+- Added `model-purge-imported PATH --confirm`; it requires the existing readable
+  task database and refuses if a blocked checkpoint references the imported
+  model identity. The API validates the import registry and sidecar, checks the
+  model lock, rehashes remaining bytes, removes the sidecar and GGUF, then
+  atomically removes the registry entry last. A failure during deletion leaves
+  the registry identity for retry. The GUI offers a separate irreversible
+  **Delete imported permanently** action while retaining reversible
+  unregistration.
+- Updated user guide and multi-LLM lifecycle roadmap. Verification: imported
+  model, inventory, retirement, GUI contract/acceptance, documentation and
+  roadmap suites passed 125 tests (6 platform skips); compilation and
+  `git diff --check` passed. Real Windows deletion/ACL behavior, external
+  inference processes and power-loss recovery remain unverified.
