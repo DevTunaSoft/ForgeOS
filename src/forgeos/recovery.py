@@ -109,7 +109,7 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         raise ValueError("on_event must be callable")
     if managed_model_factory is not None and not callable(managed_model_factory):
         raise ValueError("managed_model_factory must be callable")
-    if preset is not None and preset not in PRESETS:
+    if preset is not None and (not isinstance(preset, str) or preset not in PRESETS):
         raise ValueError("Invalid test preset override")
     if max_repairs is not None and (
             not isinstance(max_repairs, int) or isinstance(max_repairs, bool)

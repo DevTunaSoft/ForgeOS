@@ -489,6 +489,14 @@ class RecoveryTests(unittest.TestCase):
                         on_event="not callable")
         self.assertEqual(store.recovery_calls, 0)
 
+    def test_invalid_preset_override_rejected_before_store_mutation(self):
+        store = FakeStore([])
+        for preset in ([], {}, "unknown"):
+            with self.subTest(preset=preset):
+                with self.assertRaisesRegex(ValueError, "Invalid test preset override"):
+                    resume_safe(store, self.parent, allow_host_tests=True, preset=preset)
+        self.assertEqual(store.recovery_calls, 0)
+
     def test_manual_review_checkpoint_is_skipped_without_model_or_runner(self):
         checkpoint = {
             "phase": "manual_review_required",
