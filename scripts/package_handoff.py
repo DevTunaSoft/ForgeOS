@@ -7,7 +7,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -71,14 +73,22 @@ def create(root: Path, output: Path) -> dict:
     output.parent.mkdir(parents=True, exist_ok=True)
     members = {**entries, "MANIFEST.json": json.dumps(manifest, indent=2) + "\n",
                "START_HERE.txt": guide}
-    with zipfile.ZipFile(output, "x") as archive:
-        for name, data in sorted(members.items()):
-            member = zipfile.ZipInfo(name)
-            member.create_system = 3
-            archive.writestr(member, data, compress_type=zipfile.ZIP_DEFLATED,
-                             compresslevel=6)
+    with tempfile.TemporaryDirectory(prefix=".forgeos-handoff-", dir=output.parent) as stage:
+        staged = Path(stage) / "handoff.zip"
+        with zipfile.ZipFile(staged, "x") as archive:
+            for name, data in sorted(members.items()):
+                member = zipfile.ZipInfo(name)
+                member.create_system = 3
+                archive.writestr(member, data, compress_type=zipfile.ZIP_DEFLATED,
+                                 compresslevel=6)
+        digest = hashlib.sha256(staged.read_bytes()).hexdigest()
+        # Windows rename and POSIX link both refuse an existing destination.
+        if os.name == "nt":
+            staged.rename(output)
+        else:
+            os.link(staged, output)
     return {"status": "PASS", "source_sha": revision, "file_count": len(entries),
-            "package_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "package_sha256": digest,
             "output": str(output)}
 
 

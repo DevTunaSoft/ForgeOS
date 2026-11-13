@@ -5,6 +5,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
@@ -61,6 +62,13 @@ class RecoveryPackageTests(unittest.TestCase):
         (self.root / "docs" / "HANDOFF.md").write_text("changed")
         with self.assertRaises(ValueError):
             pkg.create(self.root, self.out)
+
+    def test_failed_archive_write_leaves_no_partial_output(self):
+        with patch.object(zipfile.ZipFile, "writestr", side_effect=OSError("write failed")):
+            with self.assertRaisesRegex(OSError, "write failed"):
+                pkg.create(self.root, self.out)
+        self.assertFalse(self.out.exists())
+        self.assertEqual(list(self.out.parent.glob(".forgeos-handoff-*")), [])
 
     def test_refuses_output_inside_repository(self):
         with self.assertRaises(ValueError):
