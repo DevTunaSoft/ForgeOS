@@ -6,7 +6,9 @@ are rejected. Inference binaries/model weights are managed separately.
 from __future__ import annotations
 
 import json
+import socket
 import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -32,8 +34,36 @@ class _RejectRedirects(HTTPRedirectHandler):
 
 def _open(request: Request, *, timeout: int):
     # Explicitly disable environment proxies and cross-host redirects.
-    return build_opener(ProxyHandler({}), _RejectRedirects()).open(
-        request, timeout=timeout)
+    try:
+        return build_opener(ProxyHandler({}), _RejectRedirects()).open(
+            request, timeout=timeout)
+    except HTTPError as exc:
+        try:
+            status = exc.code
+        finally:
+            exc.close()
+        guidance = {
+            400: "The local server rejected the request. Check its model name and token limit field.",
+            401: "The local server requires different authentication. Check its local API key.",
+            403: "The local server refused this request. Check its local access settings.",
+            404: "The local API path or selected model was not found. Check the endpoint and model name.",
+            429: "The local server is busy or rate-limited. Wait for it to finish current work and retry.",
+        }
+        if status in (500, 502, 503, 504):
+            message = "The local inference server failed while handling the request. Check its server log."
+        else:
+            message = guidance.get(
+                status, f"The local inference server returned HTTP {status}.")
+        raise RuntimeError(message) from None
+    except (URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            message = "The local inference server did not respond before the timeout."
+        else:
+            message = (
+                "ForgeOS could not reach the selected local inference server. "
+                "Start it and check the loopback address and port.")
+        raise RuntimeError(message) from None
 
 
 def validate_endpoint(endpoint: str) -> str:

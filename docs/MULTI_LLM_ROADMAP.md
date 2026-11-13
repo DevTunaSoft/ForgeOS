@@ -169,6 +169,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [ ] Per-role model preference, manual routing override and benchmark history remain open. **Implemented experimental baseline:** the existing managed-model GUI now provides a one-click local inference self-test that requires valid empty-edit JSON, measures elapsed time and records available one-shot memory accounting without sending project content.
 - [ ] Plain-language explanations: model too large, unavailable backend, unsupported template, missing hash, out of disk/RAM, blocked network, insufficient Windows permissions.
 - [x] **Partial Hub diagnosis:** the catalog UI now translates DNS/network failures and common HTTP 401/403/404/429/5xx responses into actionable plain-language guidance. Other model/runtime and storage diagnoses remain open.
+- [x] **Partial local endpoint diagnosis:** OpenAI-compatible adapter connection failures and common HTTP errors now produce URL-free guidance; HTTP error responses are closed. Runtime, model-load, storage and permission diagnoses remain open.
 - [ ] Accessible keyboard navigation, screen reader labels, progress/cancel/finish affordances; all slow downloads/benchmarks off the Tk main thread.
 - [ ] Minimal idle memory, no unbounded logs, no hidden background network operations; clearly state that bundled EXE **does not bundle model weights**.
 

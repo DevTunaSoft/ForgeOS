@@ -2337,3 +2337,8 @@ and restore under constrained filesystems.
 - Non-default adapter selections are written into new run checkpoints and replayed by safe recovery; old checkpoint shapes continue to parse unchanged. The GUI-managed llama.cpp recovery factory also rebuilds the profile from its checkpoint. User settings persist the selection without secrets.
 - Updated the compatibility guide and roadmap to describe this as a partial compatibility profile; server/version differences beyond this parameter and real endpoint acceptance remain open.
 - Verification: model-profile, checkpoint-recovery and settings tests passed 13 tests; GUI-contract, documentation and roadmap suites passed 52 tests. Compilation and `git diff --check` passed. One existing socket-based local HTTP test cannot run in this managed sandbox because loopback socket access is denied (WinError 10013); no real endpoint compatibility is claimed.
+
+### Follow-up — explain local inference endpoint failures
+
+- The local OpenAI-compatible request adapter now translates common HTTP statuses and connection/timeout errors into plain-language guidance without exposing the local URL or raw response body. HTTP error responses are always closed. Model/server log details remain the user's local diagnostic source.
+- Added regression cases for HTTP response closure, unsupported token parameter guidance, and redaction of URLs and raw networking messages. Updated the compatibility guide and roadmap; target-runtime diagnostics remain open.

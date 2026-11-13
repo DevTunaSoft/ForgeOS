@@ -114,7 +114,9 @@ See the [upstream documentation](https://github.com/ggml-org/llama.cpp/blob/mast
    OpenAI-compatible local adapters; Ollama keeps its native request format.
    CLI `plan` and `run` accept the equivalent `--token-parameter` option.
 6. Try **Generate plan** before a code-edit run. Check the output and any
-   server errors before enabling host-test execution.
+   server errors before enabling host-test execution. Connection failures and
+   common HTTP errors are translated into guidance without displaying the
+   endpoint URL or raw server response body.
 
 The backend and endpoint are captured when a GUI task is started. Non-Ollama
 execution checkpoints record backend and endpoint in their resume contract,

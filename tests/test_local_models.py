@@ -2,6 +2,7 @@
 import io
 import json
 import unittest
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from unittest.mock import Mock, patch
 
@@ -23,6 +24,29 @@ def payload(data):
 
 
 class LocalModelsTests(unittest.TestCase):
+    def test_local_http_errors_are_actionable_and_close_responses(self):
+        from forgeos.local_models import _open
+        response = Response(b"private server error details")
+        error = HTTPError("http://127.0.0.1:1234/v1/chat/completions", 400,
+                          "bad request", {}, response)
+        with patch("forgeos.local_models.build_opener") as opener:
+            opener.return_value.open.side_effect = error
+            with self.assertRaisesRegex(RuntimeError, "token limit field") as raised:
+                _open(Request("http://127.0.0.1:1234/v1/chat/completions"), timeout=2)
+        self.assertTrue(response.closed)
+        self.assertNotIn("http://", str(raised.exception))
+        self.assertNotIn("private server", str(raised.exception))
+
+    def test_local_connection_errors_hide_raw_url_and_os_message(self):
+        from forgeos.local_models import _open
+        with patch("forgeos.local_models.build_opener") as opener:
+            opener.return_value.open.side_effect = URLError(
+                OSError("secret resolver detail"))
+            with self.assertRaisesRegex(RuntimeError, "could not reach") as raised:
+                _open(Request("http://127.0.0.1:1234/v1/models"), timeout=2)
+        self.assertNotIn("http://", str(raised.exception))
+        self.assertNotIn("secret resolver", str(raised.exception))
+
     def test_managed_listener_owner_check_runs_before_model_request(self):
         model = LocalChatModel(
             backend="llama.cpp", model="forgeos-managed",
