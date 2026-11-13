@@ -98,11 +98,14 @@ class LocalChatModel:
     """Compatible with ForgeOS's existing plan/generate_edits interface."""
 
     def __init__(self, *, backend: str, model: str, endpoint: str | None = None,
-                 api_key: str | None = None):
+                 api_key: str | None = None,
+                 token_parameter: str = "max_tokens"):
         if backend not in DEFAULT_ENDPOINTS:
             raise ValueError("Unknown local inference backend")
         if not _valid_model_name(model):
             raise ValueError("Invalid local model identifier")
+        if token_parameter not in ("max_tokens", "max_completion_tokens"):
+            raise ValueError("Unsupported local chat token parameter profile")
         if api_key is not None and (not isinstance(api_key, str)
                 or not 20 <= len(api_key) <= 128
                 or not all(x.isalnum() or x in "-_" for x in api_key)):
@@ -111,6 +114,7 @@ class LocalChatModel:
         self.model = model
         self.base = validate_endpoint(endpoint or DEFAULT_ENDPOINTS[backend])
         self._api_key = api_key
+        self.token_parameter = token_parameter
         self._listener_owner_check = None
 
     def _verify_listener_owner(self) -> None:
@@ -179,9 +183,9 @@ class LocalChatModel:
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "temperature": 0,
-            "max_tokens": (settings["num_predict"] if edits else
-                           min(900, settings["num_predict"])),
         }
+        request_body[self.token_parameter] = (
+            settings["num_predict"] if edits else min(900, settings["num_predict"]))
         encoded = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
         if len(encoded) > MAX_REQUEST_BYTES:
             raise ValueError("Model request exceeds the bounded context budget")
@@ -220,7 +224,8 @@ class LocalChatModel:
 
 
 def create_model(*, backend: str = "ollama", model: str = "auto",
-                 endpoint: str | None = None, api_key: str | None = None):
+                 endpoint: str | None = None, api_key: str | None = None,
+                 token_parameter: str = "max_tokens"):
     """Preserve canonical Ollama integration while adding local adapters."""
     if backend == "ollama":
         if api_key is not None:
@@ -232,4 +237,5 @@ def create_model(*, backend: str = "ollama", model: str = "auto",
         from .core import Ollama
         return Ollama(model=model)
     return LocalChatModel(backend=backend, model=model,
-                          endpoint=endpoint or None, api_key=api_key)
+                          endpoint=endpoint or None, api_key=api_key,
+                          token_parameter=token_parameter)

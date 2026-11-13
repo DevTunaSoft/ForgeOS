@@ -51,7 +51,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [x] Implement fixed loopback-literal endpoint validation, disable proxies and redirects, cap catalogs/prompt/response, test malformed responses.
 - [x] Make source-level llama.cpp and LM Studio adapters selectable in the same GUI.
 - [ ] Verify each adapter against a **real** compatible server, including `/models`, `/chat/completions`, chat templates, JSON edit manifests, timeout and server version differences.
-- [ ] Add compatibility profiles for unsupported/variant OpenAI API request parameters without a parallel inference client.
+- [x] **Partial explicit token-limit profile:** the existing adapter can select `max_tokens` or `max_completion_tokens` in GUI/CLI and persists non-default choices in run checkpoints for recovery. Other server/version differences and live compatibility tests remain open.
 - [ ] Maintain an explicit adapter capability matrix: tools, JSON schema, context/token limits, model file types, license and backend versions.
 - [x] **Partial source-level matrix:** `docs/MODEL_COMPATIBILITY.md` now lists current ForgeOS request contracts, tool/schema behavior, known versus server-dependent context limits, file/license provenance and available version identity. Real backend/version compatibility profiles and measured limits remain open.
 - [ ] Prove remote endpoints, loopback impersonation where detectable, proxy bypass, redirect changes and accidental cloud API credentials cannot leak project content.

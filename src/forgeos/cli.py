@@ -9,11 +9,13 @@ from .local_models import BACKENDS, create_model
 def default_db():
     return Path.home()/'.forgeos'/'tasks.sqlite3'
 
-def _cli_model(*, backend: str, model: str, endpoint: str):
+def _cli_model(*, backend: str, model: str, endpoint: str,
+               token_parameter: str = "max_tokens"):
     """Keep the original Ollama integration patchable and backwards-compatible."""
     if backend == "ollama" and not endpoint:
         return Ollama(model=model)
-    return create_model(backend=backend, model=model, endpoint=endpoint)
+    return create_model(backend=backend, model=model, endpoint=endpoint,
+                        token_parameter=token_parameter)
 
 
 def main(argv=None):
@@ -93,6 +95,10 @@ def main(argv=None):
                              help='Local inference runtime; defaults to Ollama')
         command.add_argument('--endpoint', default='',
                              help='Optional literal 127.0.0.1 or [::1] local API endpoint')
+        command.add_argument(
+            '--token-parameter', choices=('max_tokens', 'max_completion_tokens'),
+            default='max_tokens',
+            help='OpenAI-compatible local server token limit field (default: max_tokens)')
     run.add_argument('--max-repairs',type=int,default=2)
     run.add_argument('--allow-host-tests',action='store_true',help='Explicitly permit running repository code on this machine')
     run.add_argument('--resume',action='store_true',help='Resume an interrupted test-pending or repair-pending checkpoint')
@@ -246,7 +252,8 @@ def main(argv=None):
             output = plan_task(store, args.id,
                                model_factory=lambda: _cli_model(backend=args.backend,
                                                                  model=args.model,
-                                                                 endpoint=args.endpoint))
+                                                                 endpoint=args.endpoint,
+                                                                 token_parameter=args.token_parameter))
             print(output)
         elif args.action=='resume-safe':
             from .recovery import resume_safe
@@ -268,7 +275,8 @@ def main(argv=None):
             from .engine import execute_task
             result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,
                                 model=_cli_model(backend=args.backend, model=args.model,
-                                                   endpoint=args.endpoint),max_repairs=args.max_repairs,
+                                                   endpoint=args.endpoint,
+                                                   token_parameter=args.token_parameter),max_repairs=args.max_repairs,
                                 allow_host_tests=args.allow_host_tests,resume=args.resume,
                                 role=args.role,
                                 qualification_directory=(Path(args.qualification_directory)

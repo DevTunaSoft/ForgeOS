@@ -29,12 +29,14 @@
 | Adapter | Requests ForgeOS sends | Tools / structured output | Context and output limits | Model files / license | Version identity |
 | --- | --- | --- | --- | --- | --- |
 | Ollama | Local `/api/generate`; non-streaming; edits request JSON mode | No tool calls. JSON mode is requested for edits, then ForgeOS validates the edit manifest | ForgeOS sends bounded `num_ctx` and `num_predict` options from its memory profile | Ollama-managed model formats; ForgeOS does not verify the model license | Server version is not queried by the adapter |
-| Managed llama.cpp | Local `/v1/models` and `/v1/chat/completions`; non-streaming; sends `temperature=0` and `max_tokens` | ForgeOS sends no tool definitions or JSON-schema/response-format parameter; edit JSON is validated afterward | Output budget is sent; context ceiling remains server/model configuration and is not attested in the request | Managed path loads verified GGUF bytes; license remains a Hub/author claim requiring user review | Installed official runtime bundle and GGUF hashes are checked; live server version and physical Windows identity acceptance remain open |
-| User-managed llama.cpp, LM Studio, other loopback OpenAI-compatible | Same local `/v1/models` and non-streaming `/v1/chat/completions` request contract | No tool calls or schema parameter; ForgeOS validates the returned edit manifest | Output budget is sent; server/model context support is unknown to ForgeOS | Runtime-supported formats and model licenses are provider/user supplied and not verified by the adapter | Server version, binary provenance and model identity are not attested by generic adapters |
+| Managed llama.cpp | Local `/v1/models` and `/v1/chat/completions`; non-streaming; sends `temperature=0` and a selectable `max_tokens` or `max_completion_tokens` field (default `max_tokens`) | ForgeOS sends no tool definitions or JSON-schema/response-format parameter; edit JSON is validated afterward | Output budget is sent; context ceiling remains server/model configuration and is not attested in the request | Managed path loads verified GGUF bytes; license remains a Hub/author claim requiring user review | Installed official runtime bundle and GGUF hashes are checked; live server version and physical Windows identity acceptance remain open |
+| User-managed llama.cpp, LM Studio, other loopback OpenAI-compatible | Same local `/v1/models` and non-streaming `/v1/chat/completions` request contract; token-limit field is selectable in GUI/CLI | No tool calls or schema parameter; ForgeOS validates the returned edit manifest | Output budget is sent; server/model context support is unknown to ForgeOS | Runtime-supported formats and model licenses are provider/user supplied and not verified by the adapter | Server version, binary provenance and model identity are not attested by generic adapters |
 
 This matrix records ForgeOS source behavior, not a guarantee that every server
-accepts the same parameters. Real backend/version compatibility profiles and
-measured context limits remain open release work.
+accepts the same parameters. GUI and CLI expose `max_tokens` (default) and
+`max_completion_tokens`; a non-default choice is captured in the checkpoint
+and restored during recovery. Other backend/version differences and measured
+context limits remain open release work.
 
 ForgeOS has one GUI and no extra Python dependencies for these adapters.
 The external endpoint adapters talk only to a server on **the same machine**.
@@ -107,7 +109,11 @@ See the [upstream documentation](https://github.com/ggml-org/llama.cpp/blob/mast
    `http://127.0.0.1:8081/v1`. Only literal `127.0.0.1` and `[::1]`
    HTTP URLs are permitted. Remote/cloud URLs, `localhost` hostname URLs,
    credentials, redirects and proxies are rejected or disabled.
-5. Try **Generate plan** before a code-edit run. Check the output and any
+5. Set **Token limit field** to `max_completion_tokens` only when the local
+   server rejects the default `max_tokens` field. The selection applies to
+   OpenAI-compatible local adapters; Ollama keeps its native request format.
+   CLI `plan` and `run` accept the equivalent `--token-parameter` option.
+6. Try **Generate plan** before a code-edit run. Check the output and any
    server errors before enabling host-test execution.
 
 The backend and endpoint are captured when a GUI task is started. Non-Ollama

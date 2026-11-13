@@ -269,6 +269,9 @@ def _execute_task(
             )
         if getattr(model, "backend", "ollama") != "ollama":
             contract.update(backend=model.backend, endpoint=model.base)
+            token_parameter = getattr(model, "token_parameter", "max_tokens")
+            if token_parameter != "max_tokens":
+                contract["token_parameter"] = token_parameter
         if model_name == "forgeos-managed":
             # A random port and alias are NOT durable model identity. Record
             # verified GGUF and runtime hashes. Safe recovery may resume only

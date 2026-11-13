@@ -2330,3 +2330,10 @@ and restore under constrained filesystems.
 - The actual ForgeOS catalog UI rendered the new pagination controls, but a user-triggered live search in this sandbox returned `URLError` with Windows DNS error 11001. Added catalog error translation for DNS/connectivity/timeouts and Hub 401/403/404/429/5xx responses, with guidance that does not expose request URLs or low-level resolver text.
 - Verification: the final combined catalog, GUI contract, docs/roadmap, inventory, downloader and CLI run passed 101 tests (two platform skips). This includes DNS redaction and common HTTP cases. Source compilation and `git diff --check` passed. The live UI failure was reproduced; target network/API success remains unverified.
 - The HTTP error translator now closes the response object after extracting its status. Focused catalog tests assert closure and still pass all 13 cases without `ResourceWarning`.
+
+### Follow-up — add an explicit OpenAI-compatible token limit profile
+
+- The existing local adapter now accepts either `max_tokens` (default) or `max_completion_tokens`, selectable from the GUI and through `plan`/`run --token-parameter`. Unknown fields are rejected. Ollama continues using its native request path.
+- Non-default adapter selections are written into new run checkpoints and replayed by safe recovery; old checkpoint shapes continue to parse unchanged. The GUI-managed llama.cpp recovery factory also rebuilds the profile from its checkpoint. User settings persist the selection without secrets.
+- Updated the compatibility guide and roadmap to describe this as a partial compatibility profile; server/version differences beyond this parameter and real endpoint acceptance remain open.
+- Verification: model-profile, checkpoint-recovery and settings tests passed 13 tests; GUI-contract, documentation and roadmap suites passed 52 tests. Compilation and `git diff --check` passed. One existing socket-based local HTTP test cannot run in this managed sandbox because loopback socket access is denied (WinError 10013); no real endpoint compatibility is claimed.

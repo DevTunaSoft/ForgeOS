@@ -132,6 +132,7 @@ def launch(db_path, *, acceptance: bool = False):
     task_role = tk.StringVar(value=setting("task_role", "implementation"))
     backend = tk.StringVar(value=setting("backend", "ollama"))
     endpoint = tk.StringVar(value=setting("endpoint", ""))
+    token_parameter = tk.StringVar(value=setting("token_parameter", "max_tokens"))
     preset = tk.StringVar(value=setting("preset", "python-unittest"))
     workspaces = tk.StringVar(value=setting("workspaces", str(Path.home() / ".forgeos" / "workspaces")))
     allow_host_tests = tk.BooleanVar(value=False)
@@ -202,6 +203,10 @@ def launch(db_path, *, acceptance: bool = False):
                  state="readonly", width=17).pack(side="left", padx=(6, 16))
     ttk.Label(provider_row, text="Local endpoint (optional)").pack(side="left")
     ttk.Entry(provider_row, textvariable=endpoint, width=37).pack(side="left", padx=6)
+    ttk.Label(provider_row, text="Token limit field").pack(side="left", padx=(6, 0))
+    ttk.Combobox(provider_row, textvariable=token_parameter,
+                 values=("max_tokens", "max_completion_tokens"),
+                 state="readonly", width=24).pack(side="left", padx=6)
     ttk.Button(provider_row, text="Browse Hugging Face",
                command=lambda: browse_hub_models()).pack(side="left", padx=6)
     managed_row = ttk.Frame(options)
@@ -468,7 +473,9 @@ def launch(db_path, *, acceptance: bool = False):
                     instance = create_model(
                         backend="llama.cpp", model="forgeos-managed",
                         endpoint=active_manager.endpoint,
-                        api_key=active_manager.api_key)
+                        api_key=active_manager.api_key,
+                        token_parameter=contract.get(
+                            "token_parameter", "max_tokens"))
                     instance.managed_model_sha256 = active_manager.model_sha256
                     instance.managed_runtime_sha256 = active_manager.runtime_sha256
                     instance._listener_owner_check = (
@@ -1781,6 +1788,9 @@ def launch(db_path, *, acceptance: bool = False):
             chosen_model = model.get().strip()
             chosen_backend = backend.get()
             chosen_endpoint = endpoint.get().strip()
+            chosen_token_parameter = token_parameter.get()
+            if chosen_token_parameter not in ("max_tokens", "max_completion_tokens"):
+                raise ValueError("Choose a supported local token limit field")
             manager = managed["controller"]
             if managed["busy"]:
                 raise ValueError("Managed model is starting or stopping")
@@ -1823,7 +1833,8 @@ def launch(db_path, *, acceptance: bool = False):
             def selected_model():
                 instance = create_model(
                     backend=chosen_backend, model=chosen_model,
-                    endpoint=chosen_endpoint, api_key=managed_key)
+                    endpoint=chosen_endpoint, api_key=managed_key,
+                    token_parameter=chosen_token_parameter)
                 if managed_key is not None:
                     # Store both verified immutable content identities in
                     # the engine checkpoint; NEVER persist the API secret.
@@ -2173,7 +2184,9 @@ def launch(db_path, *, acceptance: bool = False):
                 save_settings(settings_path, {
                     "project": project.get(), "model": model.get(),
                     "task_role": task_role.get(), "backend": backend.get(),
-                    "endpoint": endpoint.get(), "preset": preset.get(),
+                    "endpoint": endpoint.get(),
+                    "token_parameter": token_parameter.get(),
+                    "preset": preset.get(),
                     "workspaces": workspaces.get(),
                     "repair_count": repair_count.get(),
                     "startup_resume_workspace": startup_resume_workspace,

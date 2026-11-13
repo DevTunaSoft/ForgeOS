@@ -20,6 +20,15 @@ MAX_RECOVERY_REASON_CHARS = 400
 
 def _checkpoint_contract(checkpoint):
     contract = checkpoint.get("contract")
+    if isinstance(contract, dict) and "token_parameter" in contract:
+        token_parameter = contract["token_parameter"]
+        if token_parameter not in ("max_tokens", "max_completion_tokens"):
+            raise ValueError("Invalid checkpoint token parameter profile")
+        base = dict(contract)
+        del base["token_parameter"]
+        result = _checkpoint_contract({"contract": base})
+        result["token_parameter"] = token_parameter
+        return result
     legacy = {"preset", "max_repairs", "model"}
     extended = legacy | {"backend", "endpoint"}
     managed_extended = extended | {"managed_model_sha256", "managed_runtime_sha256"}
@@ -274,6 +283,7 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                     backend=contract["backend"],
                     model=contract["model"],
                     endpoint=contract["endpoint"],
+                    token_parameter=contract.get("token_parameter", "max_tokens"),
                 )
             else:
                 # Existing Ollama checkpoints and injected test factories

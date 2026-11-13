@@ -220,6 +220,24 @@ class LocalModelsTests(unittest.TestCase):
         self.assertIn("acceptance tests", request["messages"][0]["content"])
         self.assertLessEqual(request["max_tokens"], 900)
 
+    def test_completion_token_profile_uses_only_selected_parameter(self):
+        model = LocalChatModel(
+            backend="openai-local", model="coder",
+            token_parameter="max_completion_tokens")
+        with patch("forgeos.local_models._open",
+                   return_value=payload({"choices": [
+                       {"message": {"content": "Plan"}}
+                   ]})) as opened:
+            self.assertEqual(model.plan("Make a timer"), "Plan")
+        request = json.loads(opened.call_args.args[0].data)
+        self.assertLessEqual(request["max_completion_tokens"], 900)
+        self.assertNotIn("max_tokens", request)
+
+    def test_rejects_unknown_token_parameter_profile(self):
+        with self.assertRaises(ValueError):
+            LocalChatModel(backend="llama.cpp", model="coder",
+                           token_parameter="max_new_tokens")
+
     def test_rejects_invalid_and_oversize_model_responses(self):
         model = LocalChatModel(backend="openai-local", model="coder")
         invalid = (

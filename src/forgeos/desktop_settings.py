@@ -7,6 +7,7 @@ import tempfile
 DEFAULTS = {
     "project": "", "model": "auto", "task_role": "implementation",
     "backend": "ollama", "endpoint": "", "preset": "python-unittest",
+    "token_parameter": "max_tokens",
     "workspaces": "", "repair_count": 2, "startup_resume_workspace": "",
 }
 ALLOWED_BACKENDS = ("ollama", "llama.cpp", "lm-studio", "openai-local")
@@ -25,7 +26,8 @@ def _sanitize(values):
         if isinstance(value, str) and len(value) <= 2048 and "\x00" not in value:
             cleaned[key] = value
     for key, choices in (("backend", ALLOWED_BACKENDS),
-                         ("preset", ALLOWED_PRESETS)):
+                         ("preset", ALLOWED_PRESETS),
+                         ("token_parameter", ("max_tokens", "max_completion_tokens"))):
         if values.get(key) in choices:
             cleaned[key] = values[key]
     role = values.get("task_role")
