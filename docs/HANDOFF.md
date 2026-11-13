@@ -2202,3 +2202,5 @@ and restore under constrained filesystems.
 - Full Windows/Python 3.12.14 suite at a6cea4c: FAIL, 572 passed, 30 skipped, 8 errors and 3 failures out of 613. Six errors occurred during workspace integrity labeling and two during loopback socket access (WinError 10013). Two AppContainer tests and the handle allowlist test failed. The run predates the snapshot marker cleanup, which separately passed all nine lifecycle and routing tests on the same runtime. Physical Windows acceptance remains UNVERIFIED.
 
 - Snapshot cleanup bounds ownership marker reads and preserves the snapshot if the marker exceeds the limit. PASS on Windows: all eight test_runtime tests, including oversized marker rejection.
+
+- Snapshot setup and cleanup now recognize dangling symlinks at runtime and marker paths as invalid existing state. Windows test_runtime: eight passed. Native dangling-link coverage remains UNVERIFIED in this session.

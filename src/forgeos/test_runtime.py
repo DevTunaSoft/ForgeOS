@@ -61,12 +61,14 @@ def remove_test_snapshot(workspace: str | Path) -> bool:
     source = Path(workspace).expanduser().resolve(strict=True)
     runtime = _runtime_path(source)
     marker = _marker_path(runtime)
+    if runtime.is_symlink():
+        raise ValueError("Execution runtime path is not a real directory")
     if not runtime.exists():
-        if marker.exists():
+        if marker.exists() or marker.is_symlink():
             _validate_marker(runtime, source)
             marker.unlink()
         return False
-    if runtime.is_symlink() or not runtime.is_dir():
+    if not runtime.is_dir():
         raise ValueError("Execution runtime path is not a real directory")
     marker = _validate_marker(runtime, source)
     shutil.rmtree(runtime, onerror=_delete_readonly)
@@ -154,7 +156,7 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     if runtime == source or runtime.is_relative_to(source):
         raise ValueError("Execution runtime must be outside the editable workspace")
     marker = _marker_path(runtime)
-    if runtime.exists() or marker.exists():
+    if runtime.exists() or runtime.is_symlink() or marker.exists() or marker.is_symlink():
         remove_test_snapshot(source)
     runtime.mkdir(parents=False)
     try:
