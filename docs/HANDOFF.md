@@ -2282,3 +2282,8 @@ and restore under constrained filesystems.
 
 - Added a vertical scrollbar to the existing Hugging Face inspection details panel so longer card claims and file listings remain reachable in the fixed-size browser window.
 - Verification: Windows `python -m unittest test_gui_contract -q` passed all 37 tests; the GUI contract suite asserts the details widget is wired to its scrollbar. Compilation and `git diff --check` passed. Visual interaction on a target desktop remains unverified.
+
+### Follow-up — label search license data as unverified
+
+- Renamed the Hub search result column to **Hub license (unverified)** so a repository tag cannot be mistaken for a legal review before the user inspects the repository.
+- Verification: Windows GUI contract tests passed all 37 tests, including the explicit column label assertion; compilation and `git diff --check` passed.

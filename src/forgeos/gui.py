@@ -1450,8 +1450,10 @@ def launch(db_path, *, acceptance: bool = False):
         results = ttk.Treeview(
             frame, columns=("repository", "downloads", "license"),
             show="headings", height=11, selectmode="browse")
-        for key, width in (("repository", 430), ("downloads", 100), ("license", 150)):
-            results.heading(key, text=key.title())
+        for key, width in (("repository", 410), ("downloads", 100), ("license", 200)):
+            heading = ("Hub license (unverified)" if key == "license"
+                       else key.title())
+            results.heading(key, text=heading)
             results.column(key, width=width, stretch=key == "repository")
         results.pack(fill="both", expand=True)
         choose_row = ttk.Frame(frame)

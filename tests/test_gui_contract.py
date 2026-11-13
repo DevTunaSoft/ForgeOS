@@ -13,6 +13,7 @@ class DashboardContractTests(unittest.TestCase):
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertIn('info_scroll = ttk.Scrollbar(', source)
         self.assertIn('info.configure(yscrollcommand=info_scroll.set)', source)
+        self.assertIn('Hub license (unverified)', source)
 
     def test_desktop_settings_are_restored_and_saved(self):
         from pathlib import Path
