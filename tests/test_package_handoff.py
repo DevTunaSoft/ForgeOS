@@ -39,6 +39,8 @@ class RecoveryPackageTests(unittest.TestCase):
             self.assertEqual(manifest["source_sha"], result["source_sha"])
             for name, item in manifest["files"].items():
                 self.assertEqual(hashlib.sha256(z.read(name)).hexdigest(), item["sha256"])
+            guide = z.read("START_HERE.txt").decode("utf-8")
+            self.assertGreaterEqual(len(guide.splitlines()), 5)
             self.assertIn("START_HERE.txt", z.namelist())
 
     def test_refuses_overwrite(self):
