@@ -35,7 +35,7 @@ def main(argv=None):
     models.add_argument('--backend',choices=BACKENDS,default='ollama')
     models.add_argument('--endpoint',default='')
     catalog=sub.add_parser('model-catalog',help='Opt-in Hugging Face public GGUF discovery')
-    catalog.add_argument('operation',choices=('search','files'))
+    catalog.add_argument('operation',choices=('search','files','inspect'))
     catalog.add_argument('query',help='Search phrase or repository ID')
     local_list=sub.add_parser(
         'models-local', help='List bounded local GGUF downloads (metadata only)')
@@ -58,6 +58,8 @@ def main(argv=None):
     download.add_argument('repository',help='Public Hugging Face owner/model')
     download.add_argument('filename',help='Exact GGUF filename listed by model-catalog')
     download.add_argument('--directory',default='',help='Optional local model folder')
+    download.add_argument('--revision',default=None,
+                          help='Optional full repository commit SHA from model-catalog')
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
     evidence.add_argument('operation',choices=['show','stats'])
     evidence.add_argument('reference',nargs='?')
@@ -145,13 +147,20 @@ def main(argv=None):
         from .gguf_download import download_gguf
         result = download_gguf(
             args.repository, args.filename,
+            revision=args.revision,
             directory=args.directory or None)
         print(json.dumps(result, indent=2))
         return 0
     if args.action == 'model-catalog':
-        from .huggingface_catalog import search_gguf, list_gguf_files
-        values = (search_gguf(args.query) if args.operation == 'search'
-                  else list_gguf_files(args.query))
+        from .huggingface_catalog import (
+            search_gguf, list_gguf_files, inspect_gguf_repo,
+        )
+        if args.operation == 'search':
+            values = search_gguf(args.query)
+        elif args.operation == 'inspect':
+            values = inspect_gguf_repo(args.query)
+        else:
+            values = list_gguf_files(args.query)
         print(json.dumps(values, indent=2))
         return 0
     if args.action == 'db-restore-copy':

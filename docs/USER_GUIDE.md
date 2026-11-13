@@ -160,8 +160,8 @@ Examples for advanced users:
 ```powershell
 forgeos models --backend llama.cpp
 forgeos model-catalog search "Qwen2.5-Coder"
-forgeos model-catalog files Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
-forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-K-M.gguf
+forgeos model-catalog inspect Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-K-M.gguf --revision EXACT_40_DIGIT_REVISION
 forgeos plan 1 --backend lm-studio --model your-exact-local-model-id
 ```
 

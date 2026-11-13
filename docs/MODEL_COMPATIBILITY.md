@@ -111,9 +111,9 @@ forgeos models --backend lm-studio --endpoint http://127.0.0.1:1234/v1
 
 # Search Hugging Face metadata (opt-in internet request, not inference)
 forgeos model-catalog search "Qwen2.5-Coder"
-forgeos model-catalog files Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
-# Replace the filename with the exact result of model-catalog files:
-forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-FILENAME.gguf
+forgeos model-catalog inspect Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+# Use the exact filename and 40-digit revision returned by inspect:
+forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-FILENAME.gguf --revision EXACT_40_DIGIT_REVISION
 
 # Retain existing Ollama usage, or opt into a local compatible server
 forgeos plan 1 --model qwen2.5-coder:3b

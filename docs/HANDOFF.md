@@ -2267,3 +2267,13 @@ and restore under constrained filesystems.
 - The GUI now preserves the inspected repository commit through file selection and passes it to the existing downloader. The downloader validates a supplied full commit SHA and uses it for the pinned tree lookup, resolve URL, partial journal and installed manifest; command-line callers retain the existing resolve-current-revision default.
 - Verification: `python -m unittest tests.test_gguf_download tests.test_huggingface_catalog -q` passed 32 tests (one platform skip), and `python -m unittest test_gui_contract -q` passed all 36 tests. Coverage proves the GUI-selected revision bypasses a fresh HEAD lookup, is retained in the verified path/result, and malformed explicit revisions fail before metadata or disk work. Compilation and `git diff --check` passed.
 - Remaining gates: real CDN redirects and Windows transfer/resume behavior remain unverified. This change does not make the CLI choose a previously inspected snapshot; it still explicitly resolves the current repository revision at download time.
+
+### Follow-up — allow pinned revisions from the CLI
+
+- `model-download` accepts optional `--revision <full-commit-sha>` and forwards it to the same downloader used by the GUI. Omitting it preserves existing CLI behavior. This lets catalog users carry a reviewed revision into download without relying on the GUI.
+- Verification: combined CLI download, downloader, catalog and GUI contract suites passed 70 tests (one platform skip). CLI tests cover explicit forwarding and backward-compatible omission. Compilation and `git diff --check` passed.
+
+### Follow-up — make the pinned CLI flow discoverable
+
+- Added `model-catalog inspect <owner/repo>` to return the bounded, unverified card claims, immutable repository revision and GGUF size/hash list as one JSON result. Updated both model guides to show the intended inspect → choose exact filename/revision → download with `--revision` workflow.
+- Verification: the combined CLI/downloader/catalog/GUI-contract run passed 71 tests (one platform skip), including inspect output and revision forwarding. Compilation and `git diff --check` passed.
