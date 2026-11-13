@@ -187,7 +187,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 
 - [x] PR #51's hosted test matrix, documentation integrity and frozen EXE smoke passed on `ba985c9`.
 - [ ] End-to-end real llama.cpp + LM Studio integration against pinned versions/models.
-- [ ] Disrupted downloads: process kill, damaged journal, truncated weight, bogus hash, 206 mismatch, 429/500, TLS/redirect, physical disk full and two competing installers. A mocked ENOSPC mid-write and exact resume now have regression coverage; Windows physical disk-full acceptance remains open.
+- [ ] Disrupted downloads: damaged journal, truncated weight, bogus hash, 206 mismatch, 429/500, TLS/redirect and physical disk full. Offline regressions now cover abrupt process kill with exact-range resume and two competing requests for the same pinned model (second request is rejected before opening another network response). A mocked ENOSPC mid-write and exact resume also have coverage; physical Windows disk-full and concurrent-process stress remain open.
 - [ ] Corrupted GGUF, unsupported quantization/model architecture, missing chat template and structured-output mismatch.
 - [ ] Runtime crash, fork/process escape, port takeover, bad response, OOM, runaway context, model cancellation, rapid launch/reap and restart loops.
 - [ ] Stress concurrency in model routing with tasks, downloads, tests and checkpoints while enforcing leases, CPU and memory budgets.

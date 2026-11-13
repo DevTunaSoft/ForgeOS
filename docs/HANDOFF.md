@@ -2441,3 +2441,8 @@ and restore under constrained filesystems.
 
 - GGUF transfer chunks now use unbuffered file writes so bytes reported complete by the worker are visible after a hard process exit. Added a subprocess regression that exits immediately after the first 1 MiB chunk, verifies the retained bytes, then resumes using the exact HTTP range and pinned SHA before publication.
 - Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 139 tests (6 platform skips); compilation and `git diff --check` passed. This proves local process-crash resume with a deterministic fake HTTP response; real CDN failures and physical Windows power-loss durability remain unverified.
+
+### Follow-up — reject duplicate same-model transfers
+
+- Added an API-level concurrent request regression: one transfer holds the per-model OS lock while a second request for the same pinned model fails as active elsewhere before opening another network response. The first transfer then completes and publishes the verified GGUF.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 140 tests (6 platform skips); compilation and `git diff --check` passed. This is same-process contention evidence with mocked HTTP, not concurrent-process stress or live transfer acceptance.

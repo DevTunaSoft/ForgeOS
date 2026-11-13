@@ -9,7 +9,7 @@ import sys
 import textwrap
 from types import SimpleNamespace
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -196,6 +196,38 @@ class GGUFDownloadTests(unittest.TestCase):
         self.assertEqual(opened.call_args.args[0].get_header("Range"),
                          "bytes=1048576-")
         self.assertEqual(Path(restored["path"]).read_bytes(), body)
+
+    def test_competing_same_model_download_fails_before_second_network_open(self):
+        entered = Event()
+        release = Event()
+        outcomes = []
+        def open_first(request, *, timeout):
+            entered.set()
+            if not release.wait(10):
+                raise TimeoutError("test transfer was not released")
+            return Response(BODY)
+        def first_download():
+            try:
+                outcomes.append(self.download(revision=REVISION))
+            except BaseException as exc:
+                outcomes.append(exc)
+
+        with patch("forgeos.gguf_download._open_weight",
+                   side_effect=open_first) as opened:
+            worker = Thread(target=first_download, daemon=True)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(5), "first transfer did not start")
+                with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                    self.download(revision=REVISION)
+                self.assertEqual(opened.call_count, 1)
+            finally:
+                release.set()
+                worker.join(10)
+            self.assertFalse(worker.is_alive(), "first transfer did not finish")
+        self.assertEqual(len(outcomes), 1)
+        self.assertIsInstance(outcomes[0], dict)
+        self.assertEqual(outcomes[0]["status"], "verified")
 
     def test_invalid_pause_control_rejected_before_metadata(self):
         with patch("forgeos.gguf_download.model_revision") as revision:
