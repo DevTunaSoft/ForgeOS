@@ -2150,3 +2150,5 @@ and restore under constrained filesystems.
 - Safe Resume delivers managed-runtime skip events outside the execution error handler, so a broken progress stream propagates once instead of being reclassified as a task failure. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
 
 - Blocked checkpoint pagination stops after yielding SQLite's minimum integer ID. This prevents an out-of-range SQL bind on imported or manually repaired databases. PASS on Windows/Python 3.15: 28 recovery and pagination tests, one skip.
+
+- Database CLI backup and restore now report a publication collision on stderr and return 1. Existing database content remains protected by exclusive publication. PASS on Windows/Python 3.15: 16 CLI, backup and restore tests, one skip.

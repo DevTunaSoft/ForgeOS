@@ -1,6 +1,6 @@
 """CLI integration for explicit SQLite verification and backup."""
 import io
-from contextlib import closing, redirect_stdout
+from contextlib import closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -11,6 +11,23 @@ from forgeos.core import Store
 
 
 class DatabaseCommandsTests(unittest.TestCase):
+    def test_publication_collision_reports_a_new_destination(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.sqlite3"
+            Store(source).close()
+            destination = str(Path(directory) / "copy.sqlite3")
+            for command in (
+                    ["--db", str(source), "db-backup", destination],
+                    ["db-restore-copy", str(source), destination]):
+                with self.subTest(command=command):
+                    error = io.StringIO()
+                    with patch("forgeos.core._publish_database_copy",
+                               side_effect=FileExistsError), redirect_stderr(error):
+                        self.assertEqual(main(command), 1)
+                    self.assertIn("Choose a new file.", error.getvalue())
+
     def test_restore_copy_does_not_open_default_active_database(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:

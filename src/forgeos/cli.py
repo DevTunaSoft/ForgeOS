@@ -156,7 +156,12 @@ def main(argv=None):
         return 0
     if args.action == 'db-restore-copy':
         # Do not open or initialize the active task database for a restore copy.
-        print(f'Verified restore copy: {Store.restore_backup_to(args.source, args.destination)}')
+        try:
+            restored = Store.restore_backup_to(args.source, args.destination)
+        except FileExistsError:
+            print("Restore destination already exists. Choose a new file.", file=sys.stderr)
+            return 1
+        print(f'Verified restore copy: {restored}')
         return 0
     if args.action == 'memory':
         from .model_routing import memory_report
@@ -209,7 +214,12 @@ def main(argv=None):
                 first = False
             sys.stdout.write("\n]\n" if not first else "]\n")
         elif args.action=='db-backup':
-            print(f'Verified backup: {store.backup_to(args.destination)}')
+            try:
+                backup = store.backup_to(args.destination)
+            except FileExistsError:
+                print("Backup destination already exists. Choose a new file.", file=sys.stderr)
+                return 1
+            print(f'Verified backup: {backup}')
         elif args.action=='recover':
             print(f'Inspected {store.recover()} interrupted tasks; editing/testing tasks blocked for inspection')
         elif args.action=='recover-edits':
