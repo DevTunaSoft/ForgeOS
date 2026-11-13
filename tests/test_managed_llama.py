@@ -19,6 +19,7 @@ from forgeos.managed_llama import (
     ALIAS, ManagedLlamaServer, _child_environment, _verified_model,
     _verified_runtime,
 )
+from forgeos.gguf_download import _exclusive_download_lock
 
 
 class _Response(io.BytesIO):
@@ -158,6 +159,10 @@ class ManagedLlamaTests(unittest.TestCase):
         controller.process = process
         controller.api_key = "secret"
         controller.endpoint = "http://127.0.0.1:12345/v1"
+        model_lock = _exclusive_download_lock(
+            self.model.with_name(self.model.name + ".lock"))
+        model_lock.__enter__()
+        controller._model_lock = model_lock
         temporary = Mock()
         controller._secrets = temporary
         with patch("forgeos.managed_llama._terminate_posix_group"):
@@ -165,11 +170,17 @@ class ManagedLlamaTests(unittest.TestCase):
                 controller.stop()
         self.assertEqual(process.wait.call_count, 2)
         process.kill.assert_called_once_with()
-        process.close.assert_called_once_with()
+        process.close.assert_not_called()
         temporary.cleanup.assert_called_once_with()
-        self.assertIsNone(controller.process)
+        self.assertIs(controller.process, process)
         self.assertIsNone(controller.api_key)
         self.assertIsNone(controller.endpoint)
+        with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+            with _exclusive_download_lock(
+                    self.model.with_name(self.model.name + ".lock")):
+                pass
+        controller._model_lock.__exit__(None, None, None)
+        controller._model_lock = None
 
     def test_secret_cleanup_failure_still_clears_session_identity(self):
         controller = ManagedLlamaServer()
@@ -652,6 +663,10 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(
                 memory_ceiling.call_args.args[1], 2 * 1024**3)
             self.assertTrue(server.running())
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                with _exclusive_download_lock(
+                        self.model.with_name(self.model.name + ".lock")):
+                    pass
             command = (native_launch.call_args.args[0]
                        if os.name == "nt" else launch.call_args.args[0])
             self.assertEqual(command[0], str(self.exe))
@@ -675,6 +690,9 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                 server.start(executable=self.exe, executable_sha256=self.exe_sha,
                              model_path=self.model)
             server.stop()
+            with _exclusive_download_lock(
+                    self.model.with_name(self.model.name + ".lock")):
+                pass
             self.assertFalse(key_file.exists())
             self.assertIsNone(server.api_key)
             self.assertIsNone(server.process)

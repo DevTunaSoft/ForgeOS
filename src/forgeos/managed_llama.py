@@ -28,6 +28,7 @@ from .model_routing import (
     local_memory_settings, managed_runtime_memory_ceiling,
     safe_model_file_budget, system_memory,
 )
+from .gguf_download import _exclusive_download_lock
 
 CHUNK_BYTES = 1024 * 1024
 MAX_MANIFEST_BYTES = 4096
@@ -339,6 +340,7 @@ class ManagedLlamaServer:
         self.thread_count: int | None = None
         self.memory_ceiling_bytes: int | None = None
         self.startup_elapsed_seconds: float | None = None
+        self._model_lock = None
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -464,6 +466,34 @@ class ManagedLlamaServer:
               memory_limit_bytes: int | None = None) -> dict:
         if self.process is not None or self._secrets is not None:
             raise RuntimeError("A managed llama-server session already exists")
+        model_file = _existing_file(model_path, suffix=".gguf")
+        lock_path = model_file.with_name(model_file.name + ".lock")
+        if lock_path.is_symlink():
+            raise ValueError("Refusing a symbolic link at the model lifecycle lock")
+        model_lock = _exclusive_download_lock(lock_path)
+        model_lock.__enter__()
+        self._model_lock = model_lock
+        try:
+            return self._start_with_model_lock(
+                executable=executable, executable_sha256=executable_sha256,
+                model_path=model_file, timeout=timeout, threads=threads,
+                context=context, memory_limit_bytes=memory_limit_bytes)
+        except BaseException:
+            # Preflight failures happen before _start_with_model_lock's
+            # process-start cleanup block. Release the interprocess model lock
+            # on every failed start, but retain it if stop cannot reap a child.
+            try:
+                self.stop()
+            except Exception:
+                pass
+            raise
+
+    def _start_with_model_lock(self, *, executable: str | Path,
+                               executable_sha256: str, model_path: str | Path,
+                               timeout: int = DEFAULT_TIMEOUT,
+                               threads: int | None = None,
+                               context: int | None = None,
+                               memory_limit_bytes: int | None = None) -> dict:
         startup_started = time.perf_counter()
         if type(timeout) is not int or not 1 <= timeout <= MAX_TIMEOUT:
             raise ValueError("Startup timeout must be 1–180 seconds")
@@ -575,6 +605,7 @@ class ManagedLlamaServer:
         self.process = None
         job = self._windows_job
         self._windows_job = None
+        child_stopped_confirmed = process is None
         try:
             job_error = None
             if job is not None:
@@ -608,6 +639,7 @@ class ManagedLlamaServer:
                             pass
                 try:
                     process.wait(timeout=4)
+                    child_stopped_confirmed = True
                 except subprocess.TimeoutExpired as exc:
                     # Even a force-killed process may fail to exit/reap within
                     # the second deadline. Preserve a bounded shutdown and
@@ -620,6 +652,7 @@ class ManagedLlamaServer:
                     try:
                         process.kill()
                         process.wait(timeout=4)
+                        child_stopped_confirmed = True
                     except (OSError, subprocess.TimeoutExpired):
                         stop_error = stop_error or exc
                 except OSError as exc:
@@ -629,6 +662,7 @@ class ManagedLlamaServer:
                     try:
                         process.kill()
                         process.wait(timeout=4)
+                        child_stopped_confirmed = True
                     except (OSError, subprocess.TimeoutExpired):
                         pass
             if job_error is not None:
@@ -637,14 +671,23 @@ class ManagedLlamaServer:
                 raise stop_error
         finally:
             # Native Windows process handles must close even when poll(),
-            # wait(), termination, or Job Object cleanup raises.
-            try:
-                if hasattr(process, "close"):
-                    process.close()
-            finally:
-                self._clear_managed_session()
+            # wait(), termination, or Job Object cleanup raises. If the child
+            # may still be alive, retain its handles and model lock so another
+            # ForgeOS process cannot retire weights it may still have mapped.
+            child_may_be_running = not child_stopped_confirmed
+            if child_may_be_running:
+                self.process = process
+                self._windows_job = job
+            else:
+                try:
+                    if hasattr(process, "close"):
+                        process.close()
+                finally:
+                    self._clear_managed_session()
+            if child_may_be_running:
+                self._clear_managed_session(release_model_lock=False)
 
-    def _clear_managed_session(self) -> None:
+    def _clear_managed_session(self, *, release_model_lock: bool = True) -> None:
         """Release ephemeral credentials and reset lifecycle state on all paths."""
         temporary = self._secrets
         self._secrets = None
@@ -663,3 +706,8 @@ class ManagedLlamaServer:
             self.thread_count = None
             self.memory_ceiling_bytes = None
             self.startup_elapsed_seconds = None
+            if release_model_lock:
+                model_lock = self._model_lock
+                self._model_lock = None
+                if model_lock is not None:
+                    model_lock.__exit__(None, None, None)
