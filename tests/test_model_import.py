@@ -44,6 +44,32 @@ class LocalModelImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity or file size"):
             _verified_model(self.model)
 
+    def test_import_reports_bounded_progress_and_cancels_before_publication(self):
+        from threading import Event
+        from forgeos.model_import import ImportCancelled
+        progress = []
+        cancel = Event()
+        def cancel_after_chunk(stage, done, total):
+            progress.append((stage, done, total))
+            cancel.set()
+        with self.assertRaisesRegex(ImportCancelled, "no identity was published"):
+            import_local_gguf(
+                self.model, directory=self.models, cancel_event=cancel,
+                progress_callback=cancel_after_chunk)
+        self.assertEqual(progress, [("verify", len(self.data), len(self.data))])
+        self.assertFalse(self.model.with_name(
+            self.model.name + ".forgeos.json").exists())
+        self.assertFalse((self.models / ".forgeos-imports.json").exists())
+        self.assertEqual(self.model.read_bytes(), self.data)
+
+    def test_import_validates_cancel_and_progress_controls_before_storage(self):
+        with self.assertRaisesRegex(TypeError, "threading.Event"):
+            import_local_gguf(self.model, directory=self.models, cancel_event=True)
+        with self.assertRaisesRegex(TypeError, "callable"):
+            import_local_gguf(
+                self.model, directory=self.models, progress_callback=object())
+        self.assertFalse(self.models.exists())
+
     def test_import_does_not_overwrite_an_existing_sidecar(self):
         sidecar = self.model.with_name(self.model.name + ".forgeos.json")
         sidecar.write_text("keep this", encoding="utf-8")

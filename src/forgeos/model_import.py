@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+from threading import Event
 import uuid
 
 from .gguf_download import (
@@ -20,6 +21,15 @@ MIN_MODEL_BYTES = 16
 MAX_IMPORTED_MODELS = 200
 MAX_IMPORT_INDEX_BYTES = 1024 * 1024
 IMPORT_INDEX = ".forgeos-imports.json"
+
+
+class ImportCancelled(RuntimeError):
+    """The user cancelled hashing before the import was published."""
+
+
+def _check_import_cancelled(cancel_event: Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise ImportCancelled("GGUF import cancelled; no identity was published")
 
 
 def _register_import(path: Path, sha256: str, directory=None) -> None:
@@ -78,12 +88,21 @@ def _register_import(path: Path, sha256: str, directory=None) -> None:
 
 
 def import_local_gguf(path: str | Path, *,
-                       directory: str | Path | None = None) -> dict:
+                       directory: str | Path | None = None,
+                       cancel_event: Event | None = None,
+                       progress_callback=None) -> dict:
     """Hash a local GGUF and create an adjacent identity sidecar, without copying.
 
     The source/revision/license are unknown unless a separate trusted source
     review establishes them. The adjacent sidecar is published exclusively.
+    A caller may cooperatively cancel between bounded reads or receive
+    progress events on this worker thread.
     """
+    if cancel_event is not None and not isinstance(cancel_event, Event):
+        raise TypeError("cancel_event must be a threading.Event")
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable")
+    _check_import_cancelled(cancel_event)
     target = Path(path).expanduser().absolute()
     if target.suffix.lower() != ".gguf":
         raise ValueError("Choose a .gguf file")
@@ -122,15 +141,22 @@ def import_local_gguf(path: str | Path, *,
             raise ValueError("Imported GGUF size is outside the supported 16-byte to 16-GiB range")
 
         digest = hashlib.sha256()
+        hashed = 0
         with target.open("rb") as source:
             if source.read(4) != b"GGUF":
                 raise ValueError("Selected file does not have a GGUF header")
             source.seek(0)
             while True:
+                _check_import_cancelled(cancel_event)
                 block = source.read(CHUNK_BYTES)
+                _check_import_cancelled(cancel_event)
                 if not block:
                     break
                 digest.update(block)
+                hashed += len(block)
+                if progress_callback is not None:
+                    progress_callback("verify", hashed, before.st_size)
+        _check_import_cancelled(cancel_event)
         after = target.stat()
         if (before.st_size, before.st_mtime_ns, before.st_ino, before.st_nlink) != (
                 after.st_size, after.st_mtime_ns, after.st_ino, after.st_nlink):
