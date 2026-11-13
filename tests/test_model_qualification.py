@@ -49,6 +49,14 @@ class ModelQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Final role qualification"):
             qualify_role_evidence(item)
 
+    def test_unknown_roles_cannot_be_qualified_or_routed(self):
+        item = evidence(role="invented-role")
+        with self.assertRaisesRegex(ValueError, "Invalid qualification role"):
+            qualify_role_evidence(item)
+        with self.assertRaisesRegex(ValueError, "Invalid qualification role"):
+            route_qualified_role(
+                "invented-role", [evidence()], memory_budget_bytes=8_000_000_000)
+
     def test_requires_meaningful_final_corpus(self):
         with self.assertRaisesRegex(ValueError, "counts"):
             qualify_role_evidence(evidence(tasks=5, json_ok=5, objective_ok=5))

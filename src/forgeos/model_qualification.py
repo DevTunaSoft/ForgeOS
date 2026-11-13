@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import re
 
+from .model_roles import MODEL_ROLES
+
 FINAL_JSON_RATE = 0.95
 FINAL_OBJECTIVE_RATE = 0.80
 QUALIFICATION_SCHEMA = 1
@@ -47,8 +49,8 @@ def qualify_role_evidence(record: dict) -> dict:
     model_sha = _sha(record.get("model_sha256"), "model SHA-256")
     runtime_sha = _sha(record.get("runtime_sha256"), "runtime SHA-256")
     role = record.get("role")
-    if not isinstance(role, str) or not role:
-        raise ValueError("Qualification role required")
+    if not isinstance(role, str) or role not in MODEL_ROLES:
+        raise ValueError("Invalid qualification role")
     backend = record.get("backend")
     model_name = record.get("model_name")
     if backend not in SUPPORTED_QUALIFIED_BACKENDS:
@@ -153,8 +155,8 @@ def route_qualified_role(role: str, records: list[dict], *,
                          runtime_sha256: str | None = None,
                          evidence_sha256: str | None = None) -> dict:
     """Choose the smallest measured-qualified model that fits memory."""
-    if not isinstance(role, str) or not role:
-        raise ValueError("Role required")
+    if not isinstance(role, str) or role not in MODEL_ROLES:
+        raise ValueError("Invalid qualification role")
     if type(memory_budget_bytes) is not int or memory_budget_bytes <= 0:
         raise ValueError("Positive memory budget required")
     if not isinstance(records, list):

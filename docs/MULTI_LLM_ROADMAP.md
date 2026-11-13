@@ -403,6 +403,11 @@ qualification remain disabled.
 - [x] Fail closed when no measured-qualified candidate fits; never fall back to an unqualified model.
 - [ ] Build and execute the larger final per-role corpus against real candidate models. Until those records exist, automatic production role routing remains intentionally unavailable.
 
+Final qualification evidence and route requests are additionally restricted to
+the canonical roles in `model_roles.py`; arbitrary role labels in local files
+cannot create new routing categories. The check is covered by the focused
+qualification suite. Real candidate qualification remains a target-Windows gate.
+
 
 ### Managed GGUF checkpoint re-attestation
 
