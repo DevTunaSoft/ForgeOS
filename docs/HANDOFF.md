@@ -2498,3 +2498,6 @@ and restore under constrained filesystems.
   denied`, locked temporary evidence, and output-capture assertions; this
   restricted desktop host does not establish the hosted CI result. The focused
   98-test verification above passed independently.
+- GitHub Handoff Integrity run #87 succeeded for exact head `2b9d49b`.
+  Documentation, Foundation and Windows EXE PR workflows were skipped on
+  draft PR #68, so no hosted test matrix or package pass is claimed.
