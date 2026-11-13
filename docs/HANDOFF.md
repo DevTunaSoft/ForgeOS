@@ -2363,3 +2363,8 @@ and restore under constrained filesystems.
 
 - The Hub catalog's maximum accepted GGUF file size now imports the downloader's canonical limit instead of duplicating a second 16 GiB value. A regression test keeps the catalog inspection boundary aligned with the download boundary.
 - Verification: catalog, downloader, inventory and retirement suites passed 68 tests (six platform skips); source compilation and `git diff --check` passed.
+
+### Follow-up — distinguish feature-branch changes from mainline status
+
+- Compared the checkout with Git refs: `origin/main` (`4a24799`) is an ancestor of feature branch `fix/safe-resume-malformed-checkpoints`, currently at `f6a0e32` and 72 commits ahead. The overall roadmap, multi-LLM roadmap and compatibility guide now state which claims describe mainline and which additional follow-ups are branch-only.
+- No merge into `main` is claimed. GitHub contains the pushed feature branch; the full repository review/merge and release acceptance remain outstanding. Documentation and roadmap contract suites passed 16 tests, including a regression against confusing feature-branch changes with mainline status; `git diff --check` passed.

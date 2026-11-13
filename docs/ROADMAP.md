@@ -4,6 +4,13 @@
 
 **Status as of 2026-11-11: active prototype.** This document distinguishes **implemented on `main`**, **in development**, and **future goals**. It is not a claim that the entire product is production-ready. Each milestone needs source changes, regression evidence, Windows frozen build evidence where relevant, and real end-user testing before release claims.
 
+**Current development checkout (audited 2026-11-13):** branch
+`fix/safe-resume-malformed-checkpoints` is at `f6a0e32`, with `origin/main`
+(`4a24799`) as its ancestor and 72 branch commits ahead. The table below remains
+a mainline status summary; follow-up features recorded in the current branch's
+[handoff](HANDOFF.md) are uploaded for review but are not represented as merged
+to `main`.
+
 ## Dedicated multi-LLM requirements and implementation plan
 
 The [comprehensive multi-LLM roadmap](MULTI_LLM_ROADMAP.md) now tracks **all ten major work packages** (A–J): existing integration audit and compatibility; integrated CPU-first llama.cpp; Hugging Face discovery, secure downloads, installation, updates and removal; small coding-model benchmarks; specialized-role routing; resource governance; autonomous workflow/recovery; unified accessibility-first GUI; fault-injection and comprehensive QA; and documentation/handoff. It includes source ownership, concrete acceptance gates, dependencies and **P0–P3 execution sequencing**.

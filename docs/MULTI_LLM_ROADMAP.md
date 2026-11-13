@@ -4,6 +4,12 @@
 
 **Audit baseline (refreshed 2026-11-11):** multi-LLM PR [#51](https://github.com/DevTunaSoft/ForgeOS/pull/51) was merged into `main` (merge commit `7c582f8`). The previous draft-branch head `f7241a3` and hosted CI evidence `67c2e74` are historical branch evidence, not current-main verification. Hosted CI is regression evidence only and is not proof of real llama.cpp, LM Studio, multi-GiB downloads, model quality, physical Windows stability or production readiness.
 
+**Current checkout audit (2026-11-13):** the current source tree is branch
+`fix/safe-resume-malformed-checkpoints` at `f6a0e32`. `origin/main` at
+`4a24799` is an ancestor (the feature branch is 72 commits ahead). Newer
+follow-ups in this handoff are available on the GitHub feature branch; they
+must not be described as merged into `main` until a reviewed merge occurs.
+
 This is a **requirements-to-evidence tracker, not a declaration that all capabilities are built**. Every row below carries a source owner, a status and an observable exit gate. Existing capabilities are extended in place; no second desktop application, duplicated task engine, duplicate database or parallel model selection subsystem.
 
 ## Nonnegotiable product constraints

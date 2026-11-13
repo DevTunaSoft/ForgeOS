@@ -90,6 +90,18 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("Adapter capability matrix (source-level contract)", guide)
         self.assertIn("ForgeOS sends no tool definitions", guide)
 
+    def test_roadmaps_distinguish_mainline_from_pushed_feature_branch(self):
+        overall = (docs.ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+        multi = (docs.ROOT / "docs" / "MULTI_LLM_ROADMAP.md").read_text(
+            encoding="utf-8")
+        compatibility = (docs.ROOT / "docs" / "MODEL_COMPATIBILITY.md").read_text(
+            encoding="utf-8")
+        self.assertIn("table below remains", overall)
+        self.assertIn("not represented as merged", overall)
+        self.assertIn("72 commits ahead", multi)
+        self.assertIn("not yet part of `main`", compatibility)
+        self.assertIn("feature branch", compatibility)
+
     def test_relative_links_in_repository(self):
         self.assertEqual(docs.check_links(), [])
 

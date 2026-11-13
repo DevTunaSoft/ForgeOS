@@ -1,8 +1,10 @@
 # ForgeOS local model compatibility and setup (experimental)
 
-> **Status:** The experimental multi-model implementation is integrated on
-> `main` (PR #51) and has received subsequent source updates. This guide
-> describes implemented behavior, not production readiness. Real local-model
+> **Status:** The experimental multi-model foundation is integrated on `main`
+> (PR #51). This checkout also contains additional follow-ups on the
+> `fix/safe-resume-malformed-checkpoints` feature branch; those changes are
+> uploaded for review but are not yet part of `main`. This guide describes
+> checked-out behavior, not production readiness. Real local-model
 > inference, physical Windows acceptance, and the release gates in the roadmap
 > remain unverified.
 
@@ -29,14 +31,15 @@
 | Adapter | Requests ForgeOS sends | Tools / structured output | Context and output limits | Model files / license | Version identity |
 | --- | --- | --- | --- | --- | --- |
 | Ollama | Local `/api/generate`; non-streaming; edits request JSON mode | No tool calls. JSON mode is requested for edits, then ForgeOS validates the edit manifest | ForgeOS sends bounded `num_ctx` and `num_predict` options from its memory profile | Ollama-managed model formats; ForgeOS does not verify the model license | Server version is not queried by the adapter |
-| Managed llama.cpp | Local `/v1/models` and `/v1/chat/completions`; non-streaming; sends `temperature=0` and a selectable `max_tokens` or `max_completion_tokens` field (default `max_tokens`) | ForgeOS sends no tool definitions or JSON-schema/response-format parameter; edit JSON is validated afterward | Output budget is sent; context ceiling remains server/model configuration and is not attested in the request | Managed path loads verified GGUF bytes; license remains a Hub/author claim requiring user review | Installed official runtime bundle and GGUF hashes are checked; live server version and physical Windows identity acceptance remain open |
-| User-managed llama.cpp, LM Studio, other loopback OpenAI-compatible | Same local `/v1/models` and non-streaming `/v1/chat/completions` request contract; token-limit field is selectable in GUI/CLI | No tool calls or schema parameter; ForgeOS validates the returned edit manifest | Output budget is sent; server/model context support is unknown to ForgeOS | Runtime-supported formats and model licenses are provider/user supplied and not verified by the adapter | Server version, binary provenance and model identity are not attested by generic adapters |
+| Managed llama.cpp | Local `/v1/models` and `/v1/chat/completions`; non-streaming; sends `temperature=0` and a selectable `max_tokens` or `max_completion_tokens` field (default `max_tokens`; selectable field is a feature-branch follow-up) | ForgeOS sends no tool definitions or JSON-schema/response-format parameter; edit JSON is validated afterward | Output budget is sent; context ceiling remains server/model configuration and is not attested in the request | Managed path loads verified GGUF bytes; license remains a Hub/author claim requiring user review | Installed official runtime bundle and GGUF hashes are checked; live server version and physical Windows identity acceptance remain open |
+| User-managed llama.cpp, LM Studio, other loopback OpenAI-compatible | Same local `/v1/models` and non-streaming `/v1/chat/completions` request contract; token-limit field is selectable in GUI/CLI on the current feature branch | No tool calls or schema parameter; ForgeOS validates the returned edit manifest | Output budget is sent; server/model context support is unknown to ForgeOS | Runtime-supported formats and model licenses are provider/user supplied and not verified by the adapter | Server version, binary provenance and model identity are not attested by generic adapters |
 
 This matrix records ForgeOS source behavior, not a guarantee that every server
-accepts the same parameters. GUI and CLI expose `max_tokens` (default) and
-`max_completion_tokens`; a non-default choice is captured in the checkpoint
-and restored during recovery. Other backend/version differences and measured
-context limits remain open release work.
+accepts the same parameters. The current feature branch exposes
+`max_tokens` (default) and `max_completion_tokens` in GUI and CLI; a non-default
+choice is captured in the checkpoint and restored during recovery. Other
+backend/version differences and measured context limits remain open release
+work.
 
 ForgeOS has one GUI and no extra Python dependencies for these adapters.
 The external endpoint adapters talk only to a server on **the same machine**.
