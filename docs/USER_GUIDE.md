@@ -474,7 +474,7 @@ Use `python -m forgeos models-storage` to report ForgeOS-managed GGUF weight byt
 
 ### Memory warning when starting a local GGUF model
 
-ForgeOS chooses a conservative default context based on available system RAM. If a manually entered context exceeds the current RAM profile, startup is refused rather than risking a large llama.cpp KV-cache allocation. The app also checks available RAM again just before launching the local server, because memory may have changed while verifying the model's large SHA-256. Close competing applications, select a smaller GGUF, or use a smaller context within the suggested memory profile, then retry. A passed check cannot promise there will never be a later out-of-memory failure.
+ForgeOS chooses a conservative default context based on available system RAM. When the GGUF exposes supported architecture metadata, startup estimates the default f16 KV cache and checks the weight plus cache estimate against available model headroom. Unsupported metadata falls back to a conservative weight-size check. The app samples available RAM again just before launching because memory may have changed during SHA-256 verification. If admission fails, close competing applications, select a smaller GGUF, or use a smaller context within the suggested profile. These checks cannot account exactly for all native buffers or promise there will never be a later out-of-memory failure.
 
 
 ### Import an existing GGUF without copying

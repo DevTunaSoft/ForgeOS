@@ -38,6 +38,15 @@ SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 ALIAS = "forgeos-managed"
 MAX_TIMEOUT = 180
 DEFAULT_TIMEOUT = 90
+MAX_GGUF_METADATA_PREFIX = 4 * 1024 * 1024
+MAX_GGUF_METADATA_ENTRIES = 4096
+MAX_GGUF_ARRAY_ITEMS = 1_000_000
+
+_GGUF_SCALAR_TYPES = {
+    0: ("<B", 1), 1: ("<b", 1), 2: ("<H", 2), 3: ("<h", 2),
+    4: ("<I", 4), 5: ("<i", 4), 6: ("<f", 4), 7: ("<?", 1),
+    10: ("<Q", 8), 11: ("<q", 8), 12: ("<d", 8),
+}
 
 
 def _hex_digest(path: Path) -> str:
@@ -46,6 +55,127 @@ def _hex_digest(path: Path) -> str:
         for chunk in iter(lambda: stream.read(CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def estimate_gguf_kv_cache_bytes(path: str | Path,
+                                 context_tokens: int) -> int | None:
+    """Read bounded GGUF metadata and estimate an f16 K+V cache footprint.
+
+    This is an admission estimate, not a claim about llama.cpp's exact native
+    allocations. Unsupported/malformed metadata returns None so callers keep
+    the existing conservative weight-size check rather than guessing a value.
+    The parser reads at most 4 MiB and never visits tensor data.
+    """
+    if type(context_tokens) is not int or not 1 <= context_tokens <= 8192:
+        raise ValueError("Context must be between 1 and 8192 tokens")
+    try:
+        with Path(path).open("rb") as stream:
+            data = stream.read(MAX_GGUF_METADATA_PREFIX + 1)
+        if len(data) < 24 or data[:4] != b"GGUF":
+            return None
+        position = 4
+
+        def take(length: int) -> bytes:
+            nonlocal position
+            end = position + length
+            if length < 0 or end > MAX_GGUF_METADATA_PREFIX or end > len(data):
+                raise ValueError("GGUF metadata exceeds bounded prefix")
+            value = data[position:end]
+            position = end
+            return value
+
+        def unpack(fmt: str) -> int | float:
+            return struct.unpack(fmt, take(struct.calcsize(fmt)))[0]
+
+        version = unpack("<I")
+        tensor_count = unpack("<Q")
+        metadata_count = unpack("<Q")
+        if version not in (2, 3) or tensor_count > 1_000_000 \
+                or metadata_count > MAX_GGUF_METADATA_ENTRIES:
+            return None
+
+        def read_string() -> str:
+            length = unpack("<Q")
+            if length > 1024 * 1024:
+                raise ValueError("GGUF metadata string exceeds limit")
+            return take(length).decode("utf-8", errors="strict")
+
+        def skip_value(value_type: int) -> int | float | str | None:
+            if value_type in _GGUF_SCALAR_TYPES:
+                fmt, size = _GGUF_SCALAR_TYPES[value_type]
+                return unpack(fmt)
+            if value_type == 8:
+                return read_string()
+            if value_type != 9:
+                raise ValueError("Unknown GGUF metadata type")
+            item_type = unpack("<I")
+            count = unpack("<Q")
+            if count > MAX_GGUF_ARRAY_ITEMS or item_type == 9:
+                raise ValueError("GGUF metadata array exceeds limit")
+            if item_type == 8:
+                for _ in range(count):
+                    read_string()
+            elif item_type in _GGUF_SCALAR_TYPES:
+                _, item_size = _GGUF_SCALAR_TYPES[item_type]
+                take(count * item_size)
+            else:
+                raise ValueError("Unsupported GGUF metadata array type")
+            return None
+
+        values: dict[str, int | str] = {}
+        for _ in range(metadata_count):
+            key = read_string()
+            value_type = unpack("<I")
+            value = skip_value(value_type)
+            if key == "general.architecture" and isinstance(value, str):
+                values[key] = value
+            elif (key.endswith((".block_count", ".attention.head_count",
+                                ".attention.head_count_kv", ".embedding_length"))
+                    and type(value) is int and 0 < value <= 1_000_000):
+                values[key] = value
+
+        architecture = values.get("general.architecture")
+        if not isinstance(architecture, str) or not re.fullmatch(
+                r"[a-z0-9_-]{1,64}", architecture):
+            return None
+        prefix = architecture + "."
+        layers = values.get(prefix + "block_count")
+        heads = values.get(prefix + "attention.head_count")
+        kv_heads = values.get(prefix + "attention.head_count_kv", heads)
+        embedding = values.get(prefix + "embedding_length")
+        if (type(layers) is not int or type(heads) is not int
+                or type(kv_heads) is not int or type(embedding) is not int
+                or not 1 <= layers <= 1024 or not 1 <= kv_heads <= heads
+                or embedding % heads):
+            return None
+        head_dimension = embedding // heads
+        estimate = context_tokens * layers * kv_heads * head_dimension * 4
+        return estimate if estimate <= (1 << 63) - 1 else None
+    except (OSError, UnicodeError, ValueError, OverflowError, struct.error):
+        return None
+
+
+def _check_managed_memory_preflight(model_path: str | Path,
+                                    context_tokens: int,
+                                    memory_snapshot) -> int | None:
+    """Reject weights plus known KV estimate when they exceed safe headroom."""
+    path = Path(model_path)
+    weight_bytes = path.stat().st_size
+    budget = safe_model_file_budget(memory_snapshot)
+    kv_bytes = estimate_gguf_kv_cache_bytes(path, context_tokens)
+    required = weight_bytes + (kv_bytes or 0)
+    if required > budget:
+        if kv_bytes is None:
+            raise RuntimeError(
+                "Free RAM fell below the conservative model budget; close "
+                "other apps or choose a smaller verified GGUF")
+        raise RuntimeError(
+            "Free RAM fell below the conservative model plus KV-cache budget "
+            f"(weights {weight_bytes / 1024**3:.2f} GiB; estimated "
+            f"f16 KV cache {kv_bytes / 1024**3:.2f} GiB; available ForgeOS "
+            f"budget {budget / 1024**3:.2f} GiB). Choose a smaller context "
+            "or model, or free system memory.")
+    return kv_bytes
 
 
 def _existing_file(path: str | Path, *, suffix: str) -> Path:
@@ -444,6 +574,7 @@ class ManagedLlamaServer:
         self.model_identity: dict | None = None
         self.runtime_release_tag: str | None = None
         self.context_tokens: int | None = None
+        self.estimated_kv_cache_bytes: int | None = None
         self.thread_count: int | None = None
         self.memory_ceiling_bytes: int | None = None
         self.startup_elapsed_seconds: float | None = None
@@ -508,6 +639,7 @@ class ManagedLlamaServer:
             },
             "settings": {
                 "context_tokens": self.context_tokens,
+                "estimated_kv_cache_bytes": self.estimated_kv_cache_bytes,
                 "threads": self.thread_count,
                 "memory_ceiling_bytes": self.memory_ceiling_bytes,
             },
@@ -641,11 +773,8 @@ class ManagedLlamaServer:
         # and binary bytes, immediately before starting the native server.
         # A competing app may have consumed RAM during the slow SHA-256 pass.
         memory = system_memory()
-        if model_file.stat().st_size > safe_model_file_budget(memory):
-            raise RuntimeError(
-                "Free RAM fell below the conservative model budget "
-                "before native inference startup; close other apps "
-                "or choose a smaller verified GGUF")
+        kv_cache_estimate = _check_managed_memory_preflight(
+            model_file, context, memory)
         runtime_ceiling = managed_runtime_memory_ceiling(
             memory, memory_limit_bytes)
         if os.name == "nt" and not runtime_ceiling:
@@ -709,6 +838,7 @@ class ManagedLlamaServer:
                         raise RuntimeError("Managed server reported the wrong model")
                     self.model_identity = dict(manifest)
                     self.context_tokens = context
+                    self.estimated_kv_cache_bytes = kv_cache_estimate
                     self.thread_count = threads
                     self.memory_ceiling_bytes = runtime_ceiling
                     self.startup_elapsed_seconds = round(
@@ -831,6 +961,7 @@ class ManagedLlamaServer:
             self.model_identity = None
             self.runtime_release_tag = None
             self.context_tokens = None
+            self.estimated_kv_cache_bytes = None
             self.thread_count = None
             self.memory_ceiling_bytes = None
             self.startup_elapsed_seconds = None

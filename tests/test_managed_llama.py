@@ -11,6 +11,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import struct
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -19,8 +20,9 @@ from urllib.request import Request
 
 from forgeos.local_models import LocalChatModel, create_model
 from forgeos.managed_llama import (
-    ALIAS, ManagedLlamaServer, _child_environment, _verified_model,
-    _verified_runtime,
+    ALIAS, ManagedLlamaServer, _check_managed_memory_preflight,
+    _child_environment, _verified_model, _verified_runtime,
+    estimate_gguf_kv_cache_bytes,
 )
 from forgeos.gguf_download import _exclusive_download_lock
 
@@ -246,6 +248,70 @@ class ManagedLlamaTests(unittest.TestCase):
         with patch("forgeos.managed_llama.safe_model_file_budget", return_value=16):
             with self.assertRaisesRegex(RuntimeError, "free RAM budget"):
                 _verified_model(self.model)
+
+    def test_gguf_metadata_estimates_f16_kv_cache_without_reading_tensor_data(self):
+        def gguf_string(value):
+            encoded = value.encode("utf-8")
+            return struct.pack("<Q", len(encoded)) + encoded
+
+        entries = [
+            ("general.architecture", 8, "llama"),
+            ("llama.block_count", 4, 32),
+            ("llama.attention.head_count", 4, 32),
+            ("llama.attention.head_count_kv", 4, 8),
+            ("llama.embedding_length", 4, 4096),
+        ]
+        metadata = bytearray(b"GGUF" + struct.pack("<IQQ", 3, 1, len(entries) + 1))
+        for key, kind, value in entries:
+            metadata.extend(gguf_string(key))
+            metadata.extend(struct.pack("<I", kind))
+            metadata.extend(gguf_string(value) if kind == 8
+                            else struct.pack("<I", value))
+        # A tokenizer string array is common in GGUF headers and must be
+        # skipped with bounded reads before finding the architecture values.
+        metadata.extend(gguf_string("tokenizer.ggml.tokens"))
+        metadata.extend(struct.pack("<IIQ", 9, 8, 2))
+        metadata.extend(gguf_string("one"))
+        metadata.extend(gguf_string("two"))
+        path = self.root / "metadata.gguf"
+        path.write_bytes(metadata)
+
+        self.assertEqual(
+            estimate_gguf_kv_cache_bytes(path, 1024), 128 * 1024 * 1024)
+        self.assertEqual(
+            estimate_gguf_kv_cache_bytes(path, 512), 64 * 1024 * 1024)
+        with self.assertRaisesRegex(ValueError, "Context"):
+            estimate_gguf_kv_cache_bytes(path, 8192 + 1)
+
+    def test_memory_admission_includes_known_kv_cache_estimate(self):
+        def gguf_string(value):
+            encoded = value.encode("utf-8")
+            return struct.pack("<Q", len(encoded)) + encoded
+
+        entries = [
+            ("general.architecture", 8, "llama"),
+            ("llama.block_count", 4, 32),
+            ("llama.attention.head_count", 4, 32),
+            ("llama.attention.head_count_kv", 4, 8),
+            ("llama.embedding_length", 4, 4096),
+        ]
+        metadata = bytearray(b"GGUF" + struct.pack("<IQQ", 3, 1, len(entries)))
+        for key, kind, value in entries:
+            metadata.extend(gguf_string(key))
+            metadata.extend(struct.pack("<I", kind))
+            metadata.extend(gguf_string(value) if kind == 8
+                            else struct.pack("<I", value))
+        path = self.root / "admission.gguf"
+        path.write_bytes(metadata)
+        with patch("forgeos.managed_llama.safe_model_file_budget",
+                   return_value=100 * 1024**2):
+            with self.assertRaisesRegex(RuntimeError, "estimated f16 KV cache"):
+                _check_managed_memory_preflight(path, 1024, None)
+        with patch("forgeos.managed_llama.safe_model_file_budget",
+                   return_value=200 * 1024**2):
+            self.assertEqual(
+                _check_managed_memory_preflight(path, 1024, None),
+                128 * 1024**2)
 
     def test_corrupt_manifest_is_bounded(self):
         metadata = self.model.with_name(self.model.name + ".forgeos.json")

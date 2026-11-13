@@ -2398,3 +2398,9 @@ and restore under constrained filesystems.
 
 - Opened [draft PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) from `fix/safe-resume-malformed-checkpoints` to `main` at `34e6d6f7c729df3a52fce410e115101109469d10` to enable review/acceptance tracking without merging.
 - GitHub's draft-PR conditions skipped Foundation tests, Windows EXE and Documentation workflows. Only handoff-integrity is eligible while the PR remains draft; a skip is not a pass. Promoting the PR to ready-for-review will run the platform matrix but will notify the repository's review audience. No merge was performed.
+
+### Follow-up — include a GGUF KV-cache estimate in managed RAM admission
+
+- Added a bounded parser for GGUF v2/v3 metadata. It reads at most 4 MiB, supports bounded scalar/string/array skipping, and extracts architecture, layer count, attention heads/KV heads and embedding length without reading tensor data. For known metadata, the managed startup preflight estimates an f16 K+V cache for the selected context and checks weight plus cache bytes against the conservative model budget. Unsupported/malformed metadata retains the existing weight-size-only fallback.
+- The estimate is included in the active controller's benchmark identity for later measurements. It does not model all compute buffers, mmap residency, quantized KV cache modes, GPU memory or concurrent external-process changes; real Windows measurements are still required.
+- Verification: managed llama.cpp, model routing, GUI contract, documentation and roadmap suites passed 113 tests (7 platform skips). Parser tests cover correct context scaling, ordinary tokenizer string arrays and rejection when weight-plus-cache exceeds the budget. Compileall and `git diff --check` still need to be recorded after final run.
