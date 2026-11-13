@@ -16,6 +16,7 @@ import stat
 MARKER = ".forgeos-execution-owner.json"
 RUNTIME_DIR = ".forgeos-runtime"
 VERSION = 1
+MAX_MARKER_BYTES = 512 * 1024
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,12 @@ def _validate_marker(runtime: Path, workspace: Path) -> Path:
     if not marker.is_file() or marker.is_symlink():
         raise ValueError(f"Refusing to remove unowned execution directory: {runtime}")
     try:
-        data = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError) as exc:
+        with marker.open("rb") as stream:
+            raw = stream.read(MAX_MARKER_BYTES + 1)
+        if len(raw) > MAX_MARKER_BYTES:
+            raise ValueError("Execution runtime marker is too large")
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError) as exc:
         raise ValueError("Execution runtime marker is invalid") from exc
     if (not isinstance(data, dict) or data.get("version") != VERSION
             or data.get("workspace") != str(workspace)

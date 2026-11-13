@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from forgeos.test_runtime import (
-    MARKER, create_test_snapshot, remove_test_snapshot,
+    MARKER, MAX_MARKER_BYTES, create_test_snapshot, remove_test_snapshot,
 )
 
 
@@ -103,3 +103,13 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertTrue(runtime.path.exists())
         self.assertTrue(
             runtime.path.with_name(runtime.path.name + MARKER).exists())
+
+    def test_oversized_ownership_marker_preserves_snapshot(self):
+        runtime = create_test_snapshot(self.workspace)
+        marker = runtime.path.with_name(runtime.path.name + MARKER)
+        original = marker.read_bytes()
+        marker.write_bytes(original.ljust(MAX_MARKER_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "marker is invalid"):
+            remove_test_snapshot(self.workspace)
+        self.assertTrue(runtime.path.is_dir())
+        self.assertEqual(marker.stat().st_size, MAX_MARKER_BYTES + 1)

@@ -2200,3 +2200,5 @@ and restore under constrained filesystems.
 - Snapshot setup removes its partial ownership marker and empty runtime directory when marker writing fails. Windows test_runtime suite: seven passed, including a successful retry after injected failure. Windows containment acceptance remains open.
 
 - Full Windows/Python 3.12.14 suite at a6cea4c: FAIL, 572 passed, 30 skipped, 8 errors and 3 failures out of 613. Six errors occurred during workspace integrity labeling and two during loopback socket access (WinError 10013). Two AppContainer tests and the handle allowlist test failed. The run predates the snapshot marker cleanup, which separately passed all nine lifecycle and routing tests on the same runtime. Physical Windows acceptance remains UNVERIFIED.
+
+- Snapshot cleanup bounds ownership marker reads and preserves the snapshot if the marker exceeds the limit. PASS on Windows: all eight test_runtime tests, including oversized marker rejection.
