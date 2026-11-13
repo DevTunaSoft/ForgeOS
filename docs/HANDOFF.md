@@ -2347,3 +2347,8 @@ and restore under constrained filesystems.
 
 - Card text now replaces Unicode control/format characters with normalized spaces and clips supported claims; license tags receive the same cleanup. GGUF file rows are excluded when their paths contain traversal, invalid characters, Windows device names or exceed the downloader's 16 GiB per-file cap. This also prevents extreme metadata integers from causing GUI size conversion errors.
 - Added adversarial tests for bidi/NUL/newline text, unsafe file paths, Windows reserved names and oversized file claims. Roadmap coverage remains partial because live model-card mutation/disappearance and other Hub edge cases still require network acceptance.
+
+### Follow-up — bound Hub metadata response time
+
+- Hugging Face JSON reads now stream in bounded chunks and enforce both the existing 2 MiB response cap and a 30-second total deadline, stopping slow trickle responses. The response context closes on timeout. This complements the network socket timeout, which alone can be extended indefinitely by a server that keeps sending bytes.
+- Added a deterministic slow-reader test for total deadline enforcement; live Hub behavior remains unverified in this network-restricted session.

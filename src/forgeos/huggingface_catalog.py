@@ -8,12 +8,14 @@ from __future__ import annotations
 import json
 import re
 import socket
+import time
 import unicodedata
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MAX_HUB_JSON_BYTES = 2 * 1024 * 1024
+MAX_HUB_RESPONSE_SECONDS = 30
 MAX_GGUF_BYTES = 16 * 1024 ** 3
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
 SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
@@ -84,11 +86,25 @@ def _hub_json_response(url: str) -> tuple[object, str | None]:
     # Catalog requests are metadata-only. Never send authentication headers.
     req = Request(url, headers={"Accept": "application/json",
                                 "User-Agent": "ForgeOS-model-catalog/0.1"})
+    deadline = time.monotonic() + MAX_HUB_RESPONSE_SECONDS
+    content = bytearray()
     with urlopen(req, timeout=15) as response:
-        content = response.read(MAX_HUB_JSON_BYTES + 1)
         link_header = getattr(response, "headers", {}).get("Link")
-    if len(content) > MAX_HUB_JSON_BYTES:
-        raise RuntimeError("Hugging Face catalog exceeded the bounded metadata limit")
+        reader = getattr(response, "read1", response.read)
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    "Hugging Face catalog exceeded its total response deadline")
+            chunk = reader(min(8192, MAX_HUB_JSON_BYTES + 1 - len(content)))
+            if not chunk:
+                break
+            content.extend(chunk)
+            if len(content) > MAX_HUB_JSON_BYTES:
+                raise RuntimeError(
+                    "Hugging Face catalog exceeded the bounded metadata limit")
+    if time.monotonic() >= deadline:
+        raise TimeoutError(
+            "Hugging Face catalog exceeded its total response deadline")
     try:
         payload = json.loads(content)
     except (ValueError, UnicodeDecodeError) as exc:

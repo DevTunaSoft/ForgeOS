@@ -22,6 +22,22 @@ class Response(io.BytesIO):
 
 
 class HuggingFaceCatalogTests(unittest.TestCase):
+    def test_hub_json_response_enforces_total_deadline_on_trickle(self):
+        class Trickle(Response):
+            def read1(self, size=-1):
+                return super().read(1)
+
+        response = Trickle(b'{"items":[]}')
+        ticks = iter((0.0, 29.5, 29.75, 30.5))
+        with patch("forgeos.huggingface_catalog.urlopen",
+                   return_value=response), \
+             patch("forgeos.huggingface_catalog.time.monotonic",
+                   side_effect=lambda: next(ticks, 30.5)):
+            with self.assertRaisesRegex(TimeoutError, "total response deadline"):
+                from forgeos.huggingface_catalog import _hub_json_response
+                _hub_json_response("https://huggingface.co/api/models")
+        self.assertTrue(response.closed)
+
     def test_catalog_network_and_http_errors_have_actionable_messages(self):
         from forgeos.huggingface_catalog import catalog_error_message
         def http_message(code):
