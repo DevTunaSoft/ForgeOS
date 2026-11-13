@@ -1430,8 +1430,9 @@ def launch(db_path, *, acceptance: bool = False):
 
     def browse_hub_models():
         """Opt-in GGUF browser and verified downloader without Tk thread blocking."""
-        from .huggingface_catalog import search_gguf, inspect_gguf_repo
+        from .huggingface_catalog import search_gguf_page, inspect_gguf_repo
 
+        max_search_pages = 10
         popup = tk.Toplevel(root)
         popup.title("ForgeOS | Hugging Face GGUF catalog and downloads")
         popup.geometry("790x590")
@@ -1479,6 +1480,8 @@ def launch(db_path, *, acceptance: bool = False):
             anchor="w", pady=(6, 0))
         state = {"busy": False, "catalog": [], "inspected_repo": None,
                  "inspected_revision": None,
+                 "search_query": "", "pending_query": "",
+                 "next_page_url": None, "search_pages": 0,
                  "action": None, "cancel": None, "close_after": False}
 
         def report_transfer(stage, current, total):
@@ -1538,8 +1541,14 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 term = (state["inspected_repo"], file_choice.get(),
                         state["inspected_revision"])
+            elif action == "more":
+                if (not state["next_page_url"]
+                        or state["search_pages"] >= max_search_pages):
+                    return
+                term = (state["search_query"], state["next_page_url"])
             else:
                 term = query.get().strip()
+                state["pending_query"] = term
             state["busy"] = True
             state["action"] = action
             state["cancel"] = threading.Event() if action == "download" else None
@@ -1552,6 +1561,7 @@ def launch(db_path, *, acceptance: bool = False):
             pause_btn.configure(state="normal" if action == "download" else "disabled")
             search_btn.configure(state="disabled")
             files_btn.configure(state="disabled")
+            more_btn.configure(state="disabled")
             download_btn.configure(state="disabled")
             info.configure(state="normal")
             info.delete("1.0", "end")
@@ -1563,8 +1573,11 @@ def launch(db_path, *, acceptance: bool = False):
 
             def run_lookup():
                 try:
-                    if action == "search":
-                        data = search_gguf(term)
+                    if action in ("search", "more"):
+                        search_term, page_url = ((term, None) if action == "search"
+                                                 else term)
+                        data = search_gguf_page(
+                            search_term, next_page_url=page_url)
                     elif action == "files":
                         data = inspect_gguf_repo(term)
                         from .model_inventory import (
@@ -1592,6 +1605,10 @@ def launch(db_path, *, acceptance: bool = False):
         search_btn = ttk.Button(
             search_row, text="Search", command=lambda: begin("search"))
         search_btn.pack(side="left", padx=5)
+        more_btn = ttk.Button(
+            search_row, text="More results", state="disabled",
+            command=lambda: begin("more"))
+        more_btn.pack(side="left", padx=(0, 5))
         files_btn = ttk.Button(
             search_row, text="Inspect GGUF sizes", command=lambda: begin("files"))
         files_btn.pack(side="left")
@@ -1631,6 +1648,10 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 search_btn.configure(state="normal")
                 files_btn.configure(state="normal")
+                more_btn.configure(
+                    state=("normal" if state["next_page_url"]
+                           and state["search_pages"] < max_search_pages
+                           else "disabled"))
                 download_btn.configure(
                     state="normal" if state["inspected_repo"]
                     and file_choice.get() else "disabled")
@@ -1638,21 +1659,40 @@ def launch(db_path, *, acceptance: bool = False):
                 info.delete("1.0", "end")
                 if error:
                     info.insert("end", error)
-                elif action == "search":
-                    state["catalog"] = data
+                elif action in ("search", "more"):
+                    if action == "search":
+                        state["catalog"] = []
+                        state["search_query"] = state["pending_query"]
+                        state["search_pages"] = 1
+                        results.delete(*results.get_children())
+                    else:
+                        state["search_pages"] += 1
+                    items = data["items"]
+                    state["next_page_url"] = data["next_page_url"]
                     state["inspected_repo"] = None
                     state["inspected_revision"] = None
                     file_choice.set("")
                     file_picker.configure(values=())
                     download_btn.configure(state="disabled")
-                    results.delete(*results.get_children())
-                    for index, item in enumerate(data):
+                    known = {item["repo"] for item in state["catalog"]}
+                    for item in items:
+                        if item["repo"] in known:
+                            continue
+                        index = len(state["catalog"])
+                        state["catalog"].append(item)
+                        known.add(item["repo"])
                         results.insert("", "end", iid=str(index), values=(
                             item["repo"], item["downloads"], item["license_tag"]))
                     info.insert(
-                        "end", f"Found {len(data)} candidate repositories. "
+                        "end", f"Showing {len(state['catalog'])} candidate repositories. "
                         "A repository listing is not a license or compatibility "
-                        "verification. Select one and inspect its GGUF files.")
+                        "verification. Select one and inspect its GGUF files. "
+                        + ("More results are available."
+                           if state["next_page_url"]
+                           and state["search_pages"] < max_search_pages
+                           else "Search page limit reached."
+                           if state["next_page_url"]
+                           else "No further result page was provided."))
                 elif action == "files":
                     repo_info = data
                     data = repo_info["files"]

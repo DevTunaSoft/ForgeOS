@@ -2318,3 +2318,9 @@ and restore under constrained filesystems.
 
 - Added a source-level matrix for Ollama, managed llama.cpp and generic local OpenAI-compatible endpoints. It records request paths/parameters, tools and schema behavior, ForgeOS versus server-controlled context limits, model/license provenance, and available runtime version identity. The roadmap marks this as partial; real compatibility profiles and measured runtime limits remain open.
 - Verification: documentation and roadmap contract suites passed all 15 tests; the documentation test checks the matrix and no-tool contract language. `git diff --check` passed.
+
+## 2026-11-13 — bounded Hugging Face search pagination
+
+- Added one-page-at-a-time search with a visible **More results** control. ForgeOS follows only an HTTPS Hugging Face `/api/models` continuation whose query and page size match the original search; the server cursor remains opaque. The GUI caps searches at ten 15-result pages and deduplicates repository IDs. Existing `search_gguf()` callers still receive the first page as a list.
+- Verification: catalog, GUI contract, roadmap and documentation suites passed 64 tests. Added tests cover opaque continuation, a second page, external-host links and query-change links; API source compilation and `git diff --check` passed.
+- Live Hub pagination and GUI interaction remain unverified. The current sandbox denies access to the installed Ollama loopback service (`connectex` access denied) and cannot access the default ForgeOS model directory, so real inference remains a target-host gate.

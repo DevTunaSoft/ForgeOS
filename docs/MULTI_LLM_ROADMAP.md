@@ -83,6 +83,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 **Owners:** `huggingface_catalog.py`, `gguf_download.py`; add one canonical on-disk inventory; no duplicate downloader.
 
 - [x] Read public repository metadata and GGUF file/size/hash candidates on explicit user request.
+- [x] **Partial bounded search pagination:** the GUI follows opaque Hub-provided next links only when the origin/path and original query/page size validate; each continuation fetch is an explicit user action. Live API and failure-mode acceptance remain open.
 - [x] Resolve immutable repository revision for opt-in downloads; require trusted LFS hash; stream bounded chunks, reserve disk, retain partial journals, reject incompatible resumes and atomically publish verified bytes.
 - [ ] Real Windows checks on LFS/Xet/CDN redirects, TLS, anti-abuse, 401/403/404/429, disk-full mid-write, concurrent downloads and partial resume across process kill.
 - [ ] Confirm metadata-to-weights integrity through source revision and hash without accepting arbitrary third-party redirects, untrusted archives or symlink/path traversal.

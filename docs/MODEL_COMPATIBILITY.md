@@ -153,6 +153,12 @@ Hub-reported file sizes and hashes, and matching local-inventory status.
 These results are **metadata**, not proof
 that the model fits in memory, has the correct chat template, works in your
 inference runtime, or can legally be used for your application.
+Use **More results** to follow a Hub-provided continuation page. ForgeOS
+validates that each continuation stays on the fixed Hugging Face model API
+origin and preserves the original search and page size; it never constructs
+or guesses an opaque pagination cursor. The GUI stops after ten pages (up to
+150 repository entries at its current page size) to keep the result view
+bounded.
 
 Search and file inspection contact the Hugging Face public HTTPS API **only
 when requested**. The GUI does not send project source or secrets to the Hub.

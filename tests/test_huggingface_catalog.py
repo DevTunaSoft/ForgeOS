@@ -10,6 +10,9 @@ from forgeos.huggingface_catalog import (
 
 
 class Response(io.BytesIO):
+    def __init__(self, data, headers=None):
+        super().__init__(data)
+        self.headers = headers or {}
     def __enter__(self):
         return self
     def __exit__(self, *args):
@@ -34,6 +37,45 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         self.assertFalse(result[0]["verified_compatible"])
         self.assertTrue(opened.call_args.args[0].full_url.startswith(
             "https://huggingface.co/api/models?"))
+
+    def test_search_pagination_follows_opaque_same_origin_link(self):
+        from urllib.parse import urlencode
+        from forgeos.huggingface_catalog import search_gguf_page
+        next_url = "https://huggingface.co/api/models?" + urlencode({
+            "search": "coder", "limit": 2, "cursor": "opaque:value",
+        })
+        first = Response(json.dumps([{"id": "Owner/first-GGUF",
+                                     "tags": ["gguf"]}]).encode(), {
+            "Link": f'<{next_url}>; rel="next"',
+        })
+        second = Response(json.dumps([{"id": "Owner/second-GGUF",
+                                      "tags": ["gguf"]}]).encode())
+        with patch("forgeos.huggingface_catalog.urlopen",
+                   side_effect=[first, second]) as opened:
+            page1 = search_gguf_page("coder", limit=2)
+            page2 = search_gguf_page(
+                "coder", limit=2, next_page_url=page1["next_page_url"])
+        self.assertEqual(page1["items"][0]["repo"], "Owner/first-GGUF")
+        self.assertEqual(page2["items"][0]["repo"], "Owner/second-GGUF")
+        self.assertEqual(opened.call_count, 2)
+        self.assertIn("opaque%3Avalue", opened.call_args.args[0].full_url)
+
+    def test_search_pagination_rejects_external_or_changed_query_link(self):
+        from forgeos.huggingface_catalog import search_gguf_page
+        links = (
+            "https://evil.example/api/models?search=coder&limit=2&cursor=x",
+            "https://huggingface.co/api/models?search=other&limit=2&cursor=x",
+        )
+        for next_url in links:
+            with self.subTest(next_url=next_url):
+                first = Response(json.dumps([]).encode(), {
+                    "Link": f'<{next_url}>; rel="next"',
+                })
+                with patch("forgeos.huggingface_catalog.urlopen",
+                           return_value=first) as opened:
+                    with self.assertRaisesRegex(RuntimeError, "untrusted pagination"):
+                        search_gguf_page("coder", limit=2)
+                    self.assertEqual(opened.call_count, 1)
 
     def test_query_input_and_limit_rejected(self):
         for bad in ("", "\x00", "a", "x"*100):

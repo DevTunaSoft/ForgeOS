@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 MAX_HUB_JSON_BYTES = 2 * 1024 * 1024
@@ -18,31 +18,70 @@ SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
 COMMIT_SHA = re.compile(r"[a-fA-F0-9]{40}\Z")
 
 
-def _hub_json(url: str) -> object:
+def _hub_json_response(url: str) -> tuple[object, str | None]:
     # All URLs are constructed from a fixed HTTPS origin; no user URLs accepted.
     # Catalog requests are metadata-only. Never send authentication headers.
     req = Request(url, headers={"Accept": "application/json",
                                 "User-Agent": "ForgeOS-model-catalog/0.1"})
     with urlopen(req, timeout=15) as response:
         content = response.read(MAX_HUB_JSON_BYTES + 1)
+        link_header = getattr(response, "headers", {}).get("Link")
     if len(content) > MAX_HUB_JSON_BYTES:
         raise RuntimeError("Hugging Face catalog exceeded the bounded metadata limit")
     try:
-        return json.loads(content)
+        payload = json.loads(content)
     except (ValueError, UnicodeDecodeError) as exc:
         raise RuntimeError("Hugging Face catalog contained invalid JSON") from exc
+    next_match = re.search(
+        r'<([^<>]+)>\s*;\s*rel\s*=\s*"?next"?',
+        link_header or "", re.IGNORECASE)
+    has_next_relation = bool(re.search(
+        r'\brel\s*=\s*"?next"?', link_header or "", re.IGNORECASE))
+    if has_next_relation and not next_match:
+        raise RuntimeError("Hugging Face returned a malformed pagination link")
+    return payload, next_match.group(1) if next_match else None
 
 
-def search_gguf(query: str, *, limit: int = 15) -> list[dict]:
-    """List public candidate GGUF repositories, not verified running models."""
+def _hub_json(url: str) -> object:
+    return _hub_json_response(url)[0]
+
+
+def _validate_search(query: str, limit: int) -> str:
     if (not isinstance(query, str) or not 2 <= len(query.strip()) <= 64
             or any(ord(c) < 32 for c in query)):
         raise ValueError("Enter a search phrase of 2–64 characters")
     if type(limit) is not int or not 1 <= limit <= 30:
         raise ValueError("Catalog result limit must be 1–30")
+    return query.strip()
+
+
+def _search_next_url(url: str, query: str, limit: int) -> str:
+    if not isinstance(url, str) or len(url) > 4096:
+        raise RuntimeError("Hugging Face pagination link exceeded its limit")
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("Hugging Face returned an invalid pagination link") from exc
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    if (parsed.scheme != "https" or parsed.hostname != "huggingface.co"
+            or port not in (None, 443) or parsed.username is not None
+            or parsed.password is not None or parsed.path != "/api/models"
+            or parsed.fragment or params.get("search") != [query]
+            or params.get("limit") != [str(limit)]):
+        raise RuntimeError("Hugging Face returned an untrusted pagination link")
+    return url
+
+
+def search_gguf_page(query: str, *, limit: int = 15,
+                     next_page_url: str | None = None) -> dict:
+    """Fetch one bounded Hub search page and its validated opaque continuation."""
+    query = _validate_search(query, limit)
     params = urlencode({"search": query.strip(), "limit": limit,
                         "sort": "downloads", "direction": "-1"})
-    payload = _hub_json("https://huggingface.co/api/models?" + params)
+    url = ("https://huggingface.co/api/models?" + params if next_page_url is None
+           else _search_next_url(next_page_url, query, limit))
+    payload, continuation = _hub_json_response(url)
     if not isinstance(payload, list) or len(payload) > limit:
         raise RuntimeError("Unexpected Hugging Face search results")
     result = []
@@ -65,7 +104,14 @@ def search_gguf(query: str, *, limit: int = 15) -> list[dict]:
             "license_tag": license_tags[0] if license_tags else "unverified",
             "verified_compatible": False,
         })
-    return result
+    next_page = (_search_next_url(continuation, query, limit)
+                 if continuation else None)
+    return {"items": result, "next_page_url": next_page}
+
+
+def search_gguf(query: str, *, limit: int = 15) -> list[dict]:
+    """List one page of public GGUF repositories, not verified running models."""
+    return search_gguf_page(query, limit=limit)["items"]
 
 
 def model_revision(repo: str) -> str:
