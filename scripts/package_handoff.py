@@ -62,12 +62,12 @@ def create(root: Path, output: Path) -> dict:
         "files": {name: {"sha256": hashlib.sha256(data).hexdigest(),
                          "bytes": len(data)} for name, data in sorted(entries.items())},
     }
-    guide = ("ForgeOS recovery handoff\\n"
-             "1. Compare manifest source_sha with the GitHub repository HEAD.\\n"
-             "2. Read docs/PRODUCT_VISION.md, docs/ENGINEERING_TAKEOVER.md and docs/HANDOFF.md.\\n"
-             "3. Reconcile current issues, pull requests and CI before editing.\\n"
-             "4. Treat historical test claims as unverified until reproduced.\\n"
-             "5. This ZIP is not a source-code backup or credential archive.\\n")
+    guide = ("ForgeOS recovery handoff\n"
+             "1. Compare manifest source_sha with the GitHub repository HEAD.\n"
+             "2. Read docs/PRODUCT_VISION.md, docs/ENGINEERING_TAKEOVER.md and docs/HANDOFF.md.\n"
+             "3. Reconcile current issues, pull requests and CI before editing.\n"
+             "4. Treat historical test claims as unverified until reproduced.\n"
+             "5. This ZIP is not a source-code backup or credential archive.\n")
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED,
                          compresslevel=6) as archive:
