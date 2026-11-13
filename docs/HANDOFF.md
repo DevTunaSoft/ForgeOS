@@ -2358,3 +2358,8 @@ and restore under constrained filesystems.
 - Added a third tab to the existing GUI with a five-step first-task workflow, keyboard navigation instructions, and plain-language advice for readiness, local endpoint, token parameter, Hub network/hash and memory failures. Buttons take users to repository selection, setup readiness, model discovery or the development tab.
 - The guide does not grant host-test authorization or perform hidden model downloads; it explains that generated tests run on the computer and that local inference does not fall back to cloud.
 - Updated the user guide and marked the roadmap item partial: real desktop screenshots and interactive guided recovery remain outstanding. Verification: `test_gui_acceptance`, GUI contract, documentation and roadmap suites passed 60 tests; compileall and `git diff --check` passed. Frozen GUI rendering and visual/keyboard interaction on target Windows remain unverified.
+
+### Follow-up — share the GGUF metadata size ceiling
+
+- The Hub catalog's maximum accepted GGUF file size now imports the downloader's canonical limit instead of duplicating a second 16 GiB value. A regression test keeps the catalog inspection boundary aligned with the download boundary.
+- Verification: catalog, downloader, inventory and retirement suites passed 68 tests (six platform skips); source compilation and `git diff --check` passed.

@@ -18,10 +18,12 @@ import uuid
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-from .huggingface_catalog import REPO_ID, list_gguf_files, model_revision
+from .huggingface_catalog import (
+    MAX_GGUF_BYTES, REPO_ID, list_gguf_files, model_revision,
+)
 
 GIB = 1024 ** 3
-MAX_MODEL_BYTES = 16 * GIB
+MAX_MODEL_BYTES = MAX_GGUF_BYTES
 CHUNK_BYTES = 1024 * 1024
 RESERVED_DISK_BYTES = GIB
 SAFE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")

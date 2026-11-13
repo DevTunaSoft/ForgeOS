@@ -229,6 +229,11 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         self.assertEqual([row["path"] for row in result],
                          ["good/model-Q4_K_M.gguf"])
 
+    def test_catalog_size_cap_matches_downloader_limit(self):
+        from forgeos.gguf_download import MAX_MODEL_BYTES
+        from forgeos.huggingface_catalog import MAX_GGUF_BYTES
+        self.assertEqual(MAX_GGUF_BYTES, MAX_MODEL_BYTES)
+
     def test_repo_inspection_uses_expanded_author_when_card_data_omits_it(self):
         from forgeos.huggingface_catalog import inspect_gguf_repo
         metadata = {"author": "  Qwen  ", "sha": "e" * 40}
