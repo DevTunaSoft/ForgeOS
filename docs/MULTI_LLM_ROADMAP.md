@@ -197,7 +197,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 
 - [x] Preserve accurate main-versus-feature-branch status and full handoff; previous code and docs on PR #51.
 - [x] Add this requirements-to-code and acceptance-criteria tracker.
-- [ ] Integrate a genuinely working in-app beginner tutorial, screenshots of a real GUI (not generated mockups), guided failure recovery and FAQ.
+- [ ] Complete the in-app beginner tutorial with screenshots of a real GUI and interactive guided recovery. **Partial in-app guide:** added a first-task workflow, clickable repository/readiness/model-discovery shortcuts, common failure explanations and keyboard navigation tips in the existing GUI. Real screenshots and interactive guided recovery remain open.
 - [ ] Keep model cards/license provenance, runtime build instructions, Windows dependencies, security disclosures and reproducible benchmark results current.
 - [ ] Keep cumulative GitHub source, tests and commits; do not replace stable main until reviewed and verified, and do not silently merge an unaccepted draft.
 - [ ] Provide full cumulative source/package, exact setup/verification commands, test evidence, unresolved blockers, release provenance and recovery steps after each development segment.

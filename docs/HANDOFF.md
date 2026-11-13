@@ -2352,3 +2352,9 @@ and restore under constrained filesystems.
 
 - Hugging Face JSON reads now stream in bounded chunks and enforce both the existing 2 MiB response cap and a 30-second total deadline, stopping slow trickle responses. The response context closes on timeout. This complements the network socket timeout, which alone can be extended indefinitely by a server that keeps sending bytes.
 - Added a deterministic slow-reader test for total deadline enforcement; live Hub behavior remains unverified in this network-restricted session.
+
+### Follow-up — add an in-app getting-started and recovery guide
+
+- Added a third tab to the existing GUI with a five-step first-task workflow, keyboard navigation instructions, and plain-language advice for readiness, local endpoint, token parameter, Hub network/hash and memory failures. Buttons take users to repository selection, setup readiness, model discovery or the development tab.
+- The guide does not grant host-test authorization or perform hidden model downloads; it explains that generated tests run on the computer and that local inference does not fall back to cloud.
+- Updated the user guide and marked the roadmap item partial: real desktop screenshots and interactive guided recovery remain outstanding. Static GUI contract verification is pending.

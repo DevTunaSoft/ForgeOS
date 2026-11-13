@@ -166,8 +166,79 @@ def launch(db_path, *, acceptance: bool = False):
     tabs.pack(fill="both", expand=True)
     dashboard = ttk.Frame(tabs, padding=10)
     activity = ttk.Frame(tabs, padding=10)
+    getting_started = ttk.Frame(tabs, padding=16)
     tabs.add(dashboard, text="Development")
     tabs.add(activity, text="Activity & diagnostics")
+    tabs.add(getting_started, text="Getting started & help")
+
+    ttk.Label(getting_started, text="Build a task with ForgeOS",
+              style="Title.TLabel").pack(anchor="w", pady=(0, 8))
+    ttk.Label(
+        getting_started,
+        text=("ForgeOS works with a local model and a Git repository. It creates "
+              "task changes in an isolated Git worktree so you can review them "
+              "before applying them to your project."),
+        wraplength=900, justify="left").pack(anchor="w", pady=(0, 12))
+
+    guide_actions = ttk.Frame(getting_started)
+    guide_actions.pack(fill="x", pady=(0, 12))
+    ttk.Button(
+        guide_actions, text="Choose Git repository",
+        command=lambda: project.set(
+            filedialog.askdirectory(title="Select Git repository") or project.get()),
+    ).pack(side="left", padx=(0, 8))
+    ttk.Button(
+        guide_actions, text="Check setup",
+        command=lambda: (tabs.select(dashboard), run_readiness_check()),
+    ).pack(side="left", padx=(0, 8))
+    ttk.Button(
+        guide_actions, text="Find a local model",
+        command=lambda: (tabs.select(dashboard), browse_hub_models()),
+    ).pack(side="left", padx=(0, 8))
+    ttk.Button(
+        guide_actions, text="Open development",
+        command=lambda: tabs.select(dashboard),
+    ).pack(side="left")
+
+    guide_body = ttk.LabelFrame(getting_started, text="First task", padding=12)
+    guide_body.pack(fill="x", pady=(0, 10))
+    ttk.Label(
+        guide_body,
+        text=("1. Choose your Git repository and an existing workspace folder.\n"
+              "2. Describe one small, specific change. Use Generate plan first to "
+              "review what the model proposes.\n"
+              "3. Choose a local model and test suite. If using a local OpenAI "
+              "compatible server, start it first and enter its exact model name.\n"
+              "4. Enable host test execution only when you trust the project and "
+              "understand that generated tests run on this computer.\n"
+              "5. Run the task, inspect its diff and test results in Activity & "
+              "diagnostics, then merge or copy the changes yourself."),
+        wraplength=940, justify="left").pack(anchor="w")
+
+    guide_help = ttk.LabelFrame(getting_started, text="When something fails", padding=12)
+    guide_help.pack(fill="x", pady=(0, 10))
+    ttk.Label(
+        guide_help,
+        text=("Setup check: follow each NEEDS ATTENTION message before starting.\n"
+              "Local model unavailable: start the selected local server, check its "
+              "loopback address and port, and use the exact model ID it reports.\n"
+              "Request rejected: choose max_completion_tokens only if your server "
+              "does not accept the default max_tokens field.\n"
+              "Model search cannot connect: check internet access; Hugging Face "
+              "search and downloads are optional and require a network connection.\n"
+              "No trusted download hash: choose a GGUF file with an LFS SHA-256 "
+              "listed by the repository. A Hub license or model-card claim is "
+              "unverified until you review it yourself.\n"
+              "Not enough memory: stop other model servers and choose a smaller "
+              "model. ForgeOS does not silently switch to cloud inference."),
+        wraplength=940, justify="left").pack(anchor="w")
+    ttk.Label(
+        getting_started,
+        text=("Keyboard: use Tab or Shift+Tab to move between controls; press "
+              "Space or Enter to activate the focused button. Use the notebook "
+              "tabs to return to Development or open diagnostics."),
+        wraplength=940, justify="left", foreground="#52647b").pack(
+            anchor="w", pady=(4, 0))
 
     repo_row = ttk.LabelFrame(dashboard, text="Project repository", padding=10)
     repo_row.pack(fill="x", pady=(0, 10))
@@ -2239,7 +2310,8 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 root.update_idletasks()
                 names = [tabs.tab(tab, "text") for tab in tabs.tabs()]
-                if names != ["Development", "Activity & diagnostics"]:
+                if names != ["Development", "Activity & diagnostics",
+                             "Getting started & help"]:
                     raise RuntimeError("Unexpected GUI tab configuration")
                 if not tree.winfo_exists():
                     raise RuntimeError("Task queue was not constructed")

@@ -22,6 +22,11 @@ a heavyweight renderer, web browser or network connection. The Windows
 EXE bundles this canonical file at build time. In editable source checkouts
 the guide is read from the `docs` directory.
 
+The desktop app also has a **Getting started & help** tab with a short first-task
+workflow, shortcuts to repository selection/readiness/model discovery, and
+plain-language tips for common setup and model errors. Use Tab/Shift+Tab to
+move between controls.
+
 This guide is updated **in the same pull request** as user-facing features.
 See the [documentation maintenance policy](DOCUMENTATION_POLICY.md).
 

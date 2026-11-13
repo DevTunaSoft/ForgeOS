@@ -8,6 +8,18 @@ from forgeos.gui import (
 
 
 class DashboardContractTests(unittest.TestCase):
+    def test_getting_started_view_has_workflow_recovery_and_keyboard_guidance(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Getting started & help"', source)
+        self.assertIn('text="Choose Git repository"', source)
+        self.assertIn('text="Check setup"', source)
+        self.assertIn('text="Find a local model"', source)
+        self.assertIn('text="When something fails"', source)
+        self.assertIn('Keyboard: use ', source)
+        self.assertIn('to move between controls;', source)
+        self.assertIn('does not silently switch to cloud inference', source)
+
     def test_hugging_face_inspection_details_are_scrollable(self):
         source = (Path(__file__).resolve().parents[1] /
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
