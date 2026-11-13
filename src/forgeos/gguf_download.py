@@ -66,6 +66,13 @@ def _safe_storage_root(directory: Path | str | None) -> Path:
     return root.resolve(strict=True)
 
 
+def _lock_contention(exc: OSError) -> bool:
+    if os.name == "nt":
+        return (exc.errno in (errno.EACCES, errno.EDEADLK)
+                or getattr(exc, "winerror", None) in (33, 36))
+    return exc.errno in (errno.EACCES, errno.EAGAIN)
+
+
 def _reject_existing_link(target: Path, root: Path) -> None:
     if not target.resolve().is_relative_to(root):
         raise ValueError("Model path escaped the storage root")
@@ -77,7 +84,9 @@ def _reject_existing_link(target: Path, root: Path) -> None:
 
 
 @contextmanager
-def _exclusive_download_lock(lock_path: Path, *, blocking: bool = False):
+def _exclusive_download_lock(lock_path: Path, *, blocking: bool = False,
+                             deadline: float | None = None,
+                             cancel_event: Event | None = None):
     """Kernel-held lock releases on process exit without permanent stale locks."""
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     with os.fdopen(descriptor, "r+b") as fd:
@@ -85,9 +94,11 @@ def _exclusive_download_lock(lock_path: Path, *, blocking: bool = False):
             fd.write(b"\x00")
             fd.flush()
         fd.seek(0)
+        if cancel_event is not None and not isinstance(cancel_event, Event):
+            raise TypeError("cancel_event must be a threading.Event")
         if os.name == "nt":
             import msvcrt
-            mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+            mode = msvcrt.LK_NBLCK
             while True:
                 try:
                     msvcrt.locking(fd.fileno(), mode, 1)
@@ -96,9 +107,21 @@ def _exclusive_download_lock(lock_path: Path, *, blocking: bool = False):
                     if not blocking:
                         raise RuntimeError(
                             "This GGUF download is active elsewhere") from exc
-                    # LK_LOCK itself stops retrying after a finite interval;
-                    # keep waiting so quota locks serialize full transfers.
-                    time.sleep(0.1)
+                    if not _lock_contention(exc):
+                        raise RuntimeError(
+                            "Could not acquire the model storage quota lock") from exc
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise DownloadCancelled(
+                            "GGUF download paused while waiting for storage quota") from exc
+                    _check_deadline(deadline)
+                    if deadline is None:
+                        delay = 0.1
+                    else:
+                        delay = min(0.1, max(0.0, deadline - time.monotonic()))
+                    if cancel_event is not None:
+                        cancel_event.wait(delay)
+                    else:
+                        time.sleep(delay)
             try:
                 yield
             finally:
@@ -107,10 +130,34 @@ def _exclusive_download_lock(lock_path: Path, *, blocking: bool = False):
         else:
             import fcntl
             try:
-                mode = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
-                fcntl.flock(fd.fileno(), mode)
+                fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError as exc:
-                raise RuntimeError("This GGUF download is active elsewhere") from exc
+                if not blocking:
+                    raise RuntimeError(
+                        "This GGUF download is active elsewhere") from exc
+                if not _lock_contention(exc):
+                    raise RuntimeError(
+                        "Could not acquire the model storage quota lock") from exc
+                while True:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise DownloadCancelled(
+                            "GGUF download paused while waiting for storage quota") from exc
+                    _check_deadline(deadline)
+                    if deadline is None:
+                        delay = 0.1
+                    else:
+                        delay = min(0.1, max(0.0, deadline - time.monotonic()))
+                    if cancel_event is not None:
+                        cancel_event.wait(delay)
+                    else:
+                        time.sleep(delay)
+                    try:
+                        fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError as retry_exc:
+                        if not _lock_contention(retry_exc):
+                            raise RuntimeError(
+                                "Could not acquire the model storage quota lock") from retry_exc
             try:
                 yield
             finally:
@@ -449,6 +496,10 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
     oversubscribing the same store allowance. A total-duration limit bounds
     slow-trickle transfers in addition to the per-socket timeout.
     """
+    if cancel_event is not None and not isinstance(cancel_event, Event):
+        raise TypeError("cancel_event must be a threading.Event")
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable")
     if (type(max_duration_seconds) is not int
             or not 1 <= max_duration_seconds <= MAX_DOWNLOAD_DURATION_SECONDS):
         raise ValueError("Invalid total model download time limit")
@@ -467,7 +518,9 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
     if quota_lock.exists() and (not quota_lock.is_file()
                                 or quota_lock.stat().st_nlink != 1):
         raise ValueError("Model storage quota lock is not a safe regular file")
-    with _exclusive_download_lock(quota_lock, blocking=True):
+    with _exclusive_download_lock(
+            quota_lock, blocking=True, deadline=deadline,
+            cancel_event=cancel_event):
         return _download_gguf_unlocked(
             repo, filename, revision=revision, directory=root,
             max_bytes=max_bytes, timeout=timeout, cancel_event=cancel_event,

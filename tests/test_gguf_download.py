@@ -8,6 +8,7 @@ import subprocess
 import sys
 import textwrap
 import time
+from contextlib import contextmanager
 from urllib.error import HTTPError
 from types import SimpleNamespace
 from pathlib import Path
@@ -656,6 +657,80 @@ class GGUFDownloadTests(unittest.TestCase):
             revision.assert_not_called()
             catalog.assert_not_called()
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_pause_cancels_while_waiting_for_storage_quota_lock(self):
+        from forgeos import gguf_download as gd
+        quota_lock = self.root / ".forgeos-storage-quota.lock"
+        waiting = Event()
+        cancelled = Event()
+        outcomes = []
+        real_lock = gd._exclusive_download_lock
+
+        @contextmanager
+        def observe_quota_wait(path, **kwargs):
+            if Path(path).name == quota_lock.name:
+                waiting.set()
+            with real_lock(path, **kwargs):
+                yield
+
+        def download_in_worker():
+            try:
+                outcomes.append(self.download(
+                    revision=REVISION, storage_quota_bytes=100,
+                    cancel_event=cancelled))
+            except BaseException as exc:
+                outcomes.append(exc)
+
+        with real_lock(quota_lock):
+            with patch("forgeos.gguf_download._exclusive_download_lock",
+                       side_effect=observe_quota_wait), \
+                 patch("forgeos.gguf_download._open_weight") as network:
+                worker = Thread(target=download_in_worker, daemon=True)
+                worker.start()
+                self.assertTrue(waiting.wait(5), "download never queued for quota")
+                cancelled.set()
+                worker.join(5)
+                self.assertFalse(worker.is_alive(), "cancel did not release quota wait")
+                network.assert_not_called()
+        self.assertEqual(len(outcomes), 1)
+        self.assertIsInstance(outcomes[0], DownloadCancelled)
+        self.assertIn("storage quota", str(outcomes[0]))
+
+    def test_total_deadline_expires_while_waiting_for_storage_quota_lock(self):
+        from forgeos import gguf_download as gd
+        quota_lock = self.root / ".forgeos-storage-quota.lock"
+        waiting = Event()
+        outcomes = []
+        real_lock = gd._exclusive_download_lock
+
+        @contextmanager
+        def observe_quota_wait(path, **kwargs):
+            if Path(path).name == quota_lock.name:
+                waiting.set()
+            with real_lock(path, **kwargs):
+                yield
+
+        def download_in_worker():
+            try:
+                outcomes.append(self.download(
+                    revision=REVISION, storage_quota_bytes=100,
+                    max_duration_seconds=1))
+            except BaseException as exc:
+                outcomes.append(exc)
+
+        with real_lock(quota_lock):
+            with patch("forgeos.gguf_download._exclusive_download_lock",
+                       side_effect=observe_quota_wait), \
+                 patch("forgeos.gguf_download._open_weight") as network:
+                worker = Thread(target=download_in_worker, daemon=True)
+                worker.start()
+                self.assertTrue(waiting.wait(5), "download never queued for quota")
+                worker.join(3)
+                self.assertFalse(worker.is_alive(), "deadline did not release quota wait")
+                network.assert_not_called()
+        self.assertEqual(len(outcomes), 1)
+        self.assertIsInstance(outcomes[0], TimeoutError)
+        self.assertIn("total time limit", str(outcomes[0]))
 
     def test_hash_mismatch_is_quarantined_without_publishing(self):
         with patch("forgeos.gguf_download._open_weight",
