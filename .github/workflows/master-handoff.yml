@@ -19,14 +19,26 @@ jobs:
         run: python -m pip install 'reportlab>=4,<5' 'pypdf>=5,<7'
       - name: Verify PDF code wrapping
         run: python -m unittest discover -s tests -p 'test_handoff_pdf_wrapping.py' -v
+      - name: Test portable recovery package
+        run: python -m unittest discover -s tests -p 'test_package_handoff.py' -v
       - name: Check source handoff integrity
         run: python scripts/check_handoff.py --json
       - name: Render and verify master handoff
         run: python scripts/export_master_handoff.py --output "$RUNNER_TEMP/ForgeOS-Master-Handoff.pdf" --min-body-pages 35
+      - name: Package verified recovery bundle
+        run: python scripts/package_handoff.py --output "$RUNNER_TEMP/ForgeOS-Recovery.zip"
       - name: Publish verified handoff
         uses: actions/upload-artifact@v4
         with:
           name: ForgeOS-Master-Handoff-${{ github.sha }}
           path: ${{ runner.temp }}/ForgeOS-Master-Handoff.pdf
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish portable recovery bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForgeOS-Recovery-${{ github.sha }}
+          path: ${{ runner.temp }}/ForgeOS-Recovery.zip
           retention-days: 30
           if-no-files-found: error
