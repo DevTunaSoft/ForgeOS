@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from forgeos.managed_llama import _verified_model
+from forgeos.model_inventory import list_downloads, verify_download
 from forgeos.model_import import import_local_gguf
 
 
@@ -13,13 +14,14 @@ class LocalModelImportTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="forgeos-import-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.models = self.root / "models"
         self.model = self.root / "existing.gguf"
         self.data = b"GGUF" + b"x" * 64
         self.model.write_bytes(self.data)
 
     def test_import_records_sha_without_copying_and_runtime_reverifies(self):
         original_inode = self.model.stat().st_ino
-        result = import_local_gguf(self.model)
+        result = import_local_gguf(self.model, directory=self.models)
         sidecar = self.model.with_name(self.model.name + ".forgeos.json")
         record = json.loads(sidecar.read_text(encoding="utf-8"))
         self.assertEqual(result["status"], "imported")
@@ -29,6 +31,13 @@ class LocalModelImportTests(unittest.TestCase):
         self.assertEqual(self.model.stat().st_ino, original_inode)
         self.assertEqual(self.model.read_bytes(), self.data)
         self.assertEqual(_verified_model(self.model)[1], record)
+        items = list_downloads(self.models)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["status"], "imported_not_reverified")
+        self.assertEqual(items[0]["kind"], "imported")
+        self.assertIsNone(items[0]["revision"])
+        self.assertEqual(verify_download(self.model, directory=self.models)["status"],
+                         "verified")
 
         self.model.write_bytes(self.data + b"changed")
         with self.assertRaisesRegex(ValueError, "identity or file size"):
@@ -38,13 +47,13 @@ class LocalModelImportTests(unittest.TestCase):
         sidecar = self.model.with_name(self.model.name + ".forgeos.json")
         sidecar.write_text("keep this", encoding="utf-8")
         with self.assertRaises(FileExistsError):
-            import_local_gguf(self.model)
+            import_local_gguf(self.model, directory=self.models)
         self.assertEqual(sidecar.read_text(encoding="utf-8"), "keep this")
 
     def test_invalid_header_and_hardlinks_are_refused(self):
         self.model.write_bytes(b"not a GGUF file" * 4)
         with self.assertRaisesRegex(ValueError, "GGUF header"):
-            import_local_gguf(self.model)
+            import_local_gguf(self.model, directory=self.models)
         linked = self.root / "linked.gguf"
         linked.write_bytes(b"GGUF" + b"y" * 32)
         alias = self.root / "linked-alias.gguf"
@@ -53,7 +62,33 @@ class LocalModelImportTests(unittest.TestCase):
         except (OSError, NotImplementedError):
             self.skipTest("Hard links are unavailable")
         with self.assertRaisesRegex(ValueError, "single-link"):
-            import_local_gguf(linked)
+            import_local_gguf(linked, directory=self.models)
+
+    def test_corrupt_import_index_fails_closed_and_does_not_list_model(self):
+        import_local_gguf(self.model, directory=self.models)
+        (self.models / ".forgeos-imports.json").write_text(
+            "{broken", encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "unreadable"):
+            list_downloads(self.models)
+
+    def test_cli_lists_and_verifies_imported_models(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from forgeos.cli import main
+        import_local_gguf(self.model, directory=self.models)
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main([
+                "models-local", "--directory", str(self.models)]), 0)
+        items = json.loads(output.getvalue())
+        self.assertEqual(items[0]["kind"], "imported")
+        self.assertEqual(items[0]["status"], "imported_not_reverified")
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main([
+                "model-verify-local", str(self.model),
+                "--directory", str(self.models)]), 0)
+        self.assertEqual(json.loads(output.getvalue())["provenance"], "unknown")
 
 
 if __name__ == "__main__":

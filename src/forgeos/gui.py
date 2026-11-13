@@ -740,16 +740,17 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 records = [
                     entry for entry in list_downloads()
-                    if entry["status"] == "present_not_reverified"]
+                    if entry["status"] in (
+                        "present_not_reverified", "imported_not_reverified")]
             except (OSError, RuntimeError, ValueError) as exc:
                 messagebox.showerror(
                     "Cannot list local GGUF files", str(exc), parent=popup)
                 return
             if not records:
                 messagebox.showinfo(
-                    "No downloaded models",
-                    "Download a SHA-verified GGUF using Browse Hugging Face "
-                    "before starting a managed local model.", parent=popup)
+                    "No local models",
+                    "Download a verified GGUF or explicitly import an existing "
+                    "local file before starting managed inference.", parent=popup)
                 return
             chooser = tk.Toplevel(popup)
             chooser.title("ForgeOS | Downloaded GGUF weights")
@@ -760,11 +761,13 @@ def launch(db_path, *, acceptance: bool = False):
                 body, wraplength=760,
                 text="Metadata-only inventory (no large file is rehashed "
                      "in this view). ForgeOS verifies SHA-256 again "
-                     "when you start the model.").pack(anchor="w", pady=(0, 8))
+                     "when you start the model. Imported files have unknown "
+                     "source and license provenance.").pack(anchor="w", pady=(0, 8))
             listing = ttk.Treeview(
-                body, columns=("model", "size", "source"),
+                body, columns=("model", "size", "source", "status"),
                 show="headings", selectmode="browse")
-            for key, width in (("model", 400), ("size", 110), ("source", 210)):
+            for key, width in (("model", 330), ("size", 100),
+                               ("source", 230), ("status", 130)):
                 listing.heading(key, text=key.title())
                 listing.column(key, width=width, stretch=key == "model")
             listing.pack(fill="both", expand=True)
@@ -772,7 +775,7 @@ def launch(db_path, *, acceptance: bool = False):
                 listing.insert("", "end", iid=str(index),
                                values=(entry["file"],
                                        f'{entry["bytes"]/(1024**3):.2f} GiB',
-                                       entry["repo"]))
+                                       entry["repo"], entry["status"]))
             def select_local():
                 chosen = listing.selection()
                 if chosen:
@@ -813,6 +816,13 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 index = selection[0]
                 entry = records[int(index)]
+                if entry.get("kind") == "imported":
+                    messagebox.showinfo(
+                        "Imported model remains in place",
+                        "Recoverable retirement currently supports ForgeOS "
+                        "downloads only. This imported file and its sidecar "
+                        "were not changed.", parent=chooser)
+                    return
                 if not messagebox.askyesno(
                         "Retire verified model",
                         "Move this GGUF and its SHA-256 manifest to recoverable "
