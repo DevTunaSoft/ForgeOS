@@ -2709,6 +2709,10 @@ and restore under constrained filesystems.
 
 ### Follow-up — guarded pre-edit generation recovery
 
+- **Implementation commit:** `b994b6bc0ddd5c27138e1884ed13a4f3cb3e98dc` on
+  `fix/safe-resume-malformed-checkpoints`. The implementation and synchronized
+  user/architecture/roadmap docs are in that commit; this entry records its
+  exact source revision and acceptance evidence.
 - The engine now persists a `generation_pending` checkpoint immediately
   before its first edit-generation call. The record binds the retry to the
   original worktree, branch, saved execution contract and starting Git HEAD.
