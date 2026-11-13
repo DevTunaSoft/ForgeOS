@@ -99,7 +99,8 @@ class HuggingFaceCatalogTests(unittest.TestCase):
             "license": "apache-2.0", "model_type": " decoder-only  ",
             "author": "A" * 300, "unsafe_unknown_field": "ignored",
             "language": ["en", 42, " zh "], "quantization": "Q4_K_M",
-            "context_length": 32768,
+            "context_length": 32768, "parameter_count": -1,
+            "model_size": 10**100,
         }, "sha": "d" * 40}
         files = [{"type": "file", "path": "model.Q4_K_M.gguf",
                   "size": 100, "lfs": {"oid": "a" * 64}}]
@@ -111,8 +112,11 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         self.assertEqual(len(result["claims"]["author"]), 240)
         self.assertEqual(result["claims"]["language"], ["en", "zh"])
         self.assertEqual(result["claims"]["quantization"], "Q4_K_M")
+        self.assertEqual(result["claims"]["context_length"], "32768")
         self.assertEqual(result["revision"], "d" * 40)
         self.assertNotIn("unsafe_unknown_field", result["claims"])
+        self.assertNotIn("parameter_count", result["claims"])
+        self.assertNotIn("model_size", result["claims"])
         self.assertEqual(len(result["files"]), 1)
         self.assertIn("/tree/" + "d" * 40, opened.call_args.args[0].full_url)
         details_url = opened.call_args_list[0].args[0].full_url

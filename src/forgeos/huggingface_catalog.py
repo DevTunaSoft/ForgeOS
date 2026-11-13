@@ -116,6 +116,8 @@ def inspect_gguf_repo(repo: str) -> dict:
                 value = " ".join(value.split())[:240]
                 if value:
                     claims[key] = value
+            elif type(value) is int and 0 <= value <= 10**15:
+                claims[key] = str(value)
             elif isinstance(value, list):
                 cleaned = [" ".join(v.split())[:100] for v in value
                            if isinstance(v, str) and v.strip()]
