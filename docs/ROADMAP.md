@@ -259,5 +259,7 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Verification:** the regression exercises interrupted repair, checkpoint
   reference persistence, archive retrieval after restart, and bounded prompt
   construction; integrity tests reject malformed and tampered evidence.
-  Targeted test results and exact revision are recorded in the cumulative
+  Focused engine, recovery, diagnostics, documentation and roadmap suites
+  passed 79 tests (3 platform skips); compilation and the handoff integrity
+  checker passed. Implementation commit is recorded in the cumulative
   handoff. Legacy checkpoints without evidence references remain compatible.

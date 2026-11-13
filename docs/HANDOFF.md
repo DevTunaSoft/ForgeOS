@@ -2633,6 +2633,8 @@ and restore under constrained filesystems.
 
 ### Follow-up — link repair checkpoints to full test evidence
 
+- **Implementation commit:** `bb4e35aa78ec5688bcbf3adf3757fa85dfe8af89` on
+  `fix/safe-resume-malformed-checkpoints`.
 - Repair-pending checkpoints now store the SHA-256 reference supplied by the
   existing diagnostics archive, alongside the bounded `last_test_output`
   fallback. On resume, a present reference is validated and the full compressed
