@@ -48,6 +48,15 @@ class RecoveryPackageTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             pkg.create(self.root, self.out)
 
+    def test_archive_is_reproducible(self):
+        first = pkg.create(self.root, self.out)
+        second_path = self.out.with_name("second.zip")
+        second = pkg.create(self.root, second_path)
+        self.assertEqual(first["package_sha256"], second["package_sha256"])
+        with zipfile.ZipFile(self.out) as archive:
+            self.assertTrue(all(member.date_time == (1980, 1, 1, 0, 0, 0)
+                                for member in archive.infolist()))
+
     def test_refuses_dirty_checkout(self):
         (self.root / "docs" / "HANDOFF.md").write_text("changed")
         with self.assertRaises(ValueError):

@@ -69,12 +69,14 @@ def create(root: Path, output: Path) -> dict:
              "4. Treat historical test claims as unverified until reproduced.\n"
              "5. This ZIP is not a source-code backup or credential archive.\n")
     output.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED,
-                         compresslevel=6) as archive:
-        for name, data in sorted(entries.items()):
-            archive.writestr(name, data)
-        archive.writestr("MANIFEST.json", json.dumps(manifest, indent=2) + "\n")
-        archive.writestr("START_HERE.txt", guide)
+    members = {**entries, "MANIFEST.json": json.dumps(manifest, indent=2) + "\n",
+               "START_HERE.txt": guide}
+    with zipfile.ZipFile(output, "x") as archive:
+        for name, data in sorted(members.items()):
+            member = zipfile.ZipInfo(name)
+            member.create_system = 3
+            archive.writestr(member, data, compress_type=zipfile.ZIP_DEFLATED,
+                             compresslevel=6)
     return {"status": "PASS", "source_sha": revision, "file_count": len(entries),
             "package_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
             "output": str(output)}

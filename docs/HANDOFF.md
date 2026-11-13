@@ -2172,3 +2172,5 @@ and restore under constrained filesystems.
 - Frozen acceptance now bounds its embedded metadata read to 4 KiB and validates the source SHA as hexadecimal. Windows acceptance tests: 10 passed, one skip. Real frozen execution remains UNVERIFIED.
 
 - Regression coverage verifies that packaged acceptance metadata is accepted at 4 KiB and rejected one byte above it. Windows acceptance suites: 11 passed, one skipped.
+
+- Recovery ZIP packaging now fixes member timestamps and ordering. Two exports of the same revision produced matching SHA-256 hashes in the Windows regression suite. PASS: all five test_package_handoff tests.
