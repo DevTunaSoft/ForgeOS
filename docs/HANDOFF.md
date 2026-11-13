@@ -2757,7 +2757,7 @@ and restore under constrained filesystems.
   mocked ownership checks. No measurable resource impact is expected; no
   memory benchmark was run.
 - **Branch:** `fix/safe-resume-malformed-checkpoints`; base
-  `b961a5e5424d0482713d52307fb955de05e5eb4e`. Implementation commit and
-  PR head will be recorded after push. Next: continue issue #53 with process
+  `b961a5e5424d0482713d52307fb955de05e5eb4e`; implementation commit
+  `8b19791a1cbc02183eeafb9dd7eb5bbb985a42dd`. Next: continue issue #53 with process
   identity and crash/rapid-restart fault injection; retain real Windows
   acceptance gate.
