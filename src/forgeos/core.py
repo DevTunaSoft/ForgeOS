@@ -284,7 +284,10 @@ class Store:
                 return
             for row in rows:
                 yield dict(row)
-            before_id = int(rows[-1]["id"]) - 1
+            last_id = rows[-1]["id"]
+            if last_id == -(1 << 63):
+                return
+            before_id = last_id - 1
 
     def counts(self) -> dict[str, int]:
         """SQL aggregate, not a full scan into Python task objects."""

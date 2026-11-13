@@ -2148,3 +2148,5 @@ and restore under constrained filesystems.
 - Safe Resume skips a qualified-model checkpoint when the evidence directory cannot resolve, including older Python symlink-loop errors. Fault injection verified that a later eligible task still executes. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
 
 - Safe Resume delivers managed-runtime skip events outside the execution error handler, so a broken progress stream propagates once instead of being reclassified as a task failure. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
+
+- Blocked checkpoint pagination stops after yielding SQLite's minimum integer ID. This prevents an out-of-range SQL bind on imported or manually repaired databases. PASS on Windows/Python 3.15: 28 recovery and pagination tests, one skip.
