@@ -1430,7 +1430,9 @@ def launch(db_path, *, acceptance: bool = False):
 
     def browse_hub_models():
         """Opt-in GGUF browser and verified downloader without Tk thread blocking."""
-        from .huggingface_catalog import search_gguf_page, inspect_gguf_repo
+        from .huggingface_catalog import (
+            catalog_error_message, inspect_gguf_repo, search_gguf_page,
+        )
 
         max_search_pages = 10
         popup = tk.Toplevel(root)
@@ -1599,7 +1601,7 @@ def launch(db_path, *, acceptance: bool = False):
                             progress_callback=report_transfer)
                     hub_events.put((action, data, None))
                 except Exception as exc:
-                    hub_events.put((action, None, f"{type(exc).__name__}: {exc}"))
+                    hub_events.put((action, None, catalog_error_message(exc)))
             threading.Thread(target=run_lookup, daemon=True).start()
 
         search_btn = ttk.Button(

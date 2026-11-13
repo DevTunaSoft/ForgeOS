@@ -2324,3 +2324,8 @@ and restore under constrained filesystems.
 - Added one-page-at-a-time search with a visible **More results** control. ForgeOS follows only an HTTPS Hugging Face `/api/models` continuation whose query and page size match the original search; the server cursor remains opaque. The GUI caps searches at ten 15-result pages and deduplicates repository IDs. Existing `search_gguf()` callers still receive the first page as a list.
 - Verification: catalog, GUI contract, roadmap and documentation suites passed 64 tests. Added tests cover opaque continuation, a second page, external-host links and query-change links; API source compilation and `git diff --check` passed.
 - Live Hub pagination and GUI interaction remain unverified. The current sandbox denies access to the installed Ollama loopback service (`connectex` access denied) and cannot access the default ForgeOS model directory, so real inference remains a target-host gate.
+
+### Follow-up — explain Hub network and HTTP failures
+
+- The actual ForgeOS catalog UI rendered the new pagination controls, but a user-triggered live search in this sandbox returned `URLError` with Windows DNS error 11001. Added catalog error translation for DNS/connectivity/timeouts and Hub 401/403/404/429/5xx responses, with guidance that does not expose request URLs or low-level resolver text.
+- Verification: the final combined catalog, GUI contract, docs/roadmap, inventory, downloader and CLI run passed 101 tests (two platform skips). This includes DNS redaction and common HTTP cases. Source compilation and `git diff --check` passed. The live UI failure was reproduced; target network/API success remains unverified.

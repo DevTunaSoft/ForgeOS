@@ -19,6 +19,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('text="More results"', source)
         self.assertIn('search_gguf_page(', source)
         self.assertIn('max_search_pages = 10', source)
+        self.assertIn('catalog_error_message(exc)', source)
 
     def test_desktop_settings_are_restored_and_saved(self):
         from pathlib import Path

@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MAX_HUB_JSON_BYTES = 2 * 1024 * 1024
@@ -16,6 +18,34 @@ SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
 
 
 COMMIT_SHA = re.compile(r"[a-fA-F0-9]{40}\Z")
+
+
+def catalog_error_message(exc: Exception) -> str:
+    """Convert common Hub HTTP/network failures to actionable UI text."""
+    if isinstance(exc, HTTPError):
+        if exc.code in (401, 403):
+            return ("Hugging Face denied access. The repository may be private "
+                    "or gated; inspect its access requirements in a browser.")
+        if exc.code == 404:
+            return "Hugging Face could not find this repository, file, or revision."
+        if exc.code == 429:
+            return "Hugging Face is rate limiting requests. Wait briefly, then retry."
+        if 500 <= exc.code <= 599:
+            return f"Hugging Face is temporarily unavailable (HTTP {exc.code})."
+        return f"Hugging Face returned HTTP {exc.code}. Check the repository and retry."
+    if isinstance(exc, URLError):
+        reason = exc.reason
+        if isinstance(reason, socket.gaierror):
+            return ("Could not find Hugging Face on the network (DNS lookup failed). "
+                    "Check internet access, then retry.")
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            return "The Hugging Face request timed out. Check internet access, then retry."
+        if isinstance(reason, OSError):
+            return "Could not connect to Hugging Face. Check network access, then retry."
+        return "The Hugging Face request failed. Check network access, then retry."
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return "The Hugging Face request timed out. Check internet access, then retry."
+    return f"{type(exc).__name__}: {exc}"
 
 
 def _hub_json_response(url: str) -> tuple[object, str | None]:

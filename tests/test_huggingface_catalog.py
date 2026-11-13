@@ -1,8 +1,10 @@
 """Read-only Hugging Face catalog validation and memory-bounding tests."""
 import io
 import json
+import socket
 import unittest
 from urllib.parse import parse_qs, urlsplit
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 from forgeos.huggingface_catalog import (
     MAX_HUB_JSON_BYTES, list_gguf_files, search_gguf,
@@ -20,6 +22,22 @@ class Response(io.BytesIO):
 
 
 class HuggingFaceCatalogTests(unittest.TestCase):
+    def test_catalog_network_and_http_errors_have_actionable_messages(self):
+        from forgeos.huggingface_catalog import catalog_error_message
+        def http_message(code):
+            error = HTTPError("https://huggingface.co", code, "test", {}, None)
+            try:
+                return catalog_error_message(error)
+            finally:
+                error.close()
+        dns = catalog_error_message(URLError(socket.gaierror(11001, "no host")))
+        self.assertIn("DNS lookup failed", dns)
+        self.assertNotIn("no host", dns)
+        self.assertIn("private or gated", http_message(403))
+        self.assertIn("could not find", http_message(404).lower())
+        self.assertIn("rate limiting", http_message(429))
+        self.assertIn("temporarily unavailable", http_message(503))
+
     def test_search_filters_non_gguf_and_gated_models(self):
         items = [
             {"id": "Qwen/coder-gguf", "tags": ["gguf", "license:apache-2.0"],
