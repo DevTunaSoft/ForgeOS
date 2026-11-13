@@ -151,7 +151,8 @@ def launch(db_path, *, acceptance: bool = False):
     acceptance_events = Queue(maxsize=1)
     managed = {"controller": None, "busy": False, "last_used": None,
                "unexpected_exit": False, "stop_failed": False,
-               "screening_cancel": None, "qualification_cancel": None}
+               "screening_cancel": None, "qualification_cancel": None,
+               "import_cancel": None}
     busy = {"value": False}
     closing = {"value": False}
 
@@ -754,19 +755,56 @@ def launch(db_path, *, acceptance: bool = False):
                     parent=popup):
                 return
             managed["busy"] = True
+            cancel_event = threading.Event()
+            managed["import_cancel"] = cancel_event
+            import_cancel_btn.configure(state="normal")
             import_status.set("Hashing the existing GGUF; large files may take a while...")
 
             def worker():
                 try:
-                    from .model_import import import_local_gguf
-                    outcome = import_local_gguf(selected)
+                    from .model_import import ImportCancelled, import_local_gguf
+                    def report_progress(stage, done, total):
+                        event = ("import-progress", (popup, import_status),
+                                 {"stage": stage, "done": done,
+                                  "total": total}, None)
+                        try:
+                            managed_events.put_nowait(event)
+                        except Full:
+                            # Progress is replaceable; terminal results are not.
+                            try:
+                                managed_events.get_nowait()
+                            except Empty:
+                                pass
+                            try:
+                                managed_events.put_nowait(event)
+                            except Full:
+                                pass
+                    outcome = import_local_gguf(
+                        selected, cancel_event=cancel_event,
+                        progress_callback=report_progress)
                     managed_events.put((
                         "import", (popup, import_status), outcome, None))
+                except ImportCancelled:
+                    managed_events.put((
+                        "import-cancelled", (popup, import_status), None, None))
                 except Exception as exc:
                     managed_events.put((
                         "import", (popup, import_status), None,
                         f"{type(exc).__name__}: {exc}"))
             threading.Thread(target=worker, daemon=True).start()
+
+        def cancel_existing_import():
+            cancel_event = managed["import_cancel"]
+            if cancel_event is not None:
+                cancel_event.set()
+                import_cancel_btn.configure(state="disabled")
+                import_status.set(
+                    "Cancellation requested; waiting for the current file read...")
+
+        import_cancel_btn = ttk.Button(
+            panel, text="Cancel import", state="disabled",
+            command=cancel_existing_import)
+        import_cancel_btn.pack(anchor="w", pady=(0, 6))
 
         ttk.Button(
             panel, text="Import existing GGUF without copying…",
@@ -2358,6 +2396,13 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 while True:
                     action, controller, outcome, error = managed_events.get_nowait()
+                    if action == "import-progress":
+                        popup, import_status_var = controller
+                        if popup.winfo_exists():
+                            import_status_var.set(
+                                "Verifying local GGUF: "
+                                f'{outcome["done"]:,} / {outcome["total"]:,} bytes')
+                        continue
                     if action == "screening-progress":
                         status.set(
                             "Screening " + outcome["role"] + ": "
@@ -2371,6 +2416,15 @@ def launch(db_path, *, acceptance: bool = False):
                             + str(outcome["total"]) + " complete")
                         continue
                     managed["busy"] = False
+                    if action in ("import", "import-cancelled"):
+                        managed["import_cancel"] = None
+                        import_cancel_btn.configure(state="disabled")
+                    if action == "import-cancelled":
+                        if controller[0].winfo_exists():
+                            controller[1].set(
+                                "Import cancelled; no identity was recorded.")
+                        status.set("Local GGUF import cancelled")
+                        continue
                     if action == "screening":
                         managed["screening_cancel"] = None
                     if action == "qualification":

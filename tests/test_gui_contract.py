@@ -104,7 +104,10 @@ class DashboardContractTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] /
                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertIn('text="Import existing GGUF without copying…"', source)
-        self.assertIn("import_local_gguf(selected)", source)
+        self.assertIn("import_local_gguf(\n                        selected, cancel_event=cancel_event,", source)
+        self.assertIn('text="Cancel import"', source)
+        self.assertIn('"import-progress"', source)
+        self.assertIn('"import-cancelled"', source)
         self.assertIn('"provenance": "unknown"',
                       (Path(__file__).resolve().parents[1] /
                        "src" / "forgeos" / "model_import.py").read_text(encoding="utf-8"))
