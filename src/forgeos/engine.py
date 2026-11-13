@@ -456,7 +456,7 @@ def _execute_task(
                         "test_pending", "repair_pending", "manual_review_required"
                     )):
                 details = saved
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, RecursionError):
             pass
         if incomplete_test_evidence:
             # Keep workspace/branch and edit hashes for manual inspection but

@@ -151,7 +151,7 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
             continue
         try:
             checkpoint = json.loads(task["result"])
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, RecursionError):
             record("skipped", {"id": task["id"], "reason": "No structured checkpoint"})
             continue
         phase = checkpoint.get("phase") if isinstance(checkpoint, dict) else None
