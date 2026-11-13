@@ -296,7 +296,8 @@ background scanner, internet call or full multi-GB rehash during browsing.
   Imported files are rehashed before managed use. Reversible unregister and
   reimport are supported. The current feature branch also supports explicit
   permanent purge for imported weights; the registry entry remains until the
-  sidecar and weight bytes are removed, so interrupted cleanup can be retried.
+  weight bytes and any legacy adjacent sidecar are removed, so interrupted
+  cleanup can be retried.
   Downloaded weights can be recoverably retired/restored or explicitly purged.
   In-place updates, license validation and physical Windows deletion acceptance
   remain future work.

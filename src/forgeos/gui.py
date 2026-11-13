@@ -775,8 +775,9 @@ def launch(db_path, *, acceptance: bool = False):
             if not messagebox.askyesno(
                     "Record local model identity",
                     "ForgeOS will not copy or upload this model. It will hash "
-                    "the file and create a .forgeos.json identity sidecar next "
-                    "to it. Source, revision and license provenance remain "
+                    "the file and record its identity in ForgeOS's local "
+                    "model inventory. The source folder can be read-only. "
+                    "Source, revision and license provenance remain "
                     "unknown unless you verify them separately. Continue?",
                     parent=popup):
                 return
@@ -1239,8 +1240,8 @@ def launch(db_path, *, acceptance: bool = False):
                          else "Retire verified model")
                 question = (
                     "Remove this path from ForgeOS's active model inventory? "
-                    "The GGUF and its identity sidecar remain at the original "
-                    "location; no disk space is freed. You can import it again "
+                    "The GGUF remains at the original location; no disk space "
+                    "is freed. You can import it again "
                     "later. ForgeOS rehashes the file before unregistering."
                     if imported else
                     "Move this GGUF and its SHA-256 manifest to recoverable "
@@ -1317,7 +1318,7 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 if not messagebox.askyesno(
                         "Permanently delete imported GGUF",
-                        "Delete this imported GGUF and its ForgeOS identity sidecar? "
+                        "Delete this imported GGUF and its ForgeOS registry identity? "
                         "This cannot be undone. ForgeOS will refuse while a saved "
                         "task checkpoint references the model and will verify its "
                         "full SHA-256 before deleting. Stop any separate runtime "
@@ -1427,14 +1428,14 @@ def launch(db_path, *, acceptance: bool = False):
                     listing.delete(index)
                     messagebox.showinfo(
                         "Imported GGUF deleted",
-                        "The selected model and its ForgeOS identity sidecar were deleted.",
+                        "The selected model and its ForgeOS registry identity were deleted.",
                         parent=chooser)
                     update_selection_controls()
                     return
                 if imported:
                     retirement_status.set(
-                        "Import removed from active inventory; model file and "
-                        "sidecar remain at the original path.")
+                        "Import removed from active inventory; model file "
+                        "remains at the original path.")
                     status.set("Imported GGUF removed from active inventory")
                 else:
                     retirement_status.set(
@@ -1446,7 +1447,7 @@ def launch(db_path, *, acceptance: bool = False):
                 if imported:
                     messagebox.showinfo(
                         "Imported model removed from ForgeOS inventory",
-                        "The model and its sidecar remain unchanged. Use "
+                        "The model remains unchanged. Use "
                         "Import existing GGUF without copying to register it again. "
                         "No disk space was freed.", parent=chooser)
                 else:

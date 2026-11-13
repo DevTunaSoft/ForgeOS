@@ -1,8 +1,9 @@
 """Bounded, offline inventory and explicit re-verification of local GGUFs.
 
 Downloaded weights use their revisioned manifests; imported weights are path
-references in one bounded registry plus adjacent identity sidecars. No model
-copy, background watcher, implicit hashing or on-demand network IO.
+references in one bounded ForgeOS registry. Legacy adjacent import sidecars are
+validated when present. No model copy, background watcher, implicit hashing or
+on-demand network IO.
 """
 from __future__ import annotations
 
@@ -67,10 +68,18 @@ def _import_records(root: Path) -> list[dict]:
 
 def _import_metadata(path: Path, checksum: str) -> dict:
     sidecar = path.with_name(path.name + ".forgeos.json")
-    if (sidecar.is_symlink() or not sidecar.is_file()
-            or sidecar.stat().st_nlink != 1
+    if sidecar.is_symlink():
+        raise ValueError("Imported GGUF identity sidecar is unsafe")
+    if not sidecar.exists():
+        info = {"format": IMPORT_FORMAT, "source_path": str(path),
+                "file": path.name, "bytes": path.stat().st_size,
+                "sha256": checksum, "provenance": "unknown"}
+        if not MIN_MODEL_BYTES <= info["bytes"] <= MAX_MODEL_BYTES:
+            raise ValueError("Imported GGUF size is outside the supported range")
+        return info
+    if (not sidecar.is_file() or sidecar.stat().st_nlink != 1
             or sidecar.stat().st_size > MAX_MANIFEST_BYTES):
-        raise ValueError("Imported GGUF identity sidecar is missing or unsafe")
+        raise ValueError("Imported GGUF identity sidecar is unsafe")
     try:
         info = json.loads(sidecar.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
@@ -366,16 +375,18 @@ def verify_download(path: str | Path, *,
     selected = Path(path).expanduser().absolute()
     imported = next((record for record in _import_records(root)
                      if record["path"] == selected), None)
-    lock = selected.with_name(selected.name + ".lock")
     if imported is not None:
         if any(item.is_symlink() for item in (selected, *selected.parents)):
             raise ValueError("Imported GGUF path contains a symbolic link")
+        from .model_import import _import_lifecycle_lock_path
+        lock = _import_lifecycle_lock_path(selected.resolve(strict=False), root)
         if any(item.is_symlink() for item in (lock, *lock.parents)):
             raise ValueError("Imported GGUF lifecycle lock is a symbolic link")
         if os.path.lexists(lock) and (
                 not lock.is_file() or lock.stat().st_nlink != 1):
             raise ValueError("Imported GGUF lifecycle lock is unsafe")
     else:
+        lock = selected.with_name(selected.name + ".lock")
         _reject_existing_link(selected, root)
         selected = selected.resolve(strict=False)
         lock = selected.with_name(selected.name + ".lock")

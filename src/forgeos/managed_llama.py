@@ -224,21 +224,30 @@ def _existing_file(path: str | Path, *, suffix: str) -> Path:
     return target
 
 
-def _verified_model(path: str | Path) -> tuple[Path, dict]:
+def _verified_model(path: str | Path, *,
+                    directory: str | Path | None = None) -> tuple[Path, dict]:
     target = _existing_file(path, suffix=".gguf")
     manifest = target.with_name(target.name + ".forgeos.json")
-    if manifest.is_symlink() or not manifest.is_file():
-        raise ValueError("Only SHA-verified ForgeOS GGUF downloads can be loaded")
-    if manifest.stat().st_nlink != 1:
-        raise ValueError("Hard-linked GGUF verification manifests are not trusted")
+    if manifest.is_symlink():
+        raise ValueError("Symbolic-link GGUF identity metadata is not trusted")
+    if manifest.is_file():
+        if manifest.stat().st_nlink != 1:
+            raise ValueError("Hard-linked GGUF verification manifests are not trusted")
+        if manifest.stat().st_size > MAX_MANIFEST_BYTES:
+            raise ValueError("GGUF verification manifest is too large")
+        try:
+            info = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise ValueError("Invalid GGUF verification manifest") from exc
+    else:
+        from .model_import import registered_import
+        info = registered_import(target, directory=directory)
+        if info is None:
+            raise ValueError(
+                "Only SHA-verified ForgeOS GGUF downloads or registered imports can be loaded")
+        info["bytes"] = target.stat().st_size
     if target.stat().st_nlink != 1:
         raise ValueError("Hard-linked GGUF model files are not trusted")
-    if manifest.stat().st_size > MAX_MANIFEST_BYTES:
-        raise ValueError("GGUF verification manifest is too large")
-    try:
-        info = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, ValueError, UnicodeError) as exc:
-        raise ValueError("Invalid GGUF verification manifest") from exc
     if not isinstance(info, dict):
         raise ValueError("Invalid GGUF verification manifest format")
     if info.get("format") == "forgeos-local-import-v1":
@@ -754,7 +763,8 @@ class ManagedLlamaServer:
         if self.process is not None or self._secrets is not None:
             raise RuntimeError("A managed llama-server session already exists")
         model_file = _existing_file(model_path, suffix=".gguf")
-        lock_path = model_file.with_name(model_file.name + ".lock")
+        from .model_import import imported_model_lock_path
+        lock_path = imported_model_lock_path(model_file)
         if lock_path.is_symlink():
             raise ValueError("Refusing a symbolic link at the model lifecycle lock")
         model_lock = _exclusive_download_lock(lock_path)

@@ -2596,3 +2596,20 @@ and restore under constrained filesystems.
   remain open.
 - Verification: documentation, multi-LLM roadmap, GUI contract and imported
   model suites passed 78 tests (1 platform skip); `git diff --check` passed.
+
+### Follow-up — support read-only imported GGUF locations
+
+- New imports now keep path/SHA identity and per-model lifecycle locks in the
+  writable ForgeOS model store; no sidecar or lock file is created beside the
+  selected GGUF. Managed load, explicit verification, unregistration and purge
+  share that registry lock and rehash the referenced bytes. Existing adjacent
+  import sidecars remain validated and preserved for compatibility. Changed
+  bytes at a previously registered path require explicit unregistration before
+  a new identity can be recorded.
+- Updated the GUI confirmation, user guide, model inventory description and
+  roadmap. Added regressions for a simulated read-only source directory,
+  registry-only managed verification and legacy-sidecar compatibility.
+  Verification: lifecycle/runtime, GUI contract/acceptance, documentation and
+  roadmap suites passed 169 tests (13 platform skips); compilation and
+  `git diff --check` passed. Actual read-only removable media, Windows ACLs,
+  reparse points and power-loss behavior remain unverified.

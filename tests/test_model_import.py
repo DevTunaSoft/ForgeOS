@@ -9,7 +9,8 @@ from forgeos.gguf_download import _exclusive_download_lock
 from forgeos.managed_llama import _verified_model
 from forgeos.model_inventory import list_downloads, verify_download
 from forgeos.model_import import (
-    import_local_gguf, purge_imported_gguf, unregister_imported_gguf,
+    import_local_gguf, imported_model_lock_path, purge_imported_gguf,
+    unregister_imported_gguf,
 )
 
 
@@ -27,14 +28,15 @@ class LocalModelImportTests(unittest.TestCase):
         original_inode = self.model.stat().st_ino
         result = import_local_gguf(self.model, directory=self.models)
         sidecar = self.model.with_name(self.model.name + ".forgeos.json")
-        record = json.loads(sidecar.read_text(encoding="utf-8"))
         self.assertEqual(result["status"], "imported")
         self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
-        self.assertEqual(record["provenance"], "unknown")
-        self.assertEqual(record["source_path"], str(self.model.resolve()))
+        self.assertEqual(result["provenance"], "unknown")
+        self.assertEqual(result["source_path"], str(self.model.resolve()))
         self.assertEqual(self.model.stat().st_ino, original_inode)
         self.assertEqual(self.model.read_bytes(), self.data)
-        self.assertEqual(_verified_model(self.model)[1], record)
+        self.assertFalse(sidecar.exists())
+        self.assertEqual(_verified_model(
+            self.model, directory=self.models)[1]["sha256"], result["sha256"])
         items = list_downloads(self.models)
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["status"], "imported_not_reverified")
@@ -44,8 +46,51 @@ class LocalModelImportTests(unittest.TestCase):
                          "verified")
 
         self.model.write_bytes(self.data + b"changed")
-        with self.assertRaisesRegex(ValueError, "identity or file size"):
-            _verified_model(self.model)
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            _verified_model(self.model, directory=self.models)
+
+    def test_import_supports_read_only_source_directory(self):
+        from forgeos import model_import
+        home = self.root / "home"
+        model_store = home / ".forgeos" / "models"
+        original_open = Path.open
+
+        def deny_source_metadata_writes(path, mode="r", *args, **kwargs):
+            if path.parent == self.root and mode != "r" and mode != "rb":
+                raise PermissionError("simulated read-only model directory")
+            return original_open(path, mode, *args, **kwargs)
+
+        with patch.object(Path, "home", return_value=home), \
+                patch.object(Path, "open", deny_source_metadata_writes):
+            result = import_local_gguf(self.model)
+            verified = _verified_model(self.model)
+            records = list_downloads()
+        self.assertEqual(verified[1]["sha256"], result["sha256"])
+        self.assertFalse(self.model.with_name(
+            self.model.name + ".forgeos.json").exists())
+        self.assertEqual(len(records), 1)
+        self.assertTrue((model_store / ".forgeos-imports.json").is_file())
+        self.assertTrue(model_import._import_lifecycle_lock_path(
+            self.model.resolve(), model_store.resolve()).is_file())
+
+    def test_legacy_adjacent_sidecar_remains_compatible(self):
+        from forgeos.model_import import IMPORT_FORMAT
+        import_local_gguf(self.model, directory=self.models)
+        sidecar = self.model.with_name(self.model.name + ".forgeos.json")
+        identity = {
+            "format": IMPORT_FORMAT,
+            "source_path": str(self.model.resolve()),
+            "file": self.model.name,
+            "bytes": len(self.data),
+            "sha256": hashlib.sha256(self.data).hexdigest(),
+            "provenance": "unknown",
+        }
+        sidecar.write_text(json.dumps(identity), encoding="utf-8")
+        self.assertEqual(_verified_model(
+            self.model, directory=self.models)[1], identity)
+        outcome = unregister_imported_gguf(self.model, directory=self.models)
+        self.assertTrue(outcome["sidecar_preserved"])
+        self.assertEqual(json.loads(sidecar.read_text(encoding="utf-8")), identity)
 
     def test_import_reports_bounded_progress_and_cancels_before_publication(self):
         from threading import Event
@@ -159,15 +204,14 @@ class LocalModelImportTests(unittest.TestCase):
                   "model-purge-imported", str(self.model), "--confirm"])
         self.assertTrue(self.model.exists())
 
-    def test_unregister_preserves_file_and_sidecar_and_reimport_restores_inventory(self):
+    def test_unregister_preserves_file_and_reimport_restores_inventory(self):
         import_local_gguf(self.model, directory=self.models)
         sidecar = self.model.with_name(self.model.name + ".forgeos.json")
-        sidecar_bytes = sidecar.read_bytes()
         outcome = unregister_imported_gguf(self.model, directory=self.models)
         self.assertTrue(outcome["weights_preserved"])
-        self.assertTrue(outcome["sidecar_preserved"])
+        self.assertFalse(outcome["sidecar_preserved"])
         self.assertEqual(self.model.read_bytes(), self.data)
-        self.assertEqual(sidecar.read_bytes(), sidecar_bytes)
+        self.assertFalse(sidecar.exists())
         self.assertEqual(list_downloads(self.models), [])
 
         import_local_gguf(self.model, directory=self.models)
@@ -191,13 +235,13 @@ class LocalModelImportTests(unittest.TestCase):
                 progress_callback=cancel_after_progress)
         self.assertEqual(progress, [("verify", len(self.data), len(self.data))])
         self.assertTrue(self.model.exists())
-        self.assertTrue(self.model.with_name(
+        self.assertFalse(self.model.with_name(
             self.model.name + ".forgeos.json").exists())
         self.assertEqual(len(list_downloads(self.models)), 1)
 
     def test_unregister_refuses_runtime_lock_and_tampered_model(self):
         import_local_gguf(self.model, directory=self.models)
-        lock = self.model.with_name(self.model.name + ".lock")
+        lock = imported_model_lock_path(self.model, directory=self.models)
         with _exclusive_download_lock(lock):
             with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
                 unregister_imported_gguf(self.model, directory=self.models)
@@ -216,7 +260,7 @@ class LocalModelImportTests(unittest.TestCase):
                 purge_imported_gguf(
                     self.model, directory=self.models, **kwargs)
         self.assertTrue(self.model.exists())
-        self.assertTrue(self.model.with_name(
+        self.assertFalse(self.model.with_name(
             self.model.name + ".forgeos.json").exists())
         self.assertEqual(len(list_downloads(self.models)), 1)
 
@@ -243,7 +287,7 @@ class LocalModelImportTests(unittest.TestCase):
             purge_imported_gguf(
                 self.model, directory=self.models, confirm=True,
                 checkpoint_check=lambda _sha: True)
-        lock = self.model.with_name(self.model.name + ".lock")
+        lock = imported_model_lock_path(self.model, directory=self.models)
         with _exclusive_download_lock(lock):
             with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
                 purge_imported_gguf(
@@ -317,13 +361,13 @@ class LocalModelImportTests(unittest.TestCase):
                 checkpoint_check=lambda _sha: False, cancel_event=event,
                 progress_callback=cancel_after_hash)
         self.assertTrue(self.model.exists())
-        self.assertTrue(self.model.with_name(
+        self.assertFalse(self.model.with_name(
             self.model.name + ".forgeos.json").exists())
         self.assertEqual(len(list_downloads(self.models)), 1)
 
     def test_reverify_refuses_active_managed_runtime_lock(self):
         import_local_gguf(self.model, directory=self.models)
-        lock = self.model.with_name(self.model.name + ".lock")
+        lock = imported_model_lock_path(self.model, directory=self.models)
         with _exclusive_download_lock(lock):
             with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
                 verify_download(self.model, directory=self.models)
