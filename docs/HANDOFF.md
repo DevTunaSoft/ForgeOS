@@ -2691,6 +2691,8 @@ and restore under constrained filesystems.
 
 ### Follow-up — add bounded local project symbol search
 
+- **Implementation commit:** `6ca1006acc931df545e76561f4e066851a07db4f` on
+  `fix/safe-resume-malformed-checkpoints`.
 - Extended the canonical `context_index.py` traversal with an explicit
   `search_project()` API for Python class/function/method names and a
   `forgeos search-project` CLI command. The shared walker preserves hidden
