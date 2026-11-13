@@ -1642,6 +1642,7 @@ def launch(db_path, *, acceptance: bool = False):
                     file_choice.set(choices[0] if choices else "")
                     download_btn.configure(state="normal" if choices else "disabled")
                     info.insert("end", "Repository supplied card claims (unverified):\n")
+                    info.insert("end", f"Inspected immutable revision: {repo_info['revision']}\n")
                     claims = repo_info["claims"]
                     if claims:
                         for key, value in claims.items():

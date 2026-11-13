@@ -85,6 +85,8 @@ def model_revision(repo: str) -> str:
 _CARD_FIELDS = (
     "license", "author", "model_name", "model_type", "pipeline_tag",
     "library_name", "base_model", "language", "datasets", "tags",
+    "model_size", "parameter_count", "quantization", "context_length",
+    "chat_template", "tool_use", "structured_output",
 )
 
 
@@ -101,6 +103,9 @@ def inspect_gguf_repo(repo: str) -> dict:
     item = _hub_json(url)
     if not isinstance(item, dict) or item.get("gated") or item.get("private"):
         raise RuntimeError("Public Hugging Face repository metadata unavailable")
+    revision = item.get("sha")
+    if not isinstance(revision, str) or not COMMIT_SHA.fullmatch(revision):
+        raise RuntimeError("Repository inspection could not pin an immutable revision")
     card = item.get("cardData")
     claims = {}
     if isinstance(card, dict):
@@ -121,8 +126,9 @@ def inspect_gguf_repo(repo: str) -> dict:
                         if isinstance(t, str) and t.startswith("license:")]
         if license_tags:
             claims["license"] = license_tags[0][:100]
-    files = list_gguf_files(repo)
-    return {"repo": repo, "claims": claims, "files": files}
+    files = list_gguf_files(repo, revision=revision.lower())
+    return {"repo": repo, "revision": revision.lower(),
+            "claims": claims, "files": files}
 
 
 def list_gguf_files(repo: str, *, revision: str = "main") -> list[dict]:

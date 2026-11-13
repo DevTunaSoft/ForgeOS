@@ -97,19 +97,23 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         metadata = {"id": "Qwen/model-GGUF", "cardData": {
             "license": "apache-2.0", "model_type": " decoder-only  ",
             "author": "A" * 300, "unsafe_unknown_field": "ignored",
-            "language": ["en", 42, " zh "],
-        }}
+            "language": ["en", 42, " zh "], "quantization": "Q4_K_M",
+            "context_length": 32768,
+        }, "sha": "d" * 40}
         files = [{"type": "file", "path": "model.Q4_K_M.gguf",
                   "size": 100, "lfs": {"oid": "a" * 64}}]
         with patch("forgeos.huggingface_catalog.urlopen", side_effect=[
                 Response(json.dumps(metadata).encode()),
-                Response(json.dumps(files).encode())]):
+                Response(json.dumps(files).encode())]) as opened:
             result = inspect_gguf_repo("Qwen/model-GGUF")
         self.assertEqual(result["claims"]["model_type"], "decoder-only")
         self.assertEqual(len(result["claims"]["author"]), 240)
         self.assertEqual(result["claims"]["language"], ["en", "zh"])
+        self.assertEqual(result["claims"]["quantization"], "Q4_K_M")
+        self.assertEqual(result["revision"], "d" * 40)
         self.assertNotIn("unsafe_unknown_field", result["claims"])
         self.assertEqual(len(result["files"]), 1)
+        self.assertIn("/tree/" + "d" * 40, opened.call_args.args[0].full_url)
 
     def test_repo_inspection_rejects_private_or_gated_repo_before_file_lookup(self):
         from forgeos.huggingface_catalog import inspect_gguf_repo
@@ -119,6 +123,11 @@ class HuggingFaceCatalogTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Public"):
                     inspect_gguf_repo("Qwen/model-GGUF")
                 self.assertEqual(opened.call_count, 1)
+        with patch("forgeos.huggingface_catalog.urlopen", return_value=
+                   Response(json.dumps({"sha": "main"}).encode())) as opened:
+            with self.assertRaisesRegex(RuntimeError, "immutable revision"):
+                inspect_gguf_repo("Qwen/model-GGUF")
+            self.assertEqual(opened.call_count, 1)
 
     def test_invalid_file_response_and_path(self):
         for repo in ("../../passwd", "https://example.org/model", "name"):
