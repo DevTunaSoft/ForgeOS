@@ -3,7 +3,9 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 from forgeos.core import Store
@@ -76,7 +78,9 @@ class EditManifestTests(unittest.TestCase):
     def test_repair_prompt_keeps_failure_edges_and_clips_middle(self):
         from unittest.mock import patch
         failure = "BEGIN FAILURE\n" + "x" * 5000 + "\nEND FAILURE"
-        with patch("forgeos.engine._context", return_value="bounded inventory"):
+        with (patch("forgeos.engine._context", return_value="bounded inventory"),
+              patch("forgeos.model_routing.local_memory_settings",
+                    return_value={"num_ctx": 1024})):
             prompt = _repair_prompt(self.root, "Fix the test", failure)
         self.assertIn("BEGIN FAILURE", prompt)
         self.assertIn("END FAILURE", prompt)
@@ -859,6 +863,102 @@ class TransactionRecoveryTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("git"), "Git required")
 class CheckpointResumeTests(EngineIntegrationTests):
+    def test_hard_process_exit_recovers_repair_checkpoint_and_evidence(self):
+        from unittest.mock import patch
+        from forgeos.core import DEFAULT_LEASE_SECONDS
+        from forgeos.diagnostics import EvidenceStore
+
+        database = self.store.path
+        workspace_parent = self.root / "crash-workspaces"
+        workspace_parent.mkdir()
+        evidence_root = self.root / "crash-evidence"
+        ready = self.root / "repair-generation-started"
+        self.store.close()
+
+        child = r'''import json, sys, time
+from pathlib import Path
+from forgeos.core import Store
+from forgeos.diagnostics import EvidenceStore
+import forgeos.engine as engine
+
+database, repository, workspace_parent, evidence_root, ready, task_id = sys.argv[1:]
+store = Store(database)
+reference = EvidenceStore(evidence_root).put(
+    "AssertionError: persisted original failure after hard process exit")
+engine._run_workspace_tests = lambda *args: {
+    "passed": False, "returncode": 1, "output": "bounded test failure",
+    "optimization": {"archived": True, "reference": reference},
+}
+manifest = json.dumps({"files": [{"path": "app.py",
+    "content": "def value():\n return 0\n"}]})
+calls = 0
+def generate(model, prompt):
+    global calls
+    calls += 1
+    if calls == 1:
+        return manifest
+    Path(ready).write_text("checkpoint persisted", encoding="utf-8")
+    while True:
+        time.sleep(1)
+engine.execute_task(store, int(task_id), workspace_parent,
+    allow_host_tests=True, max_repairs=2, generate=generate)
+'''
+        environment = os.environ.copy()
+        source_root = str(Path(__file__).resolve().parents[1] / "src")
+        existing_pythonpath = environment.get("PYTHONPATH", "")
+        environment["PYTHONPATH"] = os.pathsep.join(
+            part for part in (source_root, existing_pythonpath) if part)
+        process = subprocess.Popen(
+            [sys.executable, "-c", child, str(database), str(self.repo),
+             str(workspace_parent), str(evidence_root), str(ready),
+             str(self.task)],
+            cwd=Path(__file__).resolve().parents[1], env=environment,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 30
+        while (not ready.exists() and process.poll() is None
+               and time.monotonic() < deadline):
+            time.sleep(0.05)
+        if not ready.exists():
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=10)
+            self.fail("Child did not reach the persisted repair checkpoint")
+        process.kill()
+        process.wait(timeout=10)
+
+        # Reopen exactly as a new ForgeOS process would, then expire only the
+        # dead process's lease before invoking the normal recovery path.
+        self.store = Store(database)
+        self.addCleanup(self.store.close)
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE task_leases SET heartbeat=? WHERE task_id=?",
+                (time.time() - DEFAULT_LEASE_SECONDS - 1, self.task))
+        self.assertEqual(self.store.recover(), 1)
+        checkpoint = json.loads(self.store.get(self.task)["result"])
+        self.assertEqual(checkpoint["phase"], "repair_pending")
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+        self.assertRegex(checkpoint["test_evidence_reference"], r"^[0-9a-f]{64}$")
+
+        repaired = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        prompts = []
+        evidence = EvidenceStore(evidence_root)
+        with (patch("forgeos.engine._run_workspace_tests", return_value={
+                    "passed": True, "returncode": 0, "output": "verified"}),
+              patch("forgeos.diagnostics.EvidenceStore", return_value=evidence)):
+            outcome = execute_task(
+                self.store, self.task, workspace_parent, allow_host_tests=True,
+                max_repairs=2, resume=True,
+                generate=lambda model, prompt: (prompts.append(prompt) or repaired))
+        self.assertTrue(outcome["passed"])
+        self.assertEqual(len(prompts), 1, "resume must not regenerate the first edit")
+        self.assertIn("persisted original failure", prompts[0])
+        self.assertEqual((Path(outcome["workspace"]) / "app.py").read_text(),
+                         "def value():\n return 42\n")
+        self.assertEqual((self.repo / "app.py").read_text(),
+                         "def value():\n return 42\n")
+
     def test_resume_pending_test_without_regeneration(self):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})

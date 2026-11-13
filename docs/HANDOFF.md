@@ -2666,3 +2666,23 @@ and restore under constrained filesystems.
   assertion, the two affected workspace tests plus documentation, roadmap and
   handoff suites passed 23 tests. `compileall` and `git diff --check` passed.
   This does not constitute real Windows CI or packaged acceptance.
+
+### Follow-up — exercise recovery after a hard process exit
+
+- Added a subprocess-level `repair_pending` recovery regression. A child
+  executes one failing test result, publishes its evidence-linked repair
+  checkpoint, signals that the next generation has begun, then is killed. A
+  freshly opened Store reclaims the stale lease, verifies the archived failure,
+  and resumes the saved repair without repeating the initial edit. The original
+  repository checkout remains unchanged. Model output and test results are
+  deterministic stubs; this covers process restart and SQLite/checkpoint
+  continuity, not actual model execution or OS reboot/power loss.
+- First targeted attempt found the test harness resumed from a different
+  workspace parent than the interrupted process. Corrected it to use the
+  saved workspace root. The hard-exit regression passed independently twice.
+  `compileall` also passed. The expanded 80-test focused run reached 80 tests,
+  with 3 platform skips and one WinError 32 during cleanup of a temporary gzip
+  archive in `test_deterministic_unicode_fuzz_and_integrity`; that exact test
+  passes alone. The same combined cleanup error occurred on two attempts, so
+  no further identical full run was made. This is not recorded as a green
+  regression suite; investigate Windows file-lock/AV interaction separately.

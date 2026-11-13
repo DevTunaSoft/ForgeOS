@@ -71,7 +71,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Real Windows GUI and packaged acceptance
 - [ ] Structured parser golden-fixture tests
 - [ ] Cross-platform optimization tests
-- [ ] End-to-end recovery exercise
+- [x] End-to-end recovery exercise (experimental hard-process-exit rehearsal for a repair-pending task; OS reboot and physical Windows acceptance remain open)
 
 ## Implemented baseline: diagnostic output archive
 

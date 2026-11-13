@@ -278,3 +278,18 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   cases plus documentation, roadmap and handoff checks passed 23 tests.
   Compilation and diff checks passed. Implementation commit is recorded in
   the cumulative handoff. Hosted CI remains skipped for the draft PR.
+
+### 2026-11-13 — exercise repair recovery after hard process exit
+
+- **Implemented experimentally on the feature branch:** a subprocess
+  regression terminates ForgeOS after a failed test has published a
+  `repair_pending` checkpoint and the next generation begins. The parent opens
+  a fresh SQLite connection, expires the dead lease, runs normal recovery,
+  verifies the checkpoint-linked diagnostic archive, and completes repair
+  without regenerating the original edit or modifying the source checkout.
+- The test uses a deterministic test-result stub; it does not claim real model
+  inference, OS reboot, system power-loss, or physical target-machine
+  acceptance. Its isolated regression passes. The broader 80-test focused run
+  has one repeated WinError 32 while deleting a diagnostics test's temporary
+  archive (the same test passes alone); the exact results and implementation
+  SHA are in `HANDOFF.md`.
