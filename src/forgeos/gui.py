@@ -854,8 +854,9 @@ def launch(db_path, *, acceptance: bool = False):
                 text="Metadata-only inventory (no large file is rehashed "
                      "in this view). Missing, changed-size or unsafe entries "
                      "are shown for diagnosis but cannot be selected for use "
-                     "or retirement. ForgeOS checks SHA-256 when you start "
-                     "a model. Imported files have unknown source and license."
+                     "or retirement. Reverify SHA-256 here before use; full "
+                     "checks run in the background and can be cancelled. "
+                     "Imported files have unknown source and license."
             ).pack(anchor="w", pady=(0, 8))
             listing = ttk.Treeview(
                 body, columns=("model", "size", "source", "status"),
@@ -866,12 +867,17 @@ def launch(db_path, *, acceptance: bool = False):
                 listing.column(key, width=width, stretch=key == "model")
             listing.pack(fill="both", expand=True)
             for index, entry in enumerate(records):
+                size = entry.get("bytes")
+                size_text = (f"{size/(1024**3):.2f} GiB"
+                             if type(size) is int else "unknown")
                 listing.insert("", "end", iid=str(index),
                                values=(entry["file"],
-                                       f'{entry["bytes"]/(1024**3):.2f} GiB',
+                                       size_text,
                                        entry["repo"], entry["status"]))
             selectable_statuses = {
-                "present_not_reverified", "imported_not_reverified"}
+                "present_not_reverified", "imported_not_reverified", "verified"}
+            verification_events = Queue(maxsize=1)
+            verification = {"busy": False, "cancel_event": None}
 
             def select_local():
                 chosen = listing.selection()
@@ -892,14 +898,25 @@ def launch(db_path, *, acceptance: bool = False):
                         parent=chooser)
             controls = ttk.Frame(body)
             controls.pack(fill="x", pady=(8, 0))
+            verify_btn = ttk.Button(
+                controls, text="Reverify SHA-256",
+                command=lambda: verify_selected())
+            verify_btn.pack(side="left")
+            cancel_verify_btn = ttk.Button(
+                controls, text="Cancel verification",
+                command=lambda: cancel_verification(), state="disabled")
+            cancel_verify_btn.pack(side="left", padx=(8, 0))
             use_btn = ttk.Button(controls, text="Use selected GGUF",
                                  command=select_local)
             use_btn.pack(side="right")
 
             def update_selection_controls(_event=None):
                 chosen = listing.selection()
-                eligible = bool(chosen) and records[
-                    int(chosen[0])]["status"] in selectable_statuses
+                eligible = (not verification["busy"] and bool(chosen)
+                            and records[int(chosen[0])]["status"]
+                            in selectable_statuses)
+                verify_btn.configure(
+                    state="normal" if eligible else "disabled")
                 use_btn.configure(state="normal" if eligible else "disabled")
                 retire_btn.configure(state="normal" if eligible else "disabled")
 
@@ -909,6 +926,123 @@ def launch(db_path, *, acceptance: bool = False):
             retirement_status = tk.StringVar(value="")
             ttk.Label(body, textvariable=retirement_status,
                       wraplength=750).pack(anchor="w", pady=(7, 0))
+
+            def post_verification_event(event):
+                try:
+                    verification_events.put_nowait(event)
+                except Full:
+                    try:
+                        verification_events.get_nowait()
+                    except Empty:
+                        pass
+                    try:
+                        verification_events.put_nowait(event)
+                    except Full:
+                        pass
+
+            def verify_selected():
+                if verification["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo(
+                        "Select local model", "Choose one GGUF file.",
+                        parent=chooser)
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if entry["status"] not in selectable_statuses:
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "Only a present inventory entry can be reverified.",
+                        parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish the current task and stop managed inference "
+                        "before rehashing model weights.", parent=chooser)
+                    return
+                cancel_event = threading.Event()
+                verification["busy"] = True
+                verification["cancel_event"] = cancel_event
+                managed["busy"] = True
+                verify_btn.configure(state="disabled")
+                use_btn.configure(state="disabled")
+                retire_btn.configure(state="disabled")
+                cancel_verify_btn.configure(state="normal")
+                retirement_status.set("Starting full SHA-256 verification...")
+
+                def worker():
+                    try:
+                        from .model_inventory import verify_download
+
+                        def progress(_stage, completed, total):
+                            post_verification_event((
+                                "progress", index, completed, total))
+
+                        outcome = verify_download(
+                            entry["path"], cancel_event=cancel_event,
+                            progress_callback=progress)
+                        post_verification_event(("done", index, outcome, None))
+                    except Exception as exc:
+                        post_verification_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(150, poll_verification)
+
+            def poll_verification():
+                try:
+                    event = verification_events.get_nowait()
+                except Empty:
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_verification)
+                    return
+                kind, index, payload, error = event
+                if kind == "progress":
+                    total = error
+                    percent = int(payload * 100 / total) if total else 0
+                    retirement_status.set(
+                        f"Reverifying SHA-256: {percent}% "
+                        f"({payload/(1024**2):.0f} / {total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_verification)
+                    return
+                verification["busy"] = False
+                verification["cancel_event"] = None
+                managed["busy"] = False
+                cancel_verify_btn.configure(state="disabled")
+                if error is not None:
+                    if error.startswith("VerificationCancelled:"):
+                        retirement_status.set(
+                            "Verification cancelled; model files were unchanged.")
+                    else:
+                        retirement_status.set("SHA-256 verification failed.")
+                        messagebox.showerror(
+                            "Could not verify local model", error,
+                            parent=chooser)
+                else:
+                    records[index]["status"] = "verified"
+                    old = listing.item(str(index), "values")
+                    listing.item(str(index), values=(
+                        old[0], old[1], old[2], "verified"))
+                    retirement_status.set(
+                        "SHA-256 verified for this session. Startup still "
+                        "checks model bytes before loading.")
+                    status.set("Local GGUF SHA-256 verified")
+                update_selection_controls()
+
+            def cancel_verification():
+                cancel_event = verification["cancel_event"]
+                if cancel_event is None:
+                    return
+                cancel_event.set()
+                retirement_status.set(
+                    "Cancellation requested; the current 1 MiB read may finish first.")
 
             def retire_selected():
                 if retirement["busy"]:
@@ -1034,6 +1168,11 @@ def launch(db_path, *, acceptance: bool = False):
                         parent=chooser)
 
             def close_chooser():
+                if verification["busy"]:
+                    retirement_status.set(
+                        "Verification is active. Cancel it and wait for the "
+                        "result before closing this window.")
+                    return
                 if retirement["busy"]:
                     retirement_status.set(
                         "Model verification is active. The window remains "
@@ -1042,6 +1181,7 @@ def launch(db_path, *, acceptance: bool = False):
                 chooser.destroy()
 
             chooser.protocol("WM_DELETE_WINDOW", close_chooser)
+            verify_btn.configure(state="disabled")
             retire_btn = ttk.Button(
                 controls, text="Retire selected GGUF (recoverable)",
                 command=retire_selected)

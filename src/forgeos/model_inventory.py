@@ -11,9 +11,11 @@ import os
 from pathlib import Path
 import re
 import stat
+from threading import Event
 
 from .gguf_download import (
-    MAX_MODEL_BYTES, _digest, _exclusive_download_lock, _reject_existing_link,
+    DownloadCancelled, MAX_MODEL_BYTES, _digest, _exclusive_download_lock,
+    _reject_existing_link,
     _safe_name, _safe_storage_root,
 )
 from .huggingface_catalog import REPO_ID
@@ -286,7 +288,12 @@ def catalog_file_status(repo: str, revision: str, file_info: dict,
     return "not in local model inventory"
 
 
-def _verify_download_unlocked(path: str | Path, root: Path) -> dict:
+class VerificationCancelled(RuntimeError):
+    """The caller cancelled a streaming model SHA-256 verification."""
+
+
+def _verify_download_unlocked(path: str | Path, root: Path, *,
+                              cancel_event=None, progress_callback=None) -> dict:
     """Verify model bytes while the caller holds that model's lifecycle lock."""
     selected = Path(path).expanduser().absolute()
     imported = next((record for record in _import_records(root)
@@ -301,7 +308,8 @@ def _verify_download_unlocked(path: str | Path, root: Path) -> dict:
         before = selected.stat()
         if before.st_nlink != 1 or before.st_size != info["bytes"]:
             raise RuntimeError("Imported GGUF size or link count changed")
-        if _digest(selected) != info["sha256"]:
+        if _digest(selected, cancel_event=cancel_event,
+                   progress_callback=progress_callback) != info["sha256"]:
             raise RuntimeError("Imported GGUF SHA-256 mismatch")
         after = selected.stat()
         if (before.st_size, before.st_mtime_ns, before.st_ino) != (
@@ -326,7 +334,8 @@ def _verify_download_unlocked(path: str | Path, root: Path) -> dict:
     if selected.stat().st_size != info["bytes"]:
         raise RuntimeError("GGUF size changed since download")
     before = selected.stat()
-    if _digest(selected) != info["sha256"]:
+    if _digest(selected, cancel_event=cancel_event,
+               progress_callback=progress_callback) != info["sha256"]:
         raise RuntimeError("GGUF SHA-256 mismatch; file was modified")
     after = selected.stat()
     if (before.st_size != after.st_size or
@@ -342,8 +351,17 @@ def _verify_download_unlocked(path: str | Path, root: Path) -> dict:
 
 
 def verify_download(path: str | Path, *,
-                    directory: str | Path | None = None) -> dict:
-    """Explicit streaming SHA check serialized with managed model lifecycle."""
+                    directory: str | Path | None = None,
+                    cancel_event=None, progress_callback=None) -> dict:
+    """Explicit streaming SHA check serialized with managed model lifecycle.
+
+    The optional callback receives ``(stage, completed_bytes, total_bytes)``;
+    cancellation is cooperative between bounded 1 MiB reads.
+    """
+    if cancel_event is not None and not isinstance(cancel_event, Event):
+        raise TypeError("cancel_event must be a threading.Event")
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable")
     root = _safe_storage_root(directory)
     selected = Path(path).expanduser().absolute()
     imported = next((record for record in _import_records(root)
@@ -366,4 +384,9 @@ def verify_download(path: str | Path, *,
                 not lock.is_file() or lock.stat().st_nlink != 1):
             raise ValueError("GGUF lifecycle lock is unsafe")
     with _exclusive_download_lock(lock):
-        return _verify_download_unlocked(selected, root)
+        try:
+            return _verify_download_unlocked(
+                selected, root, cancel_event=cancel_event,
+                progress_callback=progress_callback)
+        except DownloadCancelled:
+            raise VerificationCancelled("GGUF verification cancelled") from None

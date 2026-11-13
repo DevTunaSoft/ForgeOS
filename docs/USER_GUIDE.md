@@ -425,15 +425,17 @@ The packaged Windows AppContainer runner enforces its separate native output-fil
 The **Run verified local GGUF** window now offers **Choose from ForgeOS
 downloads**, which lists existing GGUF files that still have a matching
 pinned download manifest. The list is metadata-only and does **not**
-rehash multi-gigabyte models; a full rehash is performed when the managed
-server is started.
+rehash multi-gigabyte models. Select a present entry and choose
+**Reverify SHA-256** for a background, cancellable full-file check. A model
+verified in the current view is still checked again before the server loads it.
 
 Advanced users can run `forgeos models-local` to list model weights and
 `forgeos model-verify-local "C:\\Users\\You\\.forgeos\\models\\...\\model.gguf"`
 to recheck one SHA-256 explicitly, without downloading or running anything.
 Verification takes the same per-model lifecycle lock as managed startup,
 downloads and retirement, and reports an active operation instead of hashing
-the file concurrently with it.
+the file concurrently with it. The GUI check reports byte progress and can be
+cancelled between bounded reads; cancellation leaves the model files untouched.
 Do not treat a model shown in the list as independently compatible,
 licensed, executable or memory-safe. Missing/changed weights may be
 displayed as unavailable and cannot be used by the managed process.

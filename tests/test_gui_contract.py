@@ -59,6 +59,22 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('listing.bind("<<TreeviewSelect>>", update_selection_controls)', source)
         self.assertIn('retire_btn.configure(state="disabled")', source)
 
+    def test_local_model_sha_reverification_is_background_progress_and_cancelable(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Reverify SHA-256"',
+                'text="Cancel verification"',
+                'from .model_inventory import verify_download',
+                'progress_callback=progress',
+                'cancel_event=cancel_event',
+                'chooser.after(150, poll_verification)',
+                'threading.Thread(target=worker, daemon=True).start()',
+                'status"] = "verified"',
+                'size_text = (f"{size/(1024**3):.2f} GiB"'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
     def test_startup_recovery_is_scoped_to_an_explicitly_authorized_workspace(self):
         source = (Path(__file__).resolve().parents[1] /
                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")

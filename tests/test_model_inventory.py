@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 from forgeos.gguf_download import _exclusive_download_lock
 from forgeos.model_inventory import (
-    catalog_file_status, list_downloads, storage_usage, verify_download,
+    VerificationCancelled, catalog_file_status, list_downloads,
+    storage_usage, verify_download,
 )
 
 
@@ -101,6 +102,31 @@ class GGUFInventoryTests(unittest.TestCase):
         with _exclusive_download_lock(lock):
             with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
                 verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_reports_progress_and_supports_cancel(self):
+        progress = []
+        result = verify_download(
+            self.path, directory=self.root,
+            progress_callback=lambda *event: progress.append(event))
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(progress[-1], ("verify", len(self.content), len(self.content)))
+
+        from threading import Event
+        cancelled = Event()
+        def cancel_after_first_chunk(_stage, _done, _total):
+            cancelled.set()
+        with self.assertRaisesRegex(VerificationCancelled, "cancelled"):
+            verify_download(self.path, directory=self.root,
+                            cancel_event=cancelled,
+                            progress_callback=cancel_after_first_chunk)
+
+    def test_explicit_verify_validates_controls_before_touching_storage(self):
+        with patch("forgeos.model_inventory._safe_storage_root") as root:
+            with self.assertRaisesRegex(TypeError, "threading.Event"):
+                verify_download(self.path, cancel_event=object())
+            with self.assertRaisesRegex(TypeError, "callable"):
+                verify_download(self.path, progress_callback=object())
+        root.assert_not_called()
 
     def test_explicit_verify_accepts_noncanonical_but_contained_path(self):
         # Equivalent paths must compare to the canonical inventory root,
