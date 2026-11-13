@@ -275,6 +275,33 @@ class LocalModelImportTests(unittest.TestCase):
         self.assertFalse(self.model.exists())
         self.assertEqual(list_downloads(self.models), [])
 
+    def test_import_purge_retries_when_registry_publication_fails_after_unlink(self):
+        import_local_gguf(self.model, directory=self.models)
+        sidecar = self.model.with_name(self.model.name + ".forgeos.json")
+        index = self.models / ".forgeos-imports.json"
+        from forgeos import model_import
+        replace = model_import.os.replace
+
+        def fail_registry_once(source, destination):
+            if Path(destination) == index:
+                raise OSError("injected registry publication failure")
+            return replace(source, destination)
+
+        with patch.object(model_import.os, "replace", fail_registry_once):
+            with self.assertRaisesRegex(OSError, "injected registry publication"):
+                purge_imported_gguf(
+                    self.model, directory=self.models, confirm=True,
+                    checkpoint_check=lambda _sha: False)
+        self.assertFalse(sidecar.exists())
+        self.assertFalse(self.model.exists())
+        self.assertEqual(len(json.loads(index.read_text())["imports"]), 1)
+
+        result = purge_imported_gguf(
+            self.model, directory=self.models, confirm=True,
+            checkpoint_check=lambda _sha: False)
+        self.assertEqual(result["status"], "purged")
+        self.assertEqual(list_downloads(self.models), [])
+
     def test_import_purge_cancellation_preserves_all_import_files(self):
         from threading import Event
         from forgeos.model_import import ImportPurgeCancelled

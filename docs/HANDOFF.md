@@ -2556,3 +2556,8 @@ and restore under constrained filesystems.
   roadmap suites passed 125 tests (6 platform skips); compilation and
   `git diff --check` passed. Real Windows deletion/ACL behavior, external
   inference processes and power-loss recovery remain unverified.
+
+- Added a fault-injection case for atomic registry publication failure after
+  both model files have been deleted. The test confirms the old registry
+  identity survives and a subsequent purge retry removes it successfully; the
+  imported-model suite now passes 20 tests (1 platform skip).
