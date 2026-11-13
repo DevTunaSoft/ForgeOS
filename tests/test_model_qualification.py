@@ -61,6 +61,17 @@ class ModelQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "counts"):
             qualify_role_evidence(evidence(tasks=5, json_ok=5, objective_ok=5))
 
+    def test_schema_and_latency_reject_boolean_and_nonfinite_numbers(self):
+        item = evidence()
+        item["schema"] = True
+        with self.assertRaisesRegex(ValueError, "schema"):
+            qualify_role_evidence(item)
+        for latency in (True, float("nan"), float("inf"), float("-inf"),
+                        10 ** 10000):
+            with self.subTest(latency=latency):
+                with self.assertRaisesRegex(ValueError, "latency"):
+                    qualify_role_evidence(evidence(latency=latency))
+
     def test_runtime_failure_and_safety_gates_fail_closed(self):
         self.assertTrue(qualify_role_evidence(
             evidence(runtime_failures=1))["qualified"])

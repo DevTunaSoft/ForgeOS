@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 
@@ -42,7 +43,8 @@ def qualify_role_evidence(record: dict) -> dict:
     """Validate final role evidence. Screening records can never qualify."""
     if not isinstance(record, dict):
         raise TypeError("Qualification record required")
-    if record.get("schema") != QUALIFICATION_SCHEMA:
+    if (type(record.get("schema")) is not int
+            or record.get("schema") != QUALIFICATION_SCHEMA):
         raise ValueError("Unsupported qualification schema")
     if record.get("kind") != "role-qualification":
         raise ValueError("Final role qualification evidence required")
@@ -78,7 +80,14 @@ def qualify_role_evidence(record: dict) -> dict:
         raise ValueError("Invalid model size")
     if type(peak) is not int or peak <= 0:
         raise ValueError("Invalid peak memory")
-    if type(latency) not in (int, float) or isinstance(latency, bool) or latency < 0:
+    if (type(latency) not in (int, float) or isinstance(latency, bool)
+            or latency < 0):
+        raise ValueError("Invalid latency")
+    try:
+        latency = float(latency)
+    except OverflowError as exc:
+        raise ValueError("Invalid latency") from exc
+    if not math.isfinite(latency):
         raise ValueError("Invalid latency")
     json_rate = json_ok / total
     objective_rate = objective_ok / total
@@ -107,7 +116,7 @@ def qualify_role_evidence(record: dict) -> dict:
         "safety_violations": safety_violations,
         "model_bytes": model_bytes,
         "peak_memory_bytes": peak,
-        "median_latency_seconds": float(latency),
+        "median_latency_seconds": latency,
         "qualified": passed,
     }
     normalized["evidence_sha256"] = hashlib.sha256(

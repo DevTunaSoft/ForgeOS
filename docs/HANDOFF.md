@@ -2426,3 +2426,8 @@ and restore under constrained filesystems.
 
 - Final role evidence and qualified routing requests now require one of ForgeOS's canonical model roles. Unknown role strings in local evidence cannot establish a new route, and callers cannot query routing for an unsupported role.
 - Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 88 tests (one platform skip); `python -m compileall -q src/forgeos` and `git diff --check` passed. Physical target-Windows qualification remains open.
+
+### Follow-up — reject malformed qualification schema and latency values
+
+- Qualification records now require an integer schema value (so JSON `true` cannot alias version 1) and a finite, nonnegative numeric latency. Overflowing integer latency values are rejected before evidence hashing.
+- Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 89 tests (one platform skip); compilation and `git diff --check` passed. Real model qualification remains unverified on target Windows.
