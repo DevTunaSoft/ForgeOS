@@ -13,7 +13,7 @@ import re
 import stat
 
 from .gguf_download import (
-    MAX_MODEL_BYTES, _digest, _reject_existing_link,
+    MAX_MODEL_BYTES, _digest, _exclusive_download_lock, _reject_existing_link,
     _safe_name, _safe_storage_root,
 )
 from .huggingface_catalog import REPO_ID
@@ -286,10 +286,8 @@ def catalog_file_status(repo: str, revision: str, file_info: dict,
     return "not in local model inventory"
 
 
-def verify_download(path: str | Path, *,
-                    directory: str | Path | None = None) -> dict:
-    """Explicit streaming SHA check; does not load the model or use RAM quota."""
-    root = _safe_storage_root(directory)
+def _verify_download_unlocked(path: str | Path, root: Path) -> dict:
+    """Verify model bytes while the caller holds that model's lifecycle lock."""
     selected = Path(path).expanduser().absolute()
     imported = next((record for record in _import_records(root)
                      if record["path"] == selected), None)
@@ -341,3 +339,31 @@ def verify_download(path: str | Path, *,
     return {"status": "verified", "path": str(selected),
             "sha256": info["sha256"], "bytes": info["bytes"],
             "repo": info["repo"], "revision": info["revision"]}
+
+
+def verify_download(path: str | Path, *,
+                    directory: str | Path | None = None) -> dict:
+    """Explicit streaming SHA check serialized with managed model lifecycle."""
+    root = _safe_storage_root(directory)
+    selected = Path(path).expanduser().absolute()
+    imported = next((record for record in _import_records(root)
+                     if record["path"] == selected), None)
+    lock = selected.with_name(selected.name + ".lock")
+    if imported is not None:
+        if any(item.is_symlink() for item in (selected, *selected.parents)):
+            raise ValueError("Imported GGUF path contains a symbolic link")
+        if any(item.is_symlink() for item in (lock, *lock.parents)):
+            raise ValueError("Imported GGUF lifecycle lock is a symbolic link")
+        if os.path.lexists(lock) and (
+                not lock.is_file() or lock.stat().st_nlink != 1):
+            raise ValueError("Imported GGUF lifecycle lock is unsafe")
+    else:
+        _reject_existing_link(selected, root)
+        selected = selected.resolve(strict=False)
+        lock = selected.with_name(selected.name + ".lock")
+        _reject_existing_link(lock, root)
+        if os.path.lexists(lock) and (
+                not lock.is_file() or lock.stat().st_nlink != 1):
+            raise ValueError("GGUF lifecycle lock is unsafe")
+    with _exclusive_download_lock(lock):
+        return _verify_download_unlocked(selected, root)

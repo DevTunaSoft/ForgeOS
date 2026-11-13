@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from forgeos.gguf_download import _exclusive_download_lock
 from forgeos.managed_llama import _verified_model
 from forgeos.model_inventory import list_downloads, verify_download
 from forgeos.model_import import import_local_gguf, unregister_imported_gguf
@@ -116,7 +117,6 @@ class LocalModelImportTests(unittest.TestCase):
                          "imported_not_reverified")
 
     def test_unregister_refuses_runtime_lock_and_tampered_model(self):
-        from forgeos.gguf_download import _exclusive_download_lock
         import_local_gguf(self.model, directory=self.models)
         lock = self.model.with_name(self.model.name + ".lock")
         with _exclusive_download_lock(lock):
@@ -126,6 +126,13 @@ class LocalModelImportTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "changed"):
             unregister_imported_gguf(self.model, directory=self.models)
         self.assertEqual(len(list_downloads(self.models)), 1)
+
+    def test_reverify_refuses_active_managed_runtime_lock(self):
+        import_local_gguf(self.model, directory=self.models)
+        lock = self.model.with_name(self.model.name + ".lock")
+        with _exclusive_download_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                verify_download(self.model, directory=self.models)
 
 
 if __name__ == "__main__":

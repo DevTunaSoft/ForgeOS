@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from forgeos.gguf_download import _exclusive_download_lock
 from forgeos.model_inventory import (
     catalog_file_status, list_downloads, storage_usage, verify_download,
 )
@@ -94,6 +95,12 @@ class GGUFInventoryTests(unittest.TestCase):
                          "present_not_reverified")
         with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
             verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_refuses_active_model_lifecycle(self):
+        lock = self.path.with_name(self.path.name + ".lock")
+        with _exclusive_download_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                verify_download(self.path, directory=self.root)
 
     def test_explicit_verify_accepts_noncanonical_but_contained_path(self):
         # Equivalent paths must compare to the canonical inventory root,

@@ -12,7 +12,9 @@ from .gguf_download import (
     _reject_existing_link, _safe_name, _safe_storage_root, _write_json_atomic,
 )
 from .huggingface_catalog import REPO_ID
-from .model_inventory import MAX_SCAN_ENTRIES, _manifest_model_file, verify_download
+from .model_inventory import (
+    MAX_SCAN_ENTRIES, _manifest_model_file, _verify_download_unlocked,
+)
 
 RETIRE_DIR = ".forgeos-retired"
 TOKEN = re.compile(r"[a-f0-9]{32}\Z")
@@ -157,7 +159,7 @@ def retire_download(path: str | Path, *,
             raise RuntimeError("Unresolved GGUF download journal")
         _single_link(model)
         _single_link(manifest)
-        verify_download(model, directory=root)
+        _verify_download_unlocked(model, root)
         # Recheck after the multi-gigabyte SHA read before either move.
         _single_link(model)
         _single_link(manifest)
@@ -266,7 +268,7 @@ def restore_download(identifier: str, *,
         if stored_manifest:
             _single_link(saved_manifest)
             _move(saved_manifest, manifest)
-        verify_download(model, directory=root)
+        _verify_download_unlocked(model, root)
         (entry / "journal.json").unlink()
         _sync_directory(entry)
         entry.rmdir()

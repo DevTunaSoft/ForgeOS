@@ -431,6 +431,9 @@ server is started.
 Advanced users can run `forgeos models-local` to list model weights and
 `forgeos model-verify-local "C:\\Users\\You\\.forgeos\\models\\...\\model.gguf"`
 to recheck one SHA-256 explicitly, without downloading or running anything.
+Verification takes the same per-model lifecycle lock as managed startup,
+downloads and retirement, and reports an active operation instead of hashing
+the file concurrently with it.
 Do not treat a model shown in the list as independently compatible,
 licensed, executable or memory-safe. Missing/changed weights may be
 displayed as unavailable and cannot be used by the managed process.
