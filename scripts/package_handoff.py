@@ -49,7 +49,8 @@ def create(root: Path, output: Path) -> dict:
         file = root / rel
         if file.is_symlink() or not file.is_file() or not file.resolve().is_relative_to(root):
             raise ValueError("Missing or unsafe file: " + rel)
-        data = file.read_bytes()
+        with file.open("rb") as stream:
+            data = stream.read(MAX_FILE_BYTES + 1)
         if len(data) > MAX_FILE_BYTES:
             raise ValueError("Oversized file: " + rel)
         total += len(data)
@@ -81,14 +82,17 @@ def create(root: Path, output: Path) -> dict:
                 member.create_system = 3
                 archive.writestr(member, data, compress_type=zipfile.ZIP_DEFLATED,
                                  compresslevel=6)
-        digest = hashlib.sha256(staged.read_bytes()).hexdigest()
+        digest = hashlib.sha256()
+        with staged.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(64 * 1024), b""):
+                digest.update(chunk)
         # Windows rename and POSIX link both refuse an existing destination.
         if os.name == "nt":
             staged.rename(output)
         else:
             os.link(staged, output)
     return {"status": "PASS", "source_sha": revision, "file_count": len(entries),
-            "package_sha256": digest,
+            "package_sha256": digest.hexdigest(),
             "output": str(output)}
 
 

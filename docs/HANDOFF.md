@@ -2176,3 +2176,5 @@ and restore under constrained filesystems.
 - Recovery ZIP packaging now fixes member timestamps and ordering. Two exports of the same revision produced matching SHA-256 hashes in the Windows regression suite. PASS: all five test_package_handoff tests.
 
 - Recovery ZIP publication now stages and hashes the complete archive before exposing the final path without overwriting an existing file. Windows packaging suite: six tests passed, including injected write failure with no partial output or staging files.
+
+- Recovery ZIP packaging enforces its per-file read limit during I/O and streams the final archive checksum in 64 KiB chunks. PASS on Windows: all six test_package_handoff tests.
