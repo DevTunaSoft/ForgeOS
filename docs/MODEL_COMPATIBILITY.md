@@ -78,8 +78,10 @@ install LM Studio. Model inference uses a temporary bearer API key. No Docker or
    the same dialog or let idle unload occur after five inactive minutes.
 
 **Current limits:** one GUI-owned managed server per ForgeOS session; model
-updates and destructive weight deletion are not implemented (reversible
-download retirement and imported-model unregistration are available). There
+in-place model updates are not implemented: downloading a newer pinned revision
+creates a separate model path. Recoverable retirement is available for managed
+downloads, with confirmed permanent purge; imported weights can be unregistered
+or separately confirmed for permanent purge. There
 are no persistent credentials or automatic managed-session recreation across
 restart. The code checks the managed listener PID before prompts and before
 accepting responses, but those checks do not atomically bind the HTTP socket to
@@ -292,8 +294,12 @@ background scanner, internet call or full multi-GB rehash during browsing.
   external folders explicitly hashes and registers an existing `.gguf`
   without copying it; source/revision/license provenance remains unknown.
   Imported files are rehashed before managed use. Reversible unregister and
-  reimport are supported; license validation, model updates and permanent
-  deletion remain future work.
+  reimport are supported. The current feature branch also supports explicit
+  permanent purge for imported weights; the registry entry remains until the
+  sidecar and weight bytes are removed, so interrupted cleanup can be retried.
+  Downloaded weights can be recoverably retired/restored or explicitly purged.
+  In-place updates, license validation and physical Windows deletion acceptance
+  remain future work.
 
 ## Optional API/cloud model providers (planned; not implemented)
 

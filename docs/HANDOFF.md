@@ -2586,3 +2586,13 @@ and restore under constrained filesystems.
   checks succeeded; unit tests, documentation and Windows packaging were
   skipped because PR #68 remains draft. No hosted test matrix or packaged EXE
   pass is claimed.
+
+### Follow-up — reconcile model lifecycle compatibility documentation
+
+- Updated the current-checkout compatibility guide to distinguish separate
+  pinned-revision downloads from unavailable in-place updates, and to describe
+  recoverable retirement plus confirmed permanent purge for downloaded and
+  imported weights. Physical Windows deletion acceptance and license review
+  remain open.
+- Verification: documentation, multi-LLM roadmap, GUI contract and imported
+  model suites passed 78 tests (1 platform skip); `git diff --check` passed.
