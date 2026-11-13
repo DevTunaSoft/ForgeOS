@@ -2366,7 +2366,7 @@ and restore under constrained filesystems.
 
 ### Follow-up — distinguish feature-branch changes from mainline status
 
-- Compared the checkout with Git refs: `origin/main` (`4a24799`) is an ancestor of feature branch `fix/safe-resume-malformed-checkpoints`, currently at `f6a0e32` and 72 commits ahead. The overall roadmap, multi-LLM roadmap and compatibility guide now state which claims describe mainline and which additional follow-ups are branch-only.
+- Compared the checkout with Git refs: at the audit snapshot `f6a0e32`, `origin/main` (`4a24799`) was an ancestor of feature branch `fix/safe-resume-malformed-checkpoints`, 72 commits ahead. The overall roadmap, multi-LLM roadmap and compatibility guide now state which claims describe mainline and which additional follow-ups are branch-only.
 - No merge into `main` is claimed. GitHub contains the pushed feature branch; the full repository review/merge and release acceptance remain outstanding. Documentation and roadmap contract suites passed 16 tests, including a regression against confusing feature-branch changes with mainline status; `git diff --check` passed.
 
 ### Follow-up — recover from disk exhaustion during a GGUF transfer

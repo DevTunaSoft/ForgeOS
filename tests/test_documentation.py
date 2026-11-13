@@ -96,7 +96,7 @@ class DocumentationTests(unittest.TestCase):
             encoding="utf-8")
         compatibility = (docs.ROOT / "docs" / "MODEL_COMPATIBILITY.md").read_text(
             encoding="utf-8")
-        self.assertIn("table below remains", overall)
+        self.assertIn("table above remains", overall)
         self.assertIn("not represented as merged", overall)
         self.assertIn("72 commits ahead", multi)
         self.assertIn("not yet part of `main`", compatibility)
