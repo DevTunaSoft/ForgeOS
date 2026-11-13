@@ -8,6 +8,7 @@ import subprocess
 import sys
 import textwrap
 import time
+from urllib.error import HTTPError
 from types import SimpleNamespace
 from pathlib import Path
 from threading import Event, Thread
@@ -579,6 +580,41 @@ class GGUFDownloadTests(unittest.TestCase):
                 self.download()
         self.assertEqual(part.read_bytes(), initial)
         self.assertEqual(opened.call_args.args[0].get_header("Range"), "bytes=8-")
+
+    def test_http_rate_limit_retains_partial_and_reports_redacted_retry_guidance(self):
+        from forgeos.huggingface_catalog import catalog_error_message
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY[:12], headers={
+                       "Content-Length": str(len(BODY))})):
+            with self.assertRaisesRegex(RuntimeError, "interrupted"):
+                self.download(revision=REVISION)
+        partial = next(self.root.rglob("*.part"))
+        retained = partial.read_bytes()
+        self.assertEqual(retained, BODY[:12])
+
+        response_body = Response(b"private response body")
+        error = HTTPError(
+            "https://cdn-lfs.huggingface.co/file?X-Amz-Signature=secret-value",
+            429, "rate limited", {}, response_body)
+        with patch("forgeos.gguf_download._open_weight", side_effect=error):
+            with self.assertRaises(HTTPError) as caught:
+                self.download(revision=REVISION)
+        message = catalog_error_message(caught.exception)
+        self.assertIn("rate limiting", message)
+        self.assertIn("retry", message)
+        self.assertNotIn("secret-value", message)
+        self.assertNotIn("cdn-lfs", message)
+        self.assertTrue(response_body.closed)
+        self.assertEqual(partial.read_bytes(), retained)
+
+        remaining = BODY[12:]
+        with patch("forgeos.gguf_download._open_weight", return_value=Response(
+                remaining, status=206, headers={
+                    "Content-Length": str(len(remaining)),
+                    "Content-Range": f"bytes 12-{len(BODY)-1}/{len(BODY)}"})) as opened:
+            result = self.download(revision=REVISION)
+        self.assertEqual(opened.call_args.args[0].get_header("Range"), "bytes=12-")
+        self.assertEqual(Path(result["path"]).read_bytes(), BODY)
 
     def test_hash_mismatch_is_quarantined_without_publishing(self):
         with patch("forgeos.gguf_download._open_weight",
