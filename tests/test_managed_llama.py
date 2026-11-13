@@ -8,6 +8,8 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -20,6 +22,8 @@ from forgeos.managed_llama import (
     _verified_runtime,
 )
 from forgeos.gguf_download import _exclusive_download_lock
+
+_REAL_POPEN = subprocess.Popen
 
 
 class _Response(io.BytesIO):
@@ -52,6 +56,24 @@ class ManagedLlamaTests(unittest.TestCase):
             # The fixture must too, before testing SHA mismatch behavior.
             self.exe.chmod(0o700)
         self.exe_sha = hashlib.sha256(self.exe.read_bytes()).hexdigest()
+
+    def child_model_lock(self, lock_path):
+        repo_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(repo_root / "src")
+        script = (
+            "import sys; from forgeos.gguf_download import "
+            "_exclusive_download_lock; "
+            "\ntry:\n with _exclusive_download_lock(sys.argv[1]): "
+            "print('acquired')\nexcept RuntimeError:\n print('busy')")
+        args = [sys.executable, "-c", script, str(lock_path)]
+        process = _REAL_POPEN(
+            args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True)
+        stdout, stderr = process.communicate(timeout=15)
+        if process.returncode:
+            self.fail(f"lock probe failed ({process.returncode}): {stderr}")
+        return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 
     def test_shutdown_failure_still_closes_native_handle_and_clears_secrets(self):
         controller = ManagedLlamaServer()
@@ -663,10 +685,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(
                 memory_ceiling.call_args.args[1], 2 * 1024**3)
             self.assertTrue(server.running())
-            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
-                with _exclusive_download_lock(
-                        self.model.with_name(self.model.name + ".lock")):
-                    pass
+            lock_path = self.model.with_name(self.model.name + ".lock")
+            self.assertEqual(self.child_model_lock(lock_path).stdout.strip(), "busy")
             command = (native_launch.call_args.args[0]
                        if os.name == "nt" else launch.call_args.args[0])
             self.assertEqual(command[0], str(self.exe))
@@ -690,9 +710,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                 server.start(executable=self.exe, executable_sha256=self.exe_sha,
                              model_path=self.model)
             server.stop()
-            with _exclusive_download_lock(
-                    self.model.with_name(self.model.name + ".lock")):
-                pass
+            self.assertEqual(self.child_model_lock(lock_path).stdout.strip(),
+                             "acquired")
             self.assertFalse(key_file.exists())
             self.assertIsNone(server.api_key)
             self.assertIsNone(server.process)
