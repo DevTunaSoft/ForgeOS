@@ -969,7 +969,7 @@ def launch(db_path, *, acceptance: bool = False):
 
             listing.bind("<<TreeviewSelect>>", update_selection_controls)
             retirement_events = Queue(maxsize=1)
-            retirement = {"busy": False}
+            retirement = {"busy": False, "cancel_event": None}
             retirement_status = tk.StringVar(value="")
             ttk.Label(body, textvariable=retirement_status,
                       wraplength=750).pack(anchor="w", pady=(7, 0))
@@ -1221,9 +1221,12 @@ def launch(db_path, *, acceptance: bool = False):
                 if not messagebox.askyesno(title, question, parent=chooser):
                     return
                 retirement["busy"] = True
+                cancel_event = threading.Event()
+                retirement["cancel_event"] = cancel_event
                 managed["busy"] = True
                 use_btn.configure(state="disabled")
                 retire_btn.configure(state="disabled")
+                cancel_retire_btn.configure(state="normal")
                 retirement_status.set(
                     "Verifying model and updating its active inventory...")
                 status.set("Retiring local GGUF after full SHA-256 verification...")
@@ -1241,32 +1244,81 @@ def launch(db_path, *, acceptance: bool = False):
                                 "retiring the model.")
                         if imported:
                             from .model_import import unregister_imported_gguf
-                            outcome = unregister_imported_gguf(entry["path"])
+                            outcome = unregister_imported_gguf(
+                                entry["path"], cancel_event=cancel_event,
+                                progress_callback=lambda stage, done, total:
+                                post_retirement_event((
+                                    "progress", index, stage, done, total)))
                         else:
                             from .model_retirement import retire_download
-                            outcome = retire_download(entry["path"])
-                        retirement_events.put((index, outcome, None))
+                            outcome = retire_download(
+                                entry["path"], cancel_event=cancel_event,
+                                progress_callback=lambda stage, done, total:
+                                post_retirement_event((
+                                    "progress", index, stage, done, total)))
+                        post_retirement_event(("done", index, outcome, None))
                     except Exception as exc:
-                        retirement_events.put((
-                            index, None, f"{type(exc).__name__}: {exc}"))
+                        post_retirement_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
                     finally:
                         if worker_store is not None:
                             worker_store.close()
                 threading.Thread(target=worker, daemon=True).start()
                 chooser.after(200, poll_retirement)
 
+            def post_retirement_event(event):
+                try:
+                    retirement_events.put_nowait(event)
+                except Full:
+                    try:
+                        retirement_events.get_nowait()
+                    except Empty:
+                        pass
+                    try:
+                        retirement_events.put_nowait(event)
+                    except Full:
+                        pass
+
+            def cancel_retirement():
+                event = retirement.get("cancel_event")
+                if event is not None:
+                    event.set()
+                    retirement_status.set(
+                        "Cancellation requested; waiting for the current bounded read.")
+                    cancel_retire_btn.configure(state="disabled")
+
             def poll_retirement():
                 try:
-                    index, outcome, error = retirement_events.get_nowait()
+                    event = retirement_events.get_nowait()
                 except Empty:
                     if chooser.winfo_exists():
                         chooser.after(200, poll_retirement)
                     return
+                if event[0] == "progress":
+                    _kind, index, stage, completed, total = event
+                    percent = int(completed * 100 / total) if total else 0
+                    retirement_status.set(
+                        f"Verifying model SHA-256: {percent}% "
+                        f"({completed/(1024**2):.0f} / "
+                        f"{total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_retirement)
+                    return
+                _kind, index, outcome, error = event
                 retirement["busy"] = False
+                retirement["cancel_event"] = None
                 managed["busy"] = False
+                cancel_retire_btn.configure(state="disabled")
                 use_btn.configure(state="normal")
                 retire_btn.configure(state="normal")
                 if error is not None:
+                    if "Cancelled" in error:
+                        retirement_status.set(
+                            "Verification cancelled; model and inventory are unchanged.")
+                        status.set("Model retirement cancelled")
+                        update_selection_controls()
+                        return
                     retirement_status.set("Retirement failed; existing "
                                           "files or recovery journal retained.")
                     status.set("Model retirement failed")
@@ -1313,8 +1365,8 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 if retirement["busy"]:
                     retirement_status.set(
-                        "Model verification is active. The window remains "
-                        "open so the recovery result cannot be lost.")
+                        "Model verification is active. Cancel it and wait for "
+                        "the recovery result before closing this window.")
                     return
                 chooser.destroy()
 
@@ -1324,6 +1376,10 @@ def launch(db_path, *, acceptance: bool = False):
                 controls, text="Retire selected GGUF (recoverable)",
                 command=retire_selected)
             retire_btn.pack(side="right", padx=8)
+            cancel_retire_btn = ttk.Button(
+                controls, text="Cancel verification",
+                command=cancel_retirement, state="disabled")
+            cancel_retire_btn.pack(side="right", padx=8)
             retire_btn.configure(state="disabled")
             use_btn.configure(state="disabled")
 
@@ -1377,7 +1433,7 @@ def launch(db_path, *, acceptance: bool = False):
                                values=(entry.get("file", "unknown"),
                                        entry["status"], entry["id"]))
             restore_events = Queue(maxsize=1)
-            restore_state = {"busy": False}
+            restore_state = {"busy": False, "cancel_event": None}
             restore_status = tk.StringVar(value="")
             ttk.Label(body, textvariable=restore_status,
                       wraplength=740).pack(anchor="w", pady=(8, 0))
@@ -1414,8 +1470,11 @@ def launch(db_path, *, acceptance: bool = False):
                         "never be overwritten.", parent=chooser):
                     return
                 restore_state["busy"] = True
+                cancel_event = threading.Event()
+                restore_state["cancel_event"] = cancel_event
                 managed["busy"] = True
                 restore_btn.configure(state="disabled")
+                cancel_restore_btn.configure(state="normal")
                 restore_status.set(
                     "Verifying pinned bytes and restoring the model...")
                 status.set("Restoring and verifying retired GGUF...")
@@ -1424,28 +1483,71 @@ def launch(db_path, *, acceptance: bool = False):
                 def worker():
                     try:
                         from .model_retirement import restore_download
-                        result = restore_download(identifier)
-                        restore_events.put((selection[0], result, None))
+                        result = restore_download(
+                            identifier, cancel_event=cancel_event,
+                            progress_callback=lambda stage, done, total:
+                            post_restore_event((
+                                "progress", selection[0], stage, done, total)))
+                        post_restore_event(("done", selection[0], result, None))
                     except Exception as exc:
-                        restore_events.put((
-                            selection[0], None,
+                        post_restore_event((
+                            "done", selection[0], None,
                             f"{type(exc).__name__}: {exc}"))
                 threading.Thread(target=worker, daemon=True).start()
                 chooser.after(200, poll_restore)
 
+            def post_restore_event(event):
+                try:
+                    restore_events.put_nowait(event)
+                except Full:
+                    try:
+                        restore_events.get_nowait()
+                    except Empty:
+                        pass
+                    try:
+                        restore_events.put_nowait(event)
+                    except Full:
+                        pass
+
+            def cancel_restoration():
+                event = restore_state.get("cancel_event")
+                if event is not None:
+                    event.set()
+                    restore_status.set(
+                        "Cancellation requested; preserving the recovery journal.")
+                    cancel_restore_btn.configure(state="disabled")
+
             def poll_restore():
                 try:
-                    index, result, error = restore_events.get_nowait()
+                    event = restore_events.get_nowait()
                 except Empty:
                     if chooser.winfo_exists():
                         chooser.after(200, poll_restore)
                     return
+                if event[0] == "progress":
+                    _kind, _index, stage, completed, total = event
+                    percent = int(completed * 100 / total) if total else 0
+                    restore_status.set(
+                        f"Verifying model SHA-256: {percent}% "
+                        f"({completed/(1024**2):.0f} / "
+                        f"{total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_restore)
+                    return
+                _kind, index, result, error = event
                 restore_state["busy"] = False
+                restore_state["cancel_event"] = None
                 managed["busy"] = False
                 restore_btn.configure(state="normal")
+                cancel_restore_btn.configure(state="disabled")
                 if error:
-                    restore_status.set(
-                        "Restore failed; original recovery journal retained.")
+                    if "Cancelled" in error:
+                        restore_status.set(
+                            "Restore verification cancelled; recovery journal retained. "
+                            "You can retry restore safely.")
+                        status.set("Local GGUF restore cancelled")
+                        return
+                    restore_status.set("Restore failed; original recovery journal retained.")
                     status.set("Local GGUF restore failed")
                     messagebox.showerror(
                         "Could not restore local GGUF", error, parent=chooser)
@@ -1470,7 +1572,11 @@ def launch(db_path, *, acceptance: bool = False):
             restore_btn = ttk.Button(
                 body, text="Restore selected GGUF",
                 command=begin_restore)
-            restore_btn.pack(anchor="e", pady=(8, 0))
+            restore_btn.pack(side="right", pady=(8, 0))
+            cancel_restore_btn = ttk.Button(
+                body, text="Cancel verification",
+                command=cancel_restoration, state="disabled")
+            cancel_restore_btn.pack(side="right", padx=(0, 8), pady=(8, 0))
 
         ttk.Button(
             panel, text="Restore a retired GGUF (recoverable)",

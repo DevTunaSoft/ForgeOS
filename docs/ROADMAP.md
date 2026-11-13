@@ -206,3 +206,18 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - Require a fresh full Windows/Linux matrix on the corrected head before
   claiming the backup and restore regressions pass. Real physical Windows
   recovery remains UNVERIFIED.
+
+### 2026-11-13 — cooperative progress and cancellation for model lifecycle
+
+- **Implemented in the feature branch:** retirement, restoration, and removal
+  of imported models from active inventory now accept cooperative SHA-256
+  progress/cancel callbacks. The managed-model dialogs show byte progress and
+  expose cancellation during large-file verification. Restore journals remain
+  retryable when cancellation happens after either file has moved.
+- **Regression coverage:** API tests exercise progress, option validation,
+  cancellation before retirement moves, and cancellation after restore moves
+  followed by successful retry. GUI contract checks cover the worker queues
+  and cancellation controls.
+- **Acceptance:** 98 focused tests passed (5 platform skips), compileall
+  passed. Real multi-GiB dialog interaction and physical Windows recovery
+  acceptance remain unverified; exact-head hosted CI is still required.

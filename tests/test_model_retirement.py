@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+from threading import Event
 import unittest
 from unittest.mock import patch
 from forgeos.model_inventory import list_downloads, verify_download
@@ -62,6 +63,57 @@ class ModelRetirementTests(unittest.TestCase):
             self.assertEqual(list_retired(self.root), [])
             remote.assert_not_called()
             spawned.assert_not_called()
+
+    def test_retirement_reports_hash_progress_and_cancellation_keeps_files(self):
+        from forgeos.model_inventory import VerificationCancelled
+        progress = []
+        event = Event()
+
+        def cancel_after_progress(stage, completed, total):
+            progress.append((stage, completed, total))
+            event.set()
+
+        with self.assertRaises(VerificationCancelled):
+            retire_download(self.model, directory=self.root,
+                            cancel_event=event,
+                            progress_callback=cancel_after_progress)
+        self.assertEqual(progress, [("verify", len(self.data), len(self.data))])
+        self.assertEqual(self.model.read_bytes(), self.data)
+        self.assertTrue(self.manifest.exists())
+        self.assertEqual(list_retired(self.root), [])
+
+    def test_restore_cancellation_after_moves_keeps_retryable_journal(self):
+        from forgeos.model_inventory import VerificationCancelled
+        from forgeos import model_retirement as retirement
+        ticket = self.retire()
+        event = Event()
+        move = retirement._move
+        moves = 0
+
+        def cancel_after_moves(source, target):
+            nonlocal moves
+            move(source, target)
+            moves += 1
+            if moves == 2:
+                event.set()
+
+        with patch("forgeos.model_retirement._move",
+                   side_effect=cancel_after_moves):
+            with self.assertRaises(VerificationCancelled):
+                restore_download(ticket["id"], directory=self.root,
+                                 cancel_event=event)
+        self.assertTrue(self.model.exists())
+        self.assertTrue(self.manifest.exists())
+        self.assertEqual(list_retired(self.root)[0]["status"],
+                         "interrupted_retirement_or_restore")
+        self.assertEqual(self.restore(ticket["id"])["status"], "restored")
+
+    def test_retirement_rejects_invalid_progress_options(self):
+        with self.assertRaisesRegex(TypeError, "threading.Event"):
+            retire_download(self.model, directory=self.root, cancel_event=object())
+        with self.assertRaisesRegex(TypeError, "callable"):
+            restore_download("a" * 32, directory=self.root,
+                             progress_callback=object())
 
     def test_sibling_unchanged_and_modified_hash_rejected(self):
         sibling = self.model.with_name("other.gguf")
@@ -158,8 +210,8 @@ class ModelRetirementTests(unittest.TestCase):
         from forgeos import model_retirement as retirement
         ticket = self.retire()
         real_validate = retirement._validate_bytes
-        def inject_conflict(path, root, info):
-            real_validate(path, root, info)
+        def inject_conflict(path, root, info, **kwargs):
+            real_validate(path, root, info, **kwargs)
             self.model.write_bytes(b"important independent data")
         with patch("forgeos.model_retirement._validate_bytes",
                    side_effect=inject_conflict):

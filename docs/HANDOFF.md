@@ -2478,3 +2478,23 @@ and restore under constrained filesystems.
 
 - `import_local_gguf` validates optional cancellation/progress controls, streams bounded progress events during hashing, and checks cancellation between chunks and immediately before metadata publication. Cancellation leaves the source file unchanged and publishes neither adjacent sidecar nor import index. The existing managed-model dialog now displays byte progress and exposes **Cancel import**; the worker replaces stale progress events in the bounded queue and never touches Tk widgets.
 - Verification: imported-model, inventory, retirement, GUI contract/acceptance, documentation and roadmap suites passed 108 tests (6 platform skips). Tests cover progress, cancellation without side effects, invalid controls before storage access and GUI worker/cancel wiring; `python -m compileall -q src/forgeos` and `git diff --check` passed. Visual interaction with a real multi-GiB model remains unverified.
+
+### Follow-up — cooperative model retirement and restoration verification
+
+- Downloaded-model retirement/restoration and imported-model unregister now
+  accept validated cancellation events and byte-progress callbacks. The GUI
+  reports SHA-256 progress and exposes cancellation buttons for retirement
+  and restore verification. Restore cancellation after file movement leaves
+  its recovery journal available for a safe retry.
+- Tests cover callback validation, progress, no-move cancellation, cancellation
+  after restore moves and a successful retry, imported unregister cancellation,
+  and GUI worker wiring. Verification: GUI/model lifecycle, GUI acceptance,
+  documentation and roadmap suites passed 98 tests (5 platform skips);
+  `python -m compileall -q src tests` passed. Real multi-GiB visual behavior,
+  physical Windows power-loss behavior and latest hosted exact-head CI remain
+  unverified.
+- A full local Windows discovery run completed 699 tests but failed 5 and
+  errored 9. Failures include AppContainer and low-integrity ACL `Access is
+  denied`, locked temporary evidence, and output-capture assertions; this
+  restricted desktop host does not establish the hosted CI result. The focused
+  98-test verification above passed independently.

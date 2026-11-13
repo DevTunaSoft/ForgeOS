@@ -5,15 +5,17 @@ import json
 import os
 from pathlib import Path
 import re
+from threading import Event
 import uuid
 
 from .gguf_download import (
-    MAX_MODEL_BYTES, _digest, _exclusive_download_lock, _gguf_header,
+    DownloadCancelled, MAX_MODEL_BYTES, _digest, _exclusive_download_lock, _gguf_header,
     _reject_existing_link, _safe_name, _safe_storage_root, _write_json_atomic,
 )
 from .huggingface_catalog import REPO_ID
 from .model_inventory import (
-    MAX_SCAN_ENTRIES, _manifest_model_file, _verify_download_unlocked,
+    MAX_SCAN_ENTRIES, VerificationCancelled, _manifest_model_file,
+    _verify_download_unlocked,
 )
 
 RETIRE_DIR = ".forgeos-retired"
@@ -108,13 +110,21 @@ def _single_link(path: Path) -> None:
             "hard-linked or missing files are not movable")
 
 
-def _validate_bytes(path: Path, root: Path, info: dict) -> None:
+def _validate_bytes(path: Path, root: Path, info: dict, *,
+                    cancel_event=None, progress_callback=None) -> None:
     _reject_existing_link(path, root)
     _single_link(path)
     if not path.is_file():
         raise RuntimeError("Retired GGUF bytes missing")
     before = path.stat()
-    if before.st_size != info["bytes"] or _digest(path) != info["sha256"]:
+    if before.st_size != info["bytes"]:
+        raise RuntimeError("Retired GGUF size or SHA-256 mismatch")
+    try:
+        digest = _digest(path, cancel_event=cancel_event,
+                         progress_callback=progress_callback)
+    except DownloadCancelled:
+        raise VerificationCancelled("GGUF verification cancelled") from None
+    if digest != info["sha256"]:
         raise RuntimeError("Retired GGUF size or SHA-256 mismatch")
     after = path.stat()
     if (before.st_size, before.st_mtime_ns, before.st_ino) != (
@@ -137,9 +147,33 @@ def _validate_manifest(path: Path, root: Path, info: dict) -> None:
         raise RuntimeError("Retired GGUF manifest identity mismatch")
 
 
+def _check_options(cancel_event, progress_callback) -> None:
+    if cancel_event is not None and not isinstance(cancel_event, Event):
+        raise TypeError("cancel_event must be a threading.Event")
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable")
+
+
+def _check_cancelled(cancel_event) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise VerificationCancelled("GGUF verification cancelled")
+
+
+def _verify_download(path: Path, root: Path, *, cancel_event=None,
+                     progress_callback=None) -> dict:
+    try:
+        return _verify_download_unlocked(
+            path, root, cancel_event=cancel_event,
+            progress_callback=progress_callback)
+    except DownloadCancelled:
+        raise VerificationCancelled("GGUF verification cancelled") from None
+
+
 def retire_download(path: str | Path, *,
-                    directory: str | Path | None = None) -> dict:
+                    directory: str | Path | None = None,
+                    cancel_event=None, progress_callback=None) -> dict:
     """Fully reverify then move one model and manifest to restorable storage."""
+    _check_options(cancel_event, progress_callback)
     root = _safe_storage_root(directory)
     model = Path(path).expanduser().absolute()
     _reject_existing_link(model, root)
@@ -159,7 +193,9 @@ def retire_download(path: str | Path, *,
             raise RuntimeError("Unresolved GGUF download journal")
         _single_link(model)
         _single_link(manifest)
-        _verify_download_unlocked(model, root)
+        _verify_download(model, root, cancel_event=cancel_event,
+                         progress_callback=progress_callback)
+        _check_cancelled(cancel_event)
         # Recheck after the multi-gigabyte SHA read before either move.
         _single_link(model)
         _single_link(manifest)
@@ -218,8 +254,10 @@ def list_retired(directory: str | Path | None = None) -> list[dict]:
 
 
 def restore_download(identifier: str, *,
-                     directory: str | Path | None = None) -> dict:
+                     directory: str | Path | None = None,
+                     cancel_event=None, progress_callback=None) -> dict:
     """Restore by journal token; fail closed if any destination is occupied."""
+    _check_options(cancel_event, progress_callback)
     root = _safe_storage_root(directory)
     entry = _entry(root, identifier)
     model, info = _record(root, entry)
@@ -253,8 +291,11 @@ def restore_download(identifier: str, *,
             raise RuntimeError("Restore refuses to overwrite existing files")
         if not (stored_weight or original_weight) or not (stored_manifest or original_manifest):
             raise RuntimeError("Retirement bytes or manifest missing")
-        _validate_bytes(saved_weight if stored_weight else model, root, info)
+        _validate_bytes(saved_weight if stored_weight else model, root, info,
+                        cancel_event=cancel_event,
+                        progress_callback=progress_callback)
         _validate_manifest(saved_manifest if stored_manifest else manifest, root, info)
+        _check_cancelled(cancel_event)
         # A stale symlink or newly hard-linked destination must never be
         # accepted even if it appeared during a lengthy SHA-256 check.
         for item in (model, manifest, saved_weight, saved_manifest):
@@ -268,7 +309,8 @@ def restore_download(identifier: str, *,
         if stored_manifest:
             _single_link(saved_manifest)
             _move(saved_manifest, manifest)
-        _verify_download_unlocked(model, root)
+        _verify_download(model, root, cancel_event=cancel_event,
+                         progress_callback=progress_callback)
         (entry / "journal.json").unlink()
         _sync_directory(entry)
         entry.rmdir()

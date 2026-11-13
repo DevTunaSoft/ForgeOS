@@ -142,6 +142,27 @@ class LocalModelImportTests(unittest.TestCase):
         self.assertEqual(list_downloads(self.models)[0]["status"],
                          "imported_not_reverified")
 
+    def test_unregister_reports_progress_and_cancel_keeps_inventory(self):
+        from threading import Event
+        from forgeos.model_import import ImportUnregisterCancelled
+        import_local_gguf(self.model, directory=self.models)
+        progress = []
+        event = Event()
+
+        def cancel_after_progress(stage, done, total):
+            progress.append((stage, done, total))
+            event.set()
+
+        with self.assertRaises(ImportUnregisterCancelled):
+            unregister_imported_gguf(
+                self.model, directory=self.models, cancel_event=event,
+                progress_callback=cancel_after_progress)
+        self.assertEqual(progress, [("verify", len(self.data), len(self.data))])
+        self.assertTrue(self.model.exists())
+        self.assertTrue(self.model.with_name(
+            self.model.name + ".forgeos.json").exists())
+        self.assertEqual(len(list_downloads(self.models)), 1)
+
     def test_unregister_refuses_runtime_lock_and_tampered_model(self):
         import_local_gguf(self.model, directory=self.models)
         lock = self.model.with_name(self.model.name + ".lock")

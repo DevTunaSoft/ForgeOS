@@ -343,7 +343,10 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('gguf_path.set("")', source)
         self.assertIn('"imported_not_reverified"', source)
         self.assertIn('entry.get("kind") == "imported"', source)
-        self.assertIn("unregister_imported_gguf(entry[\"path\"])", source)
+        self.assertIn("unregister_imported_gguf(", source)
+        self.assertIn('cancel_event=cancel_event', source)
+        self.assertIn('text="Cancel verification"', source)
+        self.assertIn('"Verifying model SHA-256:', source)
         self.assertIn("checkpoint_references_managed_model(", source)
         self.assertIn('entry["sha256"]', source)
         self.assertIn("worker_store = Store(db_path)", source)
@@ -361,7 +364,11 @@ class DashboardContractTests(unittest.TestCase):
                 'chooser.protocol("WM_DELETE_WINDOW", close_restoration)',
                 'if restore_state["busy"]:',
                 'managed["busy"] = True',
-                'managed["busy"] = False'):
+                'managed["busy"] = False',
+                'cancel_event=cancel_event',
+                'def cancel_restoration():',
+                'def post_restore_event(event):',
+                'f"Verifying model SHA-256: {percent}% "'):
             with self.subTest(fragment=required):
                 self.assertIn(required, source)
 

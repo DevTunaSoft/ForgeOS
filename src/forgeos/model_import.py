@@ -12,7 +12,8 @@ from threading import Event
 import uuid
 
 from .gguf_download import (
-    CHUNK_BYTES, MAX_MODEL_BYTES, _exclusive_download_lock,
+    CHUNK_BYTES, DownloadCancelled, MAX_MODEL_BYTES, _digest,
+    _exclusive_download_lock,
     _safe_storage_root,
 )
 
@@ -25,6 +26,10 @@ IMPORT_INDEX = ".forgeos-imports.json"
 
 class ImportCancelled(RuntimeError):
     """The user cancelled hashing before the import was published."""
+
+
+class ImportUnregisterCancelled(RuntimeError):
+    """The user cancelled verification before an import was unregistered."""
 
 
 def _check_import_cancelled(cancel_event: Event | None) -> None:
@@ -209,8 +214,13 @@ def import_local_gguf(path: str | Path, *,
 
 
 def unregister_imported_gguf(path: str | Path, *,
-                             directory: str | Path | None = None) -> dict:
+                             directory: str | Path | None = None,
+                             cancel_event=None, progress_callback=None) -> dict:
     """Remove an imported path from active inventory; preserve weights/sidecar."""
+    if cancel_event is not None and not isinstance(cancel_event, Event):
+        raise TypeError("cancel_event must be a threading.Event")
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable")
     target = Path(path).expanduser().absolute()
     if any(item.is_symlink() for item in (target, *target.parents)):
         raise ValueError("Imported model path contains a symbolic link")
@@ -247,15 +257,18 @@ def unregister_imported_gguf(path: str | Path, *,
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
                 or before.st_size != identity["bytes"]):
             raise RuntimeError("Imported GGUF file identity changed")
-        digest = hashlib.sha256()
         with target.open("rb") as source:
             if source.read(4) != b"GGUF":
                 raise ValueError("Imported model no longer has a GGUF header")
-            source.seek(0)
-            for block in iter(lambda: source.read(CHUNK_BYTES), b""):
-                digest.update(block)
+        try:
+            actual_digest = _digest(
+                target, cancel_event=cancel_event,
+                progress_callback=progress_callback)
+        except DownloadCancelled:
+            raise ImportUnregisterCancelled(
+                "GGUF unregister cancelled; inventory was unchanged") from None
         after = target.stat()
-        if digest.hexdigest() != identity["sha256"] or (
+        if actual_digest != identity["sha256"] or (
                 before.st_size, before.st_mtime_ns, before.st_ino, before.st_nlink) != (
                 after.st_size, after.st_mtime_ns, after.st_ino, after.st_nlink):
             raise RuntimeError("Imported GGUF changed during verification")
