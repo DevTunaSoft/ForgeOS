@@ -297,7 +297,7 @@ def _execute_task(
             if (not isinstance(saved_workspace, str)
                     or Path(saved_workspace).resolve() != ws.path.resolve()
                     or checkpoint.get("branch") != ws.branch
-                    or phase not in {"test_pending", "repair_pending"}):
+                    or phase not in ("test_pending", "repair_pending")):
                 raise ValueError("No valid test-pending checkpoint or repair-pending checkpoint")
             saved_contract = checkpoint.get("contract")
             if saved_contract != contract:
@@ -452,9 +452,9 @@ def _execute_task(
             previous = store.get_task_inputs(task_id, resume=True)["result"]
             saved = json.loads(previous)
             if (isinstance(saved, dict)
-                    and saved.get("phase") in {
+                    and saved.get("phase") in (
                         "test_pending", "repair_pending", "manual_review_required"
-                    }):
+                    )):
                 details = saved
         except (ValueError, TypeError):
             pass

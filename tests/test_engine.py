@@ -861,6 +861,23 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.assertIn("Invalid resume checkpoint format", state["last_error"])
         self.assertIn("workspace", json.loads(state["result"]))
 
+    def test_resume_rejects_non_string_checkpoint_phase(self):
+        from unittest.mock import patch
+
+        response = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=lambda model, prompt: response)
+        self.store.recover()
+        checkpoint = json.loads(self.store.get(self.task)["result"])
+        checkpoint["phase"] = []
+        self.store.update(self.task, "blocked", result=json.dumps(checkpoint))
+        with self.assertRaisesRegex(ValueError, "No valid test-pending checkpoint"):
+            execute_task(self.store, self.task, self.root, allow_host_tests=True, resume=True)
+        self.assertEqual(self.store.get(self.task)["status"], "blocked")
+
     def test_checkpoint_hash_rejects_large_external_edits_before_read(self):
         from unittest.mock import patch
         from forgeos.engine import _checkpoint_file_hash, MAX_FILE_BYTES
