@@ -263,3 +263,18 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   passed 79 tests (3 platform skips); compilation and the handoff integrity
   checker passed. Implementation commit is recorded in the cumulative
   handoff. Legacy checkpoints without evidence references remain compatible.
+
+### 2026-11-13 — bound Git workspace output
+
+- **Implemented experimentally on the feature branch:** the canonical Git
+  wrapper now streams command output with a 1 MiB cap and terminates an
+  overflowing command. `workspace_diff()` has a 256 KiB default preview limit,
+  explicit truncation notice, and a validated configurable limit. Diff
+  rendering disables external diff/text-conversion helpers and uses literal
+  pathspec semantics; it remains read-only.
+- **Verification:** the workspace suite covers oversized patch truncation,
+  marked output, hard cap failure and limit validation. All 12 workspace tests
+  passed; after the hard-cap regression was added, the two affected workspace
+  cases plus documentation, roadmap and handoff checks passed 23 tests.
+  Compilation and diff checks passed. Exact revision will be recorded in the
+  cumulative handoff. Hosted CI remains skipped for the draft PR.

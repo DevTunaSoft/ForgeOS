@@ -2649,3 +2649,18 @@ and restore under constrained filesystems.
   documentation and roadmap suites passed 79 tests (3 platform skips), and
   `compileall` passed. Hosted CI and physical Windows acceptance remain
   outstanding.
+
+### Follow-up — bound Git workspace output
+
+- Extended the canonical `workspace.py` Git wrapper to drain merged command
+  output incrementally, enforce a 1 MiB cap, and terminate an overflowing
+  command. The workspace diff API returns at most a configurable (default
+  256 KiB) marked preview. It disables external diff and textconv helpers and
+  turns off Git pathspec magic for the preview. Successful commands still
+  return bounded stripped text; output beyond the global cap fails closed.
+- Added regressions for preview truncation, explicit marker, no source-tree
+  mutation, over-limit failure and parameter validation. Verification: the
+  complete workspace suite passed 12 tests; after adding the direct hard-cap
+  assertion, the two affected workspace tests plus documentation, roadmap and
+  handoff suites passed 23 tests. `compileall` and `git diff --check` passed.
+  This does not constitute real Windows CI or packaged acceptance.

@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from forgeos.workspace import (
-    WorkspaceError, _github_desktop_git, create_workspace, find_git,
+    WorkspaceError, _git, _github_desktop_git, create_workspace, find_git,
     release_workspace, workspace_diff,
 )
 
@@ -67,6 +67,24 @@ class WorkspaceTests(unittest.TestCase):
         (ws.path / "app.txt").write_text("baseline\n")
         release_workspace(ws)
         self.assertFalse(ws.path.exists())
+
+    def test_diff_preview_is_bounded_and_marks_omitted_patch(self):
+        ws = create_workspace(self.repo, 8, self.root / "large-diff")
+        (ws.path / "app.txt").write_text("changed-" * 2_000 + "\n")
+        preview = workspace_diff(ws, max_bytes=1024)
+        self.assertIn("diff --git", preview)
+        self.assertIn("diff preview truncated", preview)
+        self.assertLessEqual(len(preview.encode("utf-8")), 1024)
+        self.assertNotEqual((ws.source / "app.txt").read_text(),
+                            (ws.path / "app.txt").read_text())
+        with self.assertRaisesRegex(WorkspaceError, "safety limit"):
+            _git(ws.path, "diff", "--", max_output_bytes=1024)
+
+    def test_diff_preview_limit_is_validated(self):
+        ws = create_workspace(self.repo, 9, self.root / "bad-diff-limit")
+        for limit in (0, 100, 1024 * 1024 + 1, True):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                workspace_diff(ws, max_bytes=limit)
 
     def test_reject_duplicate_branch(self):
         create_workspace(self.repo, 1, self.root / "a")

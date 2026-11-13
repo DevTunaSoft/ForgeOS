@@ -32,7 +32,7 @@ Dispositions: **EXISTING** = code already provides this baseline; **EXTEND** = r
 |---:|---|---|---|---|
 | 1 | Intelligent output compression | **EXISTING** · A | `src/forgeos/diagnostics.py` | Existing lossless-by-recall output pipeline. Do not build another compressor. |
 | 2 | Smart test summaries | **EXISTING** · A | `src/forgeos/diagnostics.py` | Already parses test counts and prioritizes error lines; #28 supplies parser. Add fixtures, not a second summarizer. |
-| 3 | Optimized Git command output | **NEW** · B | `src/forgeos/workspace.py` | Extend the existing shell=False Git wrapper for bounded status/diff views; not a second Git client. |
+| 3 | Optimized Git command output | **NEW at audit baseline** · B | `src/forgeos/workspace.py` | Since this historical baseline, the feature branch extends the existing shell=False Git wrapper with capped streamed output and marked bounded diff previews; no second Git client. |
 | 4 | Relevant source code reading | **EXISTING** · B | `src/forgeos/context_index.py` | AST-based bounded file inventory already exists; add useful precision tests rather than a new index. |
 | 5 | Optimized project search | **EXTEND** · B | `src/forgeos/context_index.py` | Existing ranked file/symbol inventory is not full code search. Extend context_index; do not introduce another scanner. |
 | 6 | Adaptive context budgets | **NEW** · C | `src/forgeos/diagnostics.py` | Current 12k budget is fixed. Add validated per-model sizing in the existing diagnostics pipeline. |
