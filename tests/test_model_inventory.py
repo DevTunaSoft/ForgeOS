@@ -40,6 +40,12 @@ class GGUFInventoryTests(unittest.TestCase):
                      "kind": "imported"}]
         self.assertIn("source unknown", catalog_file_status(
             "Other/Repo", "b" * 40, file_info, imported))
+        missing_import = [dict(imported[0], status="missing")]
+        self.assertIn("local file is missing", catalog_file_status(
+            "Other/Repo", "b" * 40, file_info, missing_import))
+        size_mismatch_import = [dict(imported[0], status="size_mismatch")]
+        self.assertIn("local size differs", catalog_file_status(
+            "Other/Repo", "b" * 40, file_info, size_mismatch_import))
         self.assertEqual("not in local model inventory", catalog_file_status(
             "Other/Repo", "b" * 40, dict(file_info, sha256=None), []))
 

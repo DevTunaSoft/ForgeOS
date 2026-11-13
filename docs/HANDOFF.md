@@ -2303,3 +2303,8 @@ and restore under constrained filesystems.
 - The user-triggered inspect worker now reads ForgeOS's bounded offline model inventory and annotates each Hub GGUF row with exact repo/revision/file/hash status. It distinguishes a local revision with a different hash, same-SHA imported bytes with unknown provenance, an unverified installed item, and absence from the inventory. Inventory read failure is reported as unavailable while leaving public inspection usable. It never hashes model weights automatically.
 - Verification: `python -m unittest test_model_inventory test_gui_contract tests.test_huggingface_catalog -q` passed 57 tests (one platform skip), including matching/mismatch/imported/absent status mapping. The initial run with the sandbox default TEMP failed during fixture creation with WinError 5/3; rerunning with TEMP/TMP set to the writable repository passed. Compilation and `git diff --check` passed.
 - This is inventory status, not proof that current local bytes still match; the UI explicitly says the SHA is not reverified in this view. Explicit verification remains required.
+
+### Follow-up — distinguish stale imported inventory claims
+
+- When Hub metadata matches an imported registry SHA, the catalog status now incorporates the import's current metadata-only state. It distinguishes an intact-size-but-unreverified record from a missing file, size mismatch or entry needing inspection; a saved registry hash alone is never presented as proof of current local bytes.
+- Verification: model inventory and GUI contract suites passed 47 tests (one platform skip). Added cases cover imported missing and size-mismatch records. Compilation and `git diff --check` passed.

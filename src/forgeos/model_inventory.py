@@ -227,7 +227,15 @@ def catalog_file_status(repo: str, revision: str, file_info: dict,
     if checksum:
         for entry in records:
             if entry.get("sha256") == checksum and entry.get("kind") == "imported":
-                return "same SHA-256 as imported local file; source unknown, not reverified"
+                state = entry.get("status")
+                if state == "imported_not_reverified":
+                    return ("import registry claims same SHA-256; bytes not reverified, "
+                            "source unknown")
+                if state == "missing":
+                    return "import registry claims same SHA-256, but local file is missing"
+                if state == "size_mismatch":
+                    return "import registry claims same SHA-256, but local size differs"
+                return "matching imported registry entry needs manual inspection"
     return "not in local model inventory"
 
 
