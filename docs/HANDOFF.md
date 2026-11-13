@@ -2187,3 +2187,5 @@ and restore under constrained filesystems.
 - UNVERIFIED: Visual inspection sampled pages 1, 2, 72 and 144. They were legible without visible clipping or overlap. Poppler reported missing Symbol and ArialUnicode display fonts. Complete page review, cross-viewer fidelity, and exact-commit hosted publication remain open.
 
 - Master PDF export stages and validates the entire PDF before publication. Existing PDFs are preserved. PASS on Windows: three wrapping regressions and direct fault injection for validation cleanup and destination preservation. End-to-end rendering of the updated exporter remains UNVERIFIED.
+
+- Automated PDF publication regression verifies cleanup after a staged validation failure and preserves an existing PDF. Four exporter tests passed. The ba0c86c end-to-end export also passed checksum verification with 145 pages (143 body pages). Poppler font warnings persist; full visual review and Windows release acceptance remain UNVERIFIED.
