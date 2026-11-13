@@ -8,8 +8,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -100,6 +102,21 @@ def code_chunks(lines: list[str], width: int = 92, max_lines: int = 36) -> list[
 
 
 def build(root: Path, destination: Path, minimum: int) -> dict:
+    if destination.exists():
+        raise FileExistsError("Refusing to overwrite an existing handoff PDF")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".forgeos-pdf-", dir=destination.parent) as stage:
+        staged = Path(stage) / "handoff.pdf"
+        result = _build_pdf(root, staged, minimum)
+        if os.name == "nt":
+            staged.rename(destination)
+        else:
+            os.link(staged, destination)
+    result["path"] = str(destination)
+    return result
+
+
+def _build_pdf(root: Path, destination: Path, minimum: int) -> dict:
     revision = git_sha(root)
     styles = getSampleStyleSheet()
     body = ParagraphStyle("ForgeBody", parent=styles["BodyText"], fontName="Helvetica",
@@ -171,7 +188,6 @@ def build(root: Path, destination: Path, minimum: int) -> dict:
                 story.append(Paragraph(paragraph_text(stripped), body))
     if missing:
         raise ValueError("Required source documents missing: " + ", ".join(missing))
-    destination.parent.mkdir(parents=True, exist_ok=True)
     doc = HandoffDoc(str(destination), revision)
     doc.build(story)
     reader = PdfReader(str(destination))

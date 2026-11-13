@@ -2185,3 +2185,5 @@ and restore under constrained filesystems.
 
 - PASS: `scripts/export_master_handoff.py --output <path> --min-body-pages 35` at `a6ec9881c5e1b919019d4b1488f8b63b45abb27e` produced 144 pages, including 142 body pages. Independently verified SHA-256 `38935a8649d3405a0b2a4a1a0fb73f02352db92f18661d0f7e71d9ba24253ca7`.
 - UNVERIFIED: Visual inspection sampled pages 1, 2, 72 and 144. They were legible without visible clipping or overlap. Poppler reported missing Symbol and ArialUnicode display fonts. Complete page review, cross-viewer fidelity, and exact-commit hosted publication remain open.
+
+- Master PDF export stages and validates the entire PDF before publication. Existing PDFs are preserved. PASS on Windows: three wrapping regressions and direct fault injection for validation cleanup and destination preservation. End-to-end rendering of the updated exporter remains UNVERIFIED.
