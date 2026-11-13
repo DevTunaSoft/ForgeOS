@@ -2452,9 +2452,3 @@ and restore under constrained filesystems.
 - Added a two-thread integration regression for different pinned GGUF paths sharing the same store and quota. The first download holds the quota lock in its mocked transfer; after it publishes, the second remeasures usage and fails before opening another network response, so the cap is not oversubscribed.
 - Updated roadmap language to distinguish thread-level proof from unverified concurrent-process and Windows stress.
 - Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 141 tests (6 platform skips); compileall and `git diff --check` passed.
-
-### Follow-up — verify the shared storage quota under concurrent models
-
-- Added a two-thread regression where different model paths compete for one store quota. The shared quota lock serializes admission; after the first verified model publishes, the second is rejected before network open because it would exceed the cap.
-- The updated roadmap now distinguishes this thread-level proof from unverified cross-process and physical Windows stress.
-- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 141 tests (6 platform skips); compilation and `git diff --check` passed.
