@@ -689,6 +689,10 @@ py -m forgeos db-check
 py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup.sqlite3"
 ```
 
+Choose a new destination file for both backup and restore. If the file already
+exists or another process creates it during the copy, ForgeOS preserves it
+and exits with status 1.
+
 Always supply a **new filename**. An existing backup is never overwritten.
 ForgeOS includes committed SQLite WAL changes and checks the completed
 snapshot before making it visible. No background backup process is started.
