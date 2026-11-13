@@ -2189,3 +2189,8 @@ and restore under constrained filesystems.
 - Master PDF export stages and validates the entire PDF before publication. Existing PDFs are preserved. PASS on Windows: three wrapping regressions and direct fault injection for validation cleanup and destination preservation. End-to-end rendering of the updated exporter remains UNVERIFIED.
 
 - Automated PDF publication regression verifies cleanup after a staged validation failure and preserves an existing PDF. Four exporter tests passed. The ba0c86c end-to-end export also passed checksum verification with 145 pages (143 body pages). Poppler font warnings persist; full visual review and Windows release acceptance remain UNVERIFIED.
+
+### Windows Python 3.12 verification
+
+- PASS at `a6cea4c`: the bundled Python 3.12.14 runtime ran 75 focused tests (72 passed, three skipped). With `PYTHONPATH=src;.;tests`, use `python -m unittest test_recovery test_local_resume test_db_backup test_db_restore test_cli_database test_engine.TransactionRecoveryTests test_acceptance test_cli_acceptance test_launcher test_build_info -q`. Use a disposable writable USERPROFILE and set TEMP and TMP outside OneDrive to avoid the managed session's default profile and temporary-directory restrictions.
+- The full `python -m unittest discover -s tests -v` run is still in progress. A focused `test_engine.CheckpointResumeTests.test_exhausted_repairs` rerun failed before the repair loop because icacls was denied permission to label the disposable workspace. Frozen packaging is still BLOCKED locally by missing PyInstaller and pytest. Physical Windows acceptance remains UNVERIFIED.
