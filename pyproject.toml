@@ -14,3 +14,5 @@ secure-pytest = ["pytest>=9.0,<10"]
 forgeos = "forgeos.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
+[tool.setuptools.package-data]
+forgeos = ["data/*.txt"]

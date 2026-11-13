@@ -53,6 +53,7 @@ class DocumentationTests(unittest.TestCase):
         guide = (docs.ROOT / "docs" / "USER_GUIDE.md").read_text(encoding="utf-8")
         self.assertIn('text="How to use ForgeOS"', gui)
         self.assertIn("docs/USER_GUIDE.md;forgeos", build)
+        self.assertIn("src/forgeos/data/llama.cpp-LICENSE.txt;forgeos/data", build)
         self.assertIn("offline_user_guide_available", build)
         self.assertIn("How to use ForgeOS", guide)
         self.assertTrue("AppContainer" in guide,

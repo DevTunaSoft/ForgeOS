@@ -195,7 +195,7 @@ The one-window desktop prototype has **two tabs**:
 | **Development** | Project repository and **Browse** | Points ForgeOS to a local Git repository |
 | **Development** | **Tell ForgeOS what to build** | Plain-English development task description |
 | **Development** | Local model | Ollama or explicit local compatible model; `auto` requires available model-size metadata |
-| **Development** | Run verified local GGUF | Experimental one-GUI managed CPU llama.cpp start/stop with SHA-pinned user-provided executable and downloaded verified GGUF |
+| **Development** | Run verified local GGUF | Experimental one-GUI managed CPU llama.cpp start/stop with opt-in pinned official installer or SHA-pinned user-provided executable and downloaded verified GGUF |
 | **Development** | Test suite | Framework preset (availability depends on runtime) |
 | **Development** | Repair retries | Limits how many correction attempts are allowed |
 | **Development** | Workspace folder | Separate destination for temporary Git worktrees |

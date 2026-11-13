@@ -13,10 +13,13 @@ The artifact retention period is **14 days**, and a successful Actions run must 
 
 ## What is bundled
 
-The EXE packages the Python/Tkinter ForgeOS application and an offline copy
-of the single canonical [User Guide](USER_GUIDE.md). From the running
-application, select **Activity & diagnostics → How to use ForgeOS**.
-The guide is read only when requested and needs no browser or internet access.
+The EXE packages the Python/Tkinter ForgeOS application, an offline copy of
+the single canonical [User Guide](USER_GUIDE.md), and the pinned llama.cpp
+upstream llama.cpp MIT notice used by the optional runtime installer. The
+official runtime archive also carries the pinned LLVM OpenMP license notice.
+From the running application, select **Activity & diagnostics → How to use
+ForgeOS**. The guide and bundled license notice need no browser or internet
+access.
 
 The EXE packages the Python/Tkinter ForgeOS application. It does **not** package:
 
@@ -25,14 +28,18 @@ The EXE packages the Python/Tkinter ForgeOS application. It does **not** package
 - Android SDK, web build toolchains, or other arbitrary project dependencies.
 
 Git is needed for worktree operations. For AI features, Ollama can be
-installed and serve a local model at `127.0.0.1:11434`. On the experimental
-multi-LLM feature branch, users may alternatively connect their own compatible
-localhost endpoint or start a **user-supplied, independently verified CPU
-llama-server.exe** with a previously SHA-verified GGUF using the same GUI.
-ForgeOS currently does not ship, download or digitally attest llama-server
-or its associated DLLs. The initial GUI opens without any model, but
-model-powered planning/editing requires a working runtime. Hosted packaging
-does not prove real llama.cpp inference or Windows memory performance.
+installed and serve a local model at `127.0.0.1:11434`. The experimental
+multi-LLM branch also offers an explicit GUI action to download and verify one
+SHA-pinned official Windows x64 CPU llama.cpp release; users can alternatively
+connect their own compatible localhost endpoint or select a user-provided
+CPU `llama-server.exe` and previously SHA-verified GGUF. ForgeOS does not
+bundle runtime binaries or models in the EXE. The installer places the pinned
+upstream llama.cpp MIT notice beside the runtime and requires the official
+archive's pinned LLVM OpenMP notice. Other embedded/transitive component
+attributions in the official binary archive are still under review.
+The initial GUI opens without any model, but model-powered planning/editing
+requires a working runtime. Hosted packaging does not prove real llama.cpp
+inference or Windows memory performance.
 
 ## What current Windows CI verifies
 
