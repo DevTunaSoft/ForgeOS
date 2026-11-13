@@ -75,6 +75,20 @@ class DashboardContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 
+    def test_local_model_memory_estimate_reuses_admission_policy(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Estimate memory"',
+                '_managed_memory_preflight_report(',
+                'system_memory()',
+                'min(4096, local_memory_settings()["num_ctx"])',
+                'threading.Thread(target=worker, daemon=True).start()',
+                'This omits other native buffers; startup checks again.',
+                'GGUF cache metadata is unsupported.'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
     def test_startup_recovery_is_scoped_to_an_explicitly_authorized_workspace(self):
         source = (Path(__file__).resolve().parents[1] /
                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")

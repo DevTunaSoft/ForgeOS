@@ -166,15 +166,36 @@ def estimate_gguf_kv_cache_bytes(path: str | Path,
         return None
 
 
-def _check_managed_memory_preflight(model_path: str | Path,
-                                    context_tokens: int,
-                                    memory_snapshot) -> int | None:
-    """Reject weights plus known KV estimate when they exceed safe headroom."""
+def _managed_memory_preflight_report(model_path: str | Path,
+                                     context_tokens: int,
+                                     memory_snapshot) -> dict:
+    """Return a bounded estimate using the canonical conservative model budget."""
     path = Path(model_path)
     weight_bytes = path.stat().st_size
     budget = safe_model_file_budget(memory_snapshot)
     kv_bytes = estimate_gguf_kv_cache_bytes(path, context_tokens)
     required = weight_bytes + (kv_bytes or 0)
+    return {
+        "weight_bytes": weight_bytes,
+        "estimated_kv_cache_bytes": kv_bytes,
+        "estimated_required_bytes": required,
+        "safe_model_budget_bytes": budget,
+        "within_budget": required <= budget,
+        "context_tokens": context_tokens,
+        "cache_estimate_available": kv_bytes is not None,
+    }
+
+
+def _check_managed_memory_preflight(model_path: str | Path,
+                                    context_tokens: int,
+                                    memory_snapshot) -> int | None:
+    """Reject weights plus known KV estimate when they exceed safe headroom."""
+    report = _managed_memory_preflight_report(
+        model_path, context_tokens, memory_snapshot)
+    weight_bytes = report["weight_bytes"]
+    budget = report["safe_model_budget_bytes"]
+    kv_bytes = report["estimated_kv_cache_bytes"]
+    required = report["estimated_required_bytes"]
     if required > budget:
         if kv_bytes is None:
             raise RuntimeError(

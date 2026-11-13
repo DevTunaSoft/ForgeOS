@@ -21,6 +21,7 @@ from urllib.request import Request
 from forgeos.local_models import LocalChatModel, create_model
 from forgeos.managed_llama import (
     ALIAS, ManagedLlamaServer, _check_managed_memory_preflight,
+    _managed_memory_preflight_report,
     _child_environment, _verified_model, _verified_runtime,
     estimate_gguf_kv_cache_bytes,
 )
@@ -329,10 +330,16 @@ class ManagedLlamaTests(unittest.TestCase):
         path.write_bytes(metadata)
         with patch("forgeos.managed_llama.safe_model_file_budget",
                    return_value=100 * 1024**2):
+            estimate = _managed_memory_preflight_report(path, 1024, None)
+            self.assertFalse(estimate["within_budget"])
+            self.assertEqual(estimate["estimated_kv_cache_bytes"], 128 * 1024**2)
             with self.assertRaisesRegex(RuntimeError, "estimated f16 KV cache"):
                 _check_managed_memory_preflight(path, 1024, None)
         with patch("forgeos.managed_llama.safe_model_file_budget",
                    return_value=200 * 1024**2):
+            estimate = _managed_memory_preflight_report(path, 1024, None)
+            self.assertTrue(estimate["within_budget"])
+            self.assertTrue(estimate["cache_estimate_available"])
             self.assertEqual(
                 _check_managed_memory_preflight(path, 1024, None),
                 128 * 1024**2)

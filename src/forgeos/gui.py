@@ -878,6 +878,8 @@ def launch(db_path, *, acceptance: bool = False):
                 "present_not_reverified", "imported_not_reverified", "verified"}
             verification_events = Queue(maxsize=1)
             verification = {"busy": False, "cancel_event": None}
+            estimate_events = Queue(maxsize=1)
+            estimate_state = {"busy": False}
 
             def select_local():
                 chosen = listing.selection()
@@ -902,6 +904,10 @@ def launch(db_path, *, acceptance: bool = False):
                 controls, text="Reverify SHA-256",
                 command=lambda: verify_selected())
             verify_btn.pack(side="left")
+            estimate_btn = ttk.Button(
+                controls, text="Estimate memory",
+                command=lambda: estimate_selected_memory())
+            estimate_btn.pack(side="left", padx=(8, 0))
             cancel_verify_btn = ttk.Button(
                 controls, text="Cancel verification",
                 command=lambda: cancel_verification(), state="disabled")
@@ -912,10 +918,13 @@ def launch(db_path, *, acceptance: bool = False):
 
             def update_selection_controls(_event=None):
                 chosen = listing.selection()
-                eligible = (not verification["busy"] and bool(chosen)
+                eligible = (not verification["busy"]
+                            and not estimate_state["busy"] and bool(chosen)
                             and records[int(chosen[0])]["status"]
                             in selectable_statuses)
                 verify_btn.configure(
+                    state="normal" if eligible else "disabled")
+                estimate_btn.configure(
                     state="normal" if eligible else "disabled")
                 use_btn.configure(state="normal" if eligible else "disabled")
                 retire_btn.configure(state="normal" if eligible else "disabled")
@@ -941,7 +950,7 @@ def launch(db_path, *, acceptance: bool = False):
                         pass
 
             def verify_selected():
-                if verification["busy"]:
+                if verification["busy"] or estimate_state["busy"]:
                     return
                 selection = listing.selection()
                 if not selection:
@@ -1044,8 +1053,94 @@ def launch(db_path, *, acceptance: bool = False):
                 retirement_status.set(
                     "Cancellation requested; the current 1 MiB read may finish first.")
 
+            def estimate_selected_memory():
+                if verification["busy"] or estimate_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo(
+                        "Select local model", "Choose one GGUF file.",
+                        parent=chooser)
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if entry["status"] not in selectable_statuses:
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "Only a present inventory entry can be estimated.",
+                        parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish the current task and stop managed inference "
+                        "before estimating another model's memory.", parent=chooser)
+                    return
+                estimate_state["busy"] = True
+                managed["busy"] = True
+                update_selection_controls()
+                retirement_status.set("Estimating model memory from bounded GGUF metadata...")
+
+                def worker():
+                    try:
+                        from .managed_llama import _managed_memory_preflight_report
+                        from .model_routing import (
+                            local_memory_settings, system_memory,
+                        )
+                        context = min(4096, local_memory_settings()["num_ctx"])
+                        report = _managed_memory_preflight_report(
+                            entry["path"], context, system_memory())
+                        estimate_events.put(("done", index, report, None))
+                    except Exception as exc:
+                        estimate_events.put((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(100, poll_memory_estimate)
+
+            def poll_memory_estimate():
+                try:
+                    _kind, index, report, error = estimate_events.get_nowait()
+                except Empty:
+                    if chooser.winfo_exists():
+                        chooser.after(100, poll_memory_estimate)
+                    return
+                estimate_state["busy"] = False
+                managed["busy"] = False
+                if error is not None:
+                    retirement_status.set("Memory estimate unavailable.")
+                    messagebox.showerror(
+                        "Could not estimate model memory", error,
+                        parent=chooser)
+                else:
+                    gib = 1024 ** 3
+                    weight = report["weight_bytes"] / gib
+                    budget = report["safe_model_budget_bytes"] / gib
+                    if report["cache_estimate_available"]:
+                        cache = report["estimated_kv_cache_bytes"] / gib
+                        required = report["estimated_required_bytes"] / gib
+                        state = ("over" if not report["within_budget"]
+                                 else "within")
+                        retirement_status.set(
+                            f"Estimate at {report['context_tokens']} tokens: "
+                            f"weights {weight:.2f} GiB + f16 KV cache "
+                            f"{cache:.2f} GiB = {required:.2f} GiB; "
+                            f"{state} current safe model budget of {budget:.2f} GiB. "
+                            "This omits other native buffers; startup checks again.")
+                    else:
+                        retirement_status.set(
+                            f"GGUF cache metadata is unsupported. Weights are "
+                            f"{weight:.2f} GiB; safe model budget is {budget:.2f} "
+                            "GiB. This weight-only estimate is not an admission "
+                            "guarantee; startup checks again.")
+                    status.set("Local model memory estimate ready")
+                update_selection_controls()
+
             def retire_selected():
-                if retirement["busy"]:
+                if retirement["busy"] or estimate_state["busy"]:
                     return
                 selection = listing.selection()
                 if not selection:
@@ -1172,6 +1267,11 @@ def launch(db_path, *, acceptance: bool = False):
                     retirement_status.set(
                         "Verification is active. Cancel it and wait for the "
                         "result before closing this window.")
+                    return
+                if estimate_state["busy"]:
+                    retirement_status.set(
+                        "Memory estimation is active. Wait for the result before "
+                        "closing this window.")
                     return
                 if retirement["busy"]:
                     retirement_status.set(
