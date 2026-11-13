@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from forgeos.core import Store
+from forgeos.core import Store, _publish_database_copy
 
 
 class OnlineBackupTests(unittest.TestCase):
@@ -53,6 +53,20 @@ class OnlineBackupTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertEqual(list(self.root.glob(".forgeos-backup-*")), [])
         self.assertIsNone(self.store.check_integrity())
+
+    def test_publication_preserves_destination_created_after_preflight(self):
+        target = self.root / "concurrent.sqlite3"
+
+        def publish_after_concurrent_write(staging, destination):
+            destination.write_bytes(b"concurrent backup")
+            _publish_database_copy(staging, destination)
+
+        with patch("forgeos.core._publish_database_copy",
+                   side_effect=publish_after_concurrent_write):
+            with self.assertRaises(FileExistsError):
+                self.store.backup_to(target)
+        self.assertEqual(target.read_bytes(), b"concurrent backup")
+        self.assertEqual(list(self.root.glob(".forgeos-backup-*")), [])
 
     def test_active_transaction_is_rejected_without_a_partial_backup(self):
         target = self.root / "not-committed.sqlite3"
