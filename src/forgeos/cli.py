@@ -161,6 +161,9 @@ def main(argv=None):
         except FileExistsError:
             print("Restore destination already exists. Choose a new file.", file=sys.stderr)
             return 1
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
         print(f'Verified restore copy: {restored}')
         return 0
     if args.action == 'memory':
@@ -218,6 +221,9 @@ def main(argv=None):
                 backup = store.backup_to(args.destination)
             except FileExistsError:
                 print("Backup destination already exists. Choose a new file.", file=sys.stderr)
+                return 1
+            except ValueError as exc:
+                print(exc, file=sys.stderr)
                 return 1
             print(f'Verified backup: {backup}')
         elif args.action=='recover':

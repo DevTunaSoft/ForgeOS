@@ -2152,3 +2152,5 @@ and restore under constrained filesystems.
 - Blocked checkpoint pagination stops after yielding SQLite's minimum integer ID. This prevents an out-of-range SQL bind on imported or manually repaired databases. PASS on Windows/Python 3.15: 28 recovery and pagination tests, one skip.
 
 - Database CLI backup and restore now report a publication collision on stderr and return 1. Existing database content remains protected by exclusive publication. PASS on Windows/Python 3.15: 16 CLI, backup and restore tests, one skip.
+
+- Database CLI backup and restore report destination validation failures on stderr and return exit status 1, covering existing destinations at preflight as well as publication races. Windows/Python 3.15: 15 passed, one skipped across test_cli_database, test_db_backup and test_db_restore.

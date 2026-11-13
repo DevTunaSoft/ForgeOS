@@ -52,8 +52,10 @@ class DatabaseCommandsTests(unittest.TestCase):
             with closing(sqlite3.connect(destination)) as restored:
                 self.assertEqual(restored.execute(
                     "SELECT description FROM tasks").fetchone()[0], "safe restore")
-            with self.assertRaisesRegex(ValueError, "new file"):
-                main(["db-restore-copy", str(source), str(destination)])
+            error = io.StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(["db-restore-copy", str(source), str(destination)]), 1)
+            self.assertIn("new file", error.getvalue())
 
     def test_database_commands_never_initialize_a_missing_database(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -113,8 +115,10 @@ class DatabaseCommandsTests(unittest.TestCase):
                 self.assertEqual(
                     copied.execute("SELECT description FROM tasks").fetchone()[0],
                     "backup cli test")
-            with self.assertRaisesRegex(ValueError, "new file"):
-                main(["--db", str(db_path), "db-backup", str(target)])
+            error = io.StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(["--db", str(db_path), "db-backup", str(target)]), 1)
+            self.assertIn("new file", error.getvalue())
 
 
 if __name__ == "__main__":
