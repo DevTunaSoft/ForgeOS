@@ -1462,8 +1462,14 @@ def launch(db_path, *, acceptance: bool = False):
             choose_row, textvariable=file_choice, values=(),
             state="readonly", width=60)
         file_picker.pack(side="left", fill="x", expand=True, padx=6)
-        info = tk.Text(frame, height=7, wrap="word", state="disabled")
-        info.pack(fill="x", pady=(8, 0))
+        info_frame = ttk.Frame(frame)
+        info_frame.pack(fill="x", pady=(8, 0))
+        info = tk.Text(info_frame, height=7, wrap="word", state="disabled")
+        info_scroll = ttk.Scrollbar(
+            info_frame, orient="vertical", command=info.yview)
+        info.configure(yscrollcommand=info_scroll.set)
+        info.pack(side="left", fill="both", expand=True)
+        info_scroll.pack(side="right", fill="y")
         hub_events = Queue(maxsize=2)
         progress_events = Queue(maxsize=1)
         transfer_status = tk.StringVar(value="")

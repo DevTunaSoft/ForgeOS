@@ -2277,3 +2277,8 @@ and restore under constrained filesystems.
 
 - Added `model-catalog inspect <owner/repo>` to return the bounded, unverified card claims, immutable repository revision and GGUF size/hash list as one JSON result. Updated both model guides to show the intended inspect → choose exact filename/revision → download with `--revision` workflow.
 - Verification: the combined CLI/downloader/catalog/GUI-contract run passed 71 tests (one platform skip), including inspect output and revision forwarding. Compilation and `git diff --check` passed.
+
+### Follow-up — keep long inspection results readable
+
+- Added a vertical scrollbar to the existing Hugging Face inspection details panel so longer card claims and file listings remain reachable in the fixed-size browser window.
+- Verification: Windows `python -m unittest test_gui_contract -q` passed all 37 tests; the GUI contract suite asserts the details widget is wired to its scrollbar. Compilation and `git diff --check` passed. Visual interaction on a target desktop remains unverified.

@@ -8,6 +8,12 @@ from forgeos.gui import (
 
 
 class DashboardContractTests(unittest.TestCase):
+    def test_hugging_face_inspection_details_are_scrollable(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('info_scroll = ttk.Scrollbar(', source)
+        self.assertIn('info.configure(yscrollcommand=info_scroll.set)', source)
+
     def test_desktop_settings_are_restored_and_saved(self):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
