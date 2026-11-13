@@ -2513,3 +2513,18 @@ and restore under constrained filesystems.
   `git diff --check` passed. PyInstaller is unavailable locally and GitHub's
   draft-PR packaging workflow is skipped, so a packaged build and visible
   Windows desktop icon remain unverified.
+
+### Follow-up — explicit permanent purge for retired GGUFs
+
+- Added `model-purge-retired ID --confirm`. The command refuses to run without
+  confirmation, an existing readable task database and a clear blocked-task
+  checkpoint scan. The API requires that checkpoint guard, serializes with the
+  existing model lifecycle lock, revalidates journal/manifest/weight identity
+  and SHA-256, refuses already-restored destinations, and removes its journal
+  only after retired bytes are deleted. A failed partial purge can be retried
+  using the retained journal. It leaves the persistent lock file in place to
+  avoid a lock-file replacement race.
+- Verification: model-retirement, CLI model download, documentation and
+  roadmap suites passed 48 tests (4 platform skips); compileall and
+  `git diff --check` passed. Real Windows deletion semantics and power-loss
+  acceptance remain open.

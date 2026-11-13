@@ -335,9 +335,10 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 - [x] Keep a versioned, bounded same-volume retirement journal and one unique random recovery ID. Rename only the selected model and matching manifest; leave sibling files untouched.
 - [x] Support restoring from interrupted retirement or interrupted restoration without overwriting any existing model/manifest; fully rehash before and after restoration.
 - [x] Exclude retired material from active inventory and add a bounded, metadata-only retired listing.
+- [x] Add explicit permanent cleanup by recovery ID. Require the existing task database, blocked-checkpoint clearance, explicit confirmation and full SHA-256 verification under the lifecycle lock; keep the journal until retired bytes are removed so interrupted cleanup can retry.
 - [x] Add offline regression tests for corruption, incomplete downloads, malformed journals/IDs, symlinks, collisions and fault-injected interruptions.
 - [ ] Verify latest Linux/Windows Python 3.10 and 3.12 CI, documentation integrity and frozen Windows EXE/AppContainer.
-- [ ] Real Windows 11 trial with a large GGUF, native inference stopped/running, reboot or power-loss, reparse points/hardlinks and actual disk usage. GUI retirement and strong active-model interlocks are future work. A move to retired storage does not reclaim disk space.
+- [ ] Real Windows 11 trial with a large GGUF, native inference stopped/running, reboot or power-loss, reparse points/hardlinks and actual disk usage. GUI retirement exists, but permanent purge is CLI-only and external inference processes remain outside ForgeOS's lock. A reversible move to retired storage does not reclaim disk space.
 
 
 ### Local-model picker retirement control (2026-11-08)

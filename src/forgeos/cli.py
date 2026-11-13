@@ -55,6 +55,12 @@ def main(argv=None):
     restore=sub.add_parser('model-restore-local',help='Restore retired GGUF by ID')
     restore.add_argument('identifier')
     restore.add_argument('--directory',default='')
+    purge=sub.add_parser(
+        'model-purge-retired',
+        help='Permanently delete one retired GGUF after safety checks')
+    purge.add_argument('identifier')
+    purge.add_argument('--directory',default='')
+    purge.add_argument('--confirm',action='store_true')
     download=sub.add_parser('model-download',
                             help='Explicitly download one GGUF with pinned SHA-256')
     download.add_argument('repository',help='Public Hugging Face owner/model')
@@ -158,6 +164,22 @@ def main(argv=None):
         from .model_retirement import restore_download
         print(json.dumps(restore_download(
             args.identifier, directory=args.directory or None), indent=2))
+        return 0
+    if args.action == 'model-purge-retired':
+        if not args.confirm:
+            raise ValueError('Explicit --confirm required to permanently purge GGUF')
+        Store.inspect_existing_database(args.db)
+        from .model_retirement import purge_retired_download
+        from .recovery import checkpoint_references_managed_model
+        store = Store(args.db)
+        try:
+            result = purge_retired_download(
+                args.identifier, directory=args.directory or None, confirm=True,
+                checkpoint_check=lambda digest:
+                checkpoint_references_managed_model(store, digest))
+        finally:
+            store.close()
+        print(json.dumps(result, indent=2))
         return 0
     if args.action == 'model-download':
         from .gguf_download import download_gguf

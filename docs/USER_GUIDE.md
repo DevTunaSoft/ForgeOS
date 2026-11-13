@@ -500,8 +500,11 @@ When you no longer want a local downloaded GGUF in the active inventory, first s
 3. Explicitly retire just one model with: python -m forgeos model-retire-local "ABSOLUTE_PATH.gguf" --confirm
 4. Save the 32-character retirement ID from the output. To inspect all IDs use: python -m forgeos models-retired
 5. Restore with: python -m forgeos model-restore-local "RETIREMENT_ID"
+6. To permanently remove one retired model, review its ID and run: python -m forgeos model-purge-retired "RETIREMENT_ID" --confirm
 
 Each command accepts --directory PATH to select nondefault model storage. A retirement refuses an unfinished .part or .part.json transfer. A complete SHA-256 check occurs under the existing exclusive download lock. The recovery journal is written *before* either original file is moved, and remains available if one rename fails. Restoration rechecks the identity and SHA-256, refuses overwriting existing files, and handles either half-completed move. If models-retired says interrupted_retirement_or_restore, use its ID for a retry. If it says needs_manual_inspection, do not manually delete files; preserve them for diagnosis.
+
+Permanent purge is irreversible. It requires `--confirm`, an existing readable ForgeOS task database, and a clear scan of blocked task checkpoints. It refuses any model already restored to its original path, active download, invalid/hard-linked journal, or invalid remaining weights/manifest. It rehashes remaining retired weights under the lifecycle lock before deleting them. If cleanup is interrupted, the journal is removed last so the same purge command can retry; it does not promise power-loss recovery on Windows.
 
 **Safety limitations:** A running external llama-server might still be reading this model, even when the CLI has no evidence of it; stop native inference first. The lock coordinates ForgeOS downloads and retire/restore, not arbitrary foreign processes. Windows junction/reparse-point races, real power-loss resilience, and active-model GUI interlocks still require real-machine acceptance.
 

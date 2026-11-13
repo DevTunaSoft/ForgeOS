@@ -253,6 +253,79 @@ def list_retired(directory: str | Path | None = None) -> list[dict]:
     return sorted(output, key=lambda item: item["id"])
 
 
+def purge_retired_download(identifier: str, *,
+                           checkpoint_check,
+                           directory: str | Path | None = None,
+                           confirm: bool = False,
+                           cancel_event=None, progress_callback=None) -> dict:
+    """Permanently delete one explicitly confirmed retired model.
+
+    The caller must supply the canonical checkpoint reference check. The
+    model lock serializes purge against managed use, download, verification,
+    retirement, and restore. The journal is removed last so an interrupted
+    purge can be safely retried by the same identifier.
+    """
+    _check_options(cancel_event, progress_callback)
+    if confirm is not True:
+        raise ValueError("Explicit confirm=True required to permanently purge GGUF")
+    if not callable(checkpoint_check):
+        raise TypeError("checkpoint_check must be callable")
+    root = _safe_storage_root(directory)
+    entry = _entry(root, identifier)
+    model, info = _record(root, entry)
+    manifest = model.with_name(model.name + ".forgeos.json")
+    lock = model.with_name(model.name + ".lock")
+    partial = model.with_name(model.name + ".part")
+    download_journal = model.with_name(model.name + ".part.json")
+    saved_weight = entry / "weights.gguf"
+    saved_manifest = entry / "manifest.json"
+    for item in (model, manifest, lock, partial, download_journal,
+                 saved_weight, saved_manifest):
+        _reject_existing_link(item, root)
+    with _exclusive_download_lock(lock):
+        locked_model, locked_info = _record(root, entry)
+        if locked_model != model or locked_info != info:
+            raise RuntimeError("Retirement journal changed while waiting for lock")
+        for item in (model, manifest, saved_weight, saved_manifest,
+                     partial, download_journal):
+            _reject_existing_link(item, root)
+        if model.exists() or manifest.exists():
+            raise RuntimeError("Purge refuses files already restored to the active path")
+        if partial.exists() or download_journal.exists():
+            raise RuntimeError("Cannot purge over an unfinished GGUF download")
+        if checkpoint_check(info["sha256"]) is not False:
+            raise RuntimeError("A blocked task checkpoint references this GGUF; purge refused")
+        if saved_weight.exists():
+            _validate_bytes(saved_weight, root, info,
+                            cancel_event=cancel_event,
+                            progress_callback=progress_callback)
+        if saved_manifest.exists():
+            _validate_manifest(saved_manifest, root, info)
+        _check_cancelled(cancel_event)
+        for item in (saved_weight, saved_manifest):
+            _reject_existing_link(item, root)
+        if saved_weight.exists():
+            _single_link(saved_weight)
+            saved_weight.unlink()
+            _sync_directory(entry)
+        if saved_manifest.exists():
+            _single_link(saved_manifest)
+            saved_manifest.unlink()
+            _sync_directory(entry)
+        journal = entry / "journal.json"
+        _reject_existing_link(journal, root)
+        if journal.exists():
+            if journal.stat().st_nlink != 1:
+                raise ValueError("Hard-linked retirement journal is not trusted")
+            journal.unlink()
+            _sync_directory(entry)
+        entry.rmdir()
+        _sync_directory(_store(root))
+    return {"status": "purged", "id": identifier,
+            "path": str(model), "bytes": info["bytes"],
+            "sha256": info["sha256"]}
+
+
 def restore_download(identifier: str, *,
                      directory: str | Path | None = None,
                      cancel_event=None, progress_callback=None) -> dict:

@@ -7,7 +7,9 @@ from threading import Event
 import unittest
 from unittest.mock import patch
 from forgeos.model_inventory import list_downloads, verify_download
-from forgeos.model_retirement import retire_download, restore_download, list_retired
+from forgeos.model_retirement import (
+    list_retired, purge_retired_download, restore_download, retire_download,
+)
 
 
 class ModelRetirementTests(unittest.TestCase):
@@ -114,6 +116,88 @@ class ModelRetirementTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "callable"):
             restore_download("a" * 32, directory=self.root,
                              progress_callback=object())
+
+    def test_purge_requires_explicit_confirmation_and_checkpoint_clearance(self):
+        ticket = self.retire()
+        for kwargs in (
+                {"confirm": False, "checkpoint_check": lambda _sha: False},
+                {"confirm": True, "checkpoint_check": lambda _sha: True},
+                {"confirm": True, "checkpoint_check": lambda _sha: None}):
+            with self.subTest(kwargs=kwargs), self.assertRaises((ValueError, RuntimeError)):
+                purge_retired_download(
+                    ticket["id"], directory=self.root, **kwargs)
+        saved = self.root / ".forgeos-retired" / ticket["id"]
+        self.assertTrue((saved / "weights.gguf").exists())
+        self.assertTrue((saved / "manifest.json").exists())
+        self.assertTrue((saved / "journal.json").exists())
+
+    def test_confirmed_purge_verifies_and_removes_only_retired_model(self):
+        from forgeos.model_inventory import list_downloads
+        sibling = self.model.with_name("sibling.gguf")
+        sibling.write_bytes(b"keep this")
+        ticket = self.retire()
+        result = purge_retired_download(
+            ticket["id"], directory=self.root, confirm=True,
+            checkpoint_check=lambda digest: digest == "not-the-model")
+        self.assertEqual(result["status"], "purged")
+        self.assertEqual(result["sha256"], self.info["sha256"])
+        self.assertEqual(sibling.read_bytes(), b"keep this")
+        self.assertEqual(list_retired(self.root), [])
+        self.assertEqual(list_downloads(self.root), [])
+
+    def test_purge_refuses_restored_destination_and_preserves_journal(self):
+        ticket = self.retire()
+        self.model.write_bytes(b"independent file")
+        with self.assertRaisesRegex(RuntimeError, "already restored"):
+            purge_retired_download(
+                ticket["id"], directory=self.root, confirm=True,
+                checkpoint_check=lambda _sha: False)
+        self.assertTrue((self.root / ".forgeos-retired" /
+                         ticket["id"] / "journal.json").exists())
+        self.assertEqual(self.model.read_bytes(), b"independent file")
+
+    def test_purge_refuses_active_model_lock_and_corrupt_retired_bytes(self):
+        from forgeos import model_retirement as retirement
+        ticket = self.retire()
+        lock = self.model.with_name(self.model.name + ".lock")
+        with retirement._exclusive_download_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                purge_retired_download(
+                    ticket["id"], directory=self.root, confirm=True,
+                    checkpoint_check=lambda _sha: False)
+        saved = (self.root / ".forgeos-retired" /
+                 ticket["id"] / "weights.gguf")
+        saved.write_bytes(b"tampered but still GGUF".ljust(len(self.data), b"x"))
+        with self.assertRaisesRegex(RuntimeError, "SHA-256"):
+            purge_retired_download(
+                ticket["id"], directory=self.root, confirm=True,
+                checkpoint_check=lambda _sha: False)
+        self.assertTrue(saved.exists())
+        self.assertTrue((saved.parent / "journal.json").exists())
+
+    def test_interrupted_purge_can_retry_with_journal_last(self):
+        ticket = self.retire()
+        manifest = (self.root / ".forgeos-retired" /
+                    ticket["id"] / "manifest.json")
+        unlink = Path.unlink
+
+        def fail_manifest_once(path, *args, **kwargs):
+            if path == manifest:
+                raise OSError("injected manifest deletion failure")
+            return unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", fail_manifest_once):
+            with self.assertRaisesRegex(OSError, "injected"):
+                purge_retired_download(
+                    ticket["id"], directory=self.root, confirm=True,
+                    checkpoint_check=lambda _sha: False)
+        entry = self.root / ".forgeos-retired" / ticket["id"]
+        self.assertFalse((entry / "weights.gguf").exists())
+        self.assertTrue(manifest.exists())
+        self.assertTrue((entry / "journal.json").exists())
+        self.assertEqual(purge_retired_download(
+            ticket["id"], directory=self.root, confirm=True,
+            checkpoint_check=lambda _sha: False)["status"], "purged")
 
     def test_sibling_unchanged_and_modified_hash_rejected(self):
         sibling = self.model.with_name("other.gguf")
@@ -370,6 +454,24 @@ class ModelRetirementTests(unittest.TestCase):
             self.assertEqual(main(["model-restore-local", ticket["id"],
                                    "--directory", str(self.root)]), 0)
         self.assertEqual(json.loads(output.getvalue())["status"], "restored")
+
+    def test_cli_purge_requires_confirmation_and_existing_checkpoint_database(self):
+        from forgeos.cli import main
+        from forgeos.core import Store
+        from contextlib import redirect_stdout
+        from io import StringIO
+        ticket = self.retire()
+        database = self.root / "tasks.sqlite3"
+        Store(database).close()
+        with self.assertRaisesRegex(ValueError, "--confirm"):
+            main(["--db", str(database), "model-purge-retired", ticket["id"],
+                  "--directory", str(self.root)])
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main([
+                "--db", str(database), "model-purge-retired", ticket["id"],
+                "--directory", str(self.root), "--confirm"]), 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "purged")
 
     def test_symlinked_model_target_rejected(self):
         ticket = self.retire()
