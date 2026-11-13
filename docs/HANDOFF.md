@@ -2138,3 +2138,5 @@ and restore under constrained filesystems.
 - Recovery scan now fetches bounded checkpoint bytes and decodes UTF-8 per task. Invalid SQLite TEXT encoding previously could fail an entire page before per-task validation. The real SQLite pagination regression injects an invalid UTF-8 record ahead of 41 eligible tasks and verifies they still reach recovery. PASS on Windows/Python 3.15: 30 focused recovery and pagination tests, one skip.
 
 - Safe Resume now rejects malformed caller-supplied preset overrides before touching task state. PASS on Windows/Python 3.15: recovery and local-resume suites ran 30 tests with one skip, using temporary files outside OneDrive.
+
+- Checkpoint fault-injection tests now mock the engine's workspace test boundary. Previously they patched the inner runner and could fail on Windows ACL setup before reaching the injected interruption. PASS on Windows/Python 3.15: lease release, malformed checkpoint shape, pending-test resume, and pending-repair resume (four tests). Real snapshot containment retains separate integration coverage and remains UNVERIFIED for release.

@@ -807,7 +807,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
     def test_resume_pending_test_without_regeneration(self):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              generate=lambda model, prompt: response)
@@ -816,7 +816,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
         with (patch("forgeos.engine._context", side_effect=AssertionError(
                     "Test-only resume must not scan repository context")),
-              patch("forgeos.engine.run_test", return_value={
+              patch("forgeos.engine._run_workspace_tests", return_value={
                   "passed": True, "returncode": 0, "output": "ok"})):
             result = execute_task(self.store, self.task, self.root,
                                   allow_host_tests=True, resume=True,
@@ -838,7 +838,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
     def test_resume_refuses_unverified_checkpoint(self):
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
         from unittest.mock import patch
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              generate=lambda model, prompt: response)
@@ -858,7 +858,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
         from unittest.mock import patch
         response = json.dumps({"files": [{
             "path": "app.py", "content": "def value():\\n return 42\\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(
                     self.store, self.task, self.root, allow_host_tests=True,
@@ -879,7 +879,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
 
         response = json.dumps({"files": [{
             "path": "app.py", "content": "def value():\n return 42\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              generate=lambda model, prompt: response)
@@ -920,7 +920,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
         from forgeos.engine import MAX_FILE_BYTES
         response = json.dumps({"files": [
             {"path": "app.py", "content": "def value():\n return 42\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root,
                              allow_host_tests=True,
@@ -944,7 +944,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
     def test_resume_refuses_tampered_file(self):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              generate=lambda model, prompt: response)
@@ -958,7 +958,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
     def test_resume_rejects_missing_integrity_hashes(self):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              generate=lambda model, prompt: response)
@@ -981,7 +981,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
                 return failing
             raise KeyboardInterrupt()
 
-        with patch("forgeos.engine.run_test",
+        with patch("forgeos.engine._run_workspace_tests",
                    return_value={"passed": False, "returncode": 1, "output": "expected 42, got 0"}):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
@@ -993,7 +993,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.assertIn("expected 42", saved["last_test_output"])
 
         self.store.recover()
-        with patch("forgeos.engine.run_test",
+        with patch("forgeos.engine._run_workspace_tests",
                    return_value={"passed": True, "returncode": 0, "output": "ok"}):
             result = execute_task(self.store, self.task, self.root, allow_host_tests=True,
                                   max_repairs=2, resume=True,
@@ -1006,7 +1006,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
     def test_resume_rejects_changed_execution_contract(self):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\\n return 42\\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              generate=lambda model, prompt: response)
@@ -1034,7 +1034,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
         from unittest.mock import patch
         response = json.dumps({"files": [{"path": "app.py",
                                "content": "def value():\n return 42\n"}]})
-        with patch("forgeos.engine.run_test", side_effect=KeyboardInterrupt):
+        with patch("forgeos.engine._run_workspace_tests", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              generate=lambda model, prompt: response)
