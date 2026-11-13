@@ -2669,6 +2669,8 @@ and restore under constrained filesystems.
 
 ### Follow-up — exercise recovery after a hard process exit
 
+- **Implementation commit:** `b1385017475af32fc3b2ad3161d21a65f29818a8` on
+  `fix/safe-resume-malformed-checkpoints`.
 - Added a subprocess-level `repair_pending` recovery regression. A child
   executes one failing test result, publishes its evidence-linked repair
   checkpoint, signals that the next generation has begun, then is killed. A
