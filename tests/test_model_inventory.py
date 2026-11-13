@@ -6,7 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from forgeos.model_inventory import list_downloads, verify_download
+from forgeos.model_inventory import (
+    catalog_file_status, list_downloads, verify_download,
+)
 
 
 class GGUFInventoryTests(unittest.TestCase):
@@ -23,6 +25,23 @@ class GGUFInventoryTests(unittest.TestCase):
         self.sha = hashlib.sha256(self.content).hexdigest()
         self.manifest = self.path.with_name(self.path.name + ".forgeos.json")
         self.write_manifest()
+
+    def test_catalog_status_matches_exact_revision_hash_and_imported_bytes(self):
+        file_info = {"path": self.path.name, "sha256": self.sha}
+        records = list_downloads(self.root)
+        self.assertIn("not reverified", catalog_file_status(
+            "Owner/CodeModel", self.version, file_info, records))
+        different = dict(file_info, sha256="f" * 64)
+        self.assertIn("different SHA-256", catalog_file_status(
+            "Owner/CodeModel", self.version, different, records))
+        imported = [{"repo": "Local import (provenance unknown)",
+                     "revision": None, "file": "elsewhere.gguf",
+                     "sha256": self.sha, "status": "imported_not_reverified",
+                     "kind": "imported"}]
+        self.assertIn("source unknown", catalog_file_status(
+            "Other/Repo", "b" * 40, file_info, imported))
+        self.assertEqual("not in local model inventory", catalog_file_status(
+            "Other/Repo", "b" * 40, dict(file_info, sha256=None), []))
 
     def write_manifest(self, **changes):
         data = {"repo": "Owner/CodeModel", "revision": self.version,

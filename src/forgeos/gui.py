@@ -1567,6 +1567,17 @@ def launch(db_path, *, acceptance: bool = False):
                         data = search_gguf(term)
                     elif action == "files":
                         data = inspect_gguf_repo(term)
+                        from .model_inventory import (
+                            catalog_file_status, list_downloads,
+                        )
+                        try:
+                            local_records = list_downloads()
+                            for file_info in data["files"]:
+                                file_info["local_status"] = catalog_file_status(
+                                    data["repo"], data["revision"], file_info,
+                                    local_records)
+                        except (OSError, RuntimeError, ValueError):
+                            data["local_inventory_available"] = False
                     else:
                         from .gguf_download import download_gguf
                         data = download_gguf(
@@ -1667,7 +1678,11 @@ def launch(db_path, *, acceptance: bool = False):
                     for item in data[:30]:
                         size = item["bytes"] / (1024 ** 3)
                         verified = "LFS SHA-256 provided" if item["sha256"] else "Hash unavailable"
-                        info.insert("end", f'{item["path"]}: {size:.2f} GiB; {verified}\n')
+                        local = (item.get("local_status", "unavailable")
+                                 if repo_info.get("local_inventory_available", True)
+                                 else "local inventory unavailable")
+                        info.insert("end", f'{item["path"]}: {size:.2f} GiB; '
+                                            f'{verified}; local: {local}\n')
                     if not data:
                         info.insert("end", "No GGUF files found in the returned listing.")
                     elif not choices:

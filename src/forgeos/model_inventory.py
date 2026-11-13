@@ -206,6 +206,31 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
     return results
 
 
+def catalog_file_status(repo: str, revision: str, file_info: dict,
+                        records: list[dict]) -> str:
+    """Describe matching local metadata without hashing large model files."""
+    name, checksum = file_info.get("path"), file_info.get("sha256")
+    exact = [entry for entry in records
+             if entry.get("repo") == repo
+             and entry.get("revision") == revision
+             and entry.get("file") == name]
+    if exact:
+        if checksum and all(entry.get("sha256") != checksum for entry in exact):
+            return "local revision exists with a different SHA-256"
+        labels = {
+            "present_not_reverified": "present; SHA-256 not reverified in this view",
+            "missing": "recorded locally; file is missing",
+            "size_mismatch": "local file size differs from its manifest",
+        }
+        return labels.get(exact[0].get("status"),
+                          "local entry needs manual inspection")
+    if checksum:
+        for entry in records:
+            if entry.get("sha256") == checksum and entry.get("kind") == "imported":
+                return "same SHA-256 as imported local file; source unknown, not reverified"
+    return "not in local model inventory"
+
+
 def verify_download(path: str | Path, *,
                     directory: str | Path | None = None) -> dict:
     """Explicit streaming SHA check; does not load the model or use RAM quota."""

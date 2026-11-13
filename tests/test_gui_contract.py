@@ -14,6 +14,8 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('info_scroll = ttk.Scrollbar(', source)
         self.assertIn('info.configure(yscrollcommand=info_scroll.set)', source)
         self.assertIn('Hub license (unverified)', source)
+        self.assertIn('catalog_file_status(', source)
+        self.assertIn('local: {local}', source)
 
     def test_desktop_settings_are_restored_and_saved(self):
         from pathlib import Path

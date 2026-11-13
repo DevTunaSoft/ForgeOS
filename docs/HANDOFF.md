@@ -2297,3 +2297,9 @@ and restore under constrained filesystems.
 
 - Optional numeric model-size, parameter-count and context-length claims are now rendered when supplied as nonnegative JSON integers no larger than `10^15`; negative and oversized values are ignored. The UI still labels all such author metadata unverified.
 - Verification: catalog, roadmap contract and documentation suites passed 24 tests. Compilation and `git diff --check` passed.
+
+### Follow-up — show local inventory status beside Hub files
+
+- The user-triggered inspect worker now reads ForgeOS's bounded offline model inventory and annotates each Hub GGUF row with exact repo/revision/file/hash status. It distinguishes a local revision with a different hash, same-SHA imported bytes with unknown provenance, an unverified installed item, and absence from the inventory. Inventory read failure is reported as unavailable while leaving public inspection usable. It never hashes model weights automatically.
+- Verification: `python -m unittest test_model_inventory test_gui_contract tests.test_huggingface_catalog -q` passed 57 tests (one platform skip), including matching/mismatch/imported/absent status mapping. The initial run with the sandbox default TEMP failed during fixture creation with WinError 5/3; rerunning with TEMP/TMP set to the writable repository passed. Compilation and `git diff --check` passed.
+- This is inventory status, not proof that current local bytes still match; the UI explicitly says the SHA is not reverified in this view. Explicit verification remains required.
