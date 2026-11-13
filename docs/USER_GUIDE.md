@@ -491,6 +491,8 @@ Each command accepts --directory PATH to select nondefault model storage. A reti
 
 The Managed local GGUF window's **Choose from ForgeOS downloads** picker now includes **Retire selected GGUF (recoverable)**. Select an existing downloaded GGUF and confirm the dialog. ForgeOS refuses to start this operation while an AI task, local model operation or owned llama.cpp server is active, and checks blocked task checkpoints for the selected model's SHA-256. A matching checkpoint or one that cannot be safely inspected prevents retirement. Managed llama.cpp also holds the same OS-backed lock used by download and retirement for its full server lifetime, including when another ForgeOS process owns the server. The model hash is rechecked after acquiring that lock. If shutdown cannot confirm the server exited, ForgeOS keeps the lock held. The picker remains open during verification so the result is not silently lost. Keep the recovery ID for the command-line model-restore-local operation; models-retired can list IDs again. The weights remain on disk and do not free storage. If another independently launched llama-server is running, close it manually before using this feature: ForgeOS can guard only its own managed session.
 
+For an imported model, the same picker action removes only its path from ForgeOS's active local inventory. ForgeOS rehashes it, protects any blocked checkpoint that references its identity, and checks the managed model lock. The original GGUF and sidecar stay in place, so this does not reclaim disk space. Use **Import existing GGUF without copying** to register it again later.
+
 
 ### Restore a recoverably retired local model in the desktop app
 

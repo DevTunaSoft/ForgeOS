@@ -6,7 +6,7 @@ import unittest
 
 from forgeos.managed_llama import _verified_model
 from forgeos.model_inventory import list_downloads, verify_download
-from forgeos.model_import import import_local_gguf
+from forgeos.model_import import import_local_gguf, unregister_imported_gguf
 
 
 class LocalModelImportTests(unittest.TestCase):
@@ -71,6 +71,16 @@ class LocalModelImportTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "unreadable"):
             list_downloads(self.models)
 
+    def test_failed_inventory_registration_rolls_back_only_new_sidecar(self):
+        self.models.mkdir()
+        (self.models / ".forgeos-imports.json").write_text(
+            "{broken", encoding="utf-8")
+        sidecar = self.model.with_name(self.model.name + ".forgeos.json")
+        with self.assertRaisesRegex(ValueError, "unreadable"):
+            import_local_gguf(self.model, directory=self.models)
+        self.assertFalse(sidecar.exists())
+        self.assertEqual(self.model.read_bytes(), self.data)
+
     def test_cli_lists_and_verifies_imported_models(self):
         from contextlib import redirect_stdout
         from io import StringIO
@@ -89,6 +99,33 @@ class LocalModelImportTests(unittest.TestCase):
                 "model-verify-local", str(self.model),
                 "--directory", str(self.models)]), 0)
         self.assertEqual(json.loads(output.getvalue())["provenance"], "unknown")
+
+    def test_unregister_preserves_file_and_sidecar_and_reimport_restores_inventory(self):
+        import_local_gguf(self.model, directory=self.models)
+        sidecar = self.model.with_name(self.model.name + ".forgeos.json")
+        sidecar_bytes = sidecar.read_bytes()
+        outcome = unregister_imported_gguf(self.model, directory=self.models)
+        self.assertTrue(outcome["weights_preserved"])
+        self.assertTrue(outcome["sidecar_preserved"])
+        self.assertEqual(self.model.read_bytes(), self.data)
+        self.assertEqual(sidecar.read_bytes(), sidecar_bytes)
+        self.assertEqual(list_downloads(self.models), [])
+
+        import_local_gguf(self.model, directory=self.models)
+        self.assertEqual(list_downloads(self.models)[0]["status"],
+                         "imported_not_reverified")
+
+    def test_unregister_refuses_runtime_lock_and_tampered_model(self):
+        from forgeos.gguf_download import _exclusive_download_lock
+        import_local_gguf(self.model, directory=self.models)
+        lock = self.model.with_name(self.model.name + ".lock")
+        with _exclusive_download_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                unregister_imported_gguf(self.model, directory=self.models)
+        self.model.write_bytes(self.data + b"changed")
+        with self.assertRaisesRegex(RuntimeError, "changed"):
+            unregister_imported_gguf(self.model, directory=self.models)
+        self.assertEqual(len(list_downloads(self.models)), 1)
 
 
 if __name__ == "__main__":

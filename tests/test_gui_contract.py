@@ -267,6 +267,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('gguf_path.set("")', source)
         self.assertIn('"imported_not_reverified"', source)
         self.assertIn('entry.get("kind") == "imported"', source)
+        self.assertIn("unregister_imported_gguf(entry[\"path\"])", source)
         self.assertIn("checkpoint_references_managed_model(", source)
         self.assertIn('entry["sha256"]', source)
         self.assertIn("worker_store = Store(db_path)", source)

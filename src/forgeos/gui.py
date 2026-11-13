@@ -816,29 +816,28 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 index = selection[0]
                 entry = records[int(index)]
-                if entry.get("kind") == "imported":
-                    messagebox.showinfo(
-                        "Imported model remains in place",
-                        "Recoverable retirement currently supports ForgeOS "
-                        "downloads only. This imported file and its sidecar "
-                        "were not changed.", parent=chooser)
-                    return
-                if not messagebox.askyesno(
-                        "Retire verified model",
-                        "Move this GGUF and its SHA-256 manifest to recoverable "
-                        "local storage? The bytes are retained on disk, and "
-                        "this DOES NOT free storage space. Stop any separate "
-                        "llama.cpp server using this file first. The entire "
-                        "GGUF will be rehashed before the move.",
-                        parent=chooser):
+                imported = entry.get("kind") == "imported"
+                title = ("Remove imported model from active inventory" if imported
+                         else "Retire verified model")
+                question = (
+                    "Remove this path from ForgeOS's active model inventory? "
+                    "The GGUF and its identity sidecar remain at the original "
+                    "location; no disk space is freed. You can import it again "
+                    "later. ForgeOS rehashes the file before unregistering."
+                    if imported else
+                    "Move this GGUF and its SHA-256 manifest to recoverable "
+                    "local storage? The bytes are retained on disk, and "
+                    "this DOES NOT free storage space. Stop any separate "
+                    "llama.cpp server using this file first. The entire "
+                    "GGUF will be rehashed before the move.")
+                if not messagebox.askyesno(title, question, parent=chooser):
                     return
                 retirement["busy"] = True
                 managed["busy"] = True
                 use_btn.configure(state="disabled")
                 retire_btn.configure(state="disabled")
                 retirement_status.set(
-                    "Verifying model bytes and writing a recoverable "
-                    "retirement journal...")
+                    "Verifying model and updating its active inventory...")
                 status.set("Retiring local GGUF after full SHA-256 verification...")
 
                 def worker():
@@ -852,8 +851,12 @@ def launch(db_path, *, acceptance: bool = False):
                                 "A blocked task checkpoint still depends on this "
                                 "GGUF. Resume or remove that checkpoint before "
                                 "retiring the model.")
-                        from .model_retirement import retire_download
-                        outcome = retire_download(entry["path"])
+                        if imported:
+                            from .model_import import unregister_imported_gguf
+                            outcome = unregister_imported_gguf(entry["path"])
+                        else:
+                            from .model_retirement import retire_download
+                            outcome = retire_download(entry["path"])
                         retirement_events.put((index, outcome, None))
                     except Exception as exc:
                         retirement_events.put((
@@ -882,18 +885,32 @@ def launch(db_path, *, acceptance: bool = False):
                     messagebox.showerror(
                         "Could not retire local model", error, parent=chooser)
                     return
-                retirement_status.set(
-                    "Model retired safely; recovery ID: " + outcome["id"])
-                status.set("Local GGUF retired (recovery available)")
+                imported = records[int(index)].get("kind") == "imported"
+                if imported:
+                    retirement_status.set(
+                        "Import removed from active inventory; model file and "
+                        "sidecar remain at the original path.")
+                    status.set("Imported GGUF removed from active inventory")
+                else:
+                    retirement_status.set(
+                        "Model retired safely; recovery ID: " + outcome["id"])
+                    status.set("Local GGUF retired (recovery available)")
                 if gguf_path.get() == records[int(index)]["path"]:
                     gguf_path.set("")
                 listing.delete(index)
-                messagebox.showinfo(
-                    "Model moved to recoverable local storage",
-                    "Recovery ID: " + outcome["id"] + "\n"
-                    "Use models-retired and model-restore-local to restore. "
-                    "The model still occupies disk space.",
-                    parent=chooser)
+                if imported:
+                    messagebox.showinfo(
+                        "Imported model removed from ForgeOS inventory",
+                        "The model and its sidecar remain unchanged. Use "
+                        "Import existing GGUF without copying to register it again. "
+                        "No disk space was freed.", parent=chooser)
+                else:
+                    messagebox.showinfo(
+                        "Model moved to recoverable local storage",
+                        "Recovery ID: " + outcome["id"] + "\n"
+                        "Use models-retired and model-restore-local to restore. "
+                        "The model still occupies disk space.",
+                        parent=chooser)
 
             def close_chooser():
                 if retirement["busy"]:
