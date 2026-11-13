@@ -731,6 +731,19 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertEqual((self.root / "first.py").read_text(), "new")
         self.assertTrue(txn.exists())
 
+    def test_manifest_decoder_recursion_failure_preserves_journal(self):
+        from unittest.mock import patch
+        from forgeos.transactions import TransactionError, _journal, recover_edits
+
+        journal = _journal(self.root)
+        journal.mkdir(parents=True)
+        manifest = journal / "manifest.json"
+        manifest.write_bytes(b"[]")
+        with patch("forgeos.transactions.json.loads", side_effect=RecursionError):
+            with self.assertRaisesRegex(TransactionError, "Invalid transaction manifest JSON"):
+                recover_edits(self.root)
+        self.assertEqual(manifest.read_bytes(), b"[]")
+
     def test_missing_manifest_preserves_journal(self):
         from forgeos.transactions import recover_edits, TransactionError
         txn = self.root / ".forgeos" / "pending-edit"
