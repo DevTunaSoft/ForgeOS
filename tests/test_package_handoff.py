@@ -74,6 +74,12 @@ class RecoveryPackageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pkg.create(self.root, self.root / "bundle.zip")
 
+    def test_oversized_tracked_input_prevents_publication(self):
+        with patch.object(pkg, "MAX_FILE_BYTES", 8):
+            with self.assertRaisesRegex(ValueError, "Oversized file"):
+                pkg.create(self.root, self.out)
+        self.assertFalse(self.out.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

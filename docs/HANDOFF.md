@@ -2178,3 +2178,5 @@ and restore under constrained filesystems.
 - Recovery ZIP publication now stages and hashes the complete archive before exposing the final path without overwriting an existing file. Windows packaging suite: six tests passed, including injected write failure with no partial output or staging files.
 
 - Recovery ZIP packaging enforces its per-file read limit during I/O and streams the final archive checksum in 64 KiB chunks. PASS on Windows: all six test_package_handoff tests.
+
+- Added a regression confirming an oversized tracked handoff input is rejected before publishing a ZIP. PASS on Windows: all seven test_package_handoff tests.
