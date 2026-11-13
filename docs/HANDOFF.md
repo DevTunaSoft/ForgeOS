@@ -2457,3 +2457,8 @@ and restore under constrained filesystems.
 
 - Added a two-process downloader regression: the first process pauses inside a mocked transfer while holding the per-GGUF OS lock; a second process requests the same pinned file and is rejected before opening its network response. The first then finishes and publishes the SHA-verified weight. The roadmap now records this separately from the thread-based shared-quota test.
 - Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 142 tests (6 platform skips); `python -m compileall -q src/forgeos` and `git diff --check` passed. Physical Windows locking and cross-process shared-quota stress remain unverified.
+
+### Follow-up — verify shared quota locking across processes
+
+- Added a subprocess contention test with two distinct pinned GGUF paths. The first process holds the shared storage-quota lock while paused inside a fake transfer; a second process starts before release, then is denied before network open after the first publishes because the remaining quota is insufficient. The initial test barrier allowed the first fake transfer to time out before the quota assertion; extending the barrier and releasing it when the second process starts made the test deterministic.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 143 tests (6 platform skips); compilation and `git diff --check` passed. The regression uses this Windows host's OS locks and fake HTTP; physical Windows device/volume stress and live downloads remain open.

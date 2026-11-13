@@ -298,6 +298,91 @@ class GGUFDownloadTests(unittest.TestCase):
         model = next(self.root.rglob("*.gguf"))
         self.assertEqual(model.read_bytes(), BODY)
 
+    def test_competing_processes_cannot_oversubscribe_shared_quota(self):
+        ready = self.root / "quota-first-transfer-ready"
+        second_started = self.root / "quota-second-started"
+        release = self.root / "quota-release-first-transfer"
+        worker_code = textwrap.dedent("""
+            import hashlib, io, sys, time
+            from pathlib import Path
+            from forgeos import gguf_download as gd
+            mode, root, ready_name, second_name, release_name = sys.argv[1:]
+            ready, second_started, release = (
+                Path(ready_name), Path(second_name), Path(release_name))
+            body = b"GGUF0123456789abcdefghijklmnopqrstuvwxyz"
+            models = {
+                "first": ("Qwen/Coder-One", "coder-one.gguf"),
+                "second": ("Qwen/Coder-Two", "coder-two.gguf"),
+            }
+            repo, filename = models[mode]
+            gd.list_gguf_files = lambda requested_repo, revision=None: [{
+                "path": filename, "bytes": len(body),
+                "sha256": hashlib.sha256(body).hexdigest()}]
+            class Response(io.BytesIO):
+                def getcode(self): return 200
+                def __enter__(self): return self
+                def __exit__(self, *args): self.close()
+                @property
+                def headers(self): return {"Content-Length": str(len(body))}
+            def open_weight(request, *, timeout):
+                if mode != "first":
+                    raise AssertionError("quota-rejected process opened network")
+                ready.write_text("ready")
+                deadline = time.monotonic() + 60
+                while not release.exists():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("quota release marker did not arrive")
+                    time.sleep(0.02)
+                return Response(body)
+            gd._open_weight = open_weight
+            if mode == "second":
+                second_started.write_text("started")
+            try:
+                gd.download_gguf(
+                    repo, filename,
+                    revision="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    directory=root, storage_quota_bytes=len(body) + 5)
+            except RuntimeError as exc:
+                if mode == "second" and "storage cap reached" in str(exc):
+                    sys.exit(43)
+                raise
+            if mode == "second":
+                sys.exit(45)
+        """)
+        env = os.environ.copy()
+        command = [sys.executable, "-c", worker_code]
+        args = [str(self.root), str(ready), str(second_started), str(release)]
+        cwd = Path(__file__).resolve().parents[1]
+        first = subprocess.Popen(
+            [*command, "first", *args], cwd=cwd, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and first.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("first quota process did not acquire the quota lock")
+                time.sleep(0.02)
+            self.assertTrue(ready.exists(), "first quota transfer did not start")
+            second = subprocess.Popen(
+                [*command, "second", *args], cwd=cwd, env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            deadline = time.monotonic() + 10
+            while not second_started.exists() and second.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("second quota process did not start")
+                time.sleep(0.02)
+            self.assertTrue(second_started.exists(), "second quota process did not start")
+        finally:
+            release.write_text("release")
+            stdout, stderr = first.communicate(timeout=20)
+        self.assertEqual(first.returncode, 0, stderr.decode(errors="replace"))
+        second_stdout, second_stderr = second.communicate(timeout=20)
+        self.assertEqual(second.returncode, 43,
+                         second_stderr.decode(errors="replace"))
+        models = list(self.root.rglob("*.gguf"))
+        self.assertEqual(len(models), 1)
+        self.assertEqual(models[0].read_bytes(), BODY)
+
     def test_competing_different_models_cannot_oversubscribe_storage_quota(self):
         from forgeos.gguf_download import download_gguf
         entered = Event()
