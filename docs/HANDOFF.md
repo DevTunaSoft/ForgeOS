@@ -2452,3 +2452,8 @@ and restore under constrained filesystems.
 - Added a two-thread integration regression for different pinned GGUF paths sharing the same store and quota. The first download holds the quota lock in its mocked transfer; after it publishes, the second remeasures usage and fails before opening another network response, so the cap is not oversubscribed.
 - Updated roadmap language to distinguish thread-level proof from unverified concurrent-process and Windows stress.
 - Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 141 tests (6 platform skips); compileall and `git diff --check` passed.
+
+### Follow-up — verify per-model lock contention across processes
+
+- Added a two-process downloader regression: the first process pauses inside a mocked transfer while holding the per-GGUF OS lock; a second process requests the same pinned file and is rejected before opening its network response. The first then finishes and publishes the SHA-verified weight. The roadmap now records this separately from the thread-based shared-quota test.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 142 tests (6 platform skips); `python -m compileall -q src/forgeos` and `git diff --check` passed. Physical Windows locking and cross-process shared-quota stress remain unverified.

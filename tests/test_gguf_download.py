@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 from types import SimpleNamespace
 from pathlib import Path
 from threading import Event, Thread
@@ -228,6 +229,74 @@ class GGUFDownloadTests(unittest.TestCase):
         self.assertEqual(len(outcomes), 1)
         self.assertIsInstance(outcomes[0], dict)
         self.assertEqual(outcomes[0]["status"], "verified")
+
+    def test_competing_processes_share_same_model_download_lock(self):
+        ready = self.root / "first-transfer-ready"
+        release = self.root / "release-first-transfer"
+        worker_code = textwrap.dedent("""
+            import hashlib, io, sys, time
+            from pathlib import Path
+            from forgeos import gguf_download as gd
+            mode, root, ready_name, release_name = sys.argv[1:]
+            ready, release = Path(ready_name), Path(release_name)
+            body = b"GGUF0123456789abcdefghijklmnopqrstuvwxyz"
+            gd.list_gguf_files = lambda repo, revision=None: [{
+                "path": "coder-Q4_K_M.gguf", "bytes": len(body),
+                "sha256": hashlib.sha256(body).hexdigest()}]
+            class Response(io.BytesIO):
+                def getcode(self): return 200
+                def __enter__(self): return self
+                def __exit__(self, *args): self.close()
+                @property
+                def headers(self): return {"Content-Length": str(len(body))}
+            def open_weight(request, *, timeout):
+                if mode != "first":
+                    raise AssertionError("second process opened the network")
+                ready.write_text("ready")
+                deadline = time.monotonic() + 15
+                while not release.exists():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("test release marker did not arrive")
+                    time.sleep(0.02)
+                return Response(body)
+            gd._open_weight = open_weight
+            try:
+                gd.download_gguf(
+                    "Qwen/Coder-GGUF", "coder-Q4_K_M.gguf",
+                    revision="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    directory=root)
+            except RuntimeError as exc:
+                if mode == "second" and "active elsewhere" in str(exc):
+                    sys.exit(42)
+                raise
+            if mode == "second":
+                sys.exit(44)
+        """)
+        env = os.environ.copy()
+        command = [sys.executable, "-c", worker_code]
+        args = [str(self.root), str(ready), str(release)]
+        cwd = Path(__file__).resolve().parents[1]
+        first = subprocess.Popen(
+            [*command, "first", *args], cwd=cwd, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and first.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("first process did not acquire the download lock")
+                time.sleep(0.02)
+            self.assertTrue(ready.exists(), "first process did not reach network open")
+            second = subprocess.run(
+                [*command, "second", *args], cwd=cwd, env=env,
+                capture_output=True, timeout=15)
+            self.assertEqual(second.returncode, 42,
+                             second.stderr.decode(errors="replace"))
+        finally:
+            release.write_text("release")
+            stdout, stderr = first.communicate(timeout=20)
+        self.assertEqual(first.returncode, 0, stderr.decode(errors="replace"))
+        model = next(self.root.rglob("*.gguf"))
+        self.assertEqual(model.read_bytes(), BODY)
 
     def test_competing_different_models_cannot_oversubscribe_storage_quota(self):
         from forgeos.gguf_download import download_gguf
