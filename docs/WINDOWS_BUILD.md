@@ -13,8 +13,9 @@ The artifact retention period is **14 days**, and a successful Actions run must 
 
 ## What is bundled
 
-The EXE packages the Python/Tkinter ForgeOS application, an offline copy of
-the single canonical [User Guide](USER_GUIDE.md), and the pinned llama.cpp
+The EXE packages the Python/Tkinter ForgeOS application, the ForgeOS window
+icon and Windows executable icon from the [branding kit](BRANDING.md), an
+offline copy of the single canonical [User Guide](USER_GUIDE.md), and the pinned llama.cpp
 upstream llama.cpp MIT notice used by the optional runtime installer. The
 official runtime archive also carries the pinned LLVM OpenMP license notice.
 From the running application, select **Activity & diagnostics → How to use
@@ -77,7 +78,7 @@ py -3.12 -m pip install "pyinstaller>=6.0,<7" ".[secure-pytest]"
 py -3.12 -m unittest discover -s tests -v
 $sha = (git rev-parse HEAD).Trim()
 py -3.12 forgeos_build/write_build_info.py --sha $sha
-py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
+py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --icon "assets/branding/ForgeOS_Master_Branding_Kit/04_Application_Ready/ForgeOS_Windows_Icon.ico" --paths src --add-data "assets/branding/ForgeOS_Master_Branding_Kit/04_Application_Ready/ForgeOS_Transparent_Icon_128.png;branding" --add-data "docs/USER_GUIDE.md;forgeos" --add-data "src/forgeos/data/llama.cpp-LICENSE.txt;forgeos/data" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
 ```
 
 The result should be `dist/ForgeOS.exe` if all commands succeed. Do not claim it succeeded without examining the actual files and command exit statuses.

@@ -59,6 +59,28 @@ def user_guide_path() -> Path | None:
     return None
 
 
+def application_icon_path() -> Path | None:
+    """Return the verified ForgeOS app icon in source or frozen builds."""
+    bundle = getattr(sys, "_MEIPASS", None)
+    kit = Path("ForgeOS_Master_Branding_Kit") / "04_Application_Ready"
+    candidates = ([Path(bundle) / "branding" /
+                   "ForgeOS_Transparent_Icon_128.png"] if bundle else [])
+    candidates.append(Path(__file__).resolve().parents[2] / "assets" /
+                      "branding" / kit / "ForgeOS_Transparent_Icon_128.png")
+    source_root = Path.cwd()
+    if (source_root / "src" / "forgeos" / "gui.py").is_file():
+        candidates.append(source_root / "assets" / "branding" / kit /
+                          "ForgeOS_Transparent_Icon_128.png")
+    for candidate in candidates:
+        try:
+            if (not candidate.is_symlink() and candidate.is_file()
+                    and candidate.stat().st_size <= 128 * 1024):
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def _managed_idle_due(*, last_used, now, task_busy, operation_busy,
                       idle_seconds=300) -> bool:
     """Cheap deterministic admission for unloading the single resident model.
@@ -105,6 +127,10 @@ def launch(db_path, *, acceptance: bool = False):
     except BaseException:
         store.close()
         raise
+    app_icon_path = application_icon_path()
+    if app_icon_path is not None:
+        root._forgeos_icon_image = tk.PhotoImage(file=str(app_icon_path))
+        root.iconphoto(True, root._forgeos_icon_image)
     root.title("ForgeOS | Autonomous Development Dashboard")
     root.geometry("1160x790")
     root.minsize(880, 620)

@@ -221,3 +221,15 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Acceptance:** 98 focused tests passed (5 platform skips), compileall
   passed. Real multi-GiB dialog interaction and physical Windows recovery
   acceptance remain unverified; exact-head hosted CI is still required.
+
+### 2026-11-13 — verified brand kit added to the application
+
+- **Implemented on the feature branch:** imported the full corrected branding
+  kit with all 64 SHA-256 manifest entries verified. Added the brand banner to
+  the repository README, documented asset usage/limits, and integrated the
+  supplied transparent icon into source/frozen GUI windows and the PyInstaller
+  Windows executable.
+- **Acceptance:** branding-integrity, GUI contract/acceptance and documentation
+  suites passed locally. PyInstaller is not installed in this environment, and
+  the draft-PR Windows packaging workflow remains skipped; executable icon
+  appearance still needs hosted build and real Windows desktop confirmation.

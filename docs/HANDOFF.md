@@ -2501,3 +2501,15 @@ and restore under constrained filesystems.
 - GitHub Handoff Integrity run #87 succeeded for exact head `2b9d49b`.
   Documentation, Foundation and Windows EXE PR workflows were skipped on
   draft PR #68, so no hosted test matrix or package pass is claimed.
+
+### Follow-up — import and apply the verified branding kit
+
+- Added the complete supplied kit under `assets/branding/`. All 64 entries in
+  its SHA-256 manifest matched. The README now uses its GitHub banner; the
+  source/frozen app window and Windows EXE use the transparent/multi-resolution
+  icons; `docs/BRANDING.md` records the kit's supplied limits and usage notes.
+- Branding integrity, source/frozen resource resolution, GUI contract,
+  GUI acceptance and documentation suites passed (65 tests); compileall and
+  `git diff --check` passed. PyInstaller is unavailable locally and GitHub's
+  draft-PR packaging workflow is skipped, so a packaged build and visible
+  Windows desktop icon remain unverified.
