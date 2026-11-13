@@ -39,7 +39,7 @@ flowchart TB
 | `src/forgeos/secure_runner.py`, `appcontainer.py`, `windows_containment.py`, `sandbox_runner.py` | Frozen Windows execution containment |
 | `src/forgeos/diagnostics.py`, `output_capture.py`, `output_rules.py` | Evidence archive, bounded output, summaries, trusted filters |
 | `src/forgeos/error_learning.py`, `optimizer_metrics.py`, `insights.py` | Test-verified repair signatures, efficiency and advisory diagnostic views |
-| `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
+| `src/forgeos/context_index.py` | Shared bounded project traversal, prompt metadata and on-demand Python declaration-name search; no bodies in search results |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
 | `src/forgeos/local_models.py` | Experimental loopback-only chat adapter for llama.cpp, LM Studio and configurable local OpenAI-style endpoints; bounded requests/responses, no proxy/redirects |
 | `src/forgeos/huggingface_catalog.py` | Opt-in public GGUF metadata, pinned commit revision, hash/size inspection |

@@ -347,6 +347,7 @@ audit log. No additional service or background polling is started.
 | `py -m forgeos diagnostics stats` | Output evidence statistics |
 | `py -m forgeos learning stats` | Verified repair-learning statistics |
 | `py -m forgeos memory` | One-time own-process memory measurement |
+| `py -m forgeos search-project PATH "function or class name"` | Search bounded Python declaration names locally; returns file/line/signature metadata, not source bodies |
 
 The CLI has a broader list of test preset names than the secure Windows packaged runner actually supports. **Preset visibility does not imply it is safe or usable in every environment.** For the packaged Windows EXE, `python-pytest` now uses the **bundled pytest module** in the same restricted AppContainer as unittest; the package is optional for source-only installations. Its logging file is redirected away from Windows `NUL` into the disposable snapshot and watched against a 32 MiB per-file limit. Other third-party pytest plugins do not autoload in that sandbox.
 

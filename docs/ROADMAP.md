@@ -293,3 +293,15 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   has one repeated WinError 32 while deleting a diagnostics test's temporary
   archive (the same test passes alone); the exact results and implementation
   SHA are in `HANDOFF.md`.
+
+### 2026-11-13 — add bounded local project symbol search
+
+- **Implemented experimentally on the feature branch:** the existing
+  `context_index.py` scanner now supports on-demand Python class/function/method
+  name search. It ranks name matches, reports bounded file/line/signature
+  metadata, skips hidden paths and links, and inspects at most 120 Python files
+  of at most 100 KiB each. `forgeos search-project` exposes this local-only
+  operation; source bodies, comments and string values are never returned.
+- Verification and exact implementation revision are recorded in the
+  cumulative handoff. The capability is an identifier search, not full-text
+  search or a replacement for conventional code navigation.

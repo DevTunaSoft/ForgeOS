@@ -34,7 +34,7 @@ Dispositions: **EXISTING** = code already provides this baseline; **EXTEND** = r
 | 2 | Smart test summaries | **EXISTING** · A | `src/forgeos/diagnostics.py` | Already parses test counts and prioritizes error lines; #28 supplies parser. Add fixtures, not a second summarizer. |
 | 3 | Optimized Git command output | **NEW at audit baseline** · B | `src/forgeos/workspace.py` | Since this historical baseline, the feature branch extends the existing shell=False Git wrapper with capped streamed output and marked bounded diff previews; no second Git client. |
 | 4 | Relevant source code reading | **EXISTING** · B | `src/forgeos/context_index.py` | AST-based bounded file inventory already exists; add useful precision tests rather than a new index. |
-| 5 | Optimized project search | **EXTEND** · B | `src/forgeos/context_index.py` | Existing ranked file/symbol inventory is not full code search. Extend context_index; do not introduce another scanner. |
+| 5 | Optimized project search | **EXTEND** · B | `src/forgeos/context_index.py` | The feature branch adds an on-demand bounded Python declaration-name search to the shared scanner; it returns signature metadata only, not source bodies. |
 | 6 | Adaptive context budgets | **NEW** · C | `src/forgeos/diagnostics.py` | Current 12k budget is fixed. Add validated per-model sizing in the existing diagnostics pipeline. |
 | 7 | Context-aware compression | **EXTEND** · A | `src/forgeos/diagnostics.py` | Failure-aware filtering already exists; extend task- and model-aware policy within it. |
 | 8 | Repeated log deduplication | **EXISTING** · A | `src/forgeos/output_rules.py` | Existing noncritical adjacent-line dedup. Preserve failures and raw evidence. |

@@ -39,6 +39,12 @@ def main(argv=None):
     catalog=sub.add_parser('model-catalog',help='Opt-in Hugging Face public GGUF discovery')
     catalog.add_argument('operation',choices=('search','files','inspect'))
     catalog.add_argument('query',help='Search phrase or repository ID')
+    project_search=sub.add_parser(
+        'search-project',
+        help='Search bounded Python symbol names without returning source code')
+    project_search.add_argument('root', help='Local project folder')
+    project_search.add_argument('query', help='Function, method or class name terms')
+    project_search.add_argument('--limit', type=int, default=20)
     local_list=sub.add_parser(
         'models-local', help='List bounded local GGUF downloads (metadata only)')
     local_list.add_argument('--directory',default='')
@@ -131,6 +137,11 @@ def main(argv=None):
     if args.action=='gui':
         from .gui import launch
         return launch(args.db)
+    if args.action == 'search-project':
+        from .context_index import search_project
+        print(json.dumps(search_project(
+            args.root, args.query, limit=args.limit), indent=2))
+        return 0
     if args.action == 'models':
         if args.backend == 'ollama':
             from .model_routing import installed_models

@@ -2688,3 +2688,19 @@ and restore under constrained filesystems.
   passes alone. The same combined cleanup error occurred on two attempts, so
   no further identical full run was made. This is not recorded as a green
   regression suite; investigate Windows file-lock/AV interaction separately.
+
+### Follow-up — add bounded local project symbol search
+
+- Extended the canonical `context_index.py` traversal with an explicit
+  `search_project()` API for Python class/function/method names and a
+  `forgeos search-project` CLI command. The shared walker preserves hidden
+  path, symlink, extension and per-file size rules. Symbol inspection is capped
+  at 120 relevance-ranked Python files, 100 KiB per file, 40 declarations per
+  file and 100 output records. Results contain only path, line, declaration
+  kind/name/signature and matched terms; no body, comment or literal value is
+  returned. Existing prompt context remains metadata-only.
+- Regressions cover semantic ranking beyond 80 path-only distractors, value
+  privacy, hidden paths, parameter caps and CLI JSON. Verification: context
+  index, CLI, documentation, roadmap and handoff suites passed 30 tests (1
+  platform skip); compilation and `git diff --check` passed. Exact
+  implementation SHA will follow after commit.

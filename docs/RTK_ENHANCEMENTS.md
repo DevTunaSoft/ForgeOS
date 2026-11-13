@@ -9,7 +9,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [x] Smart test summaries (structured counts plus failure-aware text)
 - [x] Optimized Git command output (experimental streamed 1 MiB command cap and marked 256 KiB diff previews)
 - [x] Relevant source code reading (bounded AST metadata prototype)
-- [ ] Optimized project search
+- [x] Optimized project search (experimental bounded Python declaration-name search; returns signatures only)
 - [x] Adaptive context budgets (experimental character-budget heuristic in the existing task engine; exact model tokenization/window still unverified)
 - [ ] Context-aware compression
 - [x] Repeated log deduplication (noncritical run collapse)
