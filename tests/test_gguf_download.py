@@ -229,6 +229,65 @@ class GGUFDownloadTests(unittest.TestCase):
         self.assertIsInstance(outcomes[0], dict)
         self.assertEqual(outcomes[0]["status"], "verified")
 
+    def test_competing_different_models_cannot_oversubscribe_storage_quota(self):
+        from forgeos.gguf_download import download_gguf
+        entered = Event()
+        release = Event()
+        second_started = Event()
+        outcomes = []
+        models = {
+            "Qwen/Coder-One": "coder-one.gguf",
+            "Qwen/Coder-Two": "coder-two.gguf",
+        }
+        records = [{"path": filename, "bytes": len(BODY), "sha256": DIGEST}
+                   for filename in models.values()]
+        def catalog(repo, revision=None):
+            filename = models[repo]
+            return [record for record in records if record["path"] == filename]
+        def open_response(request, *, timeout):
+            entered.set()
+            if not release.wait(10):
+                raise TimeoutError("quota test transfer was not released")
+            return Response(BODY)
+        def transfer(label, repo, filename, started=None):
+            if started is not None:
+                started.set()
+            try:
+                result = download_gguf(
+                    repo, filename, revision=REVISION, directory=self.root,
+                    storage_quota_bytes=len(BODY) + 5)
+                outcomes.append((label, result))
+            except BaseException as exc:
+                outcomes.append((label, exc))
+
+        with patch("forgeos.gguf_download.list_gguf_files", side_effect=catalog), \
+             patch("forgeos.gguf_download._open_weight",
+                   side_effect=open_response) as opened:
+            first = Thread(target=transfer, args=(
+                "first", "Qwen/Coder-One", models["Qwen/Coder-One"]), daemon=True)
+            second = Thread(target=transfer, args=(
+                "second", "Qwen/Coder-Two", models["Qwen/Coder-Two"],
+                second_started), daemon=True)
+            first.start()
+            self.assertTrue(entered.wait(5), "first quota transfer did not start")
+            second.start()
+            try:
+                self.assertTrue(second_started.wait(5), "second request did not start")
+            finally:
+                release.set()
+                first.join(10)
+                second.join(10)
+            self.assertFalse(first.is_alive(), "first quota transfer did not finish")
+            self.assertFalse(second.is_alive(), "second quota transfer did not finish")
+            self.assertEqual(opened.call_count, 1)
+        self.assertEqual(len(outcomes), 2)
+        successes = [value for _, value in outcomes if isinstance(value, dict)]
+        failures = [value for _, value in outcomes if isinstance(value, Exception)]
+        self.assertEqual(len(successes), 1)
+        self.assertEqual(successes[0]["status"], "verified")
+        self.assertEqual(len(failures), 1)
+        self.assertRegex(str(failures[0]), "storage cap reached")
+
     def test_invalid_pause_control_rejected_before_metadata(self):
         with patch("forgeos.gguf_download.model_revision") as revision:
             with self.assertRaisesRegex(TypeError, "cancel_event"):

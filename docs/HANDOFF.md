@@ -2446,3 +2446,9 @@ and restore under constrained filesystems.
 
 - Added an API-level concurrent request regression: one transfer holds the per-model OS lock while a second request for the same pinned model fails as active elsewhere before opening another network response. The first transfer then completes and publishes the verified GGUF.
 - Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 140 tests (6 platform skips); compilation and `git diff --check` passed. This is same-process contention evidence with mocked HTTP, not concurrent-process stress or live transfer acceptance.
+
+### Follow-up — serialize concurrent transfers against the storage cap
+
+- Added a two-thread integration regression for different pinned GGUF paths sharing the same store and quota. The first download holds the quota lock in its mocked transfer; after it publishes, the second remeasures usage and fails before opening another network response, so the cap is not oversubscribed.
+- Updated roadmap language to distinguish thread-level proof from unverified concurrent-process and Windows stress.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 141 tests (6 platform skips); compileall and `git diff --check` passed.
