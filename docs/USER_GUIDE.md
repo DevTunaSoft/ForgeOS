@@ -517,6 +517,8 @@ For an imported model, the same picker action removes only its path from ForgeOS
 
 The **Restore a retired GGUF** dialog also displays SHA-256 progress and supports cancellation. The recovery journal remains available after cancellation, including when a restore had already moved files; retry the restore from the same ID. The command-line operation supports the same optional Python cancellation and progress callbacks.
 
+To reclaim space, select a retired model and choose **Delete permanently**. ForgeOS asks for confirmation, checks that no blocked checkpoint references the model, refuses while a task or managed model is active, and rehashes remaining weights under the shared lock before deleting them. This cannot be undone. If cleanup is interrupted, the recovery journal is kept for a retry. External inference servers are not detectable; stop them yourself before permanently deleting a model.
+
 
 ### Restore a recoverably retired local model in the desktop app
 

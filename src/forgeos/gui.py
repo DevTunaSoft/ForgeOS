@@ -1500,6 +1500,7 @@ def launch(db_path, *, acceptance: bool = False):
                 restore_state["cancel_event"] = cancel_event
                 managed["busy"] = True
                 restore_btn.configure(state="disabled")
+                purge_btn.configure(state="disabled")
                 cancel_restore_btn.configure(state="normal")
                 restore_status.set(
                     "Verifying pinned bytes and restoring the model...")
@@ -1513,12 +1514,84 @@ def launch(db_path, *, acceptance: bool = False):
                             identifier, cancel_event=cancel_event,
                             progress_callback=lambda stage, done, total:
                             post_restore_event((
-                                "progress", selection[0], stage, done, total)))
-                        post_restore_event(("done", selection[0], result, None))
+                                "progress", "restore", selection[0],
+                                stage, done, total)))
+                        post_restore_event((
+                            "done", "restore", selection[0], result, None))
                     except Exception as exc:
                         post_restore_event((
-                            "done", selection[0], None,
+                            "done", "restore", selection[0], None,
                             f"{type(exc).__name__}: {exc}"))
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(200, poll_restore)
+
+            def begin_purge():
+                if restore_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo(
+                        "Select a model", "Choose a retired model first.",
+                        parent=chooser)
+                    return
+                selected = records[int(selection[0])]
+                if selected["status"] not in (
+                        "retired", "interrupted_retirement_or_restore"):
+                    messagebox.showerror(
+                        "Cannot purge model",
+                        "This journal needs manual inspection.", parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"], operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish tasks and stop the managed server first.",
+                        parent=chooser)
+                    return
+                gib = selected.get("bytes", 0) / (1024 ** 3)
+                if not messagebox.askyesno(
+                        "Permanently delete retired GGUF",
+                        f"Permanently delete {selected.get('file', 'this model')} "
+                        f"({gib:.2f} GiB) and its recovery journal? This cannot "
+                        "be undone. ForgeOS will refuse if a blocked checkpoint "
+                        "references the model.", parent=chooser):
+                    return
+                restore_state["busy"] = True
+                cancel_event = threading.Event()
+                restore_state["cancel_event"] = cancel_event
+                managed["busy"] = True
+                restore_btn.configure(state="disabled")
+                purge_btn.configure(state="disabled")
+                cancel_restore_btn.configure(state="normal")
+                restore_status.set("Verifying and permanently removing retired weights...")
+                status.set("Purging retired GGUF after checkpoint and SHA-256 checks...")
+                identifier = selected["id"]
+
+                def worker():
+                    store = None
+                    try:
+                        from .recovery import checkpoint_references_managed_model
+                        from .model_retirement import purge_retired_download
+                        store = Store(db_path)
+                        result = purge_retired_download(
+                            identifier, confirm=True,
+                            checkpoint_check=lambda digest:
+                            checkpoint_references_managed_model(store, digest),
+                            cancel_event=cancel_event,
+                            progress_callback=lambda stage, done, total:
+                            post_restore_event((
+                                "progress", "purge", selection[0],
+                                stage, done, total)))
+                        post_restore_event((
+                            "done", "purge", selection[0], result, None))
+                    except Exception as exc:
+                        post_restore_event((
+                            "done", "purge", selection[0], None,
+                            f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if store is not None:
+                            store.close()
                 threading.Thread(target=worker, daemon=True).start()
                 chooser.after(200, poll_restore)
 
@@ -1551,7 +1624,7 @@ def launch(db_path, *, acceptance: bool = False):
                         chooser.after(200, poll_restore)
                     return
                 if event[0] == "progress":
-                    _kind, _index, stage, completed, total = event
+                    _kind, _action, _index, stage, completed, total = event
                     percent = int(completed * 100 / total) if total else 0
                     restore_status.set(
                         f"Verifying model SHA-256: {percent}% "
@@ -1560,37 +1633,51 @@ def launch(db_path, *, acceptance: bool = False):
                     if chooser.winfo_exists():
                         chooser.after(150, poll_restore)
                     return
-                _kind, index, result, error = event
+                _kind, action, index, result, error = event
                 restore_state["busy"] = False
                 restore_state["cancel_event"] = None
                 managed["busy"] = False
                 restore_btn.configure(state="normal")
+                purge_btn.configure(state="normal")
                 cancel_restore_btn.configure(state="disabled")
                 if error:
                     if "Cancelled" in error:
                         restore_status.set(
-                            "Restore verification cancelled; recovery journal retained. "
-                            "You can retry restore safely.")
-                        status.set("Local GGUF restore cancelled")
+                            "Verification cancelled; recovery journal retained. "
+                            "You can retry the operation safely.")
+                        status.set("Retired GGUF operation cancelled")
                         return
-                    restore_status.set("Restore failed; original recovery journal retained.")
-                    status.set("Local GGUF restore failed")
+                    restore_status.set(
+                        ("Purge failed; any remaining recovery journal can be "
+                         "used to retry. Check the retired-model list.")
+                        if action == "purge" else
+                        "Restore failed; original recovery journal retained.")
+                    status.set("Retired GGUF purge failed" if action == "purge"
+                               else "Local GGUF restore failed")
                     messagebox.showerror(
                         "Could not restore local GGUF", error, parent=chooser)
                     return
                 listing.delete(index)
-                restore_status.set(
-                    "Restored GGUF to " + result["path"])
-                status.set("Local GGUF restored and SHA-256 verified")
-                messagebox.showinfo(
-                    "Local model restored",
-                    "Verified weight restored. Choose it from ForgeOS "
-                    "downloads to run it.", parent=chooser)
+                if action == "purge":
+                    restore_status.set(
+                        "Permanently deleted retired weights and recovery journal.")
+                    status.set("Retired GGUF permanently purged")
+                    messagebox.showinfo(
+                        "Retired model deleted",
+                        "Verified retired model and its recovery journal were "
+                        "permanently deleted.", parent=chooser)
+                else:
+                    restore_status.set("Restored GGUF to " + result["path"])
+                    status.set("Local GGUF restored and SHA-256 verified")
+                    messagebox.showinfo(
+                        "Local model restored",
+                        "Verified weight restored. Choose it from ForgeOS "
+                        "downloads to run it.", parent=chooser)
 
             def close_restoration():
                 if restore_state["busy"]:
                     restore_status.set(
-                        "Restore is active. Keep this dialog open until "
+                        "A retired-model operation is active. Keep this dialog open until "
                         "the recovery operation finishes.")
                     return
                 chooser.destroy()
@@ -1599,6 +1686,10 @@ def launch(db_path, *, acceptance: bool = False):
                 body, text="Restore selected GGUF",
                 command=begin_restore)
             restore_btn.pack(side="right", pady=(8, 0))
+            purge_btn = ttk.Button(
+                body, text="Delete permanently",
+                command=begin_purge)
+            purge_btn.pack(side="right", padx=(0, 8), pady=(8, 0))
             cancel_restore_btn = ttk.Button(
                 body, text="Cancel verification",
                 command=cancel_restoration, state="disabled")

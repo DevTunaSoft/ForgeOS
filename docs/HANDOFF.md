@@ -2528,3 +2528,15 @@ and restore under constrained filesystems.
   roadmap suites passed 48 tests (4 platform skips); compileall and
   `git diff --check` passed. Real Windows deletion semantics and power-loss
   acceptance remain open.
+
+### Follow-up — expose guarded purge in the existing model dialog
+
+- The retired-model dialog now offers **Delete permanently** beside restore.
+  It asks for irreversible-delete confirmation, applies the existing task and
+  managed-model interlocks, checks blocked checkpoints, and runs journal/hash
+  validation and deletion off the Tk thread. Progress is polled through the
+  same bounded event queue; cancellation during hashing preserves the journal.
+- Verification: retirement, CLI, GUI contract/acceptance, documentation and
+  roadmap suites passed 97 tests (4 platform skips); compilation and
+  `git diff --check` passed. Real native Windows file-lock behavior and
+  recovery from physical power loss during deletion remain unverified.

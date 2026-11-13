@@ -357,8 +357,10 @@ class DashboardContractTests(unittest.TestCase):
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         for required in (
                 'text="Restore a retired GGUF (recoverable)"',
+                'text="Delete permanently"',
                 'from .model_retirement import list_retired',
                 'from .model_retirement import restore_download',
+                'from .model_retirement import purge_retired_download',
                 'restore_events = Queue(maxsize=1)',
                 'chooser.after(200, poll_restore)',
                 'chooser.protocol("WM_DELETE_WINDOW", close_restoration)',
@@ -368,6 +370,7 @@ class DashboardContractTests(unittest.TestCase):
                 'cancel_event=cancel_event',
                 'def cancel_restoration():',
                 'def post_restore_event(event):',
+                'checkpoint_references_managed_model(store, digest)',
                 'f"Verifying model SHA-256: {percent}% "'):
             with self.subTest(fragment=required):
                 self.assertIn(required, source)
