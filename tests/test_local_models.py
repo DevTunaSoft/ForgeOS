@@ -3,7 +3,7 @@ import io
 import json
 import unittest
 from urllib.request import Request
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from forgeos.local_models import (
     BACKENDS, MAX_RESPONSE_BYTES, LocalChatModel, create_model,
@@ -23,6 +23,32 @@ def payload(data):
 
 
 class LocalModelsTests(unittest.TestCase):
+    def test_managed_listener_owner_check_runs_before_model_request(self):
+        model = LocalChatModel(
+            backend="llama.cpp", model="forgeos-managed",
+            endpoint="http://127.0.0.1:40123/v1", api_key="k" * 32)
+        model._listener_owner_check = Mock(
+            side_effect=RuntimeError("listener ownership changed"))
+        with patch("forgeos.local_models._read_json") as request:
+            with self.assertRaisesRegex(RuntimeError, "ownership changed"):
+                model.generate_edits("a bounded test prompt")
+        model._listener_owner_check.assert_called_once_with()
+        request.assert_not_called()
+
+    def test_managed_listener_change_after_request_discards_response(self):
+        model = LocalChatModel(
+            backend="llama.cpp", model="forgeos-managed",
+            endpoint="http://127.0.0.1:40123/v1", api_key="k" * 32)
+        model._listener_owner_check = Mock(
+            side_effect=[None, RuntimeError("listener ownership changed")])
+        with patch("forgeos.local_models._read_json", return_value={
+                "choices": [{"finish_reason": "stop",
+                             "message": {"content": '{"files":[]}'}}]}) as request:
+            with self.assertRaisesRegex(RuntimeError, "ownership changed"):
+                model.generate_edits("a bounded test prompt")
+        self.assertEqual(model._listener_owner_check.call_count, 2)
+        request.assert_called_once()
+
     def test_real_loopback_http_trickle_has_bounded_deadline(self):
         import threading
         import time

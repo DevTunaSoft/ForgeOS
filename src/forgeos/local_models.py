@@ -111,6 +111,14 @@ class LocalChatModel:
         self.model = model
         self.base = validate_endpoint(endpoint or DEFAULT_ENDPOINTS[backend])
         self._api_key = api_key
+        self._listener_owner_check = None
+
+    def _verify_listener_owner(self) -> None:
+        check = self._listener_owner_check
+        if check is not None:
+            if not callable(check):
+                raise RuntimeError("Managed listener ownership check is invalid")
+            check()
 
     @property
     def authenticated(self) -> bool:
@@ -124,8 +132,10 @@ class LocalChatModel:
         return headers
 
     def installed(self) -> list[dict]:
+        self._verify_listener_owner()
         req = Request(self.base + "/models", headers=self._headers())
         payload = _read_json(req, limit=MAX_CATALOG_BYTES, timeout=10)
+        self._verify_listener_owner()
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             raise RuntimeError("Local endpoint did not expose a compatible model catalog")
         if len(payload["data"]) > 1000:
@@ -159,6 +169,7 @@ class LocalChatModel:
             memory_limit_bytes=safe_model_file_budget(system_memory()))
 
     def _complete(self, prompt: str, *, edits: bool = False) -> str:
+        self._verify_listener_owner()
         from .core import validate_local_prompt
         validate_local_prompt(prompt)
         settings = local_memory_settings()
@@ -179,6 +190,7 @@ class LocalChatModel:
             headers={**self._headers(), "Content-Type": "application/json"},
             method="POST")
         payload = _read_json(req, limit=MAX_RESPONSE_BYTES, timeout=180)
+        self._verify_listener_owner()
         if not isinstance(payload, dict):
             raise RuntimeError("Local chat response must be a JSON object")
         choices = payload.get("choices")

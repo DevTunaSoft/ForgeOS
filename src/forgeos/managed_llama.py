@@ -17,6 +17,8 @@ import re
 import secrets
 import signal
 import socket
+import struct
+import sys
 import subprocess
 import tempfile
 import time
@@ -161,6 +163,102 @@ def _unused_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listening:
         listening.bind(("127.0.0.1", 0))
         return int(listening.getsockname()[1])
+
+
+def _parse_tcp_owner_table(data: bytes, port: int) -> int | None:
+    """Parse the bounded MIB_TCPROW_OWNER_PID layout returned by IP Helper."""
+    if not isinstance(data, bytes) or len(data) < 4:
+        raise RuntimeError("Windows returned a truncated TCP ownership table")
+    count = struct.unpack_from("=I", data, 0)[0]
+    row_size = struct.calcsize("=IIIIII")
+    if count > 65536 or 4 + count * row_size > len(data):
+        raise RuntimeError("Windows returned an invalid TCP ownership table")
+    matches = set()
+    for index in range(count):
+        state, local_addr, local_port, _remote_addr, _remote_port, owner_pid = (
+            struct.unpack_from("=IIIIII", data, 4 + index * row_size))
+        if (state == 2
+                and struct.pack("=I", local_addr) == socket.inet_aton("127.0.0.1")
+                and socket.ntohs(local_port & 0xFFFF) == port):
+            matches.add(owner_pid)
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def _listener_owner_pid(port: int) -> int | None:
+    """Find the process owning the IPv4 loopback listener on ``port``.
+
+    Windows uses the IP Helper TCP owner-PID table. Linux maps the kernel TCP
+    socket inode back to a process file descriptor. Unknown platforms fail
+    closed because startup cannot prove which process receives model prompts.
+    """
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("Invalid managed listener port")
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        iphlpapi = ctypes.WinDLL("iphlpapi.dll")
+        get_table = iphlpapi.GetExtendedTcpTable
+        get_table.argtypes = [ctypes.c_void_p,
+                              ctypes.POINTER(wintypes.ULONG),
+                              wintypes.BOOL, wintypes.ULONG, ctypes.c_int,
+                              wintypes.ULONG]
+        get_table.restype = wintypes.ULONG
+        size = wintypes.ULONG(0)
+        family = 2  # AF_INET
+        owner_pid_listener_table = 3
+        status = get_table(None, ctypes.byref(size), False, family,
+                           owner_pid_listener_table, 0)
+        if status not in (0, 122):  # ERROR_INSUFFICIENT_BUFFER
+            raise OSError(int(status), "Could not inspect TCP listener ownership")
+        if not size.value:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        status = get_table(buffer, ctypes.byref(size), False, family,
+                           owner_pid_listener_table, 0)
+        if status != 0:
+            raise OSError(int(status), "Could not inspect TCP listener ownership")
+        return _parse_tcp_owner_table(buffer.raw[:size.value], port)
+
+    if sys.platform.startswith("linux"):
+        wanted_port = f"{port:04X}"
+        inodes = set()
+        try:
+            with open("/proc/net/tcp", encoding="ascii") as table:
+                next(table, None)
+                for line in table:
+                    fields = line.split()
+                    if (len(fields) > 9 and fields[1] == "0100007F:" + wanted_port
+                            and fields[3] == "0A"):
+                        inodes.add(fields[9])
+        except OSError as exc:
+            raise RuntimeError("Could not inspect Linux TCP listener ownership") from exc
+        if not inodes:
+            return None
+        owners = set()
+        try:
+            processes = os.scandir("/proc")
+        except OSError as exc:
+            raise RuntimeError("Could not inspect Linux process descriptors") from exc
+        with processes:
+            for proc in processes:
+                if not proc.name.isdecimal():
+                    continue
+                try:
+                    descriptors = os.scandir(Path(proc.path) / "fd")
+                except OSError:
+                    continue
+                with descriptors:
+                    for descriptor in descriptors:
+                        try:
+                            link = os.readlink(descriptor.path)
+                        except OSError:
+                            continue
+                        if link.startswith("socket:[") and link[8:-1] in inodes:
+                            owners.add(int(proc.name))
+                            if len(owners) > 1:
+                                return None
+        return next(iter(owners)) if owners else None
+    raise RuntimeError("Listener ownership verification is unsupported on this OS")
 
 
 class _WindowsNativeProcess:
@@ -354,6 +452,20 @@ class ManagedLlamaServer:
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
+    def verify_listener_ownership(self) -> None:
+        """Refuse every managed prompt unless the exact child owns the port."""
+        if not self.running() or not self.endpoint:
+            raise RuntimeError("Managed llama-server is not running")
+        try:
+            port = int(self.endpoint.rsplit(":", 1)[1].split("/", 1)[0])
+        except (AttributeError, ValueError, IndexError) as exc:
+            raise RuntimeError("Managed llama-server endpoint is invalid") from exc
+        owner_pid = _listener_owner_pid(port)
+        if owner_pid != self.process.pid:
+            raise RuntimeError(
+                "Managed loopback listener ownership changed; refusing to "
+                "send project prompts")
+
     def memory_report(self) -> dict:
         """Return one-shot managed-runtime accounting; never background-poll."""
         if not self.running():
@@ -409,9 +521,11 @@ class ManagedLlamaServer:
             raise RuntimeError("A verified managed llama-server must be running")
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
             raise ValueError("Benchmark prompt must be 1..12000 characters")
-        return LocalChatModel(
+        client = LocalChatModel(
             backend="llama.cpp", model=ALIAS, endpoint=self.endpoint,
-            api_key=self.api_key).generate_edits(prompt)
+            api_key=self.api_key)
+        client._listener_owner_check = self.verify_listener_ownership
+        return client.generate_edits(prompt)
 
     def inference_self_test(self) -> dict:
         """Exercise the active local model without sending project content."""
@@ -583,6 +697,11 @@ class ManagedLlamaServer:
                         data = response.read(256)
                     if len(data) > 256 or json.loads(data).get("status") != "ok":
                         raise RuntimeError("Unexpected llama-server health response")
+                    owner_pid = _listener_owner_pid(port)
+                    if owner_pid != self.process.pid:
+                        raise RuntimeError(
+                            "Loopback listener is not owned by the launched "
+                            "llama-server process; refusing to send model prompts")
                     models = LocalChatModel(
                         backend="llama.cpp", model=ALIAS,
                         endpoint=self.endpoint, api_key=key).installed()

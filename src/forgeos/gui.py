@@ -471,6 +471,8 @@ def launch(db_path, *, acceptance: bool = False):
                         api_key=active_manager.api_key)
                     instance.managed_model_sha256 = active_manager.model_sha256
                     instance.managed_runtime_sha256 = active_manager.runtime_sha256
+                    instance._listener_owner_check = (
+                        active_manager.verify_listener_ownership)
                     return instance
 
                 # Recover without accumulating one result object per task.
@@ -1745,6 +1747,8 @@ def launch(db_path, *, acceptance: bool = False):
                     # the engine checkpoint; NEVER persist the API secret.
                     instance.managed_model_sha256 = manager.model_sha256
                     instance.managed_runtime_sha256 = manager.runtime_sha256
+                    instance._listener_owner_check = (
+                        manager.verify_listener_ownership)
                 return instance
             try:
                 worker_store = Store(db_path)

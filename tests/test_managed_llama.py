@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -661,6 +662,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value=self.exe),
               patch("forgeos.managed_llama._unused_loopback_port",
                     return_value=17089),
+              patch("forgeos.managed_llama._listener_owner_pid",
+                    return_value=12345) as listener_owner,
               patch("forgeos.managed_llama._open", side_effect=read_health),
               patch("forgeos.managed_llama.LocalChatModel.installed",
                     return_value=[{"name": ALIAS}]),
@@ -680,6 +683,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(info["model"], ALIAS)
             self.assertEqual(info["sha256"], self.model_sha)
             self.assertEqual(info["runtime_sha256"], self.exe_sha)
+            listener_owner.assert_called_once_with(17089)
             self.assertEqual(info["memory_ceiling_bytes"], 2 * 1024**3)
             memory_ceiling.assert_called_once()
             self.assertEqual(
@@ -726,6 +730,68 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                 grouped.assert_called_once()
                 proc.terminate.assert_called_once()
 
+    def test_managed_start_refuses_a_loopback_listener_owned_by_another_process(self):
+        proc = Mock()
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+        proc.pid = 12345
+        controller = ManagedLlamaServer()
+        with (patch("forgeos.managed_llama._verified_model",
+                    return_value=(self.model, {"sha256": self.model_sha})),
+              patch("forgeos.managed_llama._verified_runtime",
+                    return_value=self.exe),
+              patch("forgeos.managed_llama._unused_loopback_port",
+                    return_value=17090),
+              patch("forgeos.managed_llama._listener_owner_pid",
+                    return_value=54321),
+              patch("forgeos.managed_llama.local_memory_settings",
+                    return_value={"num_ctx": 1024}),
+              patch("forgeos.managed_llama.safe_model_file_budget",
+                    return_value=1024),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
+              patch("forgeos.managed_llama.subprocess.Popen",
+                    return_value=proc),
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)),
+              patch("forgeos.managed_llama._release_windows_job"),
+              patch("forgeos.managed_llama._open",
+                    return_value=_Response(b'{"status":"ok"}')),
+              patch("forgeos.managed_llama.LocalChatModel.installed") as installed,
+              patch("forgeos.managed_llama._terminate_posix_group")):
+            with self.assertRaisesRegex(RuntimeError, "not owned"):
+                controller.start(
+                    executable=self.exe, executable_sha256=self.exe_sha,
+                    model_path=self.model, timeout=1, context=512, threads=1)
+        installed.assert_not_called()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+
+    def test_listener_owner_resolver_identifies_current_process(self):
+        from forgeos.managed_llama import _listener_owner_pid
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            try:
+                owner = _listener_owner_pid(port)
+            except OSError as exc:
+                self.skipTest(f"OS denied listener ownership inspection: {exc}")
+            self.assertEqual(owner, os.getpid())
+
+    def test_windows_tcp_owner_table_parser_matches_loopback_port(self):
+        import socket
+        import struct
+        from forgeos.managed_llama import _parse_tcp_owner_table
+        port = 40123
+        row = struct.pack("=IIIIII", 2, 0x0100007F, socket.htons(port),
+                          0, 0, 9876)
+        table = struct.pack("=I", 1) + row
+        self.assertEqual(_parse_tcp_owner_table(table, port), 9876)
+        self.assertIsNone(_parse_tcp_owner_table(table, port + 1))
+        with self.assertRaisesRegex(RuntimeError, "truncated"):
+            _parse_tcp_owner_table(b"", port)
+
     @unittest.skipUnless(os.name == "nt", "Windows Job Object cleanup")
     def test_job_release_failure_still_terminates_process_and_erases_secret(self):
         controller = ManagedLlamaServer()
@@ -761,6 +827,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value=proc),
               patch("forgeos.managed_llama._launch_windows_suspended_job",
                     return_value=(proc, 1234)),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
               patch("forgeos.managed_llama._release_windows_job")):
             with self.assertRaisesRegex(RuntimeError, "exited"):
                 instance.start(executable=self.exe, executable_sha256=self.exe_sha,
@@ -788,6 +856,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
               patch("forgeos.managed_llama.time.sleep") as sleep,
               patch("forgeos.managed_llama._launch_windows_suspended_job",
                     return_value=(proc, 1234)),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
               patch("forgeos.managed_llama._release_windows_job"),
               patch("forgeos.managed_llama._terminate_posix_group")):
             with self.assertRaisesRegex(RuntimeError, "timed out"):

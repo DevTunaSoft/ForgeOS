@@ -346,6 +346,7 @@ class DashboardContractTests(unittest.TestCase):
                 'api_key=active_manager.api_key',
                 'instance.managed_model_sha256 = active_manager.model_sha256',
                 'instance.managed_runtime_sha256 = active_manager.runtime_sha256',
+                'active_manager.verify_listener_ownership',
                 'allow_host_tests=True',
                 'managed["busy"] = True',
                 'managed["busy"] = False'):
