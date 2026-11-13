@@ -537,6 +537,21 @@ class EngineIntegrationTests(unittest.TestCase):
 
 
 class FrozenSecureRoutingTests(unittest.TestCase):
+    def test_windows_snapshot_setup_failure_never_runs_tests(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from forgeos.engine import _run_workspace_tests
+
+        with patch("forgeos.engine.os", SimpleNamespace(name="nt")), \
+             patch("forgeos.test_runtime.create_windows_low_integrity_snapshot",
+                   side_effect=PermissionError("snapshot setup denied")), \
+             patch("forgeos.engine.run_test") as runner, \
+             patch("forgeos.secure_runner.run_secure_windows_test") as secure:
+            with self.assertRaisesRegex(PermissionError, "snapshot setup denied"):
+                _run_workspace_tests(Path.cwd(), "python-unittest")
+        runner.assert_not_called()
+        secure.assert_not_called()
+
     def test_frozen_windows_workspace_tests_never_fall_back(self):
         from types import SimpleNamespace
         from unittest.mock import patch

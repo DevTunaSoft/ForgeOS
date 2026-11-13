@@ -2194,3 +2194,5 @@ and restore under constrained filesystems.
 
 - PASS at `a6cea4c`: the bundled Python 3.12.14 runtime ran 75 focused tests (72 passed, three skipped). With `PYTHONPATH=src;.;tests`, use `python -m unittest test_recovery test_local_resume test_db_backup test_db_restore test_cli_database test_engine.TransactionRecoveryTests test_acceptance test_cli_acceptance test_launcher test_build_info -q`. Use a disposable writable USERPROFILE and set TEMP and TMP outside OneDrive to avoid the managed session's default profile and temporary-directory restrictions.
 - The full `python -m unittest discover -s tests -v` run is still in progress. A focused `test_engine.CheckpointResumeTests.test_exhausted_repairs` rerun failed before the repair loop because icacls was denied permission to label the disposable workspace. Frozen packaging is still BLOCKED locally by missing PyInstaller and pytest. Physical Windows acceptance remains UNVERIFIED.
+
+- Added a regression for denied Windows test snapshot setup. Neither test runner is invoked. Both FrozenSecureRoutingTests passed on Windows/Python 3.12.14. Real containment remains UNVERIFIED.
