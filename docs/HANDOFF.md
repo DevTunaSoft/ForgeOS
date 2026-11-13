@@ -2154,3 +2154,9 @@ and restore under constrained filesystems.
 - Database CLI backup and restore now report a publication collision on stderr and return 1. Existing database content remains protected by exclusive publication. PASS on Windows/Python 3.15: 16 CLI, backup and restore tests, one skip.
 
 - Database CLI backup and restore report destination validation failures on stderr and return exit status 1, covering existing destinations at preflight as well as publication races. Windows/Python 3.15: 15 passed, one skipped across test_cli_database, test_db_backup and test_db_restore.
+
+### Windows acceptance evidence on `2ce399f`
+
+- PASS: `py -m compileall -q src tests forgeos_build` and `py -m unittest test_build_info test_launcher test_acceptance test_cli_acceptance -q` on Windows 11 / Python 3.15.2. The tests had 12 passes and one skip.
+- PASS: `py -m forgeos acceptance` with the isolated Windows profile wrote a source-mode snapshot with commit `2ce399f97a686dfebb1f47daba86c604dc276b1f`. The report did not assert a physical release target and recorded no frozen executable hash or managed-model evidence.
+- BLOCKED: Local packaging lacks the workflow's Python 3.12 and PyInstaller. `ollama list` encountered a loopback socket permission denial, so live Ollama acceptance is UNVERIFIED. Frozen executable smoke and physical Windows release acceptance are UNVERIFIED.
