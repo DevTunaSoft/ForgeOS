@@ -2630,3 +2630,20 @@ and restore under constrained filesystems.
   (`Access is denied`) in this managed session; local loopback adapter testing
   is similarly blocked by host socket permissions. No live backend behavior,
   tokenizer-accurate budget or physical Windows acceptance is claimed.
+
+### Follow-up — link repair checkpoints to full test evidence
+
+- Repair-pending checkpoints now store the SHA-256 reference supplied by the
+  existing diagnostics archive, alongside the bounded `last_test_output`
+  fallback. On resume, a present reference is validated and the full compressed
+  archive is streamed through the existing integrity-checked preview before a
+  repair prompt is built. Malformed archived-evidence claims block automated
+  repair; archive corruption fails closed before another model call. Final
+  result objects expose the reference when available. Legacy checkpoints that
+  predate evidence linkage remain readable.
+- Added direct malformed/tampered archive checks and an interrupted repair
+  recovery regression that confirms the original archived failure reaches the
+  resumed prompt. Verification: focused engine, recovery, diagnostics,
+  documentation and roadmap suites passed 79 tests (3 platform skips), and
+  `compileall` passed. Hosted CI and physical Windows acceptance remain
+  outstanding.

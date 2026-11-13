@@ -145,6 +145,31 @@ def _repair_prompt(root: Path, description: str, failure: str) -> str:
             "Adaptive local model context exceeds the 64 KiB request cap")
     return prompt
 
+
+def _test_evidence_reference(outcome: dict) -> str | None:
+    """Return an archived test-evidence identity, rejecting malformed claims."""
+    optimization = outcome.get("optimization")
+    if optimization is None:
+        return None  # Compatibility with test runners and legacy checkpoints.
+    if not isinstance(optimization, dict):
+        raise ValueError("Test evidence metadata is invalid")
+    reference = optimization.get("reference")
+    if reference is None and not optimization.get("archived"):
+        return None
+    if not isinstance(reference, str) or not re.fullmatch(r"[0-9a-f]{64}", reference):
+        raise ValueError("Archived test evidence reference is invalid")
+    return reference
+
+
+def _checkpoint_evidence_preview(reference: str, *, store=None) -> str:
+    """Stream-verify checkpoint evidence and return a bounded recovery excerpt."""
+    if not isinstance(reference, str) or not re.fullmatch(r"[0-9a-f]{64}", reference):
+        raise ValueError("Invalid checkpoint test evidence reference")
+    if store is None:
+        from .diagnostics import EvidenceStore
+        store = EvidenceStore()
+    return store.preview(reference, max_chars=12_000)
+
 def _generate(model: Ollama, prompt: str) -> str:
     # The local Ollama API is already the only endpoint allowed by Ollama.
     return model.generate_edits(prompt)
@@ -378,6 +403,11 @@ def _execute_task(
             last_output = checkpoint.get("last_test_output")
             if not isinstance(last_output, str) or not last_output:
                 raise ValueError("Repair checkpoint is missing test failure output")
+            evidence_reference = checkpoint.get("test_evidence_reference")
+            if evidence_reference is not None:
+                # Re-read by content hash, rather than trusting mutable text
+                # copied into SQLite, before a recovered model repair prompt.
+                last_output = _checkpoint_evidence_preview(evidence_reference)
             prompt = _repair_prompt(ws.path, task["description"], last_output)
         for attempt in range(start_attempt - 1, max_repairs + 1):
             if resume and phase == "test_pending" and attempt == start_attempt - 1:
@@ -434,6 +464,13 @@ def _execute_task(
                 incomplete_test_evidence = True
                 capture_failure = "invalid-test-outcome"
                 raise
+            try:
+                evidence_reference = _test_evidence_reference(outcome)
+            except ValueError as exc:
+                incomplete_test_evidence = True
+                capture_failure = "invalid-evidence-reference"
+                raise RuntimeError(
+                    "Test evidence reference is invalid; repair/approval blocked") from exc
             previous_failure = last_output
             last_output = outcome["output"]
             if outcome["passed"]:
@@ -452,6 +489,8 @@ def _execute_task(
                           "branch": ws.branch, "edited": paths,
                           "iterations": attempt + 1, "test": outcome,
                           "learning": learned, "model": model_name}
+                if evidence_reference is not None:
+                    result["test_evidence_reference"] = evidence_reference
                 publish({"testing"}, "passed", result=json.dumps(result))
                 return result
             if attempt > 0 and previous_failure:
@@ -477,6 +516,8 @@ def _execute_task(
                                  "phase": "repair_pending",
                                  "contract": contract,
                                  "last_test_output": last_output[-6000:],
+                                 **({"test_evidence_reference": evidence_reference}
+                                    if evidence_reference is not None else {}),
                                  "sha256": {
                                      name: _checkpoint_file_hash(_validate_path(ws.path, name))
                                      for name in paths
@@ -486,6 +527,8 @@ def _execute_task(
                   "branch": ws.branch, "model": model_name,
                   "iterations": max_repairs + 1,
                   "error": last_output[-4000:]}
+        if evidence_reference is not None:
+            result["test_evidence_reference"] = evidence_reference
         publish({"testing"}, "failed", error=result["error"], result=json.dumps(result))
         return result
     except Exception as exc:

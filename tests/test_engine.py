@@ -85,6 +85,21 @@ class EditManifestTests(unittest.TestCase):
         self.assertIn("bounded inventory", prompt)
         self.assertLess(len(prompt), len(failure))
 
+    def test_checkpoint_evidence_reference_is_verified_and_bounded(self):
+        import gzip
+        from forgeos.diagnostics import EvidenceStore
+        from forgeos.engine import _checkpoint_evidence_preview
+        evidence = EvidenceStore(self.root / "evidence")
+        original = "AssertionError: verified original test evidence"
+        reference = evidence.put(original)
+        self.assertEqual(
+            _checkpoint_evidence_preview(reference, store=evidence), original)
+        with self.assertRaisesRegex(ValueError, "reference"):
+            _checkpoint_evidence_preview("../invalid", store=evidence)
+        evidence._path(reference).write_bytes(gzip.compress(b"tampered"))
+        with self.assertRaisesRegex(ValueError, "integrity"):
+            _checkpoint_evidence_preview(reference, store=evidence)
+
 
 @unittest.skipUnless(shutil.which("git"), "Git required")
 class EngineIntegrationTests(unittest.TestCase):
@@ -1010,9 +1025,19 @@ class CheckpointResumeTests(EngineIntegrationTests):
             execute_task(self.store, self.task, self.root, allow_host_tests=True, resume=True)
 
     def test_resume_repair_pending_after_generation_interrupt(self):
+        import gzip
         from unittest.mock import patch
+        from unittest.mock import Mock
+        from forgeos.diagnostics import EvidenceStore
         failing = json.dumps({"files": [{"path": "app.py", "content": "def value():\n return 0\n"}]})
         repaired = json.dumps({"files": [{"path": "app.py", "content": "def value():\n return 42\n"}]})
+        evidence = EvidenceStore(self.root / "evidence")
+        original_failure = "AssertionError: original archived detail expected 42, got 0"
+        reference = evidence.put(original_failure)
+        failure_outcome = {
+            "passed": False, "returncode": 1, "output": "bounded failure summary",
+            "optimization": {"archived": True, "reference": reference},
+        }
         calls = []
 
         def interrupted_generator(model, prompt):
@@ -1022,7 +1047,7 @@ class CheckpointResumeTests(EngineIntegrationTests):
             raise KeyboardInterrupt()
 
         with patch("forgeos.engine._run_workspace_tests",
-                   return_value={"passed": False, "returncode": 1, "output": "expected 42, got 0"}):
+                   return_value=failure_outcome):
             with self.assertRaises(KeyboardInterrupt):
                 execute_task(self.store, self.task, self.root, allow_host_tests=True,
                              max_repairs=2, generate=interrupted_generator)
@@ -1030,15 +1055,30 @@ class CheckpointResumeTests(EngineIntegrationTests):
         self.assertEqual(self.store.get(self.task)["status"], "editing")
         self.assertEqual(saved["phase"], "repair_pending")
         self.assertEqual(saved["attempt"], 2)
-        self.assertIn("expected 42", saved["last_test_output"])
+        self.assertIn("bounded failure summary", saved["last_test_output"])
+        self.assertEqual(saved["test_evidence_reference"], reference)
 
         self.store.recover()
-        with patch("forgeos.engine._run_workspace_tests",
-                   return_value={"passed": True, "returncode": 0, "output": "ok"}):
+        evidence._path(reference).write_bytes(gzip.compress(b"tampered archive"))
+        blocked_generator = Mock(side_effect=AssertionError("model must not be called"))
+        with patch("forgeos.diagnostics.EvidenceStore", return_value=evidence):
+            with self.assertRaisesRegex(ValueError, "integrity"):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             max_repairs=2, resume=True, generate=blocked_generator)
+        blocked_generator.assert_not_called()
+        evidence.put(original_failure)  # Restore the exact content-addressed archive.
+        self.store.recover()
+
+        recovered_prompts = []
+        with (patch("forgeos.engine._run_workspace_tests",
+                    return_value={"passed": True, "returncode": 0, "output": "ok"}),
+              patch("forgeos.diagnostics.EvidenceStore", return_value=evidence)):
             result = execute_task(self.store, self.task, self.root, allow_host_tests=True,
                                   max_repairs=2, resume=True,
-                                  generate=lambda model, prompt: repaired)
+                                  generate=lambda model, prompt: (
+                                      recovered_prompts.append(prompt) or repaired))
         self.assertTrue(result["passed"])
+        self.assertIn(original_failure, recovered_prompts[0])
         self.assertEqual(result["iterations"], 2)
         self.assertEqual((Path(result["workspace"]) / "app.py").read_text(),
                          "def value():\n return 42\n")

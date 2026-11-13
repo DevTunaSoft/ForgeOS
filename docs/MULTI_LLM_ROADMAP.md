@@ -159,7 +159,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [ ] Bind checkpoints to **cryptographically verified GGUF/model revision and runtime binary identity**, not merely a model name; reject unknown identity on resume.
 - [ ] Recover interrupted inference, model download, model load, planning, editing, tests, repair and role handoffs across app restart and OS reboot.
 - [ ] Resume only from committed stage boundaries; prevent duplicate edits or publishing after stale leases/reclaimed work.
-- [ ] Persist bounded progress events and meaningful explanations; keep full source/code/test evidence in local handoffs.
+- [ ] Persist bounded progress events and meaningful explanations; keep full source/code/test evidence in local handoffs. **Partial test-evidence linkage:** repair-pending checkpoints now carry the existing diagnostics archive SHA-256 reference; safe resume streams and verifies the referenced archive before constructing a new repair prompt. Legacy checkpoints without a reference remain supported, and general progress-event persistence remains open.
 - [ ] Expand autonomous QA using the same secure test runner and trusted output rules; do not introduce unrestricted shell execution.
 - [ ] Add complete source packaging, portable project handoff and verified restoration of interrupted work.
 

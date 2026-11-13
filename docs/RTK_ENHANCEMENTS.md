@@ -47,7 +47,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Safe command interpretation
 - [ ] Transactional configuration updates
 - [x] Fail-open-to-raw on archive errors (prototype integrated)
-- [ ] Checkpoint-linked evidence
+- [x] Checkpoint-linked test evidence (experimental SHA-256 reference in repair checkpoints; archived bytes are reverified on resume)
 - [x] Trusted optimization rule verification (content hash pinning)
 
 ## ForgeOS GUI & visibility (7)

@@ -247,3 +247,17 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   and advertised context windows are not reliably exposed. The existing 64 KiB
   UTF-8 request bound remains authoritative; no exact-token guarantee is made.
   Real backend behavior and a full current-head CI run remain UNVERIFIED.
+
+### 2026-11-13 — bind repair checkpoints to archived test evidence
+
+- **Implemented experimentally on the feature branch:** repair-pending task
+  checkpoints retain the SHA-256 reference to their archived full test output.
+  On resume, ForgeOS streams and verifies that archive and supplies its bounded
+  preview to the existing repair prompt. Invalid references or archive hash
+  mismatches block the resumed model call. Final task results also expose the
+  reference when the normal diagnostics archiver produced one.
+- **Verification:** the regression exercises interrupted repair, checkpoint
+  reference persistence, archive retrieval after restart, and bounded prompt
+  construction; integrity tests reject malformed and tampered evidence.
+  Targeted test results and exact revision are recorded in the cumulative
+  handoff. Legacy checkpoints without evidence references remain compatible.
