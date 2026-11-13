@@ -7,7 +7,7 @@ import tempfile
 DEFAULTS = {
     "project": "", "model": "auto", "task_role": "implementation",
     "backend": "ollama", "endpoint": "", "preset": "python-unittest",
-    "workspaces": "", "repair_count": 2,
+    "workspaces": "", "repair_count": 2, "startup_resume_workspace": "",
 }
 ALLOWED_BACKENDS = ("ollama", "llama.cpp", "lm-studio", "openai-local")
 ALLOWED_PRESETS = ("python-unittest", "python-pytest", "npm-test",
@@ -19,7 +19,8 @@ def _sanitize(values):
     if not isinstance(values, dict):
         return {}
     cleaned = {}
-    for key in ("project", "model", "endpoint", "workspaces"):
+    for key in ("project", "model", "endpoint", "workspaces",
+                "startup_resume_workspace"):
         value = values.get(key)
         if isinstance(value, str) and len(value) <= 2048 and "\x00" not in value:
             cleaned[key] = value

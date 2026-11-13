@@ -2206,3 +2206,10 @@ and restore under constrained filesystems.
 - Snapshot setup and cleanup now recognize dangling symlinks at runtime and marker paths as invalid existing state. Windows test_runtime: eight passed. Native dangling-link coverage remains UNVERIFIED in this session.
 
 - Added native dangling-link coverage for both snapshot paths, exercising setup and cleanup and checking that the links are preserved. Windows test_runtime: eight tests passed; both link subtests skipped because the session cannot create symlinks. Native link behavior remains UNVERIFIED here.
+
+## 2026-11-13 — opt-in workspace-scoped startup recovery
+
+- Added a persistent startup recovery preference bound to one existing workspace path. It is off by default, saves only the selected scope (not a reusable host-test permission), and clears the scope when disabled. Startup dispatch revalidates that exact path and directory before using the existing Safe Resume path; it does not resume managed-model checkpoints unless their authenticated runtime is already active.
+- Updated the user guide to explain the host-test impact and workspace authorization.
+- Regression evidence: Windows/Python 3.15 `py -m unittest test_desktop_settings test_gui_contract -q` passed all 39 tests; `git diff --check` passed. GUI startup behavior is also asserted in the GUI contract suite.
+- Real startup recovery on an installed Windows build remains unverified. Continue with the next highest-priority unblocked roadmap item; full release acceptance is still open.

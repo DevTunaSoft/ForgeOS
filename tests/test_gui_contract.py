@@ -16,6 +16,17 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("if not acceptance:", source)
         self.assertNotIn('"allow_host_tests": allow_host_tests.get()', source)
 
+    def test_startup_recovery_is_scoped_to_an_explicitly_authorized_workspace(self):
+        source = (Path(__file__).resolve().parents[1] /
+                 "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Resume eligible tasks at startup and allow their tests to run on this computer"', source)
+        self.assertIn('"startup_resume_workspace": scope', source)
+        self.assertIn('Path(path).expanduser().resolve(strict=True)', source)
+        self.assertIn('str(chosen_workspace) != path', source)
+        self.assertIn('root.after_idle(lambda: resume_blocked_tasks(startup=True))', source)
+        self.assertIn('if not startup and not allow_host_tests.get():', source)
+        self.assertIn('if not acceptance and startup_resume_workspace:', source)
+
     def test_primary_actions_precede_expanding_queue(self):
         source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertLess(source.index('actions = ttk.Frame(dashboard)'),

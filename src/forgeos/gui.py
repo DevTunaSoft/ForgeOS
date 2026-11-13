@@ -135,6 +135,8 @@ def launch(db_path, *, acceptance: bool = False):
     preset = tk.StringVar(value=setting("preset", "python-unittest"))
     workspaces = tk.StringVar(value=setting("workspaces", str(Path.home() / ".forgeos" / "workspaces")))
     allow_host_tests = tk.BooleanVar(value=False)
+    startup_resume_workspace = setting("startup_resume_workspace", "")
+    startup_resume = tk.BooleanVar(value=bool(startup_resume_workspace))
     repair_count = tk.IntVar(value=setting("repair_count", 2))
     status = tk.StringVar(value="Ready")
     counts = tk.StringVar(value="")
@@ -223,6 +225,31 @@ def launch(db_path, *, acceptance: bool = False):
         text="Allow tests to run on this computer (generated code is NOT sandboxed)",
         variable=allow_host_tests,
     ).pack(anchor="w", pady=(8, 0))
+
+    def save_startup_resume():
+        nonlocal startup_resume_workspace
+        try:
+            scope = ""
+            if startup_resume.get():
+                workspace = Path(workspaces.get()).expanduser().resolve(strict=True)
+                if not workspace.is_dir():
+                    raise ValueError("Select an existing workspace folder")
+                scope = str(workspace)
+                if len(scope) > 2048:
+                    raise ValueError("Workspace folder path is too long")
+            save_settings(settings_path, {
+                **load_settings(settings_path), "startup_resume_workspace": scope,
+            })
+            startup_resume_workspace = scope
+        except (OSError, ValueError, RuntimeError) as exc:
+            startup_resume.set(bool(startup_resume_workspace))
+            messagebox.showerror("Startup recovery preference not saved", str(exc))
+
+    ttk.Checkbutton(
+        options,
+        text="Resume eligible tasks at startup and allow their tests to run on this computer",
+        variable=startup_resume, command=save_startup_resume,
+    ).pack(anchor="w")
 
     # Keep the primary actions above the expanding queue so they stay visible
     # at minimum window height and at high Windows display scaling.
@@ -394,22 +421,29 @@ def launch(db_path, *, acceptance: bool = False):
         activity, text="Run local acceptance snapshot",
         command=run_acceptance_snapshot).pack(anchor="w", pady=(0, 8))
 
-    def resume_blocked_tasks():
+    def resume_blocked_tasks(*, startup=False):
         if busy["value"] or managed["busy"]:
             messagebox.showerror(
                 "Recovery busy",
                 "Finish the current task or managed-model operation first.")
             return
-        if not allow_host_tests.get():
+        if not startup and not allow_host_tests.get():
             messagebox.showerror(
                 "Recovery requires test permission",
                 "Enable the host test execution checkbox before recovery. "
                 "Recovered tasks may execute project tests.")
             return
         try:
-            chosen_workspace = Path(workspaces.get()).expanduser().resolve(strict=True)
-        except OSError as exc:
-            messagebox.showerror("Recovery workspace unavailable", str(exc))
+            path = startup_resume_workspace if startup else workspaces.get()
+            chosen_workspace = Path(path).expanduser().resolve(strict=True)
+            if startup and (not path or str(chosen_workspace) != path
+                            or not chosen_workspace.is_dir()):
+                raise ValueError("The authorized startup recovery folder changed")
+        except (OSError, ValueError, RuntimeError) as exc:
+            if startup:
+                log(f"Startup recovery skipped: {exc}")
+            else:
+                messagebox.showerror("Recovery workspace unavailable", str(exc))
             return
         manager = managed["controller"]
         active_manager = manager if manager is not None and manager.running() else None
@@ -1961,6 +1995,7 @@ def launch(db_path, *, acceptance: bool = False):
                     "endpoint": endpoint.get(), "preset": preset.get(),
                     "workspaces": workspaces.get(),
                     "repair_count": repair_count.get(),
+                    "startup_resume_workspace": startup_resume_workspace,
                 })
             except (OSError, ValueError) as exc:
                 messagebox.showwarning("Settings not saved", str(exc))
@@ -2068,6 +2103,8 @@ def launch(db_path, *, acceptance: bool = False):
         root.after(300, verify_gui)
     if not acceptance and project.get().strip():
         root.after(400, lambda: run_readiness_check(show_dialog=False))
+    if not acceptance and startup_resume_workspace:
+        root.after_idle(lambda: resume_blocked_tasks(startup=True))
     poll()
     root.mainloop()
     return report if acceptance else None

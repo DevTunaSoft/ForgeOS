@@ -300,6 +300,15 @@ the usual complete JSON report remains the default. Streaming does not relax
 checkpoint checks, sandbox permissions, model selection or the need to inspect
 a workspace before recovery.
 
+**Automatic startup recovery:** Select an existing workspace folder and enable
+**Resume eligible tasks at startup and allow their tests to run on this computer**.
+ForgeOS saves this permission immediately for that folder. It uses the same
+checkpoint checks as manual recovery and may run eligible project tests on your
+computer. Enable it only for workspaces you trust. To authorize a different
+folder, turn the setting off, select the folder, and turn it back on. Check
+**Activity & diagnostics** for the outcome. Checkpoints that need a running
+authenticated managed model may still require manual recovery.
+
 **GUI recovery memory limits:** The **Resume safe blocked tasks** action now
 uses the same streaming recovery path automatically. The Activity tab shows
 the interrupted-task count, totals of resumed/skipped/failed tasks, and only
