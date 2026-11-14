@@ -17,6 +17,7 @@ import stat
 from threading import Event
 import shutil
 import time
+import unicodedata
 import uuid
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -39,6 +40,80 @@ WINDOWS_RESERVED_NAMES = frozenset({
     *(f"COM{x}" for x in range(1, 10)),
     *(f"LPT{x}" for x in range(1, 10)),
 })
+HUB_CLAIM_FIELDS = frozenset({
+    "license", "author", "model_name", "model_type", "pipeline_tag",
+    "library_name", "base_model", "language", "datasets", "tags",
+    "model_size", "parameter_count", "quantization", "context_length",
+    "chat_template", "tool_use", "structured_output",
+})
+DOWNLOAD_MANIFEST_FIELDS = frozenset({
+    "repo", "revision", "file", "bytes", "sha256",
+})
+MAX_HUB_CLAIMS_BYTES = 2048
+
+
+def _catalog_claim_snapshot(claims: dict, revision: str) -> dict:
+    """Bound repository-card text and label it as an unverified claim."""
+    if (not isinstance(claims, dict) or len(claims) > len(HUB_CLAIM_FIELDS)
+            or not isinstance(revision, str)
+            or not re.fullmatch(r"[a-f0-9]{40}", revision)):
+        raise ValueError("Invalid pinned Hugging Face card claims")
+    normalized = {}
+    for key, value in claims.items():
+        if key not in HUB_CLAIM_FIELDS:
+            raise ValueError("Unsupported Hugging Face card claim")
+        values = value if isinstance(value, list) else [value]
+        if (not values or len(values) > 12
+                or any(not isinstance(item, str) for item in values)):
+            raise ValueError("Invalid Hugging Face card claim value")
+        limit = 100 if isinstance(value, list) else 240
+        cleaned = []
+        for item in values:
+            if len(item) > limit:
+                raise ValueError("Hugging Face card claim is unsafe or oversized")
+            if any(unicodedata.category(char).startswith("C") for char in item):
+                raise ValueError("Hugging Face card claim is unsafe or oversized")
+            item = " ".join(item.split())
+            if (not item or len(item) > limit
+                    or any(unicodedata.category(char).startswith("C")
+                           for char in item)):
+                raise ValueError("Hugging Face card claim is unsafe or oversized")
+            cleaned.append(item)
+        normalized[key] = cleaned if isinstance(value, list) else cleaned[0]
+    snapshot = {"source": "huggingface_card_unverified",
+                "revision": revision, "claims": normalized}
+    if len(json.dumps(snapshot, ensure_ascii=False).encode("utf-8")) > MAX_HUB_CLAIMS_BYTES:
+        raise ValueError("Hugging Face card claims exceed the storage limit")
+    return snapshot
+
+
+def _validated_catalog_claim_snapshot(snapshot: object,
+                                      revision: str) -> dict | None:
+    if snapshot is None:
+        return None
+    if (not isinstance(snapshot, dict)
+            or set(snapshot) != {"source", "revision", "claims"}
+            or snapshot.get("source") != "huggingface_card_unverified"
+            or snapshot.get("revision") != revision):
+        raise ValueError("Stored Hugging Face card claims have an invalid identity")
+    return _catalog_claim_snapshot(snapshot["claims"], revision)
+
+
+def _download_manifest_matches(installed: object, expected: dict) -> bool:
+    if not isinstance(installed, dict):
+        return False
+    fields = set(installed)
+    if fields not in (DOWNLOAD_MANIFEST_FIELDS,
+                      DOWNLOAD_MANIFEST_FIELDS | {"hub_claims"}):
+        return False
+    if any(installed.get(key) != value for key, value in expected.items()):
+        return False
+    try:
+        _validated_catalog_claim_snapshot(
+            installed.get("hub_claims"), expected["revision"])
+    except ValueError:
+        return False
+    return True
 
 
 def _safe_name(name: str) -> tuple[str, ...]:
@@ -281,7 +356,8 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                             deadline: float | None = None,
                             repair_corrupt: bool = False,
                             checkpoint_check=None,
-                            repair_state: dict | None = None) -> dict:
+                            repair_state: dict | None = None,
+                            catalog_claims_snapshot: dict | None = None) -> dict:
     """Fetch one explicitly chosen GGUF with revision and SHA-256 verification.
 
     A failure never publishes an incomplete file. Interrupted partial bytes
@@ -338,6 +414,30 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
     with _exclusive_download_lock(lock):
         _check_cancelled(cancel_event)
         _check_deadline(deadline)
+        requested_claims = _validated_catalog_claim_snapshot(
+            catalog_claims_snapshot, revision)
+        manifest_payload = dict(expected)
+        installed_manifest = None
+        if manifest.exists():
+            manifest_info = manifest.stat()
+            if (not stat.S_ISREG(manifest_info.st_mode)
+                    or manifest_info.st_nlink != 1
+                    or manifest_info.st_size > 4096):
+                raise RuntimeError("Existing GGUF manifest is not a valid file")
+            try:
+                installed_manifest = json.loads(
+                    manifest.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise RuntimeError("Corrupt existing GGUF manifest") from exc
+            if not _download_manifest_matches(installed_manifest, expected):
+                raise RuntimeError("Existing GGUF manifest identity mismatch")
+            existing_claims = _validated_catalog_claim_snapshot(
+                installed_manifest.get("hub_claims"), revision)
+            if existing_claims is not None:
+                manifest_payload["hub_claims"] = existing_claims
+        if ("hub_claims" not in manifest_payload
+                and requested_claims is not None):
+            manifest_payload["hub_claims"] = requested_claims
         if (repair_corrupt
                 and checkpoint_check(checksum) is not False):
             raise RuntimeError(
@@ -365,16 +465,6 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                     raise RuntimeError("Existing GGUF is missing the GGUF header")
                 # Repair a lost manifest after a crash only when the bytes
                 # already match the requested immutable source identity.
-                if manifest.exists():
-                    if (not manifest.is_file() or manifest.stat().st_nlink != 1
-                            or manifest.stat().st_size > 4096):
-                        raise RuntimeError("Existing GGUF manifest is not a valid file")
-                    try:
-                        installed = json.loads(manifest.read_text(encoding="utf-8"))
-                    except (OSError, UnicodeError, ValueError) as exc:
-                        raise RuntimeError("Corrupt existing GGUF manifest") from exc
-                    if installed != expected:
-                        raise RuntimeError("Existing GGUF manifest identity mismatch")
                 if metadata.exists():
                     if (not metadata.is_file() or metadata.stat().st_nlink != 1
                             or metadata.stat().st_size > 4096):
@@ -390,7 +480,12 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                 _check_cancelled(cancel_event)
                 _check_deadline(deadline)
                 if not manifest.exists():
-                    _write_json_atomic(manifest, expected)
+                    _write_json_atomic(manifest, manifest_payload)
+                elif installed_manifest is None:
+                    raise RuntimeError(
+                        "GGUF manifest appeared during cached verification")
+                elif manifest_payload != installed_manifest:
+                    _write_json_atomic(manifest, manifest_payload)
                 if metadata.exists():
                     metadata.unlink()
                 return {"status": "already_verified", "path": str(destination),
@@ -401,16 +496,9 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
             if partial.exists() or metadata.exists():
                 raise RuntimeError(
                     "Existing GGUF has an unresolved download journal; repair refused")
-            if (not manifest.is_file() or manifest.stat().st_nlink != 1
-                    or manifest.stat().st_size > 4096):
+            if not manifest.exists():
                 raise RuntimeError(
                     "Repair requires the original single-link pinned GGUF manifest")
-            try:
-                installed = json.loads(manifest.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, ValueError) as exc:
-                raise RuntimeError("Repair manifest is unreadable") from exc
-            if installed != expected:
-                raise RuntimeError("Repair manifest does not match the pinned source")
             quarantined = destination.with_name(
                 destination.name + ".corrupt-" + uuid.uuid4().hex)
             _reject_existing_link(quarantined, root)
@@ -547,7 +635,7 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
         _check_cancelled(cancel_event)
         _check_deadline(deadline)
         os.replace(partial, destination)
-        _write_json_atomic(manifest, expected)
+        _write_json_atomic(manifest, manifest_payload)
         metadata.unlink(missing_ok=True)
         repaired_path = (repair_state.get("quarantined")
                          if repair_state is not None else None)
@@ -566,7 +654,9 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
                   storage_quota_bytes: int | None = None,
                   max_duration_seconds: int = MAX_DOWNLOAD_DURATION_SECONDS,
                   repair_corrupt: bool = False,
-                  checkpoint_check=None) -> dict:
+                  checkpoint_check=None,
+                  catalog_claims: dict | None = None,
+                  catalog_claims_revision: str | None = None) -> dict:
     """Download one verified GGUF, optionally enforcing a whole-store quota.
 
     Quota-checked transfers take a blocking per-store lock, measure existing
@@ -583,6 +673,18 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
         raise TypeError("repair_corrupt must be boolean")
     if repair_corrupt and not callable(checkpoint_check):
         raise TypeError("repair requires a checkpoint_check callback")
+    if catalog_claims is None:
+        if catalog_claims_revision is not None:
+            raise ValueError("A card-claim revision requires card claims")
+        claims_snapshot = None
+    else:
+        if (not isinstance(catalog_claims_revision, str)
+                or not isinstance(revision, str)
+                or revision.lower() != catalog_claims_revision.lower()):
+            raise ValueError(
+                "Hugging Face card claims require the explicit matching pinned revision")
+        claims_snapshot = _catalog_claim_snapshot(
+            catalog_claims, catalog_claims_revision.lower())
     if (type(max_duration_seconds) is not int
             or not 1 <= max_duration_seconds <= MAX_DOWNLOAD_DURATION_SECONDS):
         raise ValueError("Invalid total model download time limit")
@@ -602,7 +704,8 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
             progress_callback=progress_callback,
             storage_quota_bytes=storage_quota_bytes, deadline=deadline,
             repair_corrupt=repair_corrupt,
-            checkpoint_check=checkpoint_check, repair_state=repair_state)
+            checkpoint_check=checkpoint_check, repair_state=repair_state,
+            catalog_claims_snapshot=claims_snapshot)
 
     try:
         if storage_quota_bytes is None:

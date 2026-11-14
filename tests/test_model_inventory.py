@@ -68,6 +68,14 @@ class GGUFInventoryTests(unittest.TestCase):
         self.assertEqual(items[0]["repo"], "Owner/CodeModel")
         self.assertEqual(items[0]["sha256"], self.sha)
 
+    def test_listing_rejects_unverified_card_claims_from_another_revision(self):
+        self.write_manifest(hub_claims={
+            "source": "huggingface_card_unverified",
+            "revision": "b" * 40,
+            "claims": {"license": "apache-2.0"},
+        })
+        self.assertEqual(list_downloads(self.root), [])
+
     def test_listing_marks_hardlinked_download_unsafe(self):
         original_stat = Path.stat
 

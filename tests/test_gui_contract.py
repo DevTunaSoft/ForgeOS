@@ -115,6 +115,14 @@ class DashboardContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 
+    def test_hugging_face_card_claims_are_persisted_as_unverified_metadata(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('"inspected_claims": None', source)
+        self.assertIn('state["inspected_claims"] = dict(repo_info["claims"])', source)
+        self.assertIn('catalog_claims=term[3]', source)
+        self.assertIn('catalog_claims_revision=term[2]', source)
+
     def test_local_model_memory_estimate_reuses_admission_policy(self):
         source = (Path(__file__).resolve().parents[1] /
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")

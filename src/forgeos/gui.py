@@ -2362,6 +2362,7 @@ def launch(db_path, *, acceptance: bool = False):
             anchor="w", pady=(6, 0))
         state = {"busy": False, "catalog": [], "inspected_repo": None,
                  "inspected_revision": None,
+                 "inspected_claims": None,
                  "search_query": "", "pending_query": "",
                  "next_page_url": None, "search_pages": 0,
                  "action": None, "cancel": None, "close_after": False,
@@ -2437,7 +2438,8 @@ def launch(db_path, *, acceptance: bool = False):
                 state["storage_quota_bytes"] = (
                     quota_gib * 1024 ** 3 if quota_gib else None)
                 term = (state["inspected_repo"], file_choice.get(),
-                        state["inspected_revision"])
+                        state["inspected_revision"],
+                        state["inspected_claims"])
             elif action == "more":
                 if (not state["next_page_url"]
                         or state["search_pages"] >= max_search_pages):
@@ -2494,7 +2496,9 @@ def launch(db_path, *, acceptance: bool = False):
                             term[0], term[1], revision=term[2],
                             cancel_event=state["cancel"],
                             progress_callback=report_transfer,
-                            storage_quota_bytes=state["storage_quota_bytes"])
+                            storage_quota_bytes=state["storage_quota_bytes"],
+                            catalog_claims=term[3],
+                            catalog_claims_revision=term[2])
                     hub_events.put((action, data, None))
                 except Exception as exc:
                     hub_events.put((action, None, catalog_error_message(exc)))
@@ -2569,6 +2573,7 @@ def launch(db_path, *, acceptance: bool = False):
                     state["next_page_url"] = data["next_page_url"]
                     state["inspected_repo"] = None
                     state["inspected_revision"] = None
+                    state["inspected_claims"] = None
                     file_choice.set("")
                     file_picker.configure(values=())
                     download_btn.configure(state="disabled")
@@ -2599,6 +2604,7 @@ def launch(db_path, *, acceptance: bool = False):
                         state["catalog"][int(selected[0])]["repo"]
                         if selected else None)
                     state["inspected_revision"] = repo_info["revision"]
+                    state["inspected_claims"] = dict(repo_info["claims"])
                     choices = [item["path"] for item in data if item["sha256"]]
                     file_picker.configure(values=choices)
                     file_choice.set(choices[0] if choices else "")

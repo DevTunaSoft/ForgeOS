@@ -17,6 +17,7 @@ from threading import Event
 from .gguf_download import (
     DownloadCancelled, MAX_MODEL_BYTES, _digest, _exclusive_download_lock,
     _is_reparse_point, _reject_existing_link,
+    _validated_catalog_claim_snapshot,
     _safe_name, _safe_storage_root,
 )
 from .huggingface_catalog import REPO_ID
@@ -128,7 +129,10 @@ def _list_imports(root: Path) -> list[dict]:
         output.append({
             "path": str(path), "repo": "Local import (provenance unknown)",
             "revision": None, "file": path.name, "bytes": amount,
-            "sha256": checksum, "status": status, "kind": "imported",
+            "disk_bytes": amount, "sha256": checksum, "format": "GGUF",
+            "metadata_claims": {}, "metadata_claims_status": "unknown-import",
+            "runtime_compatibility": "not-recorded",
+            "status": status, "kind": "imported",
         })
     return output
 
@@ -156,6 +160,13 @@ def _manifest_model_file(manifest: Path, root: Path) -> tuple[Path, dict]:
     expected = root.joinpath(*repo.split("/"), revision, *name_parts)
     if manifest != expected.with_name(expected.name + ".forgeos.json"):
         raise ValueError("GGUF manifest does not match revisioned storage path")
+    try:
+        claims = _validated_catalog_claim_snapshot(
+            info.get("hub_claims"), revision.lower())
+    except ValueError as exc:
+        raise ValueError("GGUF manifest has invalid unverified card claims") from exc
+    if claims is not None:
+        info["hub_claims"] = claims
     _reject_existing_link(expected, root)
     return expected, info
 
@@ -213,7 +224,16 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
                 results.append({
                     "path": str(model), "repo": info["repo"],
                     "revision": info["revision"], "file": info["file"],
-                    "bytes": info["bytes"], "sha256": info["sha256"],
+                    "bytes": info["bytes"],
+                    "disk_bytes": (file_info.st_size
+                                   if file_info is not None else None),
+                    "sha256": info["sha256"], "format": "GGUF",
+                    "metadata_claims": (
+                        info.get("hub_claims", {}).get("claims", {})),
+                    "metadata_claims_status": (
+                        "hub-card-unverified" if info.get("hub_claims")
+                        else "not-recorded"),
+                    "runtime_compatibility": "not-recorded",
                     "status": status,
                 })
                 if len(results) > MAX_LISTED_MODELS:

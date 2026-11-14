@@ -79,6 +79,52 @@ class GGUFDownloadTests(unittest.TestCase):
             self.assertEqual(cached["status"], "already_verified")
             no_network.assert_not_called()
 
+    def test_download_persists_unverified_pinned_card_claims_in_inventory(self):
+        claims = {
+            "license": "apache-2.0", "quantization": "Q4_K_M",
+            "context_length": "32768",
+        }
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            result = self.download(
+                revision=REVISION, catalog_claims=claims,
+                catalog_claims_revision=REVISION)
+        manifest = json.loads(Path(result["path"]).with_name(
+            FILE + ".forgeos.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["hub_claims"], {
+            "source": "huggingface_card_unverified",
+            "revision": REVISION, "claims": claims,
+        })
+        from forgeos.model_inventory import list_downloads
+        record = list_downloads(self.root)[0]
+        self.assertEqual(record["repo"], REPO)
+        self.assertEqual(record["revision"], REVISION)
+        self.assertEqual(record["format"], "GGUF")
+        self.assertEqual(record["disk_bytes"], len(BODY))
+        self.assertEqual(record["metadata_claims"], claims)
+        self.assertEqual(record["metadata_claims_status"], "hub-card-unverified")
+        self.assertEqual(record["runtime_compatibility"], "not-recorded")
+        with patch("forgeos.gguf_download._open_weight") as network:
+            self.assertEqual(self.download()["status"], "already_verified")
+            network.assert_not_called()
+        self.assertEqual(json.loads(Path(result["path"]).with_name(
+            FILE + ".forgeos.json").read_text(encoding="utf-8"))["hub_claims"],
+            manifest["hub_claims"])
+
+    def test_card_claims_require_matching_pinned_revision_and_bounded_text(self):
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(ValueError, "matching pinned revision"):
+                self.download(
+                    catalog_claims={"license": "mit"},
+                    revision=REVISION,
+                    catalog_claims_revision="b" * 40)
+            with self.assertRaisesRegex(ValueError, "unsafe or oversized"):
+                self.download(
+                    catalog_claims={"license": "x\x01"},
+                    revision=REVISION,
+                    catalog_claims_revision=REVISION)
+            network.assert_not_called()
+
     def test_explicit_inspected_revision_is_used_without_re_resolving_head(self):
         revision = "b" * 40
         with patch("forgeos.gguf_download._open_weight",
