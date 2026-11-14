@@ -3,11 +3,22 @@ from pathlib import Path
 from unittest.mock import Mock
 from forgeos.gui import (
     PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
-    _retirement_allowed,
+    _model_inventory_status_label, _retirement_allowed,
 )
 
 
 class DashboardContractTests(unittest.TestCase):
+    def test_model_inventory_statuses_are_plain_language_and_unknown_fails_safe(self):
+        self.assertEqual(
+            _model_inventory_status_label("unsafe_path"),
+            "Unsafe link/file type")
+        self.assertEqual(
+            _model_inventory_status_label("present_not_reverified"),
+            "Present; not verified")
+        self.assertEqual(
+            _model_inventory_status_label("unexpected_new_status"),
+            "Needs inspection")
+
     def test_getting_started_view_has_workflow_recovery_and_keyboard_guidance(self):
         source = (Path(__file__).resolve().parents[1] /
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")

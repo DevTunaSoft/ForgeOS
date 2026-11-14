@@ -25,6 +25,20 @@ STATUS_LABELS = {
     "editing": "Editing", "testing": "Testing", "passed": "Passed",
     "failed": "Failed", "blocked": "Blocked",
 }
+MODEL_INVENTORY_STATUS_LABELS = {
+    "present_not_reverified": "Present; not verified",
+    "imported_not_reverified": "Imported; not verified",
+    "verified": "Verified",
+    "missing": "Missing",
+    "size_mismatch": "Size changed",
+    "unsafe_path": "Unsafe link/file type",
+    "needs_manual_inspection": "Needs inspection",
+}
+
+
+def _model_inventory_status_label(status: str) -> str:
+    """Show readable local-model status without weakening its selection gate."""
+    return MODEL_INVENTORY_STATUS_LABELS.get(status, "Needs inspection")
 
 
 def _retirement_allowed(*, task_busy: bool, operation_busy: bool,
@@ -938,7 +952,9 @@ def launch(db_path, *, acceptance: bool = False):
                 listing.insert("", "end", iid=str(index),
                                values=(entry["file"],
                                        size_text,
-                                       entry["repo"], entry["status"]))
+                                       entry["repo"],
+                                       _model_inventory_status_label(
+                                           entry["status"])))
             selectable_statuses = {
                 "present_not_reverified", "imported_not_reverified", "verified"}
             verification_events = Queue(maxsize=1)
@@ -1107,7 +1123,8 @@ def launch(db_path, *, acceptance: bool = False):
                     records[index]["status"] = "verified"
                     old = listing.item(str(index), "values")
                     listing.item(str(index), values=(
-                        old[0], old[1], old[2], "verified"))
+                        old[0], old[1], old[2],
+                        _model_inventory_status_label("verified")))
                     retirement_status.set(
                         "SHA-256 verified for this session. Startup still "
                         "checks model bytes before loading.")
