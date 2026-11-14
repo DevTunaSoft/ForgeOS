@@ -3108,3 +3108,31 @@ and restore under constrained filesystems.
   test double. Real llama.cpp crash/restart, PID-table access, frozen EXE,
   physical process-tree cleanup and target-device memory measurements remain
   unverified for issues #53 and #56.
+
+### 2026-11-14 — run draft-branch CI and repair cross-platform failures
+
+- **Workflow source:** `d885a04` adds explicit manual triggers to the Python
+  matrix and documentation workflows. Draft PR jobs remain skipped by policy;
+  manual dispatch can validate the branch without changing review status.
+- **First hosted run at `d885a04`:** manual documentation run
+  `43616723941` and Windows EXE run `43616725621` passed. Foundation run
+  `43616721677` failed in all four Python matrix jobs. Ubuntu exposed a
+  mocked-`Popen` type error, a one-byte Git normalization of the pinned
+  llama.cpp notice, and a hard-link retirement fixture expecting the wrong
+  exception. Windows additionally exposed brand-kit line-ending conversion
+  and model inventory/import/retirement failures. A passed Windows package
+  job does not establish that the full Windows unit matrix passed.
+- **Source repair:** `c576dcec6a7d943e1cf06cb302670c942288c299` retains
+  the real `Popen` type while tests mock the launcher, preserves exact
+  upstream license and supplied brand-kit bytes through Git attributes,
+  compares imported paths after canonicalization while still rejecting the
+  original reparse path, and aligns the linked-manifest fixture with the
+  existing fail-closed `ValueError` contract. The staged license bytes matched
+  the pinned SHA-256 before commit.
+- **Local verification:** the six affected modules passed 145 tests with
+  14 platform/environment skips; Python compilation and staged diff checks
+  passed. Hosted matrix results for the repaired source remain pending.
+- **Next:** dispatch the three workflows at the new head, inspect every
+  matrix job, then fix remaining Windows hard-link, reparse and purge failures
+  without weakening the safety contracts. Physical Windows 11 inference,
+  real GGUF download and 16/32 GiB acceptance remain open.
