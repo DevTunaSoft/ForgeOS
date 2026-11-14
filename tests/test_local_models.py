@@ -234,6 +234,8 @@ class LocalModelsTests(unittest.TestCase):
         self.assertEqual(data["model"], "coder-3b")
         self.assertFalse(data["stream"])
         self.assertIn("Fix a test", data["messages"][0]["content"])
+        self.assertEqual(data["response_format"]["type"], "json_object")
+        self.assertEqual(data["response_format"]["schema"]["required"], ["files"])
 
     def test_planning_preserves_contract(self):
         model = LocalChatModel(backend="lm-studio", model="coder")

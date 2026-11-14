@@ -222,6 +222,29 @@ class LocalChatModel:
         }
         request_body[self.token_parameter] = (
             settings["num_predict"] if edits else min(900, settings["num_predict"]))
+        if edits:
+            request_body["response_format"] = {
+                "type": "json_object",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "files": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "path": {"type": "string"},
+                                    "content": {"type": "string"},
+                                },
+                                "required": ["path", "content"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["files"],
+                    "additionalProperties": False,
+                },
+            }
         encoded = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
         if len(encoded) > MAX_REQUEST_BYTES:
             raise ValueError("Model request exceeds the bounded context budget")

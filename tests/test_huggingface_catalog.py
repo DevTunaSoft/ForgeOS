@@ -288,7 +288,8 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         self.assertIn("/tree/" + "d" * 40, opened.call_args.args[0].full_url)
         details_url = opened.call_args_list[0].args[0].full_url
         self.assertEqual(parse_qs(urlsplit(details_url).query)["expand"],
-                         ["cardData,sha,tags,author"])
+                         ["cardData", "sha", "tags", "author",
+                          "private", "gated"])
 
     def test_untrusted_card_control_characters_are_normalized(self):
         from forgeos.huggingface_catalog import inspect_gguf_repo

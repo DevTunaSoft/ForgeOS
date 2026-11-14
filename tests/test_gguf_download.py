@@ -960,6 +960,8 @@ class GGUFDownloadTests(unittest.TestCase):
                     "https://hf.co/weights",
                     "https://xethub.hf.co.evil.example/model",
                     "https://fake-xethub.hf.co/weights",
+                    "https://evil.us.aws.cdn.hf.co/weights",
+                    "https://us.aws.cdn.hf.co.evil.example/weights",
                     "https://huggingface.co:444/model",
                     "https://huggingface.co.evil.example/weights"):
             self.assertFalse(_allowed_download_url(url))
@@ -967,7 +969,9 @@ class GGUFDownloadTests(unittest.TestCase):
                     "https://cas-server.xethub.hf.co/x",
                     "https://cdn-lfs.huggingface.co/model",
                     "https://huggingface.co/owner/repo",
-                    "https://transfer.xethub.hf.co/x"):
+                    "https://transfer.xethub.hf.co/x",
+                    "https://us.aws.cdn.hf.co/weights",
+                    "https://cdn-lfs-eu-1.hf.co/weights"):
             with self.subTest(url=url):
                 self.assertTrue(_allowed_download_url(url))
 

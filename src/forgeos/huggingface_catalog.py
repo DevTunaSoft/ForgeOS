@@ -253,7 +253,8 @@ def inspect_gguf_repo(repo: str) -> dict:
         raise ValueError("Invalid Hugging Face repository identifier")
     url = ("https://huggingface.co/api/models/" +
            "/".join(quote(part, safe="") for part in repo.split("/")) +
-           "?expand=cardData,sha,tags,author")
+           "?expand=cardData&expand=sha&expand=tags&expand=author"
+           "&expand=private&expand=gated")
     item = _hub_json(url)
     if not isinstance(item, dict) or item.get("gated") or item.get("private"):
         raise RuntimeError("Public Hugging Face repository metadata unavailable")

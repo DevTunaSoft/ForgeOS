@@ -797,6 +797,21 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     RuntimeError, "empty edit contract"):
                 controller.inference_self_test()
 
+    def test_inference_self_test_accepts_one_json_markdown_fence(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.poll.return_value = None
+        process.pid = 44
+        controller.process = process
+        controller.endpoint = "http://127.0.0.1:17089/v1"
+        controller.api_key = "a" * 32
+        controller.model_name = ALIAS
+        with patch(
+                "forgeos.managed_llama.LocalChatModel.generate_edits",
+                return_value='```json\n{"files":[]}\n```'):
+            result = controller.inference_self_test()
+        self.assertEqual(result["status"], "passed")
+
     def test_managed_launch_is_local_cpu_authenticated_single_process(self):
         from forgeos.managed_llama import _verified_model, _verified_runtime
         proc = Mock()

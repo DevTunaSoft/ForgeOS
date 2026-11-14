@@ -835,8 +835,11 @@ class ManagedLlamaServer:
         encoded = response.encode("utf-8")
         if len(encoded) > 4096:
             raise RuntimeError("Managed model self-test response was unexpectedly large")
+        candidate = response.strip()
+        if candidate.startswith("```json") and candidate.endswith("```"):
+            candidate = candidate[len("```json"): -len("```")].strip()
         try:
-            payload = json.loads(response)
+            payload = json.loads(candidate)
         except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Managed model self-test did not return valid JSON") from exc

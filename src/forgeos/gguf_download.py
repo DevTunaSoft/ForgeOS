@@ -34,7 +34,11 @@ CHUNK_BYTES = 1024 * 1024
 RESERVED_DISK_BYTES = GIB
 SAFE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
 ALLOWED_CDN = ("huggingface.co", "cdn-lfs.huggingface.co",
-               "cas-bridge.xethub.hf.co", "cas-server.xethub.hf.co")
+               "cas-bridge.xethub.hf.co", "cas-server.xethub.hf.co",
+               "cas-server.xethub-eu.hf.co", "transfer.xethub.hf.co",
+               "transfer.xethub-eu.hf.co", "us.aws.cdn.hf.co",
+               "us.gcp.cdn.hf.co", "cdn-lfs-us-1.hf.co",
+               "cdn-lfs-eu-1.hf.co")
 WINDOWS_RESERVED_NAMES = frozenset({
     "CON", "PRN", "AUX", "NUL",
     *(f"COM{x}" for x in range(1, 10)),
