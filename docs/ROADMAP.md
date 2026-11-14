@@ -150,6 +150,13 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   visible and are never replaced with a loaded label. Visual Windows/EXE
   acceptance remains open.
 
+- **Issue #54 inventory metadata:** browser downloads now retain bounded Hub
+  card claims for license, quantization and context in the existing pinned
+  manifest, explicitly marked unverified. Offline inventory reports source,
+  format and expected/on-disk bytes; it does not infer runtime compatibility
+  from card claims. Persisted load compatibility and real Hub/Windows
+  acceptance remain open.
+
 
 ### 2026-11-11 — low-allocation deterministic routing checkpoint
 

@@ -171,7 +171,12 @@ partial lines without a summary; never treat such output as success.
   hard-linked model/manifest files and rechecks the model's link count after
   hashing, alongside size, modification time and file identity. The metadata
   inventory also marks hard-linked or non-regular weights as unsafe, so the
-  existing model picker cannot select them before verification.
+  existing model picker cannot select them before verification. The existing
+  pinned manifest can retain a bounded snapshot of public Hub card claims for
+  license, quantization and declared context, explicitly marked
+  `hub-card-unverified` and tied to the inspected revision. Offline inventory
+  reports expected versus observed disk bytes and does not infer actual runtime
+  compatibility from those claims.
 - `gguf_download.repair_downloaded_gguf()` is the explicit damaged-download
   recovery path. It validates the original local pinned manifest and uses the
   same revision/SHA-256 through the canonical downloader. Under the existing

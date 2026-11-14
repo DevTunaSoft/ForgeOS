@@ -444,6 +444,14 @@ the estimate; startup performs the actual admission check again.
 Advanced users can run `forgeos models-local` to list model weights and
 `forgeos model-verify-local "C:\\Users\\You\\.forgeos\\models\\...\\model.gguf"`
 to recheck one SHA-256 explicitly, without downloading or running anything.
+The inventory JSON includes source repository/revision, pinned SHA-256,
+supported format, expected and observed file sizes, and bounded `metadata_claims`
+captured during repository inspection. License, quantization and context values
+inside those claims are marked `hub-card-unverified`; they are author-supplied
+metadata, not licensing, quantization or compatibility verification. Imported
+files explicitly report unknown provenance. The offline inventory reports
+runtime compatibility as `not-recorded`; the GUI's loaded label is live
+session state, not a persisted compatibility result.
 Verification takes the same per-model lifecycle lock as managed startup,
 downloads and retirement, and reports an active operation instead of hashing
 the file concurrently with it. The GUI check reports byte progress and can be

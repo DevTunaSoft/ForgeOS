@@ -370,6 +370,15 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 - [ ] Visually verify the status in the Windows GUI and frozen EXE with a real model start/stop cycle.
 
 
+### Persist inspected Hub card claims with pinned GGUF identity (2026-11-13)
+
+- [x] Store bounded license, quantization, context and other supplied card claims in the existing revision-specific GGUF manifest, recording their source, inspected repository revision and unverified status.
+- [x] Expose source, pinned identity, format, expected/on-disk byte counts and metadata-claim status through the bounded offline inventory for downloaded and imported models.
+- [x] Keep metadata claims outside the model integrity decision; malformed/oversized claims fail closed, while all present weights still require hash verification before inference.
+- [x] Add regressions for pinned claim persistence, inventory disclosure, revision mismatch, bounded text, restart/cache reuse and existing managed/import/retirement compatibility.
+- [ ] Persist actual model/runtime load compatibility keyed by both hashes and validate the metadata capture against real Hub data; review license obligations separately.
+
+
 - [x] Harden journal and rename durability with POSIX directory fsync, plus fault injection for synchronization interruption. Windows directory durability requires physical NTFS acceptance before any power-loss guarantee.
 
 

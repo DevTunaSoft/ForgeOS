@@ -3013,3 +3013,23 @@ and restore under constrained filesystems.
 - **Limits / next:** the model picker has not been visually checked with a real
   running model or frozen EXE. The loaded state is session-derived and does
   not persist across application restarts.
+
+### 2026-11-13 — persist bounded, unverified Hub card metadata
+
+- **Source increment:** the existing browser download path now stores bounded
+  repository-card claims in the same revision-pinned GGUF manifest, including
+  the inspected revision and an explicit unverified provenance label. Offline
+  inventory exposes repository/revision/hash, `GGUF` format, expected and
+  observed file bytes, optional claims, and `runtime_compatibility:
+  not-recorded`. Imported weights continue to disclose unknown provenance.
+  Claims do not affect inference selection or imply legal/format compatibility.
+- **Verification:** isolated download (48), inventory (21), GUI-contract (46),
+  managed-runtime (43), import (25), and retirement (28) tests passed: 212
+  tests total, 14 platform/environment skips. Coverage includes claim bounds,
+  pinned revision matching, persistent manifest/cache reuse, offline inventory
+  reporting, claim identity refusal and compatibility with existing
+  runtime/import/retirement readers.
+- **Limits / next:** card claims remain author-supplied and unverified. Actual
+  load compatibility is currently session-visible only and is not persisted
+  against a model/runtime hash pair. Latest hosted CI, frozen EXE, real Hub
+  metadata and physical Windows acceptance remain open.
