@@ -73,6 +73,17 @@ class LocalModelImportTests(unittest.TestCase):
         self.assertTrue(model_import._import_lifecycle_lock_path(
             self.model.resolve(), model_store.resolve()).is_file())
 
+    def test_imported_model_lock_rejects_reparse_source_and_storage(self):
+        with patch("forgeos.model_import._is_reparse_point",
+                   side_effect=lambda path: path == self.model):
+            with self.assertRaisesRegex(ValueError, "reparse point"):
+                imported_model_lock_path(self.model, directory=self.models)
+
+        with patch("forgeos.model_import._is_reparse_point",
+                   side_effect=lambda path: path == self.models):
+            with self.assertRaisesRegex(ValueError, "reparse-point"):
+                imported_model_lock_path(self.model, directory=self.models)
+
     def test_legacy_adjacent_sidecar_remains_compatible(self):
         from forgeos.model_import import IMPORT_FORMAT
         import_local_gguf(self.model, directory=self.models)

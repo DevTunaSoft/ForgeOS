@@ -18,7 +18,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from forgeos.gguf_download import (
-    DownloadCancelled, _allowed_download_url, _safe_name, download_gguf,
+    DownloadCancelled, _allowed_download_url, _is_reparse_point, _safe_name,
+    _safe_storage_root, download_gguf,
 )
 
 REPO = "Qwen/Coder-GGUF"
@@ -835,6 +836,19 @@ class GGUFDownloadTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.download()
             network.assert_not_called()
+
+    def test_windows_reparse_attribute_is_detected_without_junction_api(self):
+        path = Mock(spec=["is_symlink", "lstat"])
+        path.is_symlink.return_value = False
+        path.lstat.return_value = SimpleNamespace(
+            st_file_attributes=0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+        self.assertTrue(_is_reparse_point(path))
+
+    def test_storage_root_rejects_reparse_points_before_use(self):
+        with patch("forgeos.gguf_download._is_reparse_point",
+                   side_effect=lambda path: path == self.root):
+            with self.assertRaisesRegex(ValueError, "reparse-point"):
+                _safe_storage_root(self.root)
 
     def test_disk_pressure_blocks_request_and_keeps_journal(self):
         # Drive measurement is injected, not the actual disk capacity.

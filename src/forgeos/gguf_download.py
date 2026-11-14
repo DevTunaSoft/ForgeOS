@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 from threading import Event
 import shutil
 import time
@@ -60,10 +61,27 @@ def _safe_storage_root(directory: Path | str | None) -> Path:
     root = Path(directory) if directory is not None else (
         Path.home() / ".forgeos" / "models")
     root = root.expanduser().absolute()
-    if any(parent.is_symlink() for parent in (root, *root.parents)):
-        raise ValueError("Refusing symlinked model storage")
+    if any(_is_reparse_point(parent) for parent in (root, *root.parents)):
+        raise ValueError("Refusing linked or reparse-point model storage")
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve(strict=True)
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """Detect symlinks, Windows junctions and other filesystem reparse points."""
+    if path.is_symlink():
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    if callable(is_junction) and is_junction():
+        return True
+    try:
+        attributes = path.lstat().st_file_attributes
+    except FileNotFoundError:
+        return False
+    except AttributeError:
+        return False
+    flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(attributes & flag)
 
 
 def _lock_contention(exc: OSError) -> bool:
@@ -79,8 +97,8 @@ def _reject_existing_link(target: Path, root: Path) -> None:
     for item in (target, *target.parents):
         if item == root:
             return
-        if item.is_symlink():
-            raise ValueError("Model path contains a symbolic link")
+        if _is_reparse_point(item):
+            raise ValueError("Model path contains a link or reparse point")
 
 
 @contextmanager
@@ -359,8 +377,10 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
         if partial.exists() != metadata.exists():
             raise RuntimeError("Incomplete download journal needs manual inspection")
         if partial.exists():
-            if partial.is_symlink() or metadata.is_symlink():
-                raise ValueError("Model download journal must not be a symlink")
+            if (_is_reparse_point(partial)
+                    or _is_reparse_point(metadata)):
+                raise ValueError(
+                    "Model download journal must not be linked or redirected")
             if metadata.stat().st_size > 4096:
                 raise RuntimeError("Model download journal is oversized")
             try:

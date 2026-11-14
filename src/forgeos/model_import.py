@@ -12,7 +12,7 @@ from threading import Event
 
 from .gguf_download import (
     CHUNK_BYTES, DownloadCancelled, MAX_MODEL_BYTES, _digest,
-    _exclusive_download_lock,
+    _exclusive_download_lock, _is_reparse_point,
     _safe_storage_root,
 )
 
@@ -40,8 +40,8 @@ def _import_lifecycle_lock_path(target: Path, root: Path) -> Path:
     """Place imported-file locks in writable ForgeOS storage, not beside media."""
     lock_id = hashlib.sha256(os.fsencode(str(target))).hexdigest()
     lock = root / (IMPORT_LOCK_PREFIX + lock_id + ".lock")
-    if lock.is_symlink():
-        raise ValueError("Refusing symbolic-link imported model lifecycle lock")
+    if _is_reparse_point(lock):
+        raise ValueError("Refusing linked or redirected model lifecycle lock")
     if os.path.lexists(lock) and (not lock.is_file() or lock.stat().st_nlink != 1):
         raise ValueError("Imported model lifecycle lock is unsafe")
     return lock
@@ -51,19 +51,19 @@ def registered_import(path: str | Path, *,
                       directory: str | Path | None = None) -> dict | None:
     """Return a bounded registry identity for one path, without touching it."""
     target = Path(path).expanduser().absolute()
-    if any(item.is_symlink() for item in (target, *target.parents)):
-        raise ValueError("Imported model path contains a symbolic link")
+    if any(_is_reparse_point(item) for item in (target, *target.parents)):
+        raise ValueError("Imported model path contains a link or reparse point")
     target = target.resolve(strict=False)
     root = (Path(directory) if directory is not None else
             Path.home() / ".forgeos" / "models").expanduser().absolute()
-    if any(item.is_symlink() for item in (root, *root.parents)):
-        raise ValueError("Refusing symlinked model storage")
+    if any(_is_reparse_point(item) for item in (root, *root.parents)):
+        raise ValueError("Refusing linked or reparse-point model storage")
     if not root.is_dir():
         return None
     root = root.resolve(strict=True)
     index = root / IMPORT_INDEX
-    if index.is_symlink():
-        raise ValueError("Local import registry is a symbolic link")
+    if _is_reparse_point(index):
+        raise ValueError("Local import registry is linked or redirected")
     if not index.exists():
         return None
     if not index.is_file() or index.stat().st_size > MAX_IMPORT_INDEX_BYTES:
@@ -102,10 +102,13 @@ def registered_import(path: str | Path, *,
 def imported_model_lock_path(path: str | Path, *,
                              directory: str | Path | None = None) -> Path:
     """Return the shared store lock for registry references, else adjacent lock."""
-    target = Path(path).expanduser().absolute().resolve(strict=False)
+    target = Path(path).expanduser().absolute()
+    if any(_is_reparse_point(item) for item in (target, *target.parents)):
+        raise ValueError("Imported model path contains a link or reparse point")
+    target = target.resolve(strict=False)
     sidecar = target.with_name(target.name + ".forgeos.json")
-    if sidecar.is_symlink():
-        raise ValueError("Symbolic-link GGUF identity metadata is not trusted")
+    if _is_reparse_point(sidecar):
+        raise ValueError("Linked or redirected GGUF identity metadata is not trusted")
     if sidecar.is_file():
         if sidecar.stat().st_size > 4096:
             return target.with_name(target.name + ".lock")
@@ -117,8 +120,8 @@ def imported_model_lock_path(path: str | Path, *,
             return target.with_name(target.name + ".lock")
     root = (Path(directory) if directory is not None else
             Path.home() / ".forgeos" / "models").expanduser().absolute()
-    if any(item.is_symlink() for item in (root, *root.parents)):
-        raise ValueError("Refusing symlinked model storage")
+    if any(_is_reparse_point(item) for item in (root, *root.parents)):
+        raise ValueError("Refusing linked or reparse-point model storage")
     if not root.is_dir():
         return target.with_name(target.name + ".lock")
     root = root.resolve(strict=True)
@@ -136,11 +139,11 @@ def _register_import(path: Path, sha256: str, directory=None) -> None:
     root = _safe_storage_root(directory)
     index = root / IMPORT_INDEX
     lock_path = root / (IMPORT_INDEX + ".lock")
-    if index.is_symlink() or lock_path.is_symlink():
-        raise ValueError("Refusing symbolic-link local import inventory")
+    if _is_reparse_point(index) or _is_reparse_point(lock_path):
+        raise ValueError("Refusing linked or redirected local import inventory")
     with _exclusive_download_lock(lock_path):
-        if index.is_symlink() or lock_path.is_symlink():
-            raise ValueError("Local import inventory changed into a symbolic link")
+        if _is_reparse_point(index) or _is_reparse_point(lock_path):
+            raise ValueError("Local import inventory changed into a redirect")
         entries = []
         if os.path.lexists(index):
             if not index.is_file() or index.stat().st_size > MAX_IMPORT_INDEX_BYTES:
@@ -213,19 +216,19 @@ def import_local_gguf(path: str | Path, *,
     target = Path(path).expanduser().absolute()
     if target.suffix.lower() != ".gguf":
         raise ValueError("Choose a .gguf file")
-    if any(item.is_symlink() for item in (target, *target.parents)):
-        raise ValueError("Refusing a symbolic link in the selected model path")
+    if any(_is_reparse_point(item) for item in (target, *target.parents)):
+        raise ValueError("Refusing a link or reparse point in the selected model path")
     target = target.resolve(strict=True)
     root = _safe_storage_root(directory)
     manifest = target.with_name(target.name + ".forgeos.json")
     lock_path = _import_lifecycle_lock_path(target, root)
-    if manifest.is_symlink():
-        raise ValueError("Refusing symbolic-link model metadata")
+    if _is_reparse_point(manifest):
+        raise ValueError("Refusing linked or redirected model metadata")
 
     with _exclusive_download_lock(lock_path):
         existing = None
         if os.path.lexists(manifest):
-            if (manifest.is_symlink() or not manifest.is_file()
+            if (_is_reparse_point(manifest) or not manifest.is_file()
                     or manifest.stat().st_nlink != 1
                     or manifest.stat().st_size > 4096):
                 raise ValueError("Existing model sidecar is not a safe local import")
@@ -294,8 +297,8 @@ def unregister_imported_gguf(path: str | Path, *,
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable")
     target = Path(path).expanduser().absolute()
-    if any(item.is_symlink() for item in (target, *target.parents)):
-        raise ValueError("Imported model path contains a symbolic link")
+    if any(_is_reparse_point(item) for item in (target, *target.parents)):
+        raise ValueError("Imported model path contains a link or reparse point")
     target = target.resolve(strict=True)
     root = _safe_storage_root(directory)
     lock_path = _import_lifecycle_lock_path(target, root)
@@ -303,8 +306,8 @@ def unregister_imported_gguf(path: str | Path, *,
     index_lock = root / (IMPORT_INDEX + ".lock")
     with _exclusive_download_lock(lock_path):
         sidecar = target.with_name(target.name + ".forgeos.json")
-        if sidecar.is_symlink():
-            raise ValueError("Imported model sidecar is a symbolic link")
+        if _is_reparse_point(sidecar):
+            raise ValueError("Imported model sidecar is linked or redirected")
         before = target.stat()
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
                 or not MIN_MODEL_BYTES <= before.st_size <= MAX_MODEL_BYTES):
@@ -313,11 +316,11 @@ def unregister_imported_gguf(path: str | Path, *,
             if source.read(4) != b"GGUF":
                 raise ValueError("Imported model no longer has a GGUF header")
 
-        if index.is_symlink() or index_lock.is_symlink():
-            raise ValueError("Refusing symbolic-link local import inventory")
+        if _is_reparse_point(index) or _is_reparse_point(index_lock):
+            raise ValueError("Refusing linked or redirected local import inventory")
         with _exclusive_download_lock(index_lock):
-            if index.is_symlink() or index_lock.is_symlink():
-                raise ValueError("Local import inventory changed into a symbolic link")
+            if _is_reparse_point(index) or _is_reparse_point(index_lock):
+                raise ValueError("Local import inventory changed into a redirect")
             if not index.is_file() or index.stat().st_size > MAX_IMPORT_INDEX_BYTES:
                 raise ValueError("Local import inventory is missing or oversized")
             try:
@@ -367,8 +370,8 @@ def unregister_imported_gguf(path: str | Path, *,
             raise RuntimeError("Imported GGUF changed during verification")
 
         with _exclusive_download_lock(index_lock):
-            if index.is_symlink() or index_lock.is_symlink():
-                raise ValueError("Local import inventory changed into a symbolic link")
+            if _is_reparse_point(index) or _is_reparse_point(index_lock):
+                raise ValueError("Local import inventory changed into a redirect")
             try:
                 latest = json.loads(index.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, ValueError) as exc:
@@ -424,8 +427,8 @@ def purge_imported_gguf(path: str | Path, *, checkpoint_check,
     if not callable(checkpoint_check):
         raise TypeError("checkpoint_check must be callable")
     target = Path(path).expanduser().absolute()
-    if any(item.is_symlink() for item in (target, *target.parents)):
-        raise ValueError("Imported model path contains a symbolic link")
+    if any(_is_reparse_point(item) for item in (target, *target.parents)):
+        raise ValueError("Imported model path contains a link or reparse point")
     target = target.resolve(strict=False)
     if target.suffix.lower() != ".gguf":
         raise ValueError("Select an imported .gguf file")
@@ -435,14 +438,14 @@ def purge_imported_gguf(path: str | Path, *, checkpoint_check,
     lock_path = _import_lifecycle_lock_path(target, root)
     sidecar = target.with_name(target.name + ".forgeos.json")
     for item in (index, index_lock, lock_path, sidecar):
-        if item.is_symlink():
-            raise ValueError("Refusing symbolic-link imported model metadata or lock")
+        if _is_reparse_point(item):
+            raise ValueError("Refusing linked or redirected imported metadata or lock")
 
     with _exclusive_download_lock(lock_path):
         with _exclusive_download_lock(index_lock):
             for item in (index, index_lock, lock_path, sidecar, target):
-                if item.is_symlink():
-                    raise ValueError("Imported model path changed into a symbolic link")
+                if _is_reparse_point(item):
+                    raise ValueError("Imported model path changed into a redirect")
             if not index.is_file() or index.stat().st_size > MAX_IMPORT_INDEX_BYTES:
                 raise ValueError("Local import inventory is missing or oversized")
             try:
