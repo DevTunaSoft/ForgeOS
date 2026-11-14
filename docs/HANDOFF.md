@@ -3180,3 +3180,19 @@ and restore under constrained filesystems.
 - **Next:** rerun the full hosted matrix on the new head, resolve any real
   failures, and retain physical Windows llama.cpp/GGUF acceptance as an
   explicit release gate.
+
+### 2026-11-14 — isolate the final hosted Windows 3.10 crash-harness failure
+
+- **Fourth hosted run at `8b537b5`:** manual documentation run
+  `43618282665`, Windows EXE run `43618284827`, both Ubuntu unit jobs and
+  Windows Python 3.12 unit tests passed. Windows Python 3.10 ran 787 tests
+  and had one failure: the owner-crash harness's Python child had already
+  exited before the test killed its owner. No other unit failure remained.
+- **Harness commit:** `db4b85f2c717a351c83f6b8e8a09a92cc7ca2b62`
+  starts that child with the same minimal OS environment used by production
+  managed launch, rather than an empty environment. The targeted real
+  Windows owner-crash test passed locally and `git diff --check` passed.
+  Hosted Python 3.10 verification at this new head is pending.
+- **Next:** rerun the exact-head hosted matrix and package job. Even a green
+  hosted matrix does not prove real llama.cpp/GGUF inference, physical
+  Windows 11 behavior, 16/32 GiB memory or large download acceptance.
