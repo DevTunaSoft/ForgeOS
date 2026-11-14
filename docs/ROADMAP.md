@@ -366,3 +366,16 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Limits:** link-count metadata was simulated because this managed Windows
   filesystem denies real hard-link creation. Physical NTFS behavior remains
   an acceptance item.
+
+### 2026-11-13 — show readable model inventory states
+
+- **Implemented experimentally on the feature branch:** the existing local
+  model picker now translates internal inventory codes to readable labels,
+  including “Unsafe link/file type.” Unknown statuses fall back to “Needs
+  inspection,” while the safe-status allowlist remains unchanged.
+- **Verification:** GUI-contract, inventory and import suites passed 87 tests
+  with 2 environment skips. The new contract checks safe human-readable
+  labels and the fail-safe unknown-status label. Compilation and
+  `git diff --check` passed.
+- **Limits:** physical GUI accessibility and target-Windows acceptance remain
+  open.

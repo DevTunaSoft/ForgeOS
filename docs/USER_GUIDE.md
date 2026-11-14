@@ -429,6 +429,9 @@ pinned download manifest. The list is metadata-only and does **not**
 rehash multi-gigabyte models. Select a present entry and choose
 **Reverify SHA-256** for a background, cancellable full-file check. A model
 verified in the current view is still checked again before the server loads it.
+Inventory states use readable labels such as **Present; not verified**,
+**Size changed**, and **Unsafe link/file type**. Unsafe and missing entries stay
+visible for diagnosis but cannot be selected.
 Use **Estimate memory** to compare its weight plus a metadata-based f16 KV
 cache estimate at the current default context against ForgeOS's safe model
 budget. Unsupported metadata, native buffers and changing system load limit

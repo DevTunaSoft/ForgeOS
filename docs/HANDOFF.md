@@ -2955,3 +2955,21 @@ and restore under constrained filesystems.
 - **Limits / next:** real NTFS hard-link creation is denied in this managed
   filesystem. Physical link behavior and the remaining roadmap's target-device
   acceptance still require the user's Windows machine.
+
+### 2026-11-13 — show readable model inventory states
+
+- **Source implementation commit:**
+  `44e4201c74dbbff4705edb1fb43651048088412d` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** replace internal inventory identifiers with clear text in the
+  existing model picker while keeping unsafe rows unselectable.
+- **Changes:** added a fail-safe inventory-status label map for present,
+  imported, verified, missing, size-changed, unsafe and manual-inspection
+  entries. The picker now shows readable labels, and a successful explicit
+  SHA-256 check updates the row to **Verified**.
+- **Verification:** GUI-contract, model-inventory and model-import suites
+  passed 87 tests with 2 environment skips. Compilation and
+  `git diff --check` passed.
+- **Limits / next:** the picker has not been visually exercised on the target
+  Windows desktop; keyboard/screen-reader and actual frozen EXE acceptance
+  remain release gates.
