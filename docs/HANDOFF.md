@@ -3066,3 +3066,25 @@ and restore under constrained filesystems.
   acceptance work. The updated source GUI was visually opened on Windows with
   an isolated synthetic model; its five-column picker fit at desktop scale and
   showed **Not self-tested**. No real inference was attempted.
+
+### 2026-11-14 — bind listener ownership to process creation identity
+
+- **Source commit:** `f1c0274ae73eb0a82a06e55e64361e5726d342ad` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Change:** the managed child now retains its Windows creation FILETIME from
+  the original process handle, or its Linux `/proc` start tick. Readiness and
+  every managed listener check compare that value with the current listener
+  owner's process instance after comparing PIDs. A reused PID therefore
+  fails closed. Linux stat parsing handles parentheses and non-ASCII bytes in
+  the process name. Failed startup now has an explicit regression check that
+  both model and runtime admission locks can be acquired again.
+- **Verification:** the focused four cases passed, the complete
+  `tests.test_managed_llama` module passed 46 tests with 7 skips, and the
+  amended Linux byte-parser case passed again. Python compilation and
+  `git diff --check` passed. The real Windows Job Object sleeper test ran in
+  that module; actual GGUF inference was not exercised.
+- **Limits / next:** Windows IP Helper still returns access denied in this
+  managed session, so live listener ownership remains unverified on the
+  target host. The checks do not atomically bind an HTTP connection to a
+  process. Native llama.cpp crash/restart, frozen EXE, model inference and
+  target-device RAM acceptance remain open for issue #53 and #56.
