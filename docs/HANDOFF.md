@@ -3232,3 +3232,19 @@ and restore under constrained filesystems.
   large-repository behavior and physical Windows model acceptance remain open.
 - **Next:** run exact-head hosted CI, then continue roadmap work without
   interpreting mocked pagination as live Hub or native GGUF acceptance.
+
+### 2026-11-14 — show local model identity before selection
+
+- **Source:** `3318042` adds a scrollable selected-model detail view to the
+  existing GGUF picker. It uses the offline inventory to show local state,
+  pinned revision and SHA-256, expected/on-disk bytes, recorded runtime
+  self-tests and any bounded Hub card claims. Those claims are explicitly
+  unverified; imported weights retain unknown source and license.
+- **Verification:** GUI contract and inventory modules passed 72 local tests
+  with one skip using a writable test temp directory. Python compilation and
+  `git diff --check` passed. The source-only picker change still needs hosted
+  Windows EXE and GUI smoke validation; physical model and license acceptance
+  are not claimed.
+- **Prior head:** all six hosted jobs passed at `81f6874`, including the
+  Windows package job, before this picker change. Do not treat that earlier
+  result as exact-head verification of `3318042`.
