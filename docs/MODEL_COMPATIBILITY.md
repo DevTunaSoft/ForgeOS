@@ -14,7 +14,7 @@
 
 | Feature | Source status | Independent runtime proof |
 | --- | --- | --- |
-| Ollama | Existing working integration and automatic installed-model size routing | Real-model Windows acceptance still required |
+| Ollama | Existing working integration and automatic installed-model size routing | Target Windows Ollama `qwen2.5-coder:3b` responded to planning and returned a valid strict one-file edit manifest; broader task/restart quality remains open |
 | llama.cpp loopback `/v1/chat/completions` | Experimental adapter on main; target Windows acceptance now covers pinned b12199 plus Qwen Q4_K_M | Real target-host startup, authenticated inference and one-file edit manifest passed; broader roles and restart acceptance remain open |
 | LM Studio loopback `/v1/chat/completions` | Experimental adapter on main | Real server/Windows integration unverified |
 | Other loopback OpenAI-compatible servers | Experimental adapter on main | Backend-specific compatibility unverified |

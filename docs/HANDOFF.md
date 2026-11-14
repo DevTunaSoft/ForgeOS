@@ -3396,3 +3396,17 @@ and restore under constrained filesystems.
   compilation and handoff integrity passed, and the live acceptance evidence
   reports seven routeable roles with context summarization correctly marked
   non-routeable.
+
+### 2026-11-14 — live Ollama compatibility boundary
+
+- **Target Windows evidence:** the existing local Ollama service reported
+  installed `qwen2.5-coder:3b` (Q4_K_M, 3.1B, digest
+  `f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225`). A
+  bounded planning request returned text successfully. With ForgeOS's exact
+  strict edit-manifest prompt, the model returned a valid one-file
+  `{"files":[...]}` response; a deliberately looser synthetic prompt returned
+  a different JSON shape and was rejected by the existing parser.
+- **Interpretation:** the Ollama transport and strict manifest path work on the
+  target host, but this is compatibility evidence rather than quality or
+  release acceptance. Broader task quality, restart behavior, timeout/slow
+  load behavior, and LM Studio remain open.
