@@ -7,6 +7,7 @@ from contextlib import ExitStack
 import hashlib
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -112,6 +113,35 @@ class CPUInstallerTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,
                                             "reparse point|redirected"):
                     ri.verify_installed_cpu_runtime(self.directory)
+
+    def test_installed_hardlinked_runtime_member_is_refused(self):
+        self.install_fixture()
+        result = ri.install_pinned_cpu_runtime(self.directory)
+        root = Path(result["path"]).parents[1]
+        dll = root / "bin" / "ggml-base.dll"
+        external_link = root.parent / "external-runtime-link.dll"
+        try:
+            os.link(dll, external_link)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"filesystem does not support hard links: {exc}")
+        with self.assertRaisesRegex(RuntimeError, "hard-linked"):
+            ri.verify_installed_cpu_runtime(self.directory)
+
+    def test_runtime_member_with_multiple_links_is_refused(self):
+        self.install_fixture()
+        result = ri.install_pinned_cpu_runtime(self.directory)
+        dll = Path(result["path"]).parent / "ggml-base.dll"
+        original_stat = Path.stat
+
+        def report_external_link(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == dll:
+                return SimpleNamespace(st_mode=metadata.st_mode, st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_external_link):
+            with self.assertRaisesRegex(RuntimeError, "hard-linked"):
+                ri.verify_installed_cpu_runtime(self.directory)
 
     def test_tampered_dll_is_refused_even_if_manifest_forged(self):
         self.install_fixture()

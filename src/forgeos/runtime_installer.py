@@ -235,12 +235,13 @@ def _verify_files(target: Path):
     manifest = target / MANIFEST_FILE
     if _is_reparse_point(archive_path) or _is_reparse_point(manifest):
         raise RuntimeError("Installed runtime archive or manifest is redirected")
-    if (not archive_path.is_file()
+    if (not archive_path.is_file() or archive_path.stat().st_nlink != 1
             or archive_path.stat().st_size != RELEASE_BYTES
             or _sha256(archive_path) != RELEASE_SHA256):
         raise RuntimeError("Installed runtime source archive failed pinned SHA-256")
     license_path = target / LICENSE_FILE
     if (_is_reparse_point(license_path) or not license_path.is_file()
+            or license_path.stat().st_nlink != 1
             or license_path.stat().st_size > 8192
             or _sha256(license_path) != LICENSE_SHA256
             or license_path.read_bytes() != _license_notice()):
@@ -261,6 +262,11 @@ def _verify_files(target: Path):
                 if _is_reparse_point(current):
                     raise RuntimeError(
                         "Installed runtime contains a linked or redirected file")
+                file_info = current.stat(follow_symlinks=False)
+                if (not stat.S_ISREG(file_info.st_mode)
+                        or file_info.st_nlink != 1):
+                    raise RuntimeError(
+                        "Installed runtime contains a non-regular or hard-linked file")
                 relative_path = current.relative_to(target).as_posix()
                 if relative_path in (ARCHIVE_FILE, MANIFEST_FILE, LICENSE_FILE):
                     continue
@@ -286,8 +292,10 @@ def _verify_files(target: Path):
             checksums["/".join(parts)] = digest.hexdigest()
         if checksums.get(LLVM_OPENMP_LICENSE_FILE) != LLVM_OPENMP_LICENSE_SHA256:
             raise RuntimeError("Pinned LLVM OpenMP license notice failed SHA-256")
-        if not manifest.is_file() or manifest.stat().st_size > 256 * 1024:
-            raise RuntimeError("Missing official runtime inventory manifest")
+        if (not manifest.is_file() or manifest.stat().st_nlink != 1
+                or manifest.stat().st_size > 256 * 1024):
+            raise RuntimeError(
+                "Missing or linked official runtime inventory manifest")
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, ValueError) as exc:
