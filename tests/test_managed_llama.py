@@ -1184,12 +1184,13 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             import sys, time
             from pathlib import Path
             from forgeos.gguf_download import _exclusive_download_lock
-            from forgeos.managed_llama import _launch_windows_suspended_job
+            from forgeos.managed_llama import (
+                _child_environment, _launch_windows_suspended_job)
             lock = _exclusive_download_lock(Path(sys.argv[1]))
             lock.__enter__()
             child, job = _launch_windows_suspended_job(
                 [sys.executable, "-c", "import time; time.sleep(60)"],
-                Path.cwd(), {}, 1024 ** 3)
+                Path.cwd(), _child_environment(), 1024 ** 3)
             Path(sys.argv[2]).write_text(str(child.pid), encoding="ascii")
             time.sleep(60)
             """)
