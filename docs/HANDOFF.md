@@ -3216,3 +3216,19 @@ and restore under constrained filesystems.
   downloads, physical Windows 11 restart/reparse behavior, or measured
   16/32 GiB model performance. Continue issues #53–#56 and run the full
   release checklist on the intended build before merging or shipping.
+
+### 2026-11-14 — page pinned Hub GGUF file listings
+
+- **Source:** `c6f310a` updates `huggingface_catalog.list_gguf_files` to
+  follow bounded Hugging Face tree continuations while preserving the exact
+  repository path, pinned revision and recursive listing. It rejects repeated
+  links, changed paths and untrusted origins, and fails visibly after 10 pages
+  or 2,000 entries. Previously the catalog silently omitted GGUFs after the
+  first page of a large repository.
+- **Verification:** the catalog and downloader modules passed 70 offline tests
+  with one skip after redirecting the Windows sandbox temp path to a writable
+  test directory. The catalog cases cover later-page files, changed revisions,
+  repeated links and cumulative bounds. `git diff --check` passed. Live Hub
+  large-repository behavior and physical Windows model acceptance remain open.
+- **Next:** run exact-head hosted CI, then continue roadmap work without
+  interpreting mocked pagination as live Hub or native GGUF acceptance.
