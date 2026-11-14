@@ -68,7 +68,8 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
 
     def test_spawn_streams_without_truncating_normal_test(self):
         command = [sys.executable, "-c", "import sys; print('HELLO'); sys.stderr.write('ERROR\\n')"]
-        result = run_streamed_process(command, self.root, timeout=10)
+        result = run_streamed_process(
+            command, self.root, timeout=10, store=self.store)
         self.assertEqual(result["returncode"], 0)
         self.assertTrue(result["capture_complete"])
         self.assertIn("HELLO", result["output"])
@@ -78,7 +79,9 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
         script = ("import sys; sys.stdout.write('INFO hello\\n' * 260000); "
                   "sys.stdout.flush(); sys.stderr.write('AssertionError final\\n'); "
                   "sys.exit(29)")
-        result = run_streamed_process([sys.executable, "-c", script], self.root, timeout=30)
+        result = run_streamed_process(
+            [sys.executable, "-c", script], self.root, timeout=30,
+            store=self.store)
         self.assertEqual(result["returncode"], 29)
         self.assertFalse(result["passed"])
         self.assertIn("AssertionError final", result["output"])
@@ -95,7 +98,8 @@ class MemoryBoundedCaptureTests(unittest.TestCase):
             script = ("import sys; buf = b'INFO memory test\\n' * 4000; "
                       "[(sys.stdout.buffer.write(buf)) for _ in range(200)]")
             result = run_streamed_process(
-                [sys.executable, "-c", script], self.root, timeout=30)
+                [sys.executable, "-c", script], self.root, timeout=30,
+                store=self.store)
             _current, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()

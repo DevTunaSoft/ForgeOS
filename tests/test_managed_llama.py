@@ -8,6 +8,10 @@ import io
 import json
 import os
 from pathlib import Path
+import socket
+import subprocess
+import sys
+import struct
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -16,9 +20,14 @@ from urllib.request import Request
 
 from forgeos.local_models import LocalChatModel, create_model
 from forgeos.managed_llama import (
-    ALIAS, ManagedLlamaServer, _child_environment, _verified_model,
-    _verified_runtime,
+    ALIAS, ManagedLlamaServer, _check_managed_memory_preflight,
+    _managed_memory_preflight_report,
+    _child_environment, _verified_model, _verified_runtime,
+    estimate_gguf_kv_cache_bytes,
 )
+from forgeos.gguf_download import _exclusive_download_lock
+
+_REAL_POPEN = subprocess.Popen
 
 
 class _Response(io.BytesIO):
@@ -34,6 +43,12 @@ class ManagedLlamaTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="forgeos-managed-tests-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        self.runtime_lock_path = self.root / ".managed-runtime.lock"
+        runtime_lock_path = patch(
+            "forgeos.managed_llama._managed_runtime_lock_path",
+            return_value=self.runtime_lock_path)
+        runtime_lock_path.start()
+        self.addCleanup(runtime_lock_path.stop)
         self.model = self.root / "test.gguf"
         data = b"GGUF" + b"\x00" * 28
         self.model.write_bytes(data)
@@ -51,6 +66,24 @@ class ManagedLlamaTests(unittest.TestCase):
             # The fixture must too, before testing SHA mismatch behavior.
             self.exe.chmod(0o700)
         self.exe_sha = hashlib.sha256(self.exe.read_bytes()).hexdigest()
+
+    def child_model_lock(self, lock_path):
+        repo_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(repo_root / "src")
+        script = (
+            "import sys; from forgeos.gguf_download import "
+            "_exclusive_download_lock; "
+            "\ntry:\n with _exclusive_download_lock(sys.argv[1]): "
+            "print('acquired')\nexcept RuntimeError:\n print('busy')")
+        args = [sys.executable, "-c", script, str(lock_path)]
+        process = _REAL_POPEN(
+            args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True)
+        stdout, stderr = process.communicate(timeout=15)
+        if process.returncode:
+            self.fail(f"lock probe failed ({process.returncode}): {stderr}")
+        return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 
     def test_shutdown_failure_still_closes_native_handle_and_clears_secrets(self):
         controller = ManagedLlamaServer()
@@ -158,6 +191,13 @@ class ManagedLlamaTests(unittest.TestCase):
         controller.process = process
         controller.api_key = "secret"
         controller.endpoint = "http://127.0.0.1:12345/v1"
+        model_lock = _exclusive_download_lock(
+            self.model.with_name(self.model.name + ".lock"))
+        model_lock.__enter__()
+        controller._model_lock = model_lock
+        runtime_lock = _exclusive_download_lock(self.runtime_lock_path)
+        runtime_lock.__enter__()
+        controller._runtime_lock = runtime_lock
         temporary = Mock()
         controller._secrets = temporary
         with patch("forgeos.managed_llama._terminate_posix_group"):
@@ -165,11 +205,22 @@ class ManagedLlamaTests(unittest.TestCase):
                 controller.stop()
         self.assertEqual(process.wait.call_count, 2)
         process.kill.assert_called_once_with()
-        process.close.assert_called_once_with()
+        process.close.assert_not_called()
         temporary.cleanup.assert_called_once_with()
-        self.assertIsNone(controller.process)
+        self.assertIs(controller.process, process)
         self.assertIsNone(controller.api_key)
         self.assertIsNone(controller.endpoint)
+        with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+            with _exclusive_download_lock(
+                    self.model.with_name(self.model.name + ".lock")):
+                pass
+        self.assertEqual(
+            self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+            "busy")
+        controller._model_lock.__exit__(None, None, None)
+        controller._model_lock = None
+        controller._runtime_lock.__exit__(None, None, None)
+        controller._runtime_lock = None
 
     def test_secret_cleanup_failure_still_clears_session_identity(self):
         controller = ManagedLlamaServer()
@@ -212,6 +263,100 @@ class ManagedLlamaTests(unittest.TestCase):
         with patch("forgeos.managed_llama.safe_model_file_budget", return_value=16):
             with self.assertRaisesRegex(RuntimeError, "free RAM budget"):
                 _verified_model(self.model)
+
+    def test_gguf_metadata_estimates_f16_kv_cache_without_reading_tensor_data(self):
+        def gguf_string(value):
+            encoded = value.encode("utf-8")
+            return struct.pack("<Q", len(encoded)) + encoded
+
+        entries = [
+            ("general.architecture", 8, "llama"),
+            ("llama.block_count", 4, 32),
+            ("llama.attention.head_count", 4, 32),
+            ("llama.attention.head_count_kv", 4, 8),
+            ("llama.embedding_length", 4, 4096),
+        ]
+        metadata = bytearray(b"GGUF" + struct.pack("<IQQ", 3, 1, len(entries) + 1))
+        for key, kind, value in entries:
+            metadata.extend(gguf_string(key))
+            metadata.extend(struct.pack("<I", kind))
+            metadata.extend(gguf_string(value) if kind == 8
+                            else struct.pack("<I", value))
+        # A tokenizer string array is common in GGUF headers and must be
+        # skipped with bounded reads before finding the architecture values.
+        metadata.extend(gguf_string("tokenizer.ggml.tokens"))
+        metadata.extend(struct.pack("<IIQ", 9, 8, 2))
+        metadata.extend(gguf_string("one"))
+        metadata.extend(gguf_string("two"))
+        path = self.root / "metadata.gguf"
+        path.write_bytes(metadata)
+
+        self.assertEqual(
+            estimate_gguf_kv_cache_bytes(path, 1024), 128 * 1024 * 1024)
+        self.assertEqual(
+            estimate_gguf_kv_cache_bytes(path, 512), 64 * 1024 * 1024)
+        # A truncated header must fail closed without inventing dimensions.
+        truncated = self.root / "truncated.gguf"
+        truncated.write_bytes(metadata[:32])
+        self.assertIsNone(estimate_gguf_kv_cache_bytes(truncated, 1024))
+        with self.assertRaisesRegex(ValueError, "Context"):
+            estimate_gguf_kv_cache_bytes(path, 8192 + 1)
+
+        # Some architectures explicitly provide key/value head widths.
+        dimensions = [
+            ("general.architecture", 8, "llama"),
+            ("llama.block_count", 4, 32),
+            ("llama.attention.head_count", 4, 32),
+            ("llama.attention.head_count_kv", 4, 8),
+            ("llama.embedding_length", 4, 4096),
+            ("llama.attention.key_length", 4, 128),
+            ("llama.attention.value_length", 4, 96),
+        ]
+        encoded = bytearray(b"GGUF" + struct.pack("<IQQ", 3, 1, len(dimensions)))
+        for key, kind, value in dimensions:
+            encoded.extend(gguf_string(key))
+            encoded.extend(struct.pack("<I", kind))
+            encoded.extend(gguf_string(value) if kind == 8
+                           else struct.pack("<I", value))
+        path.write_bytes(encoded)
+        self.assertEqual(
+            estimate_gguf_kv_cache_bytes(path, 1024), 112 * 1024 * 1024)
+
+    def test_memory_admission_includes_known_kv_cache_estimate(self):
+        def gguf_string(value):
+            encoded = value.encode("utf-8")
+            return struct.pack("<Q", len(encoded)) + encoded
+
+        entries = [
+            ("general.architecture", 8, "llama"),
+            ("llama.block_count", 4, 32),
+            ("llama.attention.head_count", 4, 32),
+            ("llama.attention.head_count_kv", 4, 8),
+            ("llama.embedding_length", 4, 4096),
+        ]
+        metadata = bytearray(b"GGUF" + struct.pack("<IQQ", 3, 1, len(entries)))
+        for key, kind, value in entries:
+            metadata.extend(gguf_string(key))
+            metadata.extend(struct.pack("<I", kind))
+            metadata.extend(gguf_string(value) if kind == 8
+                            else struct.pack("<I", value))
+        path = self.root / "admission.gguf"
+        path.write_bytes(metadata)
+        with patch("forgeos.managed_llama.safe_model_file_budget",
+                   return_value=100 * 1024**2):
+            estimate = _managed_memory_preflight_report(path, 1024, None)
+            self.assertFalse(estimate["within_budget"])
+            self.assertEqual(estimate["estimated_kv_cache_bytes"], 128 * 1024**2)
+            with self.assertRaisesRegex(RuntimeError, "estimated f16 KV cache"):
+                _check_managed_memory_preflight(path, 1024, None)
+        with patch("forgeos.managed_llama.safe_model_file_budget",
+                   return_value=200 * 1024**2):
+            estimate = _managed_memory_preflight_report(path, 1024, None)
+            self.assertTrue(estimate["within_budget"])
+            self.assertTrue(estimate["cache_estimate_available"])
+            self.assertEqual(
+                _check_managed_memory_preflight(path, 1024, None),
+                128 * 1024**2)
 
     def test_corrupt_manifest_is_bounded(self):
         metadata = self.model.with_name(self.model.name + ".forgeos.json")
@@ -622,15 +767,22 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         def read_health(request, *, timeout):
             open_calls.append(request)
             return _Response(b'{"status":"ok"}')
+        def authenticated_catalog(client):
+            client._verify_listener_owner()
+            client._verify_listener_owner()
+            return [{"name": ALIAS}]
         with (patch("forgeos.managed_llama._verified_model",
-                    return_value=(self.model, {"sha256": self.model_sha})),
+                    return_value=(self.model, {"sha256": self.model_sha}))
+                    as verified_model,
               patch("forgeos.managed_llama._verified_runtime",
                     return_value=self.exe),
               patch("forgeos.managed_llama._unused_loopback_port",
                     return_value=17089),
+              patch("forgeos.managed_llama._listener_owner_pid",
+                    return_value=12345) as listener_owner,
               patch("forgeos.managed_llama._open", side_effect=read_health),
               patch("forgeos.managed_llama.LocalChatModel.installed",
-                    return_value=[{"name": ALIAS}]),
+                    autospec=True, side_effect=authenticated_catalog),
               patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
                     return_value=2 * 1024**3) as memory_ceiling,
               patch("forgeos.managed_llama.subprocess.Popen",
@@ -647,11 +799,26 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(info["model"], ALIAS)
             self.assertEqual(info["sha256"], self.model_sha)
             self.assertEqual(info["runtime_sha256"], self.exe_sha)
+            self.assertEqual(listener_owner.call_count, 4)
+            listener_owner.assert_called_with(17089)
             self.assertEqual(info["memory_ceiling_bytes"], 2 * 1024**3)
             memory_ceiling.assert_called_once()
             self.assertEqual(
                 memory_ceiling.call_args.args[1], 2 * 1024**3)
             self.assertTrue(server.running())
+            lock_path = self.model.with_name(self.model.name + ".lock")
+            self.assertEqual(self.child_model_lock(lock_path).stdout.strip(), "busy")
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "busy")
+            another_model = self.root / "another-model.gguf"
+            another_model.write_bytes(b"GGUF" + b"Y" * 28)
+            other_server = ManagedLlamaServer()
+            with self.assertRaisesRegex(RuntimeError, "Another ForgeOS process"):
+                other_server.start(
+                    executable=self.exe, executable_sha256=self.exe_sha,
+                    model_path=another_model)
+            verified_model.assert_called_once()
             command = (native_launch.call_args.args[0]
                        if os.name == "nt" else launch.call_args.args[0])
             self.assertEqual(command[0], str(self.exe))
@@ -675,6 +842,11 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                 server.start(executable=self.exe, executable_sha256=self.exe_sha,
                              model_path=self.model)
             server.stop()
+            self.assertEqual(self.child_model_lock(lock_path).stdout.strip(),
+                             "acquired")
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "acquired")
             self.assertFalse(key_file.exists())
             self.assertIsNone(server.api_key)
             self.assertIsNone(server.process)
@@ -688,6 +860,112 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                 native_launch.assert_not_called()
                 grouped.assert_called_once()
                 proc.terminate.assert_called_once()
+
+    def test_managed_start_refuses_a_loopback_listener_owned_by_another_process(self):
+        proc = Mock()
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+        proc.pid = 12345
+        controller = ManagedLlamaServer()
+        with (patch("forgeos.managed_llama._verified_model",
+                    return_value=(self.model, {"sha256": self.model_sha})),
+              patch("forgeos.managed_llama._verified_runtime",
+                    return_value=self.exe),
+              patch("forgeos.managed_llama._unused_loopback_port",
+                    return_value=17090),
+              patch("forgeos.managed_llama._listener_owner_pid",
+                    return_value=54321),
+              patch("forgeos.managed_llama.local_memory_settings",
+                    return_value={"num_ctx": 1024}),
+              patch("forgeos.managed_llama.safe_model_file_budget",
+                    return_value=1024),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
+              patch("forgeos.managed_llama.subprocess.Popen",
+                    return_value=proc),
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)),
+              patch("forgeos.managed_llama._release_windows_job"),
+              patch("forgeos.managed_llama._open",
+                    return_value=_Response(b'{"status":"ok"}')),
+              patch("forgeos.managed_llama.LocalChatModel.installed") as installed,
+              patch("forgeos.managed_llama._terminate_posix_group")):
+            with self.assertRaisesRegex(RuntimeError, "not owned"):
+                controller.start(
+                    executable=self.exe, executable_sha256=self.exe_sha,
+                    model_path=self.model, timeout=1, context=512, threads=1)
+        installed.assert_not_called()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+
+    def test_managed_start_rechecks_owner_before_authenticated_catalog_request(self):
+        proc = Mock()
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+        proc.pid = 12345
+        controller = ManagedLlamaServer()
+        health_calls = []
+
+        def read_health(request, *, timeout):
+            health_calls.append(request.full_url)
+            return _Response(b'{"status":"ok"}')
+
+        with (patch("forgeos.managed_llama._verified_model",
+                    return_value=(self.model, {"sha256": self.model_sha})),
+              patch("forgeos.managed_llama._verified_runtime",
+                    return_value=self.exe),
+              patch("forgeos.managed_llama._unused_loopback_port",
+                    return_value=17091),
+              patch("forgeos.managed_llama._listener_owner_pid",
+                    side_effect=[12345, 54321]) as owner_pid,
+              patch("forgeos.managed_llama.local_memory_settings",
+                    return_value={"num_ctx": 1024}),
+              patch("forgeos.managed_llama.safe_model_file_budget",
+                    return_value=1024),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
+              patch("forgeos.managed_llama.subprocess.Popen",
+                    return_value=proc),
+              patch("forgeos.managed_llama._launch_windows_suspended_job",
+                    return_value=(proc, 1234)),
+              patch("forgeos.managed_llama._release_windows_job"),
+              patch("forgeos.managed_llama._open", side_effect=read_health),
+              patch("forgeos.local_models._open") as catalog_open,
+              patch("forgeos.managed_llama._terminate_posix_group")):
+            with self.assertRaisesRegex(RuntimeError, "ownership changed"):
+                controller.start(
+                    executable=self.exe, executable_sha256=self.exe_sha,
+                    model_path=self.model, timeout=1, context=512, threads=1)
+        self.assertEqual(health_calls, ["http://127.0.0.1:17091/health"])
+        self.assertEqual(owner_pid.call_count, 2)
+        catalog_open.assert_not_called()
+        self.assertIsNone(controller.process)
+        self.assertIsNone(controller.api_key)
+
+    def test_listener_owner_resolver_identifies_current_process(self):
+        from forgeos.managed_llama import _listener_owner_pid
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            try:
+                owner = _listener_owner_pid(port)
+            except OSError as exc:
+                self.skipTest(f"OS denied listener ownership inspection: {exc}")
+            self.assertEqual(owner, os.getpid())
+
+    def test_windows_tcp_owner_table_parser_matches_loopback_port(self):
+        import socket
+        import struct
+        from forgeos.managed_llama import _parse_tcp_owner_table
+        port = 40123
+        row = struct.pack("=IIIIII", 2, 0x0100007F, socket.htons(port),
+                          0, 0, 9876)
+        table = struct.pack("=I", 1) + row
+        self.assertEqual(_parse_tcp_owner_table(table, port), 9876)
+        self.assertIsNone(_parse_tcp_owner_table(table, port + 1))
+        with self.assertRaisesRegex(RuntimeError, "truncated"):
+            _parse_tcp_owner_table(b"", port)
 
     @unittest.skipUnless(os.name == "nt", "Windows Job Object cleanup")
     def test_job_release_failure_still_terminates_process_and_erases_secret(self):
@@ -724,6 +1002,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                     return_value=proc),
               patch("forgeos.managed_llama._launch_windows_suspended_job",
                     return_value=(proc, 1234)),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
               patch("forgeos.managed_llama._release_windows_job")):
             with self.assertRaisesRegex(RuntimeError, "exited"):
                 instance.start(executable=self.exe, executable_sha256=self.exe_sha,
@@ -751,6 +1031,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
               patch("forgeos.managed_llama.time.sleep") as sleep,
               patch("forgeos.managed_llama._launch_windows_suspended_job",
                     return_value=(proc, 1234)),
+              patch("forgeos.managed_llama.managed_runtime_memory_ceiling",
+                    return_value=1024**3),
               patch("forgeos.managed_llama._release_windows_job"),
               patch("forgeos.managed_llama._terminate_posix_group")):
             with self.assertRaisesRegex(RuntimeError, "timed out"):
@@ -788,6 +1070,102 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                 proc.wait(timeout=5)
             if proc is not None:
                 proc.close()
+
+    @unittest.skipUnless(__import__("os").name == "nt",
+                         "Windows owner-crash Job Object integration")
+    def test_windows_owner_crash_kills_model_child_and_releases_runtime_lock(self):
+        import ctypes
+        import subprocess
+        import sys
+        import textwrap
+        import time
+        from ctypes import wintypes
+
+        pid_file = self.root / "managed-child.pid"
+        script = textwrap.dedent("""\
+            import sys, time
+            from pathlib import Path
+            from forgeos.gguf_download import _exclusive_download_lock
+            from forgeos.managed_llama import _launch_windows_suspended_job
+            lock = _exclusive_download_lock(Path(sys.argv[1]))
+            lock.__enter__()
+            child, job = _launch_windows_suspended_job(
+                [sys.executable, "-c", "import time; time.sleep(60)"],
+                Path.cwd(), {}, 1024 ** 3)
+            Path(sys.argv[2]).write_text(str(child.pid), encoding="ascii")
+            time.sleep(60)
+            """)
+        repo_src = Path(__file__).resolve().parents[1] / "src"
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(repo_src)
+        worker = subprocess.Popen(
+            [sys.executable, "-c", script, str(self.runtime_lock_path),
+             str(pid_file)], env=environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        child_pid = None
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [
+            wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = [
+            wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.TerminateProcess.restype = wintypes.BOOL
+
+        def child_running(pid):
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                error = ctypes.get_last_error()
+                if error == 87:  # ERROR_INVALID_PARAMETER: process has exited
+                    return False
+                raise OSError(error, "OpenProcess(managed model child)")
+            try:
+                exit_code = wintypes.DWORD()
+                if not kernel32.GetExitCodeProcess(
+                        handle, ctypes.byref(exit_code)):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                return exit_code.value == 259  # STILL_ACTIVE
+            finally:
+                kernel32.CloseHandle(handle)
+
+        try:
+            deadline = time.monotonic() + 10
+            while not pid_file.is_file() and time.monotonic() < deadline:
+                if worker.poll() is not None:
+                    error = worker.stderr.read().decode("utf-8", "replace")
+                    self.fail(f"managed owner exited before launch: {error}")
+                time.sleep(0.05)
+            self.assertTrue(pid_file.is_file(), "managed child did not start")
+            child_pid = int(pid_file.read_text(encoding="ascii"))
+            self.assertTrue(child_running(child_pid))
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "busy")
+
+            worker.kill()
+            worker.wait(timeout=5)
+            deadline = time.monotonic() + 10
+            while child_running(child_pid) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertFalse(child_running(child_pid),
+                             "owner crash did not close its kill-on-close job")
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "acquired")
+        finally:
+            if worker.poll() is None:
+                worker.kill()
+                worker.wait(timeout=5)
+            if child_pid is not None and child_running(child_pid):
+                handle = kernel32.OpenProcess(0x1001, False, child_pid)
+                if handle:
+                    kernel32.TerminateProcess(handle, 125)
+                    kernel32.CloseHandle(handle)
+            if worker.stderr is not None:
+                worker.stderr.close()
 
     @unittest.skipIf(os.name == "nt", "POSIX process-group integration")
     def test_real_posix_controller_stop_reaps_process(self):

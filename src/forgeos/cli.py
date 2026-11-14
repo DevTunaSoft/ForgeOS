@@ -9,11 +9,13 @@ from .local_models import BACKENDS, create_model
 def default_db():
     return Path.home()/'.forgeos'/'tasks.sqlite3'
 
-def _cli_model(*, backend: str, model: str, endpoint: str):
+def _cli_model(*, backend: str, model: str, endpoint: str,
+               token_parameter: str = "max_tokens"):
     """Keep the original Ollama integration patchable and backwards-compatible."""
     if backend == "ollama" and not endpoint:
         return Ollama(model=model)
-    return create_model(backend=backend, model=model, endpoint=endpoint)
+    return create_model(backend=backend, model=model, endpoint=endpoint,
+                        token_parameter=token_parameter)
 
 
 def main(argv=None):
@@ -35,8 +37,14 @@ def main(argv=None):
     models.add_argument('--backend',choices=BACKENDS,default='ollama')
     models.add_argument('--endpoint',default='')
     catalog=sub.add_parser('model-catalog',help='Opt-in Hugging Face public GGUF discovery')
-    catalog.add_argument('operation',choices=('search','files'))
+    catalog.add_argument('operation',choices=('search','files','inspect'))
     catalog.add_argument('query',help='Search phrase or repository ID')
+    project_search=sub.add_parser(
+        'search-project',
+        help='Search bounded Python symbol names without returning source code')
+    project_search.add_argument('root', help='Local project folder')
+    project_search.add_argument('query', help='Function, method or class name terms')
+    project_search.add_argument('--limit', type=int, default=20)
     local_list=sub.add_parser(
         'models-local', help='List bounded local GGUF downloads (metadata only)')
     local_list.add_argument('--directory',default='')
@@ -44,6 +52,15 @@ def main(argv=None):
         'model-verify-local',help='Explicit SHA-256 recheck of one downloaded GGUF')
     local_verify.add_argument('filename')
     local_verify.add_argument('--directory',default='')
+    local_repair=sub.add_parser(
+        'model-repair-local',
+        help='Restore one damaged managed GGUF from its original pinned manifest')
+    local_repair.add_argument('filename', help='Exact managed GGUF path')
+    local_repair.add_argument('--directory', default='')
+    local_repair.add_argument('--confirm', action='store_true')
+    local_repair.add_argument(
+        '--storage-quota-gib', type=int,
+        help='Optional total ForgeOS model-store cap in GiB (1–16384)')
     retired=sub.add_parser('models-retired',help='List retired GGUF models')
     retired.add_argument('--directory',default='')
     retire=sub.add_parser('model-retire-local',help='Retire verified GGUF without erasing it')
@@ -53,11 +70,31 @@ def main(argv=None):
     restore=sub.add_parser('model-restore-local',help='Restore retired GGUF by ID')
     restore.add_argument('identifier')
     restore.add_argument('--directory',default='')
+    purge=sub.add_parser(
+        'model-purge-retired',
+        help='Permanently delete one retired GGUF after safety checks')
+    purge.add_argument('identifier')
+    purge.add_argument('--directory',default='')
+    purge.add_argument('--confirm',action='store_true')
+    imported_purge=sub.add_parser(
+        'model-purge-imported',
+        help='Permanently delete one registered imported GGUF after safety checks')
+    imported_purge.add_argument('path', help='Exact imported GGUF path')
+    imported_purge.add_argument('--directory',default='')
+    imported_purge.add_argument('--confirm',action='store_true')
     download=sub.add_parser('model-download',
                             help='Explicitly download one GGUF with pinned SHA-256')
     download.add_argument('repository',help='Public Hugging Face owner/model')
     download.add_argument('filename',help='Exact GGUF filename listed by model-catalog')
     download.add_argument('--directory',default='',help='Optional local model folder')
+    download.add_argument('--revision',default=None,
+                          help='Optional full repository commit SHA from model-catalog')
+    download.add_argument(
+        '--storage-quota-gib', type=int,
+        help='Optional total ForgeOS model-store cap in GiB (1–16384)')
+    storage=sub.add_parser(
+        'models-storage', help='Report bounded local GGUF weight storage use')
+    storage.add_argument('--directory', default='')
     evidence=sub.add_parser('diagnostics',help='Restore complete command diagnostic output')
     evidence.add_argument('operation',choices=['show','stats'])
     evidence.add_argument('reference',nargs='?')
@@ -91,6 +128,10 @@ def main(argv=None):
                              help='Local inference runtime; defaults to Ollama')
         command.add_argument('--endpoint', default='',
                              help='Optional literal 127.0.0.1 or [::1] local API endpoint')
+        command.add_argument(
+            '--token-parameter', choices=('max_tokens', 'max_completion_tokens'),
+            default='max_tokens',
+            help='OpenAI-compatible local server token limit field (default: max_tokens)')
     run.add_argument('--max-repairs',type=int,default=2)
     run.add_argument('--allow-host-tests',action='store_true',help='Explicitly permit running repository code on this machine')
     run.add_argument('--resume',action='store_true',help='Resume an interrupted test-pending or repair-pending checkpoint')
@@ -105,6 +146,11 @@ def main(argv=None):
     if args.action=='gui':
         from .gui import launch
         return launch(args.db)
+    if args.action == 'search-project':
+        from .context_index import search_project
+        print(json.dumps(search_project(
+            args.root, args.query, limit=args.limit), indent=2))
+        return 0
     if args.action == 'models':
         if args.backend == 'ollama':
             from .model_routing import installed_models
@@ -120,9 +166,31 @@ def main(argv=None):
         from .model_inventory import list_downloads
         print(json.dumps(list_downloads(directory=args.directory or None), indent=2))
         return 0
+    if args.action == 'models-storage':
+        from .model_inventory import storage_usage
+        print(json.dumps(storage_usage(directory=args.directory or None), indent=2))
+        return 0
     if args.action == 'model-verify-local':
         from .model_inventory import verify_download
         result = verify_download(args.filename, directory=args.directory or None)
+        print(json.dumps(result, indent=2))
+        return 0
+    if args.action == 'model-repair-local':
+        if not args.confirm:
+            raise ValueError('Explicit --confirm required to repair GGUF')
+        Store.inspect_existing_database(args.db)
+        from .gguf_download import repair_downloaded_gguf
+        from .recovery import checkpoint_references_managed_model
+        store = Store(args.db)
+        try:
+            result = repair_downloaded_gguf(
+                args.filename, directory=args.directory or None, confirm=True,
+                checkpoint_check=lambda digest:
+                checkpoint_references_managed_model(store, digest),
+                storage_quota_bytes=(args.storage_quota_gib * 1024**3
+                                     if args.storage_quota_gib is not None else None))
+        finally:
+            store.close()
         print(json.dumps(result, indent=2))
         return 0
     if args.action == 'models-retired':
@@ -141,22 +209,71 @@ def main(argv=None):
         print(json.dumps(restore_download(
             args.identifier, directory=args.directory or None), indent=2))
         return 0
+    if args.action == 'model-purge-retired':
+        if not args.confirm:
+            raise ValueError('Explicit --confirm required to permanently purge GGUF')
+        Store.inspect_existing_database(args.db)
+        from .model_retirement import purge_retired_download
+        from .recovery import checkpoint_references_managed_model
+        store = Store(args.db)
+        try:
+            result = purge_retired_download(
+                args.identifier, directory=args.directory or None, confirm=True,
+                checkpoint_check=lambda digest:
+                checkpoint_references_managed_model(store, digest))
+        finally:
+            store.close()
+        print(json.dumps(result, indent=2))
+        return 0
+    if args.action == 'model-purge-imported':
+        if not args.confirm:
+            raise ValueError('Explicit --confirm required to permanently purge imported GGUF')
+        Store.inspect_existing_database(args.db)
+        from .model_import import purge_imported_gguf
+        from .recovery import checkpoint_references_managed_model
+        store = Store(args.db)
+        try:
+            result = purge_imported_gguf(
+                args.path, directory=args.directory or None, confirm=True,
+                checkpoint_check=lambda digest:
+                checkpoint_references_managed_model(store, digest))
+        finally:
+            store.close()
+        print(json.dumps(result, indent=2))
+        return 0
     if args.action == 'model-download':
         from .gguf_download import download_gguf
         result = download_gguf(
             args.repository, args.filename,
-            directory=args.directory or None)
+            revision=args.revision,
+            directory=args.directory or None,
+            storage_quota_bytes=(args.storage_quota_gib * 1024**3
+                                 if args.storage_quota_gib is not None else None))
         print(json.dumps(result, indent=2))
         return 0
     if args.action == 'model-catalog':
-        from .huggingface_catalog import search_gguf, list_gguf_files
-        values = (search_gguf(args.query) if args.operation == 'search'
-                  else list_gguf_files(args.query))
+        from .huggingface_catalog import (
+            search_gguf, list_gguf_files, inspect_gguf_repo,
+        )
+        if args.operation == 'search':
+            values = search_gguf(args.query)
+        elif args.operation == 'inspect':
+            values = inspect_gguf_repo(args.query)
+        else:
+            values = list_gguf_files(args.query)
         print(json.dumps(values, indent=2))
         return 0
     if args.action == 'db-restore-copy':
         # Do not open or initialize the active task database for a restore copy.
-        print(f'Verified restore copy: {Store.restore_backup_to(args.source, args.destination)}')
+        try:
+            restored = Store.restore_backup_to(args.source, args.destination)
+        except FileExistsError:
+            print("Restore destination already exists. Choose a new file.", file=sys.stderr)
+            return 1
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f'Verified restore copy: {restored}')
         return 0
     if args.action == 'memory':
         from .model_routing import memory_report
@@ -209,7 +326,15 @@ def main(argv=None):
                 first = False
             sys.stdout.write("\n]\n" if not first else "]\n")
         elif args.action=='db-backup':
-            print(f'Verified backup: {store.backup_to(args.destination)}')
+            try:
+                backup = store.backup_to(args.destination)
+            except FileExistsError:
+                print("Backup destination already exists. Choose a new file.", file=sys.stderr)
+                return 1
+            except ValueError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            print(f'Verified backup: {backup}')
         elif args.action=='recover':
             print(f'Inspected {store.recover()} interrupted tasks; editing/testing tasks blocked for inspection')
         elif args.action=='recover-edits':
@@ -221,7 +346,8 @@ def main(argv=None):
             output = plan_task(store, args.id,
                                model_factory=lambda: _cli_model(backend=args.backend,
                                                                  model=args.model,
-                                                                 endpoint=args.endpoint))
+                                                                 endpoint=args.endpoint,
+                                                                 token_parameter=args.token_parameter))
             print(output)
         elif args.action=='resume-safe':
             from .recovery import resume_safe
@@ -243,7 +369,8 @@ def main(argv=None):
             from .engine import execute_task
             result=execute_task(store,args.id,Path(args.workspace_parent),preset=args.preset,
                                 model=_cli_model(backend=args.backend, model=args.model,
-                                                   endpoint=args.endpoint),max_repairs=args.max_repairs,
+                                                   endpoint=args.endpoint,
+                                                   token_parameter=args.token_parameter),max_repairs=args.max_repairs,
                                 allow_host_tests=args.allow_host_tests,resume=args.resume,
                                 role=args.role,
                                 qualification_directory=(Path(args.qualification_directory)

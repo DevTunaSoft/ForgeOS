@@ -49,9 +49,28 @@ class ModelQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Final role qualification"):
             qualify_role_evidence(item)
 
+    def test_unknown_roles_cannot_be_qualified_or_routed(self):
+        item = evidence(role="invented-role")
+        with self.assertRaisesRegex(ValueError, "Invalid qualification role"):
+            qualify_role_evidence(item)
+        with self.assertRaisesRegex(ValueError, "Invalid qualification role"):
+            route_qualified_role(
+                "invented-role", [evidence()], memory_budget_bytes=8_000_000_000)
+
     def test_requires_meaningful_final_corpus(self):
         with self.assertRaisesRegex(ValueError, "counts"):
             qualify_role_evidence(evidence(tasks=5, json_ok=5, objective_ok=5))
+
+    def test_schema_and_latency_reject_boolean_and_nonfinite_numbers(self):
+        item = evidence()
+        item["schema"] = True
+        with self.assertRaisesRegex(ValueError, "schema"):
+            qualify_role_evidence(item)
+        for latency in (True, float("nan"), float("inf"), float("-inf"),
+                        10 ** 10000):
+            with self.subTest(latency=latency):
+                with self.assertRaisesRegex(ValueError, "latency"):
+                    qualify_role_evidence(evidence(latency=latency))
 
     def test_runtime_failure_and_safety_gates_fail_closed(self):
         self.assertTrue(qualify_role_evidence(

@@ -45,6 +45,14 @@ class LocalResumeTests(unittest.TestCase):
                   if k not in ("backend", "endpoint")}
         self.assertEqual(_checkpoint_contract({"contract": legacy}), legacy)
 
+    def test_parses_and_validates_saved_token_parameter_profile(self):
+        profile = {**self.contract(), "token_parameter": "max_completion_tokens"}
+        self.assertEqual(_checkpoint_contract({"contract": profile}), profile)
+        for invalid in ("max_new_tokens", None, 1):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                _checkpoint_contract({
+                    "contract": {**self.contract(), "token_parameter": invalid}})
+
     def test_rejects_unsafe_or_unrecognized_saved_backends(self):
         invalid = [
             {**self.contract(), "backend": "ollama"},
@@ -76,9 +84,28 @@ class LocalResumeTests(unittest.TestCase):
             self.assertEqual(outcome["resumed"], [2])
             factory.assert_called_once_with(
                 backend=expected["backend"], model=expected["model"],
-                endpoint=expected["endpoint"])
+                endpoint=expected["endpoint"], token_parameter="max_tokens")
             self.assertIs(runner.call_args.kwargs["model"], fake_model)
             self.assertTrue(runner.call_args.kwargs["resume"])
+
+    def test_resume_restores_nondefault_token_parameter(self):
+        with tempfile.TemporaryDirectory() as folder:
+            parent = Path(folder)
+            expected = {**self.contract(),
+                        "token_parameter": "max_completion_tokens"}
+            store = CheckpointStore(self.checkpoint(parent, expected))
+            fake_model = Mock()
+            fake_model.model = expected["model"]
+            fake_model.backend = expected["backend"]
+            fake_model.base = expected["endpoint"]
+            runner = Mock(return_value={"passed": True})
+            with patch("forgeos.recovery.create_model",
+                       return_value=fake_model) as factory:
+                resume_safe(store, parent, allow_host_tests=True, execute=runner)
+            factory.assert_called_once_with(
+                backend=expected["backend"], model=expected["model"],
+                endpoint=expected["endpoint"],
+                token_parameter="max_completion_tokens")
 
     def test_unsafe_checkpoint_skipped_before_factory_or_runner(self):
         with tempfile.TemporaryDirectory() as folder:

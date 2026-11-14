@@ -32,7 +32,7 @@ jobs:
       # same suite again here; this workflow owns frozen-Windows packaging
       # and executable/security acceptance.
       - name: Package GUI executable
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --icon "assets/branding/ForgeOS_Master_Branding_Kit/04_Application_Ready/ForgeOS_Windows_Icon.ico" --paths src --add-data "assets/branding/ForgeOS_Master_Branding_Kit/04_Application_Ready/ForgeOS_Transparent_Icon_128.png;branding" --add-data "docs/USER_GUIDE.md;forgeos" --add-data "src/forgeos/data/llama.cpp-LICENSE.txt;forgeos/data" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
       - name: Check executable exists and is nonempty
         shell: pwsh
         run: |

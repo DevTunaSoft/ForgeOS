@@ -30,9 +30,9 @@ directory, an existing destination, or a symlink at the backup path.
 The source integrity check uses `PRAGMA integrity_check(1)`; the online
 copy is produced using SQLite's `Connection.backup(pages=64)`. The completed
 temporary file is checked independently and flushed before exclusive
-same-directory hard-link publication. If publishing fails, no partial
-destination is made visible. A filesystem that does not support hard links
-will cause a deliberate failure. Python does not read the full database into
+same-directory publication using rename on Windows and a hard link on POSIX.
+If publishing fails, no partial destination is made visible. POSIX filesystems
+must support hard links. Python does not read the full database into
 RAM. The operation may still take time and disk space proportional to the
 database's real size.
 

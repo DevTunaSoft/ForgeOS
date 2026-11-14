@@ -2104,3 +2104,965 @@ were PASS for `79321b8`. Physical Windows deployment, RAM and full
 disaster recovery acceptance remain UNVERIFIED. Next prioritize clean
 cross-platform CI evidence, then fault injection on database backup
 and restore under constrained filesystems.
+
+## 2026-11-12 — malformed checkpoint fields must not halt Safe Resume
+
+- Baseline: `4a247990b42082f56e302cb86133f1b139aea214`. The existing recovery scanner skipped malformed workspace paths, but a JSON array or object in the phase or test preset could raise `TypeError` during set membership and abort the scan.
+- Fix: reuse the existing per-task skip paths for invalid phases and presets. Regression coverage puts two malformed checkpoints ahead of an eligible checkpoint and asserts only the eligible task reaches execution.
+- Evidence: FAIL before the fix with `TypeError` in the new regression. PASS after the fix with `py -m unittest test_recovery test_local_resume -q` on Windows/Python 3.15 (29 tests, one skip), with `PYTHONPATH=src;tests` and workspace-local temporary files. Full-suite and physical Windows acceptance remain UNVERIFIED.
+
+- Follow-up: direct engine resume also rejects an array or object phase through its normal invalid-checkpoint error and keeps the task blocked. The new engine regression plus recovery and local-resume suites passed on Windows/Python 3.15 (30 tests, one skip) with temp files outside OneDrive. The first run under OneDrive hit a temporary Git repository cleanup lock.
+
+## 2026-11-12 — Windows backup and restore publication
+
+- Baseline `5658b70`: the verbose Windows run progressed past the apparent stall. Focused reproduction showed backup publication failing at `os.link` with WinError 5. A separate subprocess test ran successfully inside the child but ForgeOS rejected the result because diagnostic archival failed.
+- Backup and restore now publish the flushed sibling file using exclusive rename on Windows. POSIX keeps hard-link publication. Existing publication-failure tests inject errors at the shared publication function and still check cleanup.
+- PASS on Windows/Python 3.15: `py -m unittest test_db_backup test_db_restore test_cli_database -q` (14 tests, one skip), with `PYTHONPATH=src;tests` and temporary files outside OneDrive. Full-suite and physical Windows acceptance remain UNVERIFIED. Next priority: diagnose the separate diagnostic archive failure.
+
+- Diagnostic archive investigation on `1702163`: the default evidence store resolves under the Windows user profile, outside this session's writable roots. With process-local `USERPROFILE` pointing at a disposable writable profile and `TEMP`/`TMP` outside OneDrive, `py -m unittest test_core.ForgeOSTests.test_unittest_preset_passes test_engine.CheckpointResumeTests.test_exhausted_repairs -v` passed both tests on Python 3.15. Preserve the diagnostic archive requirement. A full verbose run with the isolated profile is needed to distinguish remaining failures.
+
+- Windows AppContainer runtime probe on `1702163`: FAIL in this managed session. `py -m unittest test_appcontainer.WindowsAppContainerProbeTests.test_active_python_runtime_runs_inside_appcontainer -v` reproduced `icacls` access denied on `C:\Python315\python.exe`. The isolated suite passed the database CLI tests and the basic AppContainer token, loopback and workspace isolation probes. Runtime startup acceptance still requires an environment where ForgeOS can apply and revoke its temporary runtime ACLs.
+
+- Recovery follow-up: a checkpoint below the byte limit can still exceed a JSON decoder's recursion limit. Safe Resume now skips that row, and direct-resume error handling preserves the original exception. The regression also accepts runtimes that successfully decode the nested array and reject it as nonresumable. PASS on Windows/Python 3.15: 29 recovery and local-resume tests, one skip.
+
+- Transaction recovery now reports JSON decoder recursion failures as invalid edit manifests and retains the journal for inspection. Fault injection verifies the manifest survives. PASS on Windows/Python 3.15: 12 tests via "py -m unittest test_engine.TransactionRecoveryTests -q" with PYTHONPATH=src;tests and temporary files outside OneDrive.
+
+- Windows snapshot write isolation: FAIL on `ac3cf18` in the isolated Windows/Python 3.15 environment. `py -m unittest test_engine.CheckpointResumeTests.test_windows_snapshot_blocks_write_back_to_editable_worktree -v` reproduced the full-suite failure. The child reported that its write to the editable worktree was permitted; ForgeOS correctly reported the test result as failed. The cause of the write permission and behavior on a standard Windows release host are UNVERIFIED. Treat source-mode snapshot write isolation as an open release criterion.
+
+- Synthetic output memory gate on `0b6763d`: PASS on Windows/Python 3.15 with `PYTHONPATH=src` and the isolated test profile. `py tools/memory_benchmark.py --mib 12 --cycles 3 --check` recovered the archive in all three cycles, with 1,982,885 bytes peak traced allocation and 30,396,416 bytes peak process RSS. This measures the Python process only. Target-machine process-tree performance with Ollama remains UNVERIFIED.
+
+- Isolated full Windows suite at source `1702163`: FAIL. `py -m unittest discover -s tests -v` with `PYTHONPATH=src;.`, writable disposable `USERPROFILE`, and `TEMP`/`TMP` outside OneDrive ran 600 tests in 397.684 seconds: 564 passed, 30 skipped, four failures, two errors. Both real loopback errors were WinError 10013. The four failures were AppContainer Python startup (runtime ACL denied), editable-worktree snapshot write isolation, low-integrity workspace write-up isolation, and the handle allowlist test (child received `STATUS_INVALID_HANDLE` as an exception instead of the expected false return). The isolation failures require verification on the intended release host. This run predates the follow-up transaction manifest change.
+
+- Database recovery follow-up on `923e4c2`: a fault-injection regression creates the destination after preflight, then invokes the real publication primitive. Backup rejects the collision, preserves the other writer's file, and cleans its staging file. PASS on Windows/Python 3.15: `py -m unittest test_recovery test_local_resume test_engine.TransactionRecoveryTests test_db_backup test_db_restore test_cli_database -q` ran 56 tests with two skips, using `PYTHONPATH=src;tests` and temporary files outside OneDrive.
+
+- Recovery scan now fetches bounded checkpoint bytes and decodes UTF-8 per task. Invalid SQLite TEXT encoding previously could fail an entire page before per-task validation. The real SQLite pagination regression injects an invalid UTF-8 record ahead of 41 eligible tasks and verifies they still reach recovery. PASS on Windows/Python 3.15: 30 focused recovery and pagination tests, one skip.
+
+- Safe Resume now rejects malformed caller-supplied preset overrides before touching task state. PASS on Windows/Python 3.15: recovery and local-resume suites ran 30 tests with one skip, using temporary files outside OneDrive.
+
+- Checkpoint fault-injection tests now mock the engine's workspace test boundary. Previously they patched the inner runner and could fail on Windows ACL setup before reaching the injected interruption. PASS on Windows/Python 3.15: lease release, malformed checkpoint shape, pending-test resume, and pending-repair resume (four tests). Real snapshot containment retains separate integration coverage and remains UNVERIFIED for release.
+
+- Expanded verification on `b5c7e1e`: all ten changed `CheckpointResumeTests` passed on Windows/Python 3.15 with `PYTHONPATH=src;tests` and writable temporary storage outside OneDrive. The set covers lease release, pending-test and pending-repair interruption, missing hashes, malformed payloads and phases, changed contracts, and tampered or oversized files. Branch-wide documentation coverage passed with `py tools/check_documentation.py --links --base origin/main --head HEAD`.
+
+- Direct resume now validates checkpoint UTF-8 after a bounded byte read and reports a clear validation error for damaged rows. The SQLite regression covers both direct reads and recovery scans. PASS on Windows/Python 3.15: 30 tests in test_recovery and test_local_resume, one skip.
+
+- Safe Resume skips a qualified-model checkpoint when the evidence directory cannot resolve, including older Python symlink-loop errors. Fault injection verified that a later eligible task still executes. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
+
+- Safe Resume delivers managed-runtime skip events outside the execution error handler, so a broken progress stream propagates once instead of being reclassified as a task failure. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
+
+- Blocked checkpoint pagination stops after yielding SQLite's minimum integer ID. This prevents an out-of-range SQL bind on imported or manually repaired databases. PASS on Windows/Python 3.15: 28 recovery and pagination tests, one skip.
+
+- Database CLI backup and restore now report a publication collision on stderr and return 1. Existing database content remains protected by exclusive publication. PASS on Windows/Python 3.15: 16 CLI, backup and restore tests, one skip.
+
+- Database CLI backup and restore report destination validation failures on stderr and return exit status 1, covering existing destinations at preflight as well as publication races. Windows/Python 3.15: 15 passed, one skipped across test_cli_database, test_db_backup and test_db_restore.
+
+### Windows acceptance evidence on `2ce399f`
+
+- PASS: `py -m compileall -q src tests forgeos_build` and `py -m unittest test_build_info test_launcher test_acceptance test_cli_acceptance -q` on Windows 11 / Python 3.15.2. The tests had 12 passes and one skip.
+- PASS: `py -m forgeos acceptance` with the isolated Windows profile wrote a source-mode snapshot with commit `2ce399f97a686dfebb1f47daba86c604dc276b1f`. The report did not assert a physical release target and recorded no frozen executable hash or managed-model evidence.
+- BLOCKED: Local packaging lacks the workflow's Python 3.12 and PyInstaller. `ollama list` encountered a loopback socket permission denial, so live Ollama acceptance is UNVERIFIED. Frozen executable smoke and physical Windows release acceptance are UNVERIFIED.
+
+- Safe Resume treats missing checkpoint payloads from nullable legacy rows as invalid per task. PASS on Windows/Python 3.15: 31 recovery and local-resume tests, one skip.
+
+- Acceptance evidence derives source-mode Git identity from the module checkout. Frozen builds use embedded artifact identity and skip source checkout lookup. PASS on Windows/Python 3.15: test_acceptance and test_cli_acceptance, 9 passed and one skip. Actual frozen execution remains UNVERIFIED.
+
+- Source acceptance reports omit the commit when tracked checkout changes are present or Git cannot verify them. PASS on Windows: 10 acceptance tests passed and one skipped. Frozen build acceptance remains UNVERIFIED.
+
+- The clean checkout at 043c32e reported its exact source commit on Windows. The snapshot now explains that source identity requires verifiable Git metadata and unchanged tracked files. Acceptance and CLI acceptance tests: 10 passed, one skip.
+
+- Frozen acceptance now bounds its embedded metadata read to 4 KiB and validates the source SHA as hexadecimal. Windows acceptance tests: 10 passed, one skip. Real frozen execution remains UNVERIFIED.
+
+- Regression coverage verifies that packaged acceptance metadata is accepted at 4 KiB and rejected one byte above it. Windows acceptance suites: 11 passed, one skipped.
+
+- Recovery ZIP packaging now fixes member timestamps and ordering. Two exports of the same revision produced matching SHA-256 hashes in the Windows regression suite. PASS: all five test_package_handoff tests.
+
+- Recovery ZIP publication now stages and hashes the complete archive before exposing the final path without overwriting an existing file. Windows packaging suite: six tests passed, including injected write failure with no partial output or staging files.
+
+- Recovery ZIP packaging enforces its per-file read limit during I/O and streams the final archive checksum in 64 KiB chunks. PASS on Windows: all six test_package_handoff tests.
+
+- Added a regression confirming an oversized tracked handoff input is rejected before publishing a ZIP. PASS on Windows: all seven test_package_handoff tests.
+
+### Local master handoff PDF verification
+
+- PASS: `scripts/export_master_handoff.py --output <path> --min-body-pages 35` at `a6ec9881c5e1b919019d4b1488f8b63b45abb27e` produced 144 pages, including 142 body pages. Independently verified SHA-256 `38935a8649d3405a0b2a4a1a0fb73f02352db92f18661d0f7e71d9ba24253ca7`.
+- UNVERIFIED: Visual inspection sampled pages 1, 2, 72 and 144. They were legible without visible clipping or overlap. Poppler reported missing Symbol and ArialUnicode display fonts. Complete page review, cross-viewer fidelity, and exact-commit hosted publication remain open.
+
+- Master PDF export stages and validates the entire PDF before publication. Existing PDFs are preserved. PASS on Windows: three wrapping regressions and direct fault injection for validation cleanup and destination preservation. End-to-end rendering of the updated exporter remains UNVERIFIED.
+
+- Automated PDF publication regression verifies cleanup after a staged validation failure and preserves an existing PDF. Four exporter tests passed. The ba0c86c end-to-end export also passed checksum verification with 145 pages (143 body pages). Poppler font warnings persist; full visual review and Windows release acceptance remain UNVERIFIED.
+
+### Windows Python 3.12 verification
+
+- PASS at `a6cea4c`: the bundled Python 3.12.14 runtime ran 75 focused tests (72 passed, three skipped). With `PYTHONPATH=src;.;tests`, use `python -m unittest test_recovery test_local_resume test_db_backup test_db_restore test_cli_database test_engine.TransactionRecoveryTests test_acceptance test_cli_acceptance test_launcher test_build_info -q`. Use a disposable writable USERPROFILE and set TEMP and TMP outside OneDrive to avoid the managed session's default profile and temporary-directory restrictions.
+- The full `python -m unittest discover -s tests -v` run is still in progress. A focused `test_engine.CheckpointResumeTests.test_exhausted_repairs` rerun failed before the repair loop because icacls was denied permission to label the disposable workspace. Frozen packaging is still BLOCKED locally by missing PyInstaller and pytest. Physical Windows acceptance remains UNVERIFIED.
+
+- Added a regression for denied Windows test snapshot setup. Neither test runner is invoked. Both FrozenSecureRoutingTests passed on Windows/Python 3.12.14. Real containment remains UNVERIFIED.
+
+- Snapshot setup removes its partial ownership marker and empty runtime directory when marker writing fails. Windows test_runtime suite: seven passed, including a successful retry after injected failure. Windows containment acceptance remains open.
+
+- Full Windows/Python 3.12.14 suite at a6cea4c: FAIL, 572 passed, 30 skipped, 8 errors and 3 failures out of 613. Six errors occurred during workspace integrity labeling and two during loopback socket access (WinError 10013). Two AppContainer tests and the handle allowlist test failed. The run predates the snapshot marker cleanup, which separately passed all nine lifecycle and routing tests on the same runtime. Physical Windows acceptance remains UNVERIFIED.
+
+- Snapshot cleanup bounds ownership marker reads and preserves the snapshot if the marker exceeds the limit. PASS on Windows: all eight test_runtime tests, including oversized marker rejection.
+
+- Snapshot setup and cleanup now recognize dangling symlinks at runtime and marker paths as invalid existing state. Windows test_runtime: eight passed. Native dangling-link coverage remains UNVERIFIED in this session.
+
+- Added native dangling-link coverage for both snapshot paths, exercising setup and cleanup and checking that the links are preserved. Windows test_runtime: eight tests passed; both link subtests skipped because the session cannot create symlinks. Native link behavior remains UNVERIFIED here.
+
+## 2026-11-13 — opt-in workspace-scoped startup recovery
+
+- Added a persistent startup recovery preference bound to one existing workspace path. It is off by default, saves only the selected scope (not a reusable host-test permission), and clears the scope when disabled. Startup dispatch revalidates that exact path and directory before using the existing Safe Resume path; it does not resume managed-model checkpoints unless their authenticated runtime is already active.
+- Updated the user guide to explain the host-test impact and workspace authorization.
+- Regression evidence: Windows/Python 3.15 `py -m unittest test_desktop_settings test_gui_contract -q` passed all 39 tests; `git diff --check` passed. GUI startup behavior is also asserted in the GUI contract suite.
+- Real startup recovery on an installed Windows build remains unverified. Continue with the next highest-priority unblocked roadmap item; full release acceptance is still open.
+
+## 2026-11-13 — protect GGUFs required by blocked checkpoints
+
+- The desktop's recoverable GGUF retirement now scans blocked checkpoints using the existing bounded SQLite iterator before moving a model. A checkpoint whose managed-model SHA matches the selected GGUF prevents retirement. Oversized, unreadable, invalid-shape, or unidentified managed-model checkpoints also fail closed because their references cannot be ruled out. The scan and full model verification stay off the Tk event thread.
+- Regression evidence: Windows/Python 3.15 `py -m unittest test_recovery test_gui_contract test_model_retirement -q` passed 81 tests (five platform skips); `git diff --check` passed. Tests cover exact SHA match, unrelated model identity, and unreadable/oversized checkpoint refusal.
+- Remaining gate: no transaction spans task checkpoint creation and the retirement scan, so a separate ForgeOS process could race this check. Native Windows task/model lifecycle and external llama-server acceptance remain outstanding.
+
+## 2026-11-13 — coordinate runtime, download, and retirement across processes
+
+- Managed GGUF startup now takes the existing per-file OS lock before revalidating model bytes and holds it through the runtime session. Download and recoverable retirement use the same lock, so competing ForgeOS processes cannot replace or move a model while a managed server may have it mapped. If shutdown cannot confirm the child exited, ForgeOS retains the process handle and lock and reports the shutdown error. The checkpoint SHA scan from the preceding increment protects dependencies after the runtime has stopped.
+- Regression evidence: Windows/Python 3.15 and the bundled Python 3.12.14 runtime each passed `python -m unittest test_managed_llama test_model_retirement test_gguf_download -q` (75 tests, 11 platform skips). A real child Python process confirms lock acquisition is rejected while the managed runtime holds the model and succeeds after confirmed shutdown; a shutdown timeout preserves the model lock.
+- Remaining acceptance: native Windows cross-process lock semantics, suspended process/job termination and actual llama.cpp memory-mapped weight behavior require release-host validation. Separately launched unmanaged servers are not coordinated.
+
+## 2026-11-13 — explicit no-copy import of an existing GGUF
+
+- Added **Import existing GGUF without copying** to the existing Managed local GGUF window. After an explicit confirmation, a worker streams SHA-256 over the selected `.gguf` and exclusively creates an adjacent `.forgeos.json` sidecar recording exact path, bytes, hash and `provenance: unknown`. It refuses symlinks, hard-linked files, invalid headers, unsupported sizes and pre-existing sidecars. No network call or model copy occurs. The managed loader accepts this import identity and rehashes it before inference.
+- Regression evidence: Windows/Python 3.15 and bundled Python 3.12.14 each passed `test_model_import test_managed_llama test_model_retirement test_gguf_download test_recovery test_gui_contract` (142 tests, 13 platform skips). Tests cover no-copy identity, tamper detection, no-clobber sidecars, invalid GGUF/header and GUI authorization. Documentation links and source compilation passed.
+- Remaining gaps: imported files are not in the unified model inventory or recoverable retirement workflow; the sidecar requires write access next to the model. Source/revision/license provenance remains unknown. Real Windows UI and large-file import/inference acceptance remain unverified.
+
+## 2026-11-13 — include no-copy imports in the local GGUF inventory
+
+- Extended explicit local import to register only an absolute path and SHA-256 in a bounded, atomically updated index under ForgeOS model storage; model bytes remain where the user selected them. The existing offline model inventory and GUI picker now show imported entries as `imported_not_reverified`, label provenance unknown, and allow selection. `models-local` lists imports and `model-verify-local` streams and verifies them through the same CLI. Corrupt/unbounded index state fails closed instead of silently claiming imports are absent.
+- Regression evidence: Windows/Python 3.15 and bundled Python 3.12.14 each passed `test_model_import test_model_inventory test_managed_llama test_gui_contract` (86 tests, eight platform skips); `test_model_import` additionally verifies CLI list/verify for imports. Compilation, docs link checks and `git diff --check` passed.
+- Remaining: imported models are not yet recoverably retired/unregistered, Windows read-only and large-file GUI acceptance are open, and unified inventory still needs real user workflow validation.
+
+## 2026-11-13 — reversible removal of imported GGUF inventory entries
+
+- Imported-model removal now verifies the source bytes again under the shared per-model lock and removes only its path record from the bounded local inventory. The original GGUF and identity sidecar remain unchanged; selecting the explicit import action again verifies and re-registers that same sidecar. GUI removal checks blocked checkpoint references before unregistering and refuses an active model lock.
+- Regression evidence: Windows/Python 3.15 and bundled Python 3.12.14 each passed `test_model_import test_model_inventory test_model_retirement test_recovery test_gui_contract` (99 tests, seven platform skips). Coverage verifies preserved source bytes/sidecar, reimport, lock contention, tamper rejection, failed-registration rollback, checkpoint guard wiring and GUI inventory flow. Documentation links and compilation pass.
+- Remaining: no destructive deletion of external weights is offered; cleanup requires user action outside ForgeOS after all references are retired. Unmanaged external inference servers and real Windows GUI/large-file acceptance remain open.
+
+## 2026-11-13 — verify managed loopback listener process identity
+
+- Managed startup now inspects the local IPv4 TCP listener owner and refuses readiness unless the PID matches the child ForgeOS launched. Windows uses IP Helper `GetExtendedTcpTable`; Linux maps the listener's `/proc/net/tcp` inode to process descriptors. Managed `LocalChatModel` calls check ownership before the request and again before accepting the response, so a changed listener fails closed and its output is discarded. GUI task/recovery factories pass the live controller check into managed model clients.
+- Regression evidence: Windows/Python 3.15 and bundled Python 3.12.14 each passed the managed runtime, managed local-model ownership checks and GUI contract suites (77 tests, seven platform skips). Coverage includes deterministic TCP-table parsing, refusing a mismatched owner before authenticated model discovery, and rejecting a response when the owner changes during a request. Compilation and documentation links passed.
+- Environment limitation: the live Windows owner-table probe was skipped after IP Helper returned access denied (error 5) in this managed session. A prior full `test_local_models` run also encountered the known loopback `WinError 10013` restriction. Therefore real Windows PID-table access, runtime listener ownership and request-race acceptance remain UNVERIFIED on the target release host. The code fails closed where ownership cannot be established.
+
+## 2026-11-13 — show bounded Hugging Face card claims during inspection
+
+- The explicit GGUF repository inspection action now fetches structured Hub card data and the existing file listing. It displays only allowlisted fields (license, author, model name/type, pipeline/library, base model, language, datasets and tags), clips each string and list, and labels these values as repository supplied and unverified. GGUF sizes and optional LFS SHA-256 hashes remain shown with their Hub source context. Private and gated repositories are rejected before the file request. No request is made at startup.
+- Verification: `python -m unittest tests.test_huggingface_catalog -v` passed all nine tests, including allowlist/clipping, mixed-type lists, private/gated refusal and the existing size/hash/search limits. Pytest was unavailable in the active Python 3.15 runtime, so unittest was used.
+- Remaining roadmap scope includes parameters, quantization, context/chat template/tool claims, binding metadata to the downloaded revision, live model-card change tests, target-host download behavior and local verification status integration. This increment does not validate licensing or compatibility.
+
+### Follow-up — pin the inspected Hub snapshot
+
+- Repository inspection now requires the Hub response to provide a full immutable commit SHA and uses that exact revision for its GGUF tree request. The UI displays the inspected revision. The card-field allowlist also includes optional author-provided model-size, parameter-count, quantization, context-length, chat-template, tool-use and structured-output claims; values remain clipped and explicitly unverified.
+- Verification: the same focused catalog suite passed all nine tests after adding assertions that the file-list URL uses the pinned SHA and malformed revision metadata is rejected. Source compilation and `git diff --check` passed.
+- This pins the inspected metadata/tree snapshot only. The later downloader still independently resolves and verifies its own download revision; full end-to-end provenance binding remains a release gap.
+
+### Follow-up — download the inspected snapshot
+
+- The GUI now preserves the inspected repository commit through file selection and passes it to the existing downloader. The downloader validates a supplied full commit SHA and uses it for the pinned tree lookup, resolve URL, partial journal and installed manifest; command-line callers retain the existing resolve-current-revision default.
+- Verification: `python -m unittest tests.test_gguf_download tests.test_huggingface_catalog -q` passed 32 tests (one platform skip), and `python -m unittest test_gui_contract -q` passed all 36 tests. Coverage proves the GUI-selected revision bypasses a fresh HEAD lookup, is retained in the verified path/result, and malformed explicit revisions fail before metadata or disk work. Compilation and `git diff --check` passed.
+- Remaining gates: real CDN redirects and Windows transfer/resume behavior remain unverified. This change does not make the CLI choose a previously inspected snapshot; it still explicitly resolves the current repository revision at download time.
+
+### Follow-up — allow pinned revisions from the CLI
+
+- `model-download` accepts optional `--revision <full-commit-sha>` and forwards it to the same downloader used by the GUI. Omitting it preserves existing CLI behavior. This lets catalog users carry a reviewed revision into download without relying on the GUI.
+- Verification: combined CLI download, downloader, catalog and GUI contract suites passed 70 tests (one platform skip). CLI tests cover explicit forwarding and backward-compatible omission. Compilation and `git diff --check` passed.
+
+### Follow-up — make the pinned CLI flow discoverable
+
+- Added `model-catalog inspect <owner/repo>` to return the bounded, unverified card claims, immutable repository revision and GGUF size/hash list as one JSON result. Updated both model guides to show the intended inspect → choose exact filename/revision → download with `--revision` workflow.
+- Verification: the combined CLI/downloader/catalog/GUI-contract run passed 71 tests (one platform skip), including inspect output and revision forwarding. Compilation and `git diff --check` passed.
+
+### Follow-up — keep long inspection results readable
+
+- Added a vertical scrollbar to the existing Hugging Face inspection details panel so longer card claims and file listings remain reachable in the fixed-size browser window.
+- Verification: Windows `python -m unittest test_gui_contract -q` passed all 37 tests; the GUI contract suite asserts the details widget is wired to its scrollbar. Compilation and `git diff --check` passed. Visual interaction on a target desktop remains unverified.
+
+### Follow-up — label search license data as unverified
+
+- Renamed the Hub search result column to **Hub license (unverified)** so a repository tag cannot be mistaken for a legal review before the user inspects the repository.
+- Verification: Windows GUI contract tests passed all 37 tests, including the explicit column label assertion; compilation and `git diff --check` passed.
+
+### Follow-up — explicitly request expanded Hub card data
+
+- `inspect_gguf_repo` now requests `expand=cardData,sha,tags,author` from the fixed Hub model endpoint. This is required for the structured card fields; author also falls back to the separately expanded API property when absent from card metadata. The Hub's [official API reference](https://huggingface.co/docs/huggingface_hub/main/en/package_reference/hf_api) documents `cardData` and `author` as explicit expansion properties.
+- Verification: all ten Hugging Face catalog unit tests passed. They assert the exact expansion query and author fallback, in addition to the existing bounds and pinned tree behavior. Compilation and `git diff --check` passed.
+
+### Follow-up — retain bounded numeric card claims
+
+- Optional numeric model-size, parameter-count and context-length claims are now rendered when supplied as nonnegative JSON integers no larger than `10^15`; negative and oversized values are ignored. The UI still labels all such author metadata unverified.
+- Verification: catalog, roadmap contract and documentation suites passed 24 tests. Compilation and `git diff --check` passed.
+
+### Follow-up — show local inventory status beside Hub files
+
+- The user-triggered inspect worker now reads ForgeOS's bounded offline model inventory and annotates each Hub GGUF row with exact repo/revision/file/hash status. It distinguishes a local revision with a different hash, same-SHA imported bytes with unknown provenance, an unverified installed item, and absence from the inventory. Inventory read failure is reported as unavailable while leaving public inspection usable. It never hashes model weights automatically.
+- Verification: `python -m unittest test_model_inventory test_gui_contract tests.test_huggingface_catalog -q` passed 57 tests (one platform skip), including matching/mismatch/imported/absent status mapping. The initial run with the sandbox default TEMP failed during fixture creation with WinError 5/3; rerunning with TEMP/TMP set to the writable repository passed. Compilation and `git diff --check` passed.
+- This is inventory status, not proof that current local bytes still match; the UI explicitly says the SHA is not reverified in this view. Explicit verification remains required.
+
+### Follow-up — distinguish stale imported inventory claims
+
+- When Hub metadata matches an imported registry SHA, the catalog status now incorporates the import's current metadata-only state. It distinguishes an intact-size-but-unreverified record from a missing file, size mismatch or entry needing inspection; a saved registry hash alone is never presented as proof of current local bytes.
+- Verification: model inventory and GUI contract suites passed 47 tests (one platform skip). Added cases cover imported missing and size-mismatch records. Compilation and `git diff --check` passed.
+
+## 2026-11-13 — refresh the model compatibility guide against current source
+
+- Replaced the stale proposed-branch introduction and capability table with the current status: experimental implementation on main, exact remaining real-runtime gates, current listener-owner checks and their Windows limitation, reversible model retirement/import lifecycle, and current HF inspect/pinned-download/local-inventory workflow. Replaced proposed-test/future-phase language with existing focused coverage and actual remaining release phases; updated external-model status to avoid implying model updates or verified local bytes.
+- Verification: `python -m unittest test_documentation test_multillm_roadmap -q` passed all 15 tests. Added a documentation regression preventing reintroduction of the old branch status and ensuring current pinned-inspect/import behavior remains documented. `git diff --check` passed.
+
+### Follow-up — document adapter capability boundaries
+
+- Added a source-level matrix for Ollama, managed llama.cpp and generic local OpenAI-compatible endpoints. It records request paths/parameters, tools and schema behavior, ForgeOS versus server-controlled context limits, model/license provenance, and available runtime version identity. The roadmap marks this as partial; real compatibility profiles and measured runtime limits remain open.
+- Verification: documentation and roadmap contract suites passed all 15 tests; the documentation test checks the matrix and no-tool contract language. `git diff --check` passed.
+
+## 2026-11-13 — bounded Hugging Face search pagination
+
+- Added one-page-at-a-time search with a visible **More results** control. ForgeOS follows only an HTTPS Hugging Face `/api/models` continuation whose query and page size match the original search; the server cursor remains opaque. The GUI caps searches at ten 15-result pages and deduplicates repository IDs. Existing `search_gguf()` callers still receive the first page as a list.
+- Verification: catalog, GUI contract, roadmap and documentation suites passed 64 tests. Added tests cover opaque continuation, a second page, external-host links and query-change links; API source compilation and `git diff --check` passed.
+- Live Hub pagination and GUI interaction remain unverified. The current sandbox denies access to the installed Ollama loopback service (`connectex` access denied) and cannot access the default ForgeOS model directory, so real inference remains a target-host gate.
+
+### Follow-up — explain Hub network and HTTP failures
+
+- The actual ForgeOS catalog UI rendered the new pagination controls, but a user-triggered live search in this sandbox returned `URLError` with Windows DNS error 11001. Added catalog error translation for DNS/connectivity/timeouts and Hub 401/403/404/429/5xx responses, with guidance that does not expose request URLs or low-level resolver text.
+- Verification: the final combined catalog, GUI contract, docs/roadmap, inventory, downloader and CLI run passed 101 tests (two platform skips). This includes DNS redaction and common HTTP cases. Source compilation and `git diff --check` passed. The live UI failure was reproduced; target network/API success remains unverified.
+- The HTTP error translator now closes the response object after extracting its status. Focused catalog tests assert closure and still pass all 13 cases without `ResourceWarning`.
+
+### Follow-up — add an explicit OpenAI-compatible token limit profile
+
+- The existing local adapter now accepts either `max_tokens` (default) or `max_completion_tokens`, selectable from the GUI and through `plan`/`run --token-parameter`. Unknown fields are rejected. Ollama continues using its native request path.
+- Non-default adapter selections are written into new run checkpoints and replayed by safe recovery; old checkpoint shapes continue to parse unchanged. The GUI-managed llama.cpp recovery factory also rebuilds the profile from its checkpoint. User settings persist the selection without secrets.
+- Updated the compatibility guide and roadmap to describe this as a partial compatibility profile; server/version differences beyond this parameter and real endpoint acceptance remain open.
+- Verification: model-profile, checkpoint-recovery and settings tests passed 13 tests; GUI-contract, documentation and roadmap suites passed 52 tests. Compilation and `git diff --check` passed. One existing socket-based local HTTP test cannot run in this managed sandbox because loopback socket access is denied (WinError 10013); no real endpoint compatibility is claimed.
+
+### Follow-up — explain local inference endpoint failures
+
+- The local OpenAI-compatible request adapter now translates common HTTP statuses and connection/timeout errors into plain-language guidance without exposing the local URL or raw response body. HTTP error responses are always closed. Model/server log details remain the user's local diagnostic source.
+- Added regression cases for HTTP response closure, unsupported token parameter guidance, and redaction of URLs and raw networking messages. Updated the compatibility guide and roadmap; target-runtime diagnostics remain open.
+
+### Follow-up — harden untrusted Hugging Face metadata display
+
+- Card text now replaces Unicode control/format characters with normalized spaces and clips supported claims; license tags receive the same cleanup. GGUF file rows are excluded when their paths contain traversal, invalid characters, Windows device names or exceed the downloader's 16 GiB per-file cap. This also prevents extreme metadata integers from causing GUI size conversion errors.
+- Added adversarial tests for bidi/NUL/newline text, unsafe file paths, Windows reserved names and oversized file claims. Roadmap coverage remains partial because live model-card mutation/disappearance and other Hub edge cases still require network acceptance.
+
+### Follow-up — bound Hub metadata response time
+
+- Hugging Face JSON reads now stream in bounded chunks and enforce both the existing 2 MiB response cap and a 30-second total deadline, stopping slow trickle responses. The response context closes on timeout. This complements the network socket timeout, which alone can be extended indefinitely by a server that keeps sending bytes.
+- Added a deterministic slow-reader test for total deadline enforcement; live Hub behavior remains unverified in this network-restricted session.
+
+### Follow-up — add an in-app getting-started and recovery guide
+
+- Added a third tab to the existing GUI with a five-step first-task workflow, keyboard navigation instructions, and plain-language advice for readiness, local endpoint, token parameter, Hub network/hash and memory failures. Buttons take users to repository selection, setup readiness, model discovery or the development tab.
+- The guide does not grant host-test authorization or perform hidden model downloads; it explains that generated tests run on the computer and that local inference does not fall back to cloud.
+- Updated the user guide and marked the roadmap item partial: real desktop screenshots and interactive guided recovery remain outstanding. Verification: `test_gui_acceptance`, GUI contract, documentation and roadmap suites passed 60 tests; compileall and `git diff --check` passed. Frozen GUI rendering and visual/keyboard interaction on target Windows remain unverified.
+
+### Follow-up — share the GGUF metadata size ceiling
+
+- The Hub catalog's maximum accepted GGUF file size now imports the downloader's canonical limit instead of duplicating a second 16 GiB value. A regression test keeps the catalog inspection boundary aligned with the download boundary.
+- Verification: catalog, downloader, inventory and retirement suites passed 68 tests (six platform skips); source compilation and `git diff --check` passed.
+
+### Follow-up — distinguish feature-branch changes from mainline status
+
+- Compared the checkout with Git refs: at the audit snapshot `f6a0e32`, `origin/main` (`4a24799`) was an ancestor of feature branch `fix/safe-resume-malformed-checkpoints`, 72 commits ahead. The overall roadmap, multi-LLM roadmap and compatibility guide now state which claims describe mainline and which additional follow-ups are branch-only.
+- No merge into `main` is claimed. GitHub contains the pushed feature branch; the full repository review/merge and release acceptance remain outstanding. Documentation and roadmap contract suites passed 16 tests, including a regression against confusing feature-branch changes with mainline status; `git diff --check` passed.
+
+### Follow-up — recover from disk exhaustion during a GGUF transfer
+
+- The downloader now translates Windows error 112 and POSIX `ENOSPC` raised while opening, writing, flushing or syncing a partial GGUF into clear recovery guidance. It retains the partial file and identity journal for retry; the destination remains unpublished.
+- Added a regression that injects a mid-write ENOSPC, verifies only the written prefix and journal remain, then resumes with the exact HTTP Range and pinned digest to publish the verified model. This is mocked fault injection; physical full-disk and process-kill acceptance remain outstanding.
+
+### Follow-up — optional model storage cap and usage report
+
+- Added bounded offline GGUF storage accounting for active revisioned weights, retired weights, resumable partials and quarantined files. The scan rejects symlinks/non-regular entries, caps traversal at 4,096 entries and depth 12, de-duplicates hard links where the platform exposes inode identity, and does not hash weights. Imported references outside this managed root are excluded.
+- Added an optional desktop setting (0/off or 16–512 GiB) and `model-download --storage-quota-gib N`. Cap-checked transfers hold a store-wide OS lock so concurrent ForgeOS downloads do not each spend the same remaining quota. A blocked transfer retains its exact partial and journal; raising the cap permits exact-revision resume. `models-storage` reports counted bytes/files.
+- Verification: the focused inventory, downloader, CLI, settings, GUI contract, documentation and roadmap suites passed 102 tests (2 platform skips). The default sandbox temp location denied test fixture writes, so the successful run set `TMP` and `TEMP` to the writable checkout. Physical Windows quota behavior, large files, cross-process lock behavior and reparse-point races remain unverified.
+
+### Follow-up — expose damaged GGUF inventory states in the GUI picker
+
+- The existing local model picker now lists bounded inventory records even when the file is missing, has changed size, or needs manual inspection. It visibly distinguishes those entries and disables both inference selection and retirement unless metadata and current size pass the inventory's basic checks. Starting a selectable model still performs the full SHA-256 re-verification.
+- Added a GUI source-contract regression for visibility, disabled controls and the fail-closed action guard. This does not yet provide a GUI repair/update workflow or classify same-size byte corruption before explicit verification.
+- Verification: GUI contract, inventory, retirement, documentation and roadmap tests passed 85 tests (5 platform skips); compileall and `git diff --check` passed. The local full suite remains environment-limited as recorded above; hosted full CI for this feature branch has not yet been observed.
+
+### Follow-up — preserve pinned llama.cpp and LLVM OpenMP licenses
+
+- Checked the exact `b12199` upstream `LICENSE` through GitHub's repository contents API; it is MIT, copyright 2023–2026 The ggml authors. Added that exact notice as a bounded packaged data file, included it in the frozen EXE, installed it next to the official runtime, and made runtime verification reject missing/modified notices. The installed-runtime manifest records its SHA-256.
+- Corrected Windows build and user-facing feature docs: the EXE does not bundle runtime binaries or weights, while the optional GUI installer downloads the pinned official runtime. The installer preserves the upstream MIT license and requires the archive's pinned LLVM OpenMP license. Other embedded components remain under review.
+- The upstream `b12199` CPU release workflow configures `GGML_OPENMP=ON` and `GGML_OPENMP_FETCH=ON`; its matching `ggml/src/CMakeLists.txt` pins LLVM OpenMP 20.1.8's license digest and copies `LICENSE-LLVM-OpenMP` into the runtime output directory. The release workflow archives that output directory. The installer requires exactly one root `LICENSE-LLVM-OpenMP` entry and verifies its SHA-256 before use.
+- Upstream evidence: [pinned b12199 LICENSE](https://github.com/ggml-org/llama.cpp/blob/b12199/LICENSE), [pinned b12199 Windows release workflow](https://github.com/ggml-org/llama.cpp/blob/b12199/.github/workflows/release.yml), [pinned b12199 OpenMP build configuration](https://github.com/ggml-org/llama.cpp/blob/b12199/ggml/src/CMakeLists.txt) and [LLVM OpenMP license](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/openmp/LICENSE.TXT).
+- Verification: runtime installer tests passed 12 tests and documentation, GUI contract and roadmap suites passed 56 tests; compileall and `git diff --check` passed. One initial combined run hit a transient sandbox `PermissionError` renaming its temporary installer fixture; the targeted installer rerun passed. A source wheel build could not run because `setuptools.build_meta` is unavailable in the managed Python and package installation is restricted. Physical Windows installer validation, frozen EXE validation and a complete archive component-license review remain open.
+
+### GitHub review and CI state — 2026-11-13
+
+- Opened [draft PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) from `fix/safe-resume-malformed-checkpoints` to `main` at `34e6d6f7c729df3a52fce410e115101109469d10` to enable review/acceptance tracking without merging.
+- GitHub's draft-PR conditions skipped Foundation tests, Windows EXE and Documentation workflows. Only handoff-integrity is eligible while the PR remains draft; a skip is not a pass. Promoting the PR to ready-for-review will run the platform matrix but will notify the repository's review audience. No merge was performed.
+
+### Follow-up — include a GGUF KV-cache estimate in managed RAM admission
+
+- Added a bounded parser for GGUF v2/v3 metadata. It reads at most 4 MiB, supports bounded scalar/string/array skipping, and extracts architecture, layer count, attention heads/KV heads and embedding length without reading tensor data. For known metadata, the managed startup preflight estimates an f16 K+V cache for the selected context and checks weight plus cache bytes against the conservative model budget. Unsupported/malformed metadata retains the existing weight-size-only fallback.
+- The estimate is included in the active controller's benchmark identity for later measurements. It does not model all compute buffers, mmap residency, quantized KV cache modes, GPU memory or concurrent external-process changes; real Windows measurements are still required.
+- Verification: managed llama.cpp, model routing, GUI contract, documentation and roadmap suites passed 113 tests (7 platform skips); `python -m compileall -q src/forgeos` and `git diff --check` passed. Parser tests cover correct context scaling, ordinary tokenizer string arrays and rejection when weight-plus-cache exceeds the budget. The commit was pushed as `a72639e`; GitHub reports the PR head matches and handoff-integrity succeeded. Foundation, Windows EXE and Documentation workflows were skipped because PR #68 is draft, so no hosted source/packaging matrix pass is claimed.
+- A follow-up bounds the actual GGUF prefix read to 4 MiB (not 4 MiB plus a sentinel byte) and checks a truncated metadata header returns no estimate. Target Windows memory behavior remains unverified.
+- The parser also uses explicit architecture key/value head widths when GGUF metadata supplies them, with a regression covering different K and V dimensions. This still estimates f16 cache allocation and does not model other runtime memory.
+- Latest verification at `e5a2d047ccadb0e847f1538e08640b0c8512bbc3`: the focused managed llama.cpp, routing, GUI contract, documentation and roadmap suites passed 113 tests (7 platform skips); compileall and `git diff --check` passed. GitHub handoff-integrity succeeded. Foundation tests, Windows EXE and Documentation were skipped because PR #68 is draft. The feature branch is pushed; it remains unmerged and physical Windows acceptance is still required.
+
+### 2026-11-13 — broader Windows regression run and sandbox limits
+
+- Corrected the inherited-handle containment regression for Python 3.15: `WriteFile` may raise `OSError(ERROR_INVALID_HANDLE)` when the intentionally unlisted parent handle is absent from the child. The test now treats that as the expected denial and still fails if the child can write. The focused containment case passed.
+- Ran `python -u -m unittest discover -s tests -v` on Windows/Python 3.15.2 with `PYTHONPATH=src;tests`, `TEMP`/`TMP` and `USERPROFILE` under the writable Codex visualization root (outside the Git checkout). Result: 675 tests, 2 failures, 8 errors, 34 skips in 335.7 seconds. Moving the fixtures outside both OneDrive and the repository eliminated earlier temp-path, repository-root, installer rename and retirement cleanup errors.
+- Remaining errors/failures were environmental: `icacls` returned Access Denied while setting low-integrity/AppContainer ACLs (including the secure engine test setup), and the managed environment denied loopback socket tests with WinError 10013. No host-test fallback was enabled. The Windows inheritance test now passes. This run is not a complete green suite; hosted CI and an unrestricted target Windows release candidate are still needed.
+
+### Follow-up — serialize explicit GGUF re-verification with lifecycle changes
+
+- Explicit local model SHA verification now acquires the same per-GGUF interprocess lock used by downloads, managed runtime startup, retirement and import unregistration. A concurrent operation fails closed rather than reporting a verification result while the model is changing. Retirement and restore call the unlocked verifier only while already holding that lock, avoiding recursive acquisition.
+- Added downloaded and imported model tests for active-lock refusal. Verification: inventory, import and retirement suites passed 39 tests (6 platform skips); compileall and `git diff --check` passed. The broader 675-test run above remains 2 failures/8 errors because this session cannot apply the required ACLs or open restricted loopback sockets.
+- Added a **Reverify SHA-256** action to the existing local model picker. It runs on a worker thread, displays bounded byte progress, supports cooperative cancellation, keeps the picker open until completion, and marks only current-view results as verified; startup still rehashes before native load. Missing imported weights display an unknown size instead of crashing the inventory view. Focused inventory/import/retirement/GUI-contract/docs/roadmap verification passed 98 tests (6 platform skips); compileall and `git diff --check` passed.
+- At `7787e979e3e82cd78de7e96ce61bf08128eba73e`, the GUI acceptance plus GUI contract suites passed 48 tests; compileall and `git diff --check` passed. GitHub handoff-integrity succeeded. Foundation, Documentation and Windows EXE workflows were skipped on draft PR #68; no hosted source or package pass is claimed.
+- The existing local picker now also offers a background memory estimate using the same metadata parser, conservative budget and default context as managed startup. It labels the estimate heuristic, shows an unavailable state for unsupported GGUF metadata, and never substitutes for startup admission. Managed llama.cpp, inventory, import, retirement, GUI contract/acceptance, documentation and roadmap tests passed 147 tests (13 platform skips); compileall and `git diff --check` passed.
+
+### Follow-up — constrain qualification evidence to canonical roles
+
+- Final role evidence and qualified routing requests now require one of ForgeOS's canonical model roles. Unknown role strings in local evidence cannot establish a new route, and callers cannot query routing for an unsupported role.
+- Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 88 tests (one platform skip); `python -m compileall -q src/forgeos` and `git diff --check` passed. Physical target-Windows qualification remains open.
+
+### Follow-up — reject malformed qualification schema and latency values
+
+- Qualification records now require an integer schema value (so JSON `true` cannot alias version 1) and a finite, nonnegative numeric latency. Overflowing integer latency values are rejected before evidence hashing.
+- Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 89 tests (one platform skip); compilation and `git diff --check` passed. Real model qualification remains unverified on target Windows.
+
+### Follow-up — reject boolean schema aliases and non-finite latency
+
+- The final-evidence validator now rejects JSON `true` as schema version 1, boolean latency, `NaN`, infinities, negative values and integers that overflow when normalized to the measured floating-point latency field.
+- Verification: model qualification, model benchmark, GUI contract, documentation and multi-LLM roadmap suites passed 89 tests (one platform skip); `python -m compileall -q src/forgeos` and `git diff --check` passed. This is record validation evidence only; model quality and target-Windows qualification remain open.
+
+### Follow-up — verify GGUF resume after abrupt process termination
+
+- GGUF transfer chunks now use unbuffered file writes so bytes reported complete by the worker are visible after a hard process exit. Added a subprocess regression that exits immediately after the first 1 MiB chunk, verifies the retained bytes, then resumes using the exact HTTP range and pinned SHA before publication.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 139 tests (6 platform skips); compilation and `git diff --check` passed. This proves local process-crash resume with a deterministic fake HTTP response; real CDN failures and physical Windows power-loss durability remain unverified.
+
+### Follow-up — reject duplicate same-model transfers
+
+- Added an API-level concurrent request regression: one transfer holds the per-model OS lock while a second request for the same pinned model fails as active elsewhere before opening another network response. The first transfer then completes and publishes the verified GGUF.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 140 tests (6 platform skips); compilation and `git diff --check` passed. This is same-process contention evidence with mocked HTTP, not concurrent-process stress or live transfer acceptance.
+
+### Follow-up — serialize concurrent transfers against the storage cap
+
+- Added a two-thread integration regression for different pinned GGUF paths sharing the same store and quota. The first download holds the quota lock in its mocked transfer; after it publishes, the second remeasures usage and fails before opening another network response, so the cap is not oversubscribed.
+- Updated roadmap language to distinguish thread-level proof from unverified concurrent-process and Windows stress.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 141 tests (6 platform skips); compileall and `git diff --check` passed.
+
+### Follow-up — verify per-model lock contention across processes
+
+- Added a two-process downloader regression: the first process pauses inside a mocked transfer while holding the per-GGUF OS lock; a second process requests the same pinned file and is rejected before opening its network response. The first then finishes and publishes the SHA-verified weight. The roadmap now records this separately from the thread-based shared-quota test.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 142 tests (6 platform skips); `python -m compileall -q src/forgeos` and `git diff --check` passed. Physical Windows locking and cross-process shared-quota stress remain unverified.
+
+### Follow-up — verify shared quota locking across processes
+
+- Added a subprocess contention test with two distinct pinned GGUF paths. The first process holds the shared storage-quota lock while paused inside a fake transfer; a second process starts before release, then is denied before network open after the first publishes because the remaining quota is insufficient. The initial test barrier allowed the first fake transfer to time out before the quota assertion; extending the barrier and releasing it when the second process starts made the test deterministic.
+- Verification: downloader, inventory, retirement, catalog, CLI, GUI contract, documentation and roadmap suites passed 143 tests (6 platform skips); compilation and `git diff --check` passed. The regression uses this Windows host's OS locks and fake HTTP; physical Windows device/volume stress and live downloads remain open.
+
+### Follow-up — preserve resumable bytes across a redacted HTTP rate limit
+
+- Added an injected CDN HTTP 429 regression after a partial download. It confirms partial bytes and their pinned transfer journal survive the failure, the response body is closed, the UI error guidance contains no signed URL/token, and a later request uses the exact byte range to complete SHA-verified publication.
+- Verification: downloader, catalog, inventory, retirement, CLI, GUI contract, documentation and roadmap suites passed 144 tests (6 platform skips); compilation and `git diff --check` passed. This does not establish live Hub/CDN behavior.
+
+### Follow-up — bound total GGUF transfer duration
+
+- Added a validated maximum total duration of 24 hours (caller may request a shorter 1–86400 second limit) in addition to the existing per-socket timeout. The absolute deadline is checked around blocking reads, before/after opening the response, and while hashing; expiry preserves the last completed partial chunk and journal for retry. The GUI inherits the 24-hour bound without extra configuration.
+- The shared quota lock now polls the kernel lock in bounded intervals so the same total deadline and cooperative pause apply while queued; quota admissions remain serialized across processes.
+- Verification: focused tests prove a simulated slow-trickle transfer times out after preserving one completed chunk, resumes at its exact offset, and rejects invalid duration values before metadata or storage access. They also prove pause and deadline expiry release a request waiting on the shared quota lock. Downloader, catalog, inventory, retirement, CLI, GUI contract, documentation and roadmap suites passed 148 tests (6 platform skips); compilation and `git diff --check` passed. Live socket timeout and multi-GiB throughput remain unverified.
+
+### Follow-up — cooperative local GGUF import verification
+
+- `import_local_gguf` validates optional cancellation/progress controls, streams bounded progress events during hashing, and checks cancellation between chunks and immediately before metadata publication. Cancellation leaves the source file unchanged and publishes neither adjacent sidecar nor import index. The existing managed-model dialog now displays byte progress and exposes **Cancel import**; the worker replaces stale progress events in the bounded queue and never touches Tk widgets.
+- Verification: imported-model, inventory, retirement, GUI contract/acceptance, documentation and roadmap suites passed 108 tests (6 platform skips). Tests cover progress, cancellation without side effects, invalid controls before storage access and GUI worker/cancel wiring; `python -m compileall -q src/forgeos` and `git diff --check` passed. Visual interaction with a real multi-GiB model remains unverified.
+
+### Follow-up — cooperative model retirement and restoration verification
+
+- Downloaded-model retirement/restoration and imported-model unregister now
+  accept validated cancellation events and byte-progress callbacks. The GUI
+  reports SHA-256 progress and exposes cancellation buttons for retirement
+  and restore verification. Restore cancellation after file movement leaves
+  its recovery journal available for a safe retry.
+- Tests cover callback validation, progress, no-move cancellation, cancellation
+  after restore moves and a successful retry, imported unregister cancellation,
+  and GUI worker wiring. Verification: GUI/model lifecycle, GUI acceptance,
+  documentation and roadmap suites passed 98 tests (5 platform skips);
+  `python -m compileall -q src tests` passed. Real multi-GiB visual behavior,
+  physical Windows power-loss behavior and latest hosted exact-head CI remain
+  unverified.
+- A full local Windows discovery run completed 699 tests but failed 5 and
+  errored 9. Failures include AppContainer and low-integrity ACL `Access is
+  denied`, locked temporary evidence, and output-capture assertions; this
+  restricted desktop host does not establish the hosted CI result. The focused
+  98-test verification above passed independently.
+- GitHub Handoff Integrity run #87 succeeded for exact head `2b9d49b`.
+  Documentation, Foundation and Windows EXE PR workflows were skipped on
+  draft PR #68, so no hosted test matrix or package pass is claimed.
+
+### Follow-up — import and apply the verified branding kit
+
+- Added the complete supplied kit under `assets/branding/`. All 64 entries in
+  its SHA-256 manifest matched. The README now uses its GitHub banner; the
+  source/frozen app window and Windows EXE use the transparent/multi-resolution
+  icons; `docs/BRANDING.md` records the kit's supplied limits and usage notes.
+- Branding integrity, source/frozen resource resolution, GUI contract,
+  GUI acceptance and documentation suites passed (65 tests); compileall and
+  `git diff --check` passed. PyInstaller is unavailable locally and GitHub's
+  draft-PR packaging workflow is skipped, so a packaged build and visible
+  Windows desktop icon remain unverified.
+
+### Follow-up — explicit permanent purge for retired GGUFs
+
+- Added `model-purge-retired ID --confirm`. The command refuses to run without
+  confirmation, an existing readable task database and a clear blocked-task
+  checkpoint scan. The API requires that checkpoint guard, serializes with the
+  existing model lifecycle lock, revalidates journal/manifest/weight identity
+  and SHA-256, refuses already-restored destinations, and removes its journal
+  only after retired bytes are deleted. A failed partial purge can be retried
+  using the retained journal. It leaves the persistent lock file in place to
+  avoid a lock-file replacement race.
+- Verification: model-retirement, CLI model download, documentation and
+  roadmap suites passed 48 tests (4 platform skips); compileall and
+  `git diff --check` passed. Real Windows deletion semantics and power-loss
+  acceptance remain open.
+
+### Follow-up — expose guarded purge in the existing model dialog
+
+- The retired-model dialog now offers **Delete permanently** beside restore.
+  It asks for irreversible-delete confirmation, applies the existing task and
+  managed-model interlocks, checks blocked checkpoints, and runs journal/hash
+  validation and deletion off the Tk thread. Progress is polled through the
+  same bounded event queue; cancellation during hashing preserves the journal.
+- Verification: retirement, CLI, GUI contract/acceptance, documentation and
+  roadmap suites passed 97 tests (4 platform skips); compilation and
+  `git diff --check` passed. Real native Windows file-lock behavior and
+  recovery from physical power loss during deletion remain unverified.
+
+### Follow-up — add retryable permanent cleanup for imported GGUFs
+
+- Added `model-purge-imported PATH --confirm`; it requires the existing readable
+  task database and refuses if a blocked checkpoint references the imported
+  model identity. The API validates the import registry and sidecar, checks the
+  model lock, rehashes remaining bytes, removes the sidecar and GGUF, then
+  atomically removes the registry entry last. A failure during deletion leaves
+  the registry identity for retry. The GUI offers a separate irreversible
+  **Delete imported permanently** action while retaining reversible
+  unregistration.
+- Updated user guide and multi-LLM lifecycle roadmap. Verification: imported
+  model, inventory, retirement, GUI contract/acceptance, documentation and
+  roadmap suites passed 125 tests (6 platform skips); compilation and
+  `git diff --check` passed. Real Windows deletion/ACL behavior, external
+  inference processes and power-loss recovery remain unverified.
+
+- Added a fault-injection case for atomic registry publication failure after
+  both model files have been deleted. The test confirms the old registry
+  identity survives and a subsequent purge retry removes it successfully; the
+  imported-model suite now passes 20 tests (1 platform skip).
+
+### Follow-up — constrain Hugging Face metadata redirects
+
+- Public Hub JSON metadata requests now use an opener with ambient proxies
+  disabled and permit redirects only to literal HTTPS `huggingface.co` on its
+  default port. Cross-origin, downgrade, deceptive-host and credential-bearing
+  redirect targets fail closed. This is limited to the opt-in metadata client;
+  the separate weight downloader retains its own pinned revision, LFS digest
+  and redirect policy.
+- Added redirect and proxy-opener regressions. Verification: catalog, download,
+  inventory, import, retirement, GUI contract, documentation and roadmap suites
+  passed 174 tests (7 platform skips); compilation and `git diff --check`
+  passed. Live Hub redirects and CDN behavior remain unverified.
+
+- Full local Windows/Python 3.15.2 discovery at `647cae3` completed 719 tests:
+  5 failures, 8 errors and 34 skips. AppContainer and low-integrity setup hit
+  `icacls` Access Denied in this managed session; real loopback tests were
+  denied; and existing subprocess output-capture/test-runner assertions failed
+  under the restricted host. The focused model/catalog/download and recent
+  purge suites passed independently. This full run is not green and is not a
+  substitute for hosted matrix execution.
+- Exact-head GitHub diagnostics for `647cae3`: both eligible handoff-integrity
+  checks succeeded; unit tests, documentation and Windows packaging were
+  skipped because PR #68 remains draft. No hosted test matrix or packaged EXE
+  pass is claimed.
+
+### Follow-up — reconcile model lifecycle compatibility documentation
+
+- Updated the current-checkout compatibility guide to distinguish separate
+  pinned-revision downloads from unavailable in-place updates, and to describe
+  recoverable retirement plus confirmed permanent purge for downloaded and
+  imported weights. Physical Windows deletion acceptance and license review
+  remain open.
+- Verification: documentation, multi-LLM roadmap, GUI contract and imported
+  model suites passed 78 tests (1 platform skip); `git diff --check` passed.
+
+### Follow-up — support read-only imported GGUF locations
+
+- New imports now keep path/SHA identity and per-model lifecycle locks in the
+  writable ForgeOS model store; no sidecar or lock file is created beside the
+  selected GGUF. Managed load, explicit verification, unregistration and purge
+  share that registry lock and rehash the referenced bytes. Existing adjacent
+  import sidecars remain validated and preserved for compatibility. Changed
+  bytes at a previously registered path require explicit unregistration before
+  a new identity can be recorded.
+- Updated the GUI confirmation, user guide, model inventory description and
+  roadmap. Added regressions for a simulated read-only source directory,
+  registry-only managed verification and legacy-sidecar compatibility.
+  Verification: lifecycle/runtime, GUI contract/acceptance, documentation and
+  roadmap suites passed 169 tests (13 platform skips); compilation and
+  `git diff --check` passed. Actual read-only removable media, Windows ACLs,
+  reparse points and power-loss behavior remain unverified.
+
+### Follow-up — adapt local repair context to memory profiles
+
+- Repository metadata budgets in the existing task engine now scale with its
+  local `num_ctx` profile and task framing. Fresh failure-repair requests and
+  resumed `repair_pending` checkpoints share one builder; long diagnostics are
+  reduced to head/tail excerpts while their original evidence remains in the
+  SHA-256-addressed archive. The ordinary initial edit inventory also uses a
+  profile-aware bound. The 64 KiB UTF-8 model request validator remains the
+  hard request limit.
+- Added budget monotonicity/bounds and repair excerpt fidelity regressions.
+  Verification: engine-budget, diagnostics and model-memory-profile tests
+  passed (44 tests, 2 platform skips); compilation passed. An attempted real
+  engine integration run was blocked by Windows low-integrity ACL setup
+  (`Access is denied`) in this managed session; local loopback adapter testing
+  is similarly blocked by host socket permissions. No live backend behavior,
+  tokenizer-accurate budget or physical Windows acceptance is claimed.
+
+### Follow-up — link repair checkpoints to full test evidence
+
+- **Implementation commit:** `bb4e35aa78ec5688bcbf3adf3757fa85dfe8af89` on
+  `fix/safe-resume-malformed-checkpoints`.
+- Repair-pending checkpoints now store the SHA-256 reference supplied by the
+  existing diagnostics archive, alongside the bounded `last_test_output`
+  fallback. On resume, a present reference is validated and the full compressed
+  archive is streamed through the existing integrity-checked preview before a
+  repair prompt is built. Malformed archived-evidence claims block automated
+  repair; archive corruption fails closed before another model call. Final
+  result objects expose the reference when available. Legacy checkpoints that
+  predate evidence linkage remain readable.
+- Added direct malformed/tampered archive checks and an interrupted repair
+  recovery regression that confirms the original archived failure reaches the
+  resumed prompt. Verification: focused engine, recovery, diagnostics,
+  documentation and roadmap suites passed 79 tests (3 platform skips), and
+  `compileall` passed. Hosted CI and physical Windows acceptance remain
+  outstanding.
+
+### Follow-up — bound Git workspace output
+
+- **Implementation commit:** `369884155795ac955b678ca143c0c4ecccefbd78` on
+  `fix/safe-resume-malformed-checkpoints`.
+- Extended the canonical `workspace.py` Git wrapper to drain merged command
+  output incrementally, enforce a 1 MiB cap, and terminate an overflowing
+  command. The workspace diff API returns at most a configurable (default
+  256 KiB) marked preview. It disables external diff and textconv helpers and
+  turns off Git pathspec magic for the preview. Successful commands still
+  return bounded stripped text; output beyond the global cap fails closed.
+- Added regressions for preview truncation, explicit marker, no source-tree
+  mutation, over-limit failure and parameter validation. Verification: the
+  complete workspace suite passed 12 tests; after adding the direct hard-cap
+  assertion, the two affected workspace tests plus documentation, roadmap and
+  handoff suites passed 23 tests. `compileall` and `git diff --check` passed.
+  This does not constitute real Windows CI or packaged acceptance.
+
+### Follow-up — exercise recovery after a hard process exit
+
+- **Implementation commit:** `b1385017475af32fc3b2ad3161d21a65f29818a8` on
+  `fix/safe-resume-malformed-checkpoints`.
+- Added a subprocess-level `repair_pending` recovery regression. A child
+  executes one failing test result, publishes its evidence-linked repair
+  checkpoint, signals that the next generation has begun, then is killed. A
+  freshly opened Store reclaims the stale lease, verifies the archived failure,
+  and resumes the saved repair without repeating the initial edit. The original
+  repository checkout remains unchanged. Model output and test results are
+  deterministic stubs; this covers process restart and SQLite/checkpoint
+  continuity, not actual model execution or OS reboot/power loss.
+- First targeted attempt found the test harness resumed from a different
+  workspace parent than the interrupted process. Corrected it to use the
+  saved workspace root. The hard-exit regression passed independently twice.
+  `compileall` also passed. The expanded 80-test focused run reached 80 tests,
+  with 3 platform skips and one WinError 32 during cleanup of a temporary gzip
+  archive in `test_deterministic_unicode_fuzz_and_integrity`; that exact test
+  passes alone. The same combined cleanup error occurred on two attempts, so
+  no further identical full run was made. This is not recorded as a green
+  regression suite; investigate Windows file-lock/AV interaction separately.
+
+### Follow-up — add bounded local project symbol search
+
+- **Implementation commit:** `6ca1006acc931df545e76561f4e066851a07db4f` on
+  `fix/safe-resume-malformed-checkpoints`.
+- Extended the canonical `context_index.py` traversal with an explicit
+  `search_project()` API for Python class/function/method names and a
+  `forgeos search-project` CLI command. The shared walker preserves hidden
+  path, symlink, extension and per-file size rules. Symbol inspection is capped
+  at 120 relevance-ranked Python files, 100 KiB per file, 40 declarations per
+  file and 100 output records. Results contain only path, line, declaration
+  kind/name/signature and matched terms; no body, comment or literal value is
+  returned. Existing prompt context remains metadata-only.
+- Regressions cover semantic ranking beyond 80 path-only distractors, value
+  privacy, hidden paths, parameter caps and CLI JSON. Verification: context
+  index, CLI, documentation, roadmap and handoff suites passed 30 tests (1
+  platform skip); compilation and `git diff --check` passed. Exact
+  implementation SHA will follow after commit.
+
+### Follow-up — guarded pre-edit generation recovery
+
+- **Implementation commit:** `b994b6bc0ddd5c27138e1884ed13a4f3cb3e98dc` on
+  `fix/safe-resume-malformed-checkpoints`. The implementation and synchronized
+  user/architecture/roadmap docs are in that commit; this entry records its
+  exact source revision and acceptance evidence.
+- The engine now persists a `generation_pending` checkpoint immediately
+  before its first edit-generation call. The record binds the retry to the
+  original worktree, branch, saved execution contract and starting Git HEAD.
+- Safe Resume admits the new phase with a maximum of three generation calls.
+  Before retry, the engine checks that HEAD is unchanged, the worktree has no
+  tracked or untracked changes, and no transaction journal remains. A dirty
+  workspace after a crash between edit application and test checkpoint blocks
+  automatic resume to protect the generated or user-modified files.
+- Regressions cover a generation exception followed by a successful retry
+  and refusal after workspace tampering, exhaustion at three attempts, and
+  Safe Resume eligibility/skipping at the budget boundary. Commands:
+  `py -m unittest tests.test_engine.EngineIntegrationTests.test_first_generation_failure_can_resume_from_clean_pre_edit_checkpoint tests.test_engine.EngineIntegrationTests.test_pre_edit_resume_refuses_changed_workspace_before_model_call tests.test_engine.EngineIntegrationTests.test_pre_edit_generation_retry_budget_is_bounded -v`
+  (3 passed) and
+  `py -m unittest tests.test_recovery tests.test_handoff_check tests.test_multillm_roadmap tests.test_documentation -v`
+  (51 passed, 1 platform skip). `py -m compileall -q src tests`,
+  `git diff --check`, and `py scripts/check_handoff.py --json` passed.
+  Hosted CI and physical Windows acceptance remain open.
+
+### 2026-11-13 — close the managed-startup catalog ownership window
+
+- **Objective and rationale:** continue roadmap work package B / issue #53 by
+  ensuring that the authenticated model-catalog request used during startup
+  checks the managed child PID before and after the HTTP exchange. Previously,
+  startup checked listener ownership before constructing the client but did
+  not attach the ownership callback to that catalog request.
+- **Changed paths:** `src/forgeos/managed_llama.py`,
+  `tests/test_managed_llama.py`, `docs/ARCHITECTURE.md`,
+  `docs/MULTI_LLM_ROADMAP.md`, and this handoff.
+- **Verification:** `py -m unittest tests.test_managed_llama tests.test_documentation -v`
+  passed 54 tests with 7 platform/environment skips. Five focused listener
+  ownership regressions also passed. A combined run including
+  `tests.test_local_models` had one host restriction: its live loopback HTTP
+  trickle test could not bind/connect in this managed Windows session
+  (WinError 10013 surfaced through the adapter). The separate selected
+  ownership-before/after request tests passed. Compilation and diff checks
+  passed.
+- **Limits / security:** this narrows but does not eliminate TOCTOU; a TCP
+  connection is still not atomically bound to a PID. The direct Windows
+  IP Helper listener probe remains denied (error 5), and actual llama.cpp
+  install, inference, restart and target-hardware memory acceptance remain
+  unverified. No benchmark or production-readiness claim follows from these
+  mocked ownership checks. No measurable resource impact is expected; no
+  memory benchmark was run.
+- **Branch:** `fix/safe-resume-malformed-checkpoints`; base
+  `b961a5e5424d0482713d52307fb955de05e5eb4e`; implementation commit
+  `8b19791a1cbc02183eeafb9dd7eb5bbb985a42dd`. Next: continue issue #53 with process
+  identity and crash/rapid-restart fault injection; retain real Windows
+  acceptance gate.
+
+### 2026-11-13 — reconcile broad Windows suite findings
+
+- **Implementation commit:** `acda2ffdf9a9e11072da1ebcda516178de57ae49`
+  on `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** validate the latest integrated branch and close repository
+  consistency defects exposed by the full 739-test run.
+- **Changes:** pre-edit generation failures now retain their bounded error
+  message inside the structured checkpoint, and invalid-resume diagnostics
+  preserve the established “test-pending checkpoint” wording. The canonical
+  52-enhancement audit was missing roadmap item #3 and mislabeled #34; it now
+  maps all 52 exact titles with source-backed current dispositions. Output
+  capture tests now pass their isolated temporary EvidenceStore instead of
+  writing to the user's default profile directory.
+- **Verification:** on the corrected tree,
+  `py -m unittest discover -s tests -v` ran 739 tests in 693.336 seconds:
+  **3 failures, 8 errors, 34 skips**. The actionable checkpoint-message,
+  bounded-error, enhancement-map, and output-capture findings were fixed;
+  focused reruns passed: engine/audit/documentation (22 tests) and
+  output-capture/enhancement audit (32 tests, 4 skips). The earlier
+  output-capture failure disappeared once its archive was isolated. The
+  remaining full-suite failures are environment acceptance limits: AppContainer
+  and low-integrity ACL probes receive Windows access denied, local HTTP
+  integration/trickle tests cannot bind/connect to loopback, and the default
+  user-profile diagnostic directory is inaccessible. The last case passes
+  when `USERPROFILE`/`HOME` are redirected to the writable test temp
+  directory. No broad-suite green claim is made.
+- **Build checks:** compilation and `git diff --check` passed. Physical
+  Windows AppContainer/low-integrity and loopback acceptance, plus current
+  hosted matrix results, remain unverified on this managed desktop.
+- **Next:** continue code-verifiable issue #53 and other roadmap items; use a
+  normal Windows user session only when remaining acceptance gates require it.
+
+### 2026-11-13 — reserve one managed model across ForgeOS processes
+
+- **Source implementation commit:**
+  `66e17e603f20ba3fb3ee2ac39259539e89f41afc` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** close the work package F race where two ForgeOS instances
+  could each start a different large managed GGUF after independently passing
+  RAM preflight.
+- **Changes:** managed runtime startup now acquires a kernel-held per-user
+  admission lock in the existing `.forgeos/models` storage root before the
+  per-model lifecycle lock. This prevents a second ForgeOS GUI/CLI process
+  from starting another managed GGUF. The slot stays held until process exit
+  is confirmed; a failed reap retains both runtime and model locks. Architecture
+  and roadmap now state the external-runtime and measurement limits.
+- **Verification:** managed runtime, documentation and roadmap suites passed:
+  58 tests, 7 platform/environment skips. The managed-runtime tests include a
+  second controller attempting a different model, a separate OS process
+  checking the active lock, and retention after failed shutdown. Compilation
+  and `git diff --check` passed. No real llama.cpp inference or target-device
+  resource measurement was performed.
+- **Branding request:** the attached corrected ZIP's 65 entries were compared
+  byte-for-byte with `assets/branding/ForgeOS_Master_Branding_Kit`; all match.
+  The existing commit already includes the full kit, README banner, source and
+  frozen application icons, and PyInstaller icon wiring. No duplicate files
+  were added.
+- **Limits / next:** the admission lock coordinates ForgeOS processes that share
+  this user's model storage profile; it does not coordinate Ollama, third-party
+  inference servers, unrelated builds or OS sessions with separate homes.
+  Real Windows install/inference, runtime DLL behavior, physical memory and
+  latency acceptance remain release gates.
+
+### 2026-11-13 — reject reparse points in model storage paths
+
+- **Source implementation commit:**
+  `532962e63057f272bd1e0e502b610f138fc26fc3` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** continue P1 issue #54 supply-chain hardening; Windows junctions
+  and other NTFS reparse points can redirect paths even where no symbolic-link
+  privilege is available.
+- **Changes:** the canonical managed-storage validator now detects symlinks,
+  `Path.is_junction()` results and the Windows reparse-point file attribute.
+  Download journals, imported GGUF paths and registry sidecars use the same
+  fail-closed check. The existing shared helper extends the protection to
+  model inventory, retirement and the pinned runtime-install directory.
+- **Verification:** 130 downloader, import, inventory, retirement, runtime
+  installer, documentation and roadmap tests passed with 7 platform skips.
+  Compilation and `git diff --check` passed. A synthetic
+  `FILE_ATTRIBUTE_REPARSE_POINT` test covers the Windows flag without requiring
+  junction-creation privileges.
+- **Limits / next:** this managed session cannot create/inspect a real NTFS
+  junction as an acceptance test. Concurrent path replacement, live model
+  downloads, and physical Windows reparse handling remain open release gates.
+
+### 2026-11-13 — exercise managed-runtime owner crash on Windows
+
+- **Source implementation commit:**
+  `a22d8ee33158685d6b081365c5c6107fd1c0170e` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** verify that an unexpected ForgeOS owner-process exit does not
+  leave a managed model child running after the cross-process admission slot
+  becomes available.
+- **Changes:** a Windows-only subprocess regression acquires the same
+  kernel-held runtime lock, launches a real sleeping child in the existing
+  kill-on-close Job Object, then forcibly exits the owner. The test verifies
+  that the child exits and a fresh OS process can acquire the model slot.
+- **Verification:** managed runtime, model import, documentation and roadmap
+  suites passed: 82 tests, 8 platform/environment skips. This included the
+  native Windows Job Object owner-crash test. Compilation and
+  `git diff --check` passed.
+- **Limits / next:** the child is a controlled Python process, not llama.cpp;
+  the test does not load a GGUF, check native DLLs, or measure RAM/latency.
+  Real runtime crash/restart and target Windows 11 acceptance remain open.
+
+### 2026-11-13 — cover nested reparse points in model scans and runtime files
+
+- **Source implementation commit:**
+  `432cf2aec25c1b619aebbf6ce59f4ea63434dbe6` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** complete the source-side Windows path guard after review found
+  that bounded directory scans could skip redirected entries and installed
+  runtime verification checked only symbolic links among DLLs.
+- **Changes:** inventory skips redirected entries as unusable; quota accounting
+  now fails closed on them; retired entries with reparse points require manual
+  inspection; runtime bundle verification rejects reparse points on nested
+  directories and files, including DLLs. Import/download path checks continue
+  using the same helper.
+- **Verification:** downloader, import, inventory, retirement, runtime
+  installer, documentation and roadmap suites passed: 133 tests, 7 skips.
+  The exact move tests that saw intermittent host file locks passed both alone
+  and in the final fresh-temp suite. Compilation and `git diff --check` passed.
+- **Limits / next:** no actual NTFS junction was created because this managed
+  session lacks that privilege; reparse flags were tested synthetically.
+  Concurrent path replacement, physical Windows storage scans and real model
+  loading still require target-device acceptance.
+
+### 2026-11-13 — reject hard-linked installed runtime members
+
+- **Source implementation commit:**
+  `85a768a437e086da615de5ceed9b9654f08235fa` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** close the runtime-install trust gap where a DLL or executable
+  could be hard-linked outside the pinned bundle while still matching the
+  bundle's verified bytes.
+- **Changes:** installation verification now requires a regular file with one
+  link for every runtime-tree member, and also checks link counts for the
+  preserved official archive, generated manifest and bundled license notice.
+  Added a deterministic multiple-link metadata regression and a real hard-link
+  regression that runs where the filesystem permits link creation.
+- **Verification:** runtime installer, GGUF download, model import, inventory
+  and retirement suites passed 119 tests with 8 skips. The deterministic
+  multiple-link test passed. The real hard-link test skipped because Windows
+  returned access denied for `os.link` in this managed filesystem. Compilation
+  and `git diff --check` passed.
+- **Limits / next:** physical NTFS hard-link behavior, concurrent same-user
+  path replacement and real CPU model loading remain target-device acceptance
+  work. This is integrity hardening, not a complete local-adversary boundary.
+
+### 2026-11-13 — re-attest model hard-link identity during hashing
+
+- **Source implementation commit:**
+  `826e0c128af47394a72b9e5a24308dff3e571273` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** ensure that explicit local GGUF verification does not accept
+  a hard-linked weight or manifest, and does not miss a link-count change
+  during streaming SHA-256 verification.
+- **Changes:** downloaded manifests and downloaded model files now require a
+  single link before verification. Both downloaded and imported model
+  verification compare link counts before and after hashing. Added synthetic
+  metadata regressions for a hard-linked model, hard-linked manifest and a
+  model whose link count changes during the hash.
+- **Verification:** focused GGUF download, model inventory, model import,
+  retirement and runtime-installer suites passed independently: 123 tests,
+  8 platform/environment skips. `compileall` and `git diff --check` passed.
+  Combined attempts had intermittent Windows temporary-file replace/cleanup
+  failures in unrelated tests; the exact cases passed alone and all affected
+  suites passed in module-isolated runs.
+- **Limits / next:** link-count change is synthetic because this managed
+  Windows filesystem denied real hard-link creation. Same-user concurrent
+  path replacement, physical Windows hard-link behavior and actual model load
+  remain unverified.
+
+### 2026-11-13 — surface unsafe model links in the existing picker
+
+- **Source implementation commit:**
+  `c20366dad67299430db5abf5eb0ccd9901a7a328` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** keep multiply linked or non-regular GGUFs from appearing
+  ready-to-select when ForgeOS already rejects them at the verification or
+  managed-start boundary.
+- **Changes:** bounded metadata-only inventory now labels downloaded and
+  imported weights with multiple links or non-regular file types as
+  `unsafe_path`. Catalog status gives a plain-language explanation. The
+  existing GUI picker only allows known safe inventory states, so these rows
+  are visible for diagnosis but cannot be selected.
+- **Verification:** inventory, import and GUI-contract suites passed 86 tests
+  with 2 environment skips. The regressions synthesize hard-link metadata for
+  imported and downloaded weights; no weight bytes are hashed by listing.
+  Compilation and `git diff --check` passed.
+- **Limits / next:** real NTFS hard-link creation is denied in this managed
+  filesystem. Physical link behavior and the remaining roadmap's target-device
+  acceptance still require the user's Windows machine.
+
+### 2026-11-13 — show readable model inventory states
+
+- **Source implementation commit:**
+  `44e4201c74dbbff4705edb1fb43651048088412d` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** replace internal inventory identifiers with clear text in the
+  existing model picker while keeping unsafe rows unselectable.
+- **Changes:** added a fail-safe inventory-status label map for present,
+  imported, verified, missing, size-changed, unsafe and manual-inspection
+  entries. The picker now shows readable labels, and a successful explicit
+  SHA-256 check updates the row to **Verified**.
+- **Verification:** GUI-contract, model-inventory and model-import suites
+  passed 87 tests with 2 environment skips. Compilation and
+  `git diff --check` passed.
+- **Limits / next:** the picker has not been visually exercised on the target
+  Windows desktop; keyboard/screen-reader and actual frozen EXE acceptance
+  remain release gates.
+
+### 2026-11-13 — restore damaged pinned GGUF downloads
+
+- **Source increment:** explicit `repair_downloaded_gguf()` uses the exact
+  repository, immutable revision and SHA-256 from the existing single-link
+  manifest. It checks blocked task references under the per-file download
+  lock, refuses unsafe files and unresolved journals, preserves corrupt bytes
+  in a unique same-directory quarantine, and retries interrupted replacement
+  from the same pinned transfer journal. Quarantine bytes count toward store
+  usage and quota. The existing model picker offers the confirmed, cancellable
+  operation for managed missing, size-changed or not-yet-reverified entries;
+  imported, unsafe and untrusted-manifest entries are excluded. The CLI is
+  `model-repair-local PATH --confirm` and requires the existing task database.
+- **Verification:** isolated `test_gguf_download`, `test_model_inventory` and
+  `test_gui_contract` modules passed: 111 tests, 2 environment skips.
+  Coverage includes checkpoint refusal for corrupt and missing files,
+  quarantine and quota accounting, quota exhaustion followed by a successful
+  raised-cap retry, interrupted exact-range resume, missing-file recovery,
+  synthetic hard-link refusal, required confirmation, CLI quota forwarding and
+  GUI/CLI exposure. `compileall` and `git diff --check` passed.
+- **Limits / next:** these are offline and synthetic transfer tests. Latest
+  Linux/Windows hosted CI, frozen EXE/AppContainer, real multi-GiB download
+  repair and quota exhaustion, actual NTFS hard-link behavior, GUI visual
+  acceptance and external inference-process detection remain unverified.
+
+### 2026-11-13 — identify the active model in the inventory picker
+
+- **Source increment:** the existing picker displays **Loaded in active
+  runtime** only when a safe inventory entry's pinned model SHA-256 matches
+  the identity verified by the running managed controller. Missing,
+  hard-linked, non-regular and manual-inspection rows retain their existing
+  warnings. The inventory status does not claim that an on-disk file remained
+  unchanged after runtime startup; startup independently rehashes it before
+  each launch.
+- **Verification:** `test_gui_contract` passed 45 tests. Tests verify matching
+  loaded identity labeling and confirm an unsafe row stays unsafe. `compileall`
+  and `git diff --check` passed.
+- **Limits / next:** the model picker has not been visually checked with a real
+  running model or frozen EXE. The loaded state is session-derived and does
+  not persist across application restarts.
+
+### 2026-11-13 — persist bounded, unverified Hub card metadata
+
+- **Source increment:** the existing browser download path now stores bounded
+  repository-card claims in the same revision-pinned GGUF manifest, including
+  the inspected revision and an explicit unverified provenance label. Offline
+  inventory exposes repository/revision/hash, `GGUF` format, expected and
+  observed file bytes, optional claims, and `runtime_compatibility:
+  not-recorded`. Imported weights continue to disclose unknown provenance.
+  Claims do not affect inference selection or imply legal/format compatibility.
+- **Verification:** isolated download (48), inventory (21), GUI-contract (46),
+  managed-runtime (43), import (25), and retirement (28) tests passed: 212
+  tests total, 14 platform/environment skips. Coverage includes claim bounds,
+  pinned revision matching, persistent manifest/cache reuse, offline inventory
+  reporting, claim identity refusal and compatibility with existing
+  runtime/import/retirement readers.
+- **Limits / next:** card claims remain author-supplied and unverified. Actual
+  load compatibility is currently session-visible only and is not persisted
+  against a model/runtime hash pair. Latest hosted CI, frozen EXE, real Hub
+  metadata and physical Windows acceptance remain open.
+
+### 2026-11-13 — persist exact managed model/runtime self-test pairs
+
+- **Source increment:** the explicit **Test local model** action now records
+  a bounded local result only after ForgeOS's structured-output self-test
+  passes. Each entry is keyed by the exact model and runtime executable
+  SHA-256 values already established by managed startup. Repeating a passing
+  test updates that pair; a different runtime hash remains a distinct result.
+  The offline inventory associates these records with both downloaded and
+  imported models by model hash, and the existing picker displays the short
+  model/runtime hash prefixes. No model weights are rehashed to list history,
+  and the existing full verification before managed start remains required.
+- **Persistence and trust:** a bounded, atomically replaced local index lives
+  in the model store. Linked, oversized, malformed, duplicate, unstable or
+  invalid-timestamp records fail closed as compatibility history, but do not
+  hide otherwise usable inventory rows. Records are mutable local test
+  history, not publisher signatures, license review or proof that current disk
+  bytes still match the model hash. Raw model output and API keys are never
+  stored.
+- **Verification:** compatibility (6), inventory (24), GUI contract (47),
+  download (48), managed runtime (43), import (26) and retirement (28)
+  modules passed: 222 tests, 14 platform/environment skips. `compileall` and
+  `git diff --check` passed. Initial grouped Windows runs encountered
+  intermittent WinError 5/32 file-sharing failures in existing repair,
+  import-index and retirement temporary-file operations; affected tests were
+  rerun individually and each complete affected module subsequently passed.
+- **Limits / next:** no real GGUF inference or successful compatibility record
+  was exercised on hardware in this increment. The frozen EXE, actual model
+  and runtime, live Hub claims, feature-level persisted-record display,
+  Windows process ownership and physical NTFS behavior remain target-device
+  acceptance work. The updated source GUI was visually opened on Windows with
+  an isolated synthetic model; its five-column picker fit at desktop scale and
+  showed **Not self-tested**. No real inference was attempted.

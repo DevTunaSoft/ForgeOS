@@ -5,6 +5,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
@@ -48,14 +49,36 @@ class RecoveryPackageTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             pkg.create(self.root, self.out)
 
+    def test_archive_is_reproducible(self):
+        first = pkg.create(self.root, self.out)
+        second_path = self.out.with_name("second.zip")
+        second = pkg.create(self.root, second_path)
+        self.assertEqual(first["package_sha256"], second["package_sha256"])
+        with zipfile.ZipFile(self.out) as archive:
+            self.assertTrue(all(member.date_time == (1980, 1, 1, 0, 0, 0)
+                                for member in archive.infolist()))
+
     def test_refuses_dirty_checkout(self):
         (self.root / "docs" / "HANDOFF.md").write_text("changed")
         with self.assertRaises(ValueError):
             pkg.create(self.root, self.out)
 
+    def test_failed_archive_write_leaves_no_partial_output(self):
+        with patch.object(zipfile.ZipFile, "writestr", side_effect=OSError("write failed")):
+            with self.assertRaisesRegex(OSError, "write failed"):
+                pkg.create(self.root, self.out)
+        self.assertFalse(self.out.exists())
+        self.assertEqual(list(self.out.parent.glob(".forgeos-handoff-*")), [])
+
     def test_refuses_output_inside_repository(self):
         with self.assertRaises(ValueError):
             pkg.create(self.root, self.root / "bundle.zip")
+
+    def test_oversized_tracked_input_prevents_publication(self):
+        with patch.object(pkg, "MAX_FILE_BYTES", 8):
+            with self.assertRaisesRegex(ValueError, "Oversized file"):
+                pkg.create(self.root, self.out)
+        self.assertFalse(self.out.exists())
 
 
 if __name__ == "__main__":

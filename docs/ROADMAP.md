@@ -4,6 +4,13 @@
 
 **Status as of 2026-11-11: active prototype.** This document distinguishes **implemented on `main`**, **in development**, and **future goals**. It is not a claim that the entire product is production-ready. Each milestone needs source changes, regression evidence, Windows frozen build evidence where relevant, and real end-user testing before release claims.
 
+**Branch relationship snapshot (audited 2026-11-13 at `f6a0e32`):** at that
+point, `fix/safe-resume-malformed-checkpoints` had `origin/main` (`4a24799`) as
+its ancestor and was 72 commits ahead. The table above remains a mainline status
+summary; follow-up features recorded in the current branch's
+[handoff](HANDOFF.md) are uploaded for review but are not represented as merged
+to `main`.
+
 ## Dedicated multi-LLM requirements and implementation plan
 
 The [comprehensive multi-LLM roadmap](MULTI_LLM_ROADMAP.md) now tracks **all ten major work packages** (A–J): existing integration audit and compatibility; integrated CPU-first llama.cpp; Hugging Face discovery, secure downloads, installation, updates and removal; small coding-model benchmarks; specialized-role routing; resource governance; autonomous workflow/recovery; unified accessibility-first GUI; fault-injection and comprehensive QA; and documentation/handoff. It includes source ownership, concrete acceptance gates, dependencies and **P0–P3 execution sequencing**.
@@ -24,7 +31,7 @@ Do not introduce second copies of `model_routing.py`, `Store`, `engine.py`, outp
 | Offline local GGUF inventory | **Implemented experimental on `main` (merged PR #51):** bounded existing-manifest scan, no large-file hash on list; explicit full SHA-256 verification; selection in current GUI | Import, update/remove, live model use and installed-model lifecycle acceptance |
 | Optional cloud LLM adapters | **Planned / not implemented:** user-authorized ChatGPT/OpenAI, Claude/Anthropic and compatible services | Consent per disclosure, credential isolation, spending limits, no default cloud/API or required subscription |
 | Safe Git workspaces | **Implemented prototype:** per-task worktrees, path/budget validation, transactional edits | Broader recovery fault injection, demonstrated end-to-end rollback on Windows |
-| Resumable autonomous cycle | **Implemented prototype:** limited test/repair checkpoints, `resume-safe`, GUI constant-size recovery summaries (12 recent outcomes and totals), 400-character recovery reason caps, lease-fenced engine state publication, bounded streamed checkpoint hashing, fail-closed timeout/runtime errors and strict test outcome validation | Resume additional phases safely, long-run crash/restart and concurrent worker acceptance |
+| Resumable autonomous cycle | **Implemented prototype:** bounded pre-edit generation retry plus test/repair checkpoints, `resume-safe`, GUI constant-size recovery summaries (12 recent outcomes and totals), 400-character recovery reason caps, lease-fenced engine state publication, bounded streamed checkpoint hashing, fail-closed timeout/runtime errors and strict test outcome validation | Long-run crash/restart and concurrent worker acceptance; broader phase fault injection |
 | Execution isolation | **Implemented prototype:** packaged Windows `unittest` AppContainer path; fail closed on unsupported presets, missing/unreadable evidence, combined 32 MiB output cap, and a 1–3600 second test timeout budget | Secure coverage for additional frameworks, adversarial Windows acceptance |
 | Python `pytest` packaged isolation | **Implemented experimental (PR #43):** rebased successor to [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29), avoids Windows NUL logging denial | Hosted frozen Windows pytest AppContainer smoke and regression suite passed; still needs actual end-user Windows acceptance |
 | Diagnostics and repair learning | **Implemented experimental:** SHA-256 evidence, bounded summaries, fail-closed archival errors, 64 KiB task-action result storage and 4,000-character failure diagnostics, aggregate learning | Encrypted retention, broader structured parsers, verified learning decisions |
@@ -99,6 +106,19 @@ The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issu
 | Usability | Click-by-click manual, real screenshots only, accessible understandable error messages, nontechnical recovery |
 | Documentation | Current feature states, tests and known limits in README, user manual, architecture, roadmap and handoff |
 
+### 2026-11-13 — guarded pre-edit generation recovery
+
+- **Implemented on the feature branch:** the engine persists a `generation_pending`
+  checkpoint immediately before the first model edit call, including the saved
+  execution contract and starting Git HEAD. Recovery retries only while that
+  HEAD is unchanged, the worktree is clean, and no edit journal remains.
+- **Bound:** at most three pre-edit generation calls per task; exhausted or
+  malformed checkpoints are skipped by Safe Resume. An interruption after
+  edits have reached disk but before the test checkpoint is intentionally
+  blocked because the worktree is no longer clean.
+- **Acceptance:** focused retry, tamper rejection and recovery regressions
+  passed locally. Hosted checks and physical Windows acceptance remain open.
+
 ## The 52 RTK-inspired improvements
 
 All outcomes and deduplication concerns are tracked separately in [RTK_ENHANCEMENTS.md](RTK_ENHANCEMENTS.md) and [ENHANCEMENT_DEDUP_AUDIT.md](ENHANCEMENT_DEDUP_AUDIT.md). A checkbox in an engineering tracker may mean **prototype integrated**, not mature or independently accepted. Keep the canonical subsystem where an enhancement overlaps existing ForgeOS code.
@@ -116,6 +136,26 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Implemented on `main`, test results pending:** native `llama.cpp` shutdown attempts forceful process cleanup if poll/terminate/OS wait or POSIX process-group signaling fails. Added mocked failure-path regression tests and one actual subprocess lifecycle integration test per OS family (POSIX process-group, Windows Job Object), but the repository's current Linux/Windows CI and physical Windows inference have not been verified.
 - **Implemented on `main`, test results pending:** the existing retired GGUF inventory reuses the active-model `MAX_SCAN_ENTRIES=4096` cap to fail closed on oversized folders instead of scanning unlimited invalid entries. Added a synthetic 4,097-entry regression without filesystem-heavy test fixtures. Isolated Python reproduction passed; actual repository CI remains unverified.
 - **Still required (#53, #54, #56):** exact-current-head Windows/Linux regression suite, frozen EXE smoke, native Windows process-tree cleanup under injected faults, real CPU GGUF start/infer/stop, 16/32 GiB memory/latency acceptance. Avoid describing these safeguards as production certification. Full evidence and commit SHAs are in [handoff](HANDOFF.md).
+
+- **Issue #54 source progress (2026-11-13):** the existing managed-download
+  picker and CLI can explicitly restore a damaged GGUF only from its original
+  pinned manifest. Repair checks blocked task references, refuses unsafe file
+  types and journals, preserves damaged bytes in quota-counted quarantine, and
+  resumes the same pinned revision after interruption. This remains pending
+  current-head hosted CI, frozen EXE and real Windows/network acceptance.
+
+- **Issue #54 GUI state:** the local inventory now labels a model **Loaded in
+  active runtime** only when its recorded SHA-256 matches the verified model
+  identity held by the running managed controller. Unsafe file states remain
+  visible and are never replaced with a loaded label. Visual Windows/EXE
+  acceptance remains open.
+
+- **Issue #54 inventory metadata:** browser downloads now retain bounded Hub
+  card claims for license, quantization and context in the existing pinned
+  manifest, explicitly marked unverified. Offline inventory reports source,
+  format and expected/on-disk bytes; it does not infer runtime compatibility
+  from card claims. Persisted load compatibility and real Hub/Windows
+  acceptance remain open.
 
 
 ### 2026-11-11 — low-allocation deterministic routing checkpoint
@@ -199,3 +239,163 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - Require a fresh full Windows/Linux matrix on the corrected head before
   claiming the backup and restore regressions pass. Real physical Windows
   recovery remains UNVERIFIED.
+
+### 2026-11-13 — cooperative progress and cancellation for model lifecycle
+
+- **Implemented in the feature branch:** retirement, restoration, and removal
+  of imported models from active inventory now accept cooperative SHA-256
+  progress/cancel callbacks. The managed-model dialogs show byte progress and
+  expose cancellation during large-file verification. Restore journals remain
+  retryable when cancellation happens after either file has moved.
+- **Regression coverage:** API tests exercise progress, option validation,
+  cancellation before retirement moves, and cancellation after restore moves
+  followed by successful retry. GUI contract checks cover the worker queues
+  and cancellation controls.
+- **Acceptance:** 98 focused tests passed (5 platform skips), compileall
+  passed. Real multi-GiB dialog interaction and physical Windows recovery
+  acceptance remain unverified; exact-head hosted CI is still required.
+
+### 2026-11-13 — verified brand kit added to the application
+
+- **Implemented on the feature branch:** imported the full corrected branding
+  kit with all 64 SHA-256 manifest entries verified. Added the brand banner to
+  the repository README, documented asset usage/limits, and integrated the
+  supplied transparent icon into source/frozen GUI windows and the PyInstaller
+  Windows executable.
+- **Acceptance:** branding-integrity, GUI contract/acceptance and documentation
+  suites passed locally. PyInstaller is not installed in this environment, and
+  the draft-PR Windows packaging workflow remains skipped; executable icon
+  appearance still needs hosted build and real Windows desktop confirmation.
+
+### 2026-11-13 — adaptive local repair context budgets
+
+- **Implemented experimentally on the feature branch:** the existing engine
+  scales repository metadata and repair-failure excerpts against its current
+  local memory context profile and the task framing. Fresh repair and resumed
+  repair checkpoints use the same builder; failure excerpts retain both ends,
+  while the original diagnostic remains in the existing evidence archive.
+- **Evidence and limits:** 44 focused engine-budget, diagnostics and model
+  memory-profile tests passed (2 platform skips); `compileall` passed. The
+  budget uses a conservative character heuristic because backend tokenizers
+  and advertised context windows are not reliably exposed. The existing 64 KiB
+  UTF-8 request bound remains authoritative; no exact-token guarantee is made.
+  Real backend behavior and a full current-head CI run remain UNVERIFIED.
+
+### 2026-11-13 — bind repair checkpoints to archived test evidence
+
+- **Implemented experimentally on the feature branch:** repair-pending task
+  checkpoints retain the SHA-256 reference to their archived full test output.
+  On resume, ForgeOS streams and verifies that archive and supplies its bounded
+  preview to the existing repair prompt. Invalid references or archive hash
+  mismatches block the resumed model call. Final task results also expose the
+  reference when the normal diagnostics archiver produced one.
+- **Verification:** the regression exercises interrupted repair, checkpoint
+  reference persistence, archive retrieval after restart, and bounded prompt
+  construction; integrity tests reject malformed and tampered evidence.
+  Focused engine, recovery, diagnostics, documentation and roadmap suites
+  passed 79 tests (3 platform skips); compilation and the handoff integrity
+  checker passed. Implementation commit is recorded in the cumulative
+  handoff. Legacy checkpoints without evidence references remain compatible.
+
+### 2026-11-13 — bound Git workspace output
+
+- **Implemented experimentally on the feature branch:** the canonical Git
+  wrapper now streams command output with a 1 MiB cap and terminates an
+  overflowing command. `workspace_diff()` has a 256 KiB default preview limit,
+  explicit truncation notice, and a validated configurable limit. Diff
+  rendering disables external diff/text-conversion helpers and uses literal
+  pathspec semantics; it remains read-only.
+- **Verification:** the workspace suite covers oversized patch truncation,
+  marked output, hard cap failure and limit validation. All 12 workspace tests
+  passed; after the hard-cap regression was added, the two affected workspace
+  cases plus documentation, roadmap and handoff checks passed 23 tests.
+  Compilation and diff checks passed. Implementation commit is recorded in
+  the cumulative handoff. Hosted CI remains skipped for the draft PR.
+
+### 2026-11-13 — exercise repair recovery after hard process exit
+
+- **Implemented experimentally on the feature branch:** a subprocess
+  regression terminates ForgeOS after a failed test has published a
+  `repair_pending` checkpoint and the next generation begins. The parent opens
+  a fresh SQLite connection, expires the dead lease, runs normal recovery,
+  verifies the checkpoint-linked diagnostic archive, and completes repair
+  without regenerating the original edit or modifying the source checkout.
+- The test uses a deterministic test-result stub; it does not claim real model
+  inference, OS reboot, system power-loss, or physical target-machine
+  acceptance. Its isolated regression passes. The broader 80-test focused run
+  has one repeated WinError 32 while deleting a diagnostics test's temporary
+  archive (the same test passes alone); the exact results and implementation
+  SHA are in `HANDOFF.md`.
+
+### 2026-11-13 — add bounded local project symbol search
+
+- **Implemented experimentally on the feature branch:** the existing
+  `context_index.py` scanner now supports on-demand Python class/function/method
+  name search. It ranks name matches, reports bounded file/line/signature
+  metadata, skips hidden paths and links, and inspects at most 120 Python files
+  of at most 100 KiB each. `forgeos search-project` exposes this local-only
+  operation; source bodies, comments and string values are never returned.
+- Verification and exact implementation revision are recorded in the
+  cumulative handoff. The capability is an identifier search, not full-text
+  search or a replacement for conventional code navigation.
+
+### 2026-11-13 — reject hard-linked installed runtime members
+
+- **Implemented experimentally on the feature branch:** pinned llama.cpp
+  installation verification now rejects hard-linked or non-regular runtime
+  files, including the original release ZIP, inventory manifest and license
+  notices. This prevents a verified bundle member from also aliasing a file
+  outside the runtime directory.
+- **Verification:** runtime installer, GGUF download, model import, inventory
+  and retirement suites passed 119 tests with 8 platform/environment skips;
+  the hard-link metadata regression passed. `compileall` and `git diff --check`
+  passed. Exact revision and the real-filesystem test limitation are recorded
+  in the cumulative handoff.
+- **Limits:** this managed Windows filesystem denied real hard-link creation,
+  so the physical-link regression skipped; metadata-based rejection was
+  exercised. Concurrent same-user path replacement and actual model loading
+  remain target-device acceptance work.
+
+### 2026-11-13 — re-attest model hard-link identity during hashing
+
+- **Implemented experimentally on the feature branch:** explicit SHA-256
+  verification now rejects a multiply linked downloaded GGUF or manifest
+  before hashing. Imported and downloaded model paths are checked again after
+  hashing, so ForgeOS cannot report `verified` if the link count changed while
+  bytes were being read.
+- **Verification:** model inventory/import regressions exercise both initial
+  hard-link rejection and link-count mutation during hashing. The focused
+  inventory, import, retirement, runtime-installer and downloader suites pass
+  123 tests with 8 platform/environment skips when run in isolated module
+  roots. Combined runs encountered transient Windows temp-file locks in
+  unrelated retirement/installer fixtures; those exact suites passed in
+  isolation. Compilation and `git diff --check` passed.
+- **Limits:** physical NTFS hard-link mutation and same-user concurrent path
+  replacement remain target-device acceptance work.
+
+### 2026-11-13 — surface unsafe model links in the existing picker
+
+- **Implemented experimentally on the feature branch:** metadata-only model
+  inventory now marks hard-linked or non-regular downloaded and imported GGUFs
+  as `unsafe_path`. Hugging Face file status reports the same state in plain
+  language. The existing GUI's allowlist disables selection for this state;
+  no separate model manager or large-file hash was added.
+- **Verification:** inventory, import and GUI-contract suites passed 86 tests
+  with 2 environment skips. Synthetic link-count fixtures cover both local
+  downloads and imported paths. Compilation and `git diff --check` passed.
+- **Limits:** link-count metadata was simulated because this managed Windows
+  filesystem denies real hard-link creation. Physical NTFS behavior remains
+  an acceptance item.
+
+### 2026-11-13 — show readable model inventory states
+
+- **Implemented experimentally on the feature branch:** the existing local
+  model picker now translates internal inventory codes to readable labels,
+  including “Unsafe link/file type.” Unknown statuses fall back to “Needs
+  inspection,” while the safe-status allowlist remains unchanged.
+- **Verification:** GUI-contract, inventory and import suites passed 87 tests
+  with 2 environment skips. The new contract checks safe human-readable
+  labels and the fail-safe unknown-status label. Compilation and
+  `git diff --check` passed.
+- **Limits:** physical GUI accessibility and target-Windows acceptance remain
+  open.

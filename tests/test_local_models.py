@@ -2,8 +2,9 @@
 import io
 import json
 import unittest
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from forgeos.local_models import (
     BACKENDS, MAX_RESPONSE_BYTES, LocalChatModel, create_model,
@@ -23,6 +24,55 @@ def payload(data):
 
 
 class LocalModelsTests(unittest.TestCase):
+    def test_local_http_errors_are_actionable_and_close_responses(self):
+        from forgeos.local_models import _open
+        response = Response(b"private server error details")
+        error = HTTPError("http://127.0.0.1:1234/v1/chat/completions", 400,
+                          "bad request", {}, response)
+        with patch("forgeos.local_models.build_opener") as opener:
+            opener.return_value.open.side_effect = error
+            with self.assertRaisesRegex(RuntimeError, "token limit field") as raised:
+                _open(Request("http://127.0.0.1:1234/v1/chat/completions"), timeout=2)
+        self.assertTrue(response.closed)
+        self.assertNotIn("http://", str(raised.exception))
+        self.assertNotIn("private server", str(raised.exception))
+
+    def test_local_connection_errors_hide_raw_url_and_os_message(self):
+        from forgeos.local_models import _open
+        with patch("forgeos.local_models.build_opener") as opener:
+            opener.return_value.open.side_effect = URLError(
+                OSError("secret resolver detail"))
+            with self.assertRaisesRegex(RuntimeError, "could not reach") as raised:
+                _open(Request("http://127.0.0.1:1234/v1/models"), timeout=2)
+        self.assertNotIn("http://", str(raised.exception))
+        self.assertNotIn("secret resolver", str(raised.exception))
+
+    def test_managed_listener_owner_check_runs_before_model_request(self):
+        model = LocalChatModel(
+            backend="llama.cpp", model="forgeos-managed",
+            endpoint="http://127.0.0.1:40123/v1", api_key="k" * 32)
+        model._listener_owner_check = Mock(
+            side_effect=RuntimeError("listener ownership changed"))
+        with patch("forgeos.local_models._read_json") as request:
+            with self.assertRaisesRegex(RuntimeError, "ownership changed"):
+                model.generate_edits("a bounded test prompt")
+        model._listener_owner_check.assert_called_once_with()
+        request.assert_not_called()
+
+    def test_managed_listener_change_after_request_discards_response(self):
+        model = LocalChatModel(
+            backend="llama.cpp", model="forgeos-managed",
+            endpoint="http://127.0.0.1:40123/v1", api_key="k" * 32)
+        model._listener_owner_check = Mock(
+            side_effect=[None, RuntimeError("listener ownership changed")])
+        with patch("forgeos.local_models._read_json", return_value={
+                "choices": [{"finish_reason": "stop",
+                             "message": {"content": '{"files":[]}'}}]}) as request:
+            with self.assertRaisesRegex(RuntimeError, "ownership changed"):
+                model.generate_edits("a bounded test prompt")
+        self.assertEqual(model._listener_owner_check.call_count, 2)
+        request.assert_called_once()
+
     def test_real_loopback_http_trickle_has_bounded_deadline(self):
         import threading
         import time
@@ -193,6 +243,24 @@ class LocalModelsTests(unittest.TestCase):
         request = json.loads(opened.call_args.args[0].data)
         self.assertIn("acceptance tests", request["messages"][0]["content"])
         self.assertLessEqual(request["max_tokens"], 900)
+
+    def test_completion_token_profile_uses_only_selected_parameter(self):
+        model = LocalChatModel(
+            backend="openai-local", model="coder",
+            token_parameter="max_completion_tokens")
+        with patch("forgeos.local_models._open",
+                   return_value=payload({"choices": [
+                       {"message": {"content": "Plan"}}
+                   ]})) as opened:
+            self.assertEqual(model.plan("Make a timer"), "Plan")
+        request = json.loads(opened.call_args.args[0].data)
+        self.assertLessEqual(request["max_completion_tokens"], 900)
+        self.assertNotIn("max_tokens", request)
+
+    def test_rejects_unknown_token_parameter_profile(self):
+        with self.assertRaises(ValueError):
+            LocalChatModel(backend="llama.cpp", model="coder",
+                           token_parameter="max_new_tokens")
 
     def test_rejects_invalid_and_oversize_model_responses(self):
         model = LocalChatModel(backend="openai-local", model="coder")

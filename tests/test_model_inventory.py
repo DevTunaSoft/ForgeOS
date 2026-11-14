@@ -3,10 +3,15 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from forgeos.model_inventory import list_downloads, verify_download
+from forgeos.gguf_download import _exclusive_download_lock
+from forgeos.model_inventory import (
+    VerificationCancelled, catalog_file_status, list_downloads,
+    storage_usage, verify_download,
+)
 
 
 class GGUFInventoryTests(unittest.TestCase):
@@ -24,6 +29,29 @@ class GGUFInventoryTests(unittest.TestCase):
         self.manifest = self.path.with_name(self.path.name + ".forgeos.json")
         self.write_manifest()
 
+    def test_catalog_status_matches_exact_revision_hash_and_imported_bytes(self):
+        file_info = {"path": self.path.name, "sha256": self.sha}
+        records = list_downloads(self.root)
+        self.assertIn("not reverified", catalog_file_status(
+            "Owner/CodeModel", self.version, file_info, records))
+        different = dict(file_info, sha256="f" * 64)
+        self.assertIn("different SHA-256", catalog_file_status(
+            "Owner/CodeModel", self.version, different, records))
+        imported = [{"repo": "Local import (provenance unknown)",
+                     "revision": None, "file": "elsewhere.gguf",
+                     "sha256": self.sha, "status": "imported_not_reverified",
+                     "kind": "imported"}]
+        self.assertIn("source unknown", catalog_file_status(
+            "Other/Repo", "b" * 40, file_info, imported))
+        missing_import = [dict(imported[0], status="missing")]
+        self.assertIn("local file is missing", catalog_file_status(
+            "Other/Repo", "b" * 40, file_info, missing_import))
+        size_mismatch_import = [dict(imported[0], status="size_mismatch")]
+        self.assertIn("local size differs", catalog_file_status(
+            "Other/Repo", "b" * 40, file_info, size_mismatch_import))
+        self.assertEqual("not in local model inventory", catalog_file_status(
+            "Other/Repo", "b" * 40, dict(file_info, sha256=None), []))
+
     def write_manifest(self, **changes):
         data = {"repo": "Owner/CodeModel", "revision": self.version,
                 "file": self.path.name, "bytes": len(self.content),
@@ -40,6 +68,112 @@ class GGUFInventoryTests(unittest.TestCase):
         self.assertEqual(items[0]["repo"], "Owner/CodeModel")
         self.assertEqual(items[0]["sha256"], self.sha)
 
+    def test_runtime_self_test_history_matches_only_exact_model_hash(self):
+        from forgeos.model_compatibility import record_runtime_self_test
+
+        class Controller:
+            def __init__(inner, model_hash, runtime_hash):
+                inner.model_sha256 = model_hash
+                inner.runtime_sha256 = runtime_hash
+
+            def running(inner):
+                return True
+
+            def inference_self_test(inner):
+                return {"status": "passed", "response_bytes": 12,
+                        "elapsed_seconds": 0.2, "memory": None}
+
+        record_runtime_self_test(
+            Controller(self.sha, "c" * 64), directory=self.root)
+        other = self.parent / "other.gguf"
+        other_content = b"GGUF" + b"\x01" * 60
+        other.write_bytes(other_content)
+        other_sha = hashlib.sha256(other_content).hexdigest()
+        (other.with_name(other.name + ".forgeos.json")).write_text(
+            json.dumps({"repo": "Owner/CodeModel", "revision": self.version,
+                        "file": other.name, "bytes": len(other_content),
+                        "sha256": other_sha}), encoding="utf-8")
+        record_runtime_self_test(
+            Controller(other_sha, "d" * 64), directory=self.root)
+        with patch("forgeos.model_inventory._digest") as hashing:
+            items = list_downloads(self.root)
+        hashing.assert_not_called()
+        target = next(item for item in items if item["file"] == self.path.name)
+        self.assertEqual(target["runtime_compatibility"]["status"],
+                         "self_test_passed")
+        self.assertEqual([pair["runtime_sha256"] for pair in
+                          target["runtime_compatibility"]["pairs"]], ["c" * 64])
+        self.assertRegex(target["runtime_compatibility"]["pairs"][0][
+            "tested_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        different = next(item for item in items if item["file"] == other.name)
+        self.assertEqual([pair["runtime_sha256"] for pair in
+                          different["runtime_compatibility"]["pairs"]], ["d" * 64])
+
+    def test_corrupt_compatibility_history_does_not_hide_model_inventory(self):
+        (self.root / ".forgeos-runtime-compatibility.json").write_text(
+            '{"version":1,"pairs":[{"model_sha256":"bad"}]}',
+            encoding="utf-8")
+        records = list_downloads(self.root)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["sha256"], self.sha)
+        self.assertEqual(records[0]["runtime_compatibility"], "unavailable")
+
+    def test_listing_rejects_unverified_card_claims_from_another_revision(self):
+        self.write_manifest(hub_claims={
+            "source": "huggingface_card_unverified",
+            "revision": "b" * 40,
+            "claims": {"license": "apache-2.0"},
+        })
+        self.assertEqual(list_downloads(self.root), [])
+
+    def test_listing_marks_hardlinked_download_unsafe(self):
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.path:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_hardlink), \
+             patch("forgeos.model_inventory._digest") as hashing:
+            records = list_downloads(self.root)
+        hashing.assert_not_called()
+        self.assertEqual(records[0]["status"], "unsafe_path")
+        self.assertIn("linked", catalog_file_status(
+            "Owner/CodeModel", self.version,
+            {"path": self.path.name, "sha256": self.sha}, records))
+
+    def test_storage_usage_counts_active_partial_retired_and_quarantined_weights(self):
+        partial = self.parent / "next.gguf.part"
+        partial.write_bytes(b"partial")
+        quarantine = self.parent / "bad.gguf.part.corrupt-123"
+        quarantine.write_bytes(b"bad")
+        retired_dir = self.root / ".forgeos-retired" / ("b" * 32)
+        retired_dir.mkdir(parents=True)
+        retired = retired_dir / "weights.gguf"
+        retired.write_bytes(b"retired")
+        (self.parent / "notes.txt").write_bytes(b"ignored")
+
+        with patch("forgeos.model_inventory._digest") as hashing:
+            usage = storage_usage(self.root)
+        hashing.assert_not_called()
+        self.assertEqual(usage, {
+            "bytes": (len(self.content) + len(b"partial") + len(b"bad")
+                      + len(b"retired")),
+            "files": 4,
+        })
+
+    def test_storage_usage_fails_closed_on_reparse_point_entries(self):
+        redirected = self.root / "redirected"
+        redirected.mkdir()
+        with patch("forgeos.model_inventory._is_reparse_point",
+                   side_effect=lambda path: path == redirected):
+            with self.assertRaisesRegex(RuntimeError, "reparse-point entry"):
+                storage_usage(self.root)
+
     def test_explicit_verify_streams_bytes_and_detects_corruption(self):
         proof = verify_download(self.path, directory=self.root)
         self.assertEqual(proof["status"], "verified")
@@ -49,6 +183,92 @@ class GGUFInventoryTests(unittest.TestCase):
                          "present_not_reverified")
         with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
             verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_refuses_hardlinked_model_before_hashing(self):
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.path:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_hardlink), \
+             patch("forgeos.model_inventory._digest") as digest:
+            with self.assertRaisesRegex(RuntimeError, "Hard-linked GGUF"):
+                verify_download(self.path, directory=self.root)
+        digest.assert_not_called()
+
+    def test_explicit_verify_refuses_hardlinked_manifest(self):
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.manifest:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_hardlink):
+            with self.assertRaisesRegex(ValueError, "linked"):
+                verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_detects_link_count_change_during_hash(self):
+        original_stat = Path.stat
+        state = {"hash_started": False}
+
+        def report_link_after_hash(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.path and state["hash_started"]:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2,
+                                       st_mtime_ns=metadata.st_mtime_ns,
+                                       st_ino=metadata.st_ino)
+            return metadata
+
+        def finish_hash(*_args, **_kwargs):
+            state["hash_started"] = True
+            return self.sha
+
+        with patch.object(Path, "stat", new=report_link_after_hash), \
+             patch("forgeos.model_inventory._digest", side_effect=finish_hash):
+            with self.assertRaisesRegex(RuntimeError, "changed while verifying"):
+                verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_refuses_active_model_lifecycle(self):
+        lock = self.path.with_name(self.path.name + ".lock")
+        with _exclusive_download_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_reports_progress_and_supports_cancel(self):
+        progress = []
+        result = verify_download(
+            self.path, directory=self.root,
+            progress_callback=lambda *event: progress.append(event))
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(progress[-1], ("verify", len(self.content), len(self.content)))
+
+        from threading import Event
+        cancelled = Event()
+        def cancel_after_first_chunk(_stage, _done, _total):
+            cancelled.set()
+        with self.assertRaisesRegex(VerificationCancelled, "cancelled"):
+            verify_download(self.path, directory=self.root,
+                            cancel_event=cancelled,
+                            progress_callback=cancel_after_first_chunk)
+
+    def test_explicit_verify_validates_controls_before_touching_storage(self):
+        with patch("forgeos.model_inventory._safe_storage_root") as root:
+            with self.assertRaisesRegex(TypeError, "threading.Event"):
+                verify_download(self.path, cancel_event=object())
+            with self.assertRaisesRegex(TypeError, "callable"):
+                verify_download(self.path, progress_callback=object())
+        root.assert_not_called()
 
     def test_explicit_verify_accepts_noncanonical_but_contained_path(self):
         # Equivalent paths must compare to the canonical inventory root,
@@ -114,6 +334,31 @@ class GGUFInventoryTests(unittest.TestCase):
                 "model-verify-local", str(self.path),
                 "--directory", str(self.root)]), 0)
         self.assertEqual(json.loads(output.getvalue())["status"], "verified")
+
+    def test_cli_model_repair_requires_confirmation_before_opening_database(self):
+        from forgeos.cli import main
+        database = self.root / "must-not-be-created.sqlite3"
+        with self.assertRaisesRegex(ValueError, "Explicit --confirm"):
+            main(["--db", str(database), "model-repair-local", str(self.path)])
+        self.assertFalse(database.exists())
+
+    def test_cli_model_repair_uses_requested_storage_cap(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from forgeos.cli import main
+        from forgeos.core import Store
+        database = self.root / "tasks.sqlite3"
+        Store(database).close()
+        with patch("forgeos.gguf_download.repair_downloaded_gguf",
+                   return_value={"status": "repaired"}) as repair, \
+                redirect_stdout(StringIO()):
+            self.assertEqual(main([
+                "--db", str(database), "model-repair-local", str(self.path),
+                "--directory", str(self.root), "--confirm",
+                "--storage-quota-gib", "16"]), 0)
+        self.assertEqual(
+            repair.call_args.kwargs["storage_quota_bytes"], 16 * 1024**3)
 
     def test_no_automatic_network_or_model_execution(self):
         with patch("forgeos.huggingface_catalog.search_gguf") as remote, \

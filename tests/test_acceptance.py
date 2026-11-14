@@ -10,6 +10,25 @@ from forgeos.acceptance import (
 
 
 class AcceptanceSnapshotTests(unittest.TestCase):
+    def test_modified_checkout_omits_commit_identity(self):
+        from subprocess import CompletedProcess
+        from forgeos.acceptance import _source_commit
+
+        with patch("forgeos.acceptance.subprocess.run", side_effect=[
+            CompletedProcess([], 0, stdout="a" * 40 + "\n"),
+            CompletedProcess([], 1),
+        ]) as git:
+            self.assertIsNone(_source_commit())
+        self.assertIn("--no-ext-diff", git.call_args.args[0])
+
+    def test_frozen_report_does_not_inspect_the_current_checkout(self):
+        from forgeos.acceptance import _source_commit
+
+        with patch("forgeos.acceptance.sys.frozen", True, create=True), \
+             patch("forgeos.acceptance.subprocess.run") as git:
+            self.assertIsNone(_source_commit())
+        git.assert_not_called()
+
     def test_host_snapshot_is_bounded_and_secret_free(self):
         with patch("forgeos.acceptance.platform.system", return_value="Windows"), \
              patch("forgeos.acceptance._source_commit", return_value="a" * 40), \
@@ -61,6 +80,21 @@ class AcceptanceSnapshotTests(unittest.TestCase):
                 '{"source_commit":"../not-a-sha"}', encoding="utf-8")
             with patch("forgeos.acceptance.sys._MEIPASS",
                        str(Path(temp)), create=True):
+                self.assertIsNone(_embedded_build_commit())
+
+    def test_embedded_metadata_size_boundary(self):
+        from forgeos.acceptance import MAX_BUILD_INFO_BYTES, _embedded_build_commit
+
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp) / "forgeos"
+            bundle.mkdir()
+            metadata = bundle / "build_info.json"
+            payload = json.dumps({"source_commit": "a" * 40}).encode("utf-8")
+            padded = payload.ljust(MAX_BUILD_INFO_BYTES)
+            with patch("forgeos.acceptance.sys._MEIPASS", temp, create=True):
+                metadata.write_bytes(padded)
+                self.assertEqual(_embedded_build_commit(), "a" * 40)
+                metadata.write_bytes(padded + b" ")
                 self.assertIsNone(_embedded_build_commit())
 
     def test_physical_target_cannot_be_claimed_on_non_windows(self):

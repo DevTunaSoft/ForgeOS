@@ -1,8 +1,10 @@
-"""Opt-in, single-process, CPU-first llama.cpp server lifecycle.
+"""Opt-in, CPU-first llama.cpp server lifecycle with a per-user process lock.
 
-One managed llama-server belongs to one ForgeOS GUI session. Executables are
-provided explicitly and pinned to a SHA-256 supplied by the operator; no code
-downloads, remote inference, Docker, shell or second desktop application.
+One managed llama-server belongs to one ForgeOS GUI session, and a shared lock
+prevents another ForgeOS process for the same user from starting a second one.
+Executables are provided explicitly and pinned to a SHA-256 supplied by the
+operator; no code downloads, remote inference, Docker, shell or second desktop
+application.
 
 A checksum is integrity evidence, NOT a software publisher signature. Verify
 the upstream binary and adjacent DLL provenance before electing to run it.
@@ -17,6 +19,8 @@ import re
 import secrets
 import signal
 import socket
+import struct
+import sys
 import subprocess
 import tempfile
 import time
@@ -28,6 +32,7 @@ from .model_routing import (
     local_memory_settings, managed_runtime_memory_ceiling,
     safe_model_file_budget, system_memory,
 )
+from .gguf_download import _exclusive_download_lock, _safe_storage_root
 
 CHUNK_BYTES = 1024 * 1024
 MAX_MANIFEST_BYTES = 4096
@@ -35,6 +40,15 @@ SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 ALIAS = "forgeos-managed"
 MAX_TIMEOUT = 180
 DEFAULT_TIMEOUT = 90
+MAX_GGUF_METADATA_PREFIX = 4 * 1024 * 1024
+MAX_GGUF_METADATA_ENTRIES = 4096
+MAX_GGUF_ARRAY_ITEMS = 1_000_000
+
+_GGUF_SCALAR_TYPES = {
+    0: ("<B", 1), 1: ("<b", 1), 2: ("<H", 2), 3: ("<h", 2),
+    4: ("<I", 4), 5: ("<i", 4), 6: ("<f", 4), 7: ("<?", 1),
+    10: ("<Q", 8), 11: ("<q", 8), 12: ("<d", 8),
+}
 
 
 def _hex_digest(path: Path) -> str:
@@ -43,6 +57,159 @@ def _hex_digest(path: Path) -> str:
         for chunk in iter(lambda: stream.read(CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def estimate_gguf_kv_cache_bytes(path: str | Path,
+                                 context_tokens: int) -> int | None:
+    """Read bounded GGUF metadata and estimate an f16 K+V cache footprint.
+
+    This is an admission estimate, not a claim about llama.cpp's exact native
+    allocations. Unsupported/malformed metadata returns None so callers keep
+    the existing conservative weight-size check rather than guessing a value.
+    The parser reads at most 4 MiB and never visits tensor data.
+    """
+    if type(context_tokens) is not int or not 1 <= context_tokens <= 8192:
+        raise ValueError("Context must be between 1 and 8192 tokens")
+    try:
+        with Path(path).open("rb") as stream:
+            data = stream.read(MAX_GGUF_METADATA_PREFIX)
+        if len(data) < 24 or data[:4] != b"GGUF":
+            return None
+        position = 4
+
+        def take(length: int) -> bytes:
+            nonlocal position
+            end = position + length
+            if length < 0 or end > MAX_GGUF_METADATA_PREFIX or end > len(data):
+                raise ValueError("GGUF metadata exceeds bounded prefix")
+            value = data[position:end]
+            position = end
+            return value
+
+        def unpack(fmt: str) -> int | float:
+            return struct.unpack(fmt, take(struct.calcsize(fmt)))[0]
+
+        version = unpack("<I")
+        tensor_count = unpack("<Q")
+        metadata_count = unpack("<Q")
+        if version not in (2, 3) or tensor_count > 1_000_000 \
+                or metadata_count > MAX_GGUF_METADATA_ENTRIES:
+            return None
+
+        def read_string() -> str:
+            length = unpack("<Q")
+            if length > 1024 * 1024:
+                raise ValueError("GGUF metadata string exceeds limit")
+            return take(length).decode("utf-8", errors="strict")
+
+        def skip_value(value_type: int) -> int | float | str | None:
+            if value_type in _GGUF_SCALAR_TYPES:
+                fmt, size = _GGUF_SCALAR_TYPES[value_type]
+                return unpack(fmt)
+            if value_type == 8:
+                return read_string()
+            if value_type != 9:
+                raise ValueError("Unknown GGUF metadata type")
+            item_type = unpack("<I")
+            count = unpack("<Q")
+            if count > MAX_GGUF_ARRAY_ITEMS or item_type == 9:
+                raise ValueError("GGUF metadata array exceeds limit")
+            if item_type == 8:
+                for _ in range(count):
+                    read_string()
+            elif item_type in _GGUF_SCALAR_TYPES:
+                _, item_size = _GGUF_SCALAR_TYPES[item_type]
+                take(count * item_size)
+            else:
+                raise ValueError("Unsupported GGUF metadata array type")
+            return None
+
+        values: dict[str, int | str] = {}
+        for _ in range(metadata_count):
+            key = read_string()
+            value_type = unpack("<I")
+            value = skip_value(value_type)
+            if key == "general.architecture" and isinstance(value, str):
+                values[key] = value
+            elif (key.endswith((".block_count", ".attention.head_count",
+                                ".attention.head_count_kv", ".embedding_length"))
+                    and type(value) is int and 0 < value <= 1_000_000):
+                values[key] = value
+            elif (key.endswith((".attention.key_length",
+                                ".attention.value_length"))
+                    and type(value) is int and 0 < value <= 1_000_000):
+                values[key] = value
+
+        architecture = values.get("general.architecture")
+        if not isinstance(architecture, str) or not re.fullmatch(
+                r"[a-z0-9_-]{1,64}", architecture):
+            return None
+        prefix = architecture + "."
+        layers = values.get(prefix + "block_count")
+        heads = values.get(prefix + "attention.head_count")
+        kv_heads = values.get(prefix + "attention.head_count_kv", heads)
+        embedding = values.get(prefix + "embedding_length")
+        if (type(layers) is not int or type(heads) is not int
+                or type(kv_heads) is not int or type(embedding) is not int
+                or not 1 <= layers <= 1024 or not 1 <= kv_heads <= heads
+                or embedding % heads):
+            return None
+        head_dimension = embedding // heads
+        key_dimension = values.get(prefix + "attention.key_length", head_dimension)
+        value_dimension = values.get(prefix + "attention.value_length", head_dimension)
+        if (type(key_dimension) is not int or type(value_dimension) is not int
+                or not 1 <= key_dimension <= 1_000_000
+                or not 1 <= value_dimension <= 1_000_000):
+            return None
+        estimate = (context_tokens * layers * kv_heads
+                    * (key_dimension + value_dimension) * 2)
+        return estimate if estimate <= (1 << 63) - 1 else None
+    except (OSError, UnicodeError, ValueError, OverflowError, struct.error):
+        return None
+
+
+def _managed_memory_preflight_report(model_path: str | Path,
+                                     context_tokens: int,
+                                     memory_snapshot) -> dict:
+    """Return a bounded estimate using the canonical conservative model budget."""
+    path = Path(model_path)
+    weight_bytes = path.stat().st_size
+    budget = safe_model_file_budget(memory_snapshot)
+    kv_bytes = estimate_gguf_kv_cache_bytes(path, context_tokens)
+    required = weight_bytes + (kv_bytes or 0)
+    return {
+        "weight_bytes": weight_bytes,
+        "estimated_kv_cache_bytes": kv_bytes,
+        "estimated_required_bytes": required,
+        "safe_model_budget_bytes": budget,
+        "within_budget": required <= budget,
+        "context_tokens": context_tokens,
+        "cache_estimate_available": kv_bytes is not None,
+    }
+
+
+def _check_managed_memory_preflight(model_path: str | Path,
+                                    context_tokens: int,
+                                    memory_snapshot) -> int | None:
+    """Reject weights plus known KV estimate when they exceed safe headroom."""
+    report = _managed_memory_preflight_report(
+        model_path, context_tokens, memory_snapshot)
+    weight_bytes = report["weight_bytes"]
+    budget = report["safe_model_budget_bytes"]
+    kv_bytes = report["estimated_kv_cache_bytes"]
+    required = report["estimated_required_bytes"]
+    if required > budget:
+        if kv_bytes is None:
+            raise RuntimeError(
+                "Free RAM fell below the conservative model budget; close "
+                "other apps or choose a smaller verified GGUF")
+        raise RuntimeError(
+            "Free RAM fell below the conservative model plus KV-cache budget "
+            f"(weights {weight_bytes / 1024**3:.2f} GiB; estimated "
+            f"f16 KV cache {kv_bytes / 1024**3:.2f} GiB; available ForgeOS "
+            f"budget {budget / 1024**3:.2f} GiB). Choose a smaller context "
+            "or model, or free system memory.")
+    return kv_bytes
 
 
 def _existing_file(path: str | Path, *, suffix: str) -> Path:
@@ -59,23 +226,41 @@ def _existing_file(path: str | Path, *, suffix: str) -> Path:
     return target
 
 
-def _verified_model(path: str | Path) -> tuple[Path, dict]:
+def _verified_model(path: str | Path, *,
+                    directory: str | Path | None = None) -> tuple[Path, dict]:
     target = _existing_file(path, suffix=".gguf")
     manifest = target.with_name(target.name + ".forgeos.json")
-    if manifest.is_symlink() or not manifest.is_file():
-        raise ValueError("Only SHA-verified ForgeOS GGUF downloads can be loaded")
-    if manifest.stat().st_nlink != 1:
-        raise ValueError("Hard-linked GGUF verification manifests are not trusted")
+    if manifest.is_symlink():
+        raise ValueError("Symbolic-link GGUF identity metadata is not trusted")
+    if manifest.is_file():
+        if manifest.stat().st_nlink != 1:
+            raise ValueError("Hard-linked GGUF verification manifests are not trusted")
+        if manifest.stat().st_size > MAX_MANIFEST_BYTES:
+            raise ValueError("GGUF verification manifest is too large")
+        try:
+            info = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise ValueError("Invalid GGUF verification manifest") from exc
+    else:
+        from .model_import import registered_import
+        info = registered_import(target, directory=directory)
+        if info is None:
+            raise ValueError(
+                "Only SHA-verified ForgeOS GGUF downloads or registered imports can be loaded")
+        info["bytes"] = target.stat().st_size
     if target.stat().st_nlink != 1:
         raise ValueError("Hard-linked GGUF model files are not trusted")
-    if manifest.stat().st_size > MAX_MANIFEST_BYTES:
-        raise ValueError("GGUF verification manifest is too large")
-    try:
-        info = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, ValueError, UnicodeError) as exc:
-        raise ValueError("Invalid GGUF verification manifest") from exc
     if not isinstance(info, dict):
         raise ValueError("Invalid GGUF verification manifest format")
+    if info.get("format") == "forgeos-local-import-v1":
+        if (set(info) != {"format", "source_path", "file", "bytes",
+                          "sha256", "provenance"}
+                or info.get("source_path") != str(target.resolve(strict=True))
+                or info.get("file") != target.name
+                or info.get("provenance") != "unknown"):
+            raise ValueError("Local GGUF import identity does not match its file")
+    elif "format" in info:
+        raise ValueError("Unsupported GGUF manifest format")
     expected = info.get("sha256")
     size = info.get("bytes")
     if (not isinstance(expected, str) or not SHA256.fullmatch(expected)
@@ -124,6 +309,17 @@ def _verified_runtime(binary: str | Path, expected_sha256: str) -> Path:
     return path
 
 
+def _managed_runtime_lock_path(directory: str | Path | None = None) -> Path:
+    """Return the per-user lock that admits one managed heavy model process."""
+    root = _safe_storage_root(directory)
+    lock = root / ".managed-runtime.lock"
+    if lock.is_symlink() or (os.path.lexists(lock)
+                             and (not lock.is_file()
+                                  or lock.stat().st_nlink != 1)):
+        raise ValueError("Managed runtime lock file is unsafe")
+    return lock
+
+
 # Minimal operating-system variables only. In particular, do not inherit
 # GGML_*, CUDA_*, OMP_*, PYTHON*, DLL injection, provider credentials, proxy
 # settings or arbitrary model-server feature toggles from the user's shell.
@@ -151,6 +347,102 @@ def _unused_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listening:
         listening.bind(("127.0.0.1", 0))
         return int(listening.getsockname()[1])
+
+
+def _parse_tcp_owner_table(data: bytes, port: int) -> int | None:
+    """Parse the bounded MIB_TCPROW_OWNER_PID layout returned by IP Helper."""
+    if not isinstance(data, bytes) or len(data) < 4:
+        raise RuntimeError("Windows returned a truncated TCP ownership table")
+    count = struct.unpack_from("=I", data, 0)[0]
+    row_size = struct.calcsize("=IIIIII")
+    if count > 65536 or 4 + count * row_size > len(data):
+        raise RuntimeError("Windows returned an invalid TCP ownership table")
+    matches = set()
+    for index in range(count):
+        state, local_addr, local_port, _remote_addr, _remote_port, owner_pid = (
+            struct.unpack_from("=IIIIII", data, 4 + index * row_size))
+        if (state == 2
+                and struct.pack("=I", local_addr) == socket.inet_aton("127.0.0.1")
+                and socket.ntohs(local_port & 0xFFFF) == port):
+            matches.add(owner_pid)
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def _listener_owner_pid(port: int) -> int | None:
+    """Find the process owning the IPv4 loopback listener on ``port``.
+
+    Windows uses the IP Helper TCP owner-PID table. Linux maps the kernel TCP
+    socket inode back to a process file descriptor. Unknown platforms fail
+    closed because startup cannot prove which process receives model prompts.
+    """
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("Invalid managed listener port")
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        iphlpapi = ctypes.WinDLL("iphlpapi.dll")
+        get_table = iphlpapi.GetExtendedTcpTable
+        get_table.argtypes = [ctypes.c_void_p,
+                              ctypes.POINTER(wintypes.ULONG),
+                              wintypes.BOOL, wintypes.ULONG, ctypes.c_int,
+                              wintypes.ULONG]
+        get_table.restype = wintypes.ULONG
+        size = wintypes.ULONG(0)
+        family = 2  # AF_INET
+        owner_pid_listener_table = 3
+        status = get_table(None, ctypes.byref(size), False, family,
+                           owner_pid_listener_table, 0)
+        if status not in (0, 122):  # ERROR_INSUFFICIENT_BUFFER
+            raise OSError(int(status), "Could not inspect TCP listener ownership")
+        if not size.value:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        status = get_table(buffer, ctypes.byref(size), False, family,
+                           owner_pid_listener_table, 0)
+        if status != 0:
+            raise OSError(int(status), "Could not inspect TCP listener ownership")
+        return _parse_tcp_owner_table(buffer.raw[:size.value], port)
+
+    if sys.platform.startswith("linux"):
+        wanted_port = f"{port:04X}"
+        inodes = set()
+        try:
+            with open("/proc/net/tcp", encoding="ascii") as table:
+                next(table, None)
+                for line in table:
+                    fields = line.split()
+                    if (len(fields) > 9 and fields[1] == "0100007F:" + wanted_port
+                            and fields[3] == "0A"):
+                        inodes.add(fields[9])
+        except OSError as exc:
+            raise RuntimeError("Could not inspect Linux TCP listener ownership") from exc
+        if not inodes:
+            return None
+        owners = set()
+        try:
+            processes = os.scandir("/proc")
+        except OSError as exc:
+            raise RuntimeError("Could not inspect Linux process descriptors") from exc
+        with processes:
+            for proc in processes:
+                if not proc.name.isdecimal():
+                    continue
+                try:
+                    descriptors = os.scandir(Path(proc.path) / "fd")
+                except OSError:
+                    continue
+                with descriptors:
+                    for descriptor in descriptors:
+                        try:
+                            link = os.readlink(descriptor.path)
+                        except OSError:
+                            continue
+                        if link.startswith("socket:[") and link[8:-1] in inodes:
+                            owners.add(int(proc.name))
+                            if len(owners) > 1:
+                                return None
+        return next(iter(owners)) if owners else None
+    raise RuntimeError("Listener ownership verification is unsupported on this OS")
 
 
 class _WindowsNativeProcess:
@@ -336,12 +628,29 @@ class ManagedLlamaServer:
         self.model_identity: dict | None = None
         self.runtime_release_tag: str | None = None
         self.context_tokens: int | None = None
+        self.estimated_kv_cache_bytes: int | None = None
         self.thread_count: int | None = None
         self.memory_ceiling_bytes: int | None = None
         self.startup_elapsed_seconds: float | None = None
+        self._model_lock = None
+        self._runtime_lock = None
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def verify_listener_ownership(self) -> None:
+        """Refuse every managed prompt unless the exact child owns the port."""
+        if not self.running() or not self.endpoint:
+            raise RuntimeError("Managed llama-server is not running")
+        try:
+            port = int(self.endpoint.rsplit(":", 1)[1].split("/", 1)[0])
+        except (AttributeError, ValueError, IndexError) as exc:
+            raise RuntimeError("Managed llama-server endpoint is invalid") from exc
+        owner_pid = _listener_owner_pid(port)
+        if owner_pid != self.process.pid:
+            raise RuntimeError(
+                "Managed loopback listener ownership changed; refusing to "
+                "send project prompts")
 
     def memory_report(self) -> dict:
         """Return one-shot managed-runtime accounting; never background-poll."""
@@ -385,6 +694,7 @@ class ManagedLlamaServer:
             },
             "settings": {
                 "context_tokens": self.context_tokens,
+                "estimated_kv_cache_bytes": self.estimated_kv_cache_bytes,
                 "threads": self.thread_count,
                 "memory_ceiling_bytes": self.memory_ceiling_bytes,
             },
@@ -398,9 +708,11 @@ class ManagedLlamaServer:
             raise RuntimeError("A verified managed llama-server must be running")
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
             raise ValueError("Benchmark prompt must be 1..12000 characters")
-        return LocalChatModel(
+        client = LocalChatModel(
             backend="llama.cpp", model=ALIAS, endpoint=self.endpoint,
-            api_key=self.api_key).generate_edits(prompt)
+            api_key=self.api_key)
+        client._listener_owner_check = self.verify_listener_ownership
+        return client.generate_edits(prompt)
 
     def inference_self_test(self) -> dict:
         """Exercise the active local model without sending project content."""
@@ -464,6 +776,46 @@ class ManagedLlamaServer:
               memory_limit_bytes: int | None = None) -> dict:
         if self.process is not None or self._secrets is not None:
             raise RuntimeError("A managed llama-server session already exists")
+        runtime_lock = _exclusive_download_lock(_managed_runtime_lock_path())
+        try:
+            runtime_lock.__enter__()
+        except RuntimeError as exc:
+            if str(exc) == "This GGUF download is active elsewhere":
+                raise RuntimeError(
+                    "Another ForgeOS process already has a managed model "
+                    "running; stop it before starting another") from exc
+            raise
+        self._runtime_lock = runtime_lock
+        try:
+            model_file = _existing_file(model_path, suffix=".gguf")
+            from .model_import import imported_model_lock_path
+            lock_path = imported_model_lock_path(model_file)
+            if lock_path.is_symlink():
+                raise ValueError(
+                    "Refusing a symbolic link at the model lifecycle lock")
+            model_lock = _exclusive_download_lock(lock_path)
+            model_lock.__enter__()
+            self._model_lock = model_lock
+            return self._start_with_model_lock(
+                executable=executable, executable_sha256=executable_sha256,
+                model_path=model_file, timeout=timeout, threads=threads,
+                context=context, memory_limit_bytes=memory_limit_bytes)
+        except BaseException:
+            # Preflight failures happen before _start_with_model_lock's
+            # process-start cleanup block. Release both admission locks on
+            # every failed start, but retain them if stop cannot reap a child.
+            try:
+                self.stop()
+            except Exception:
+                pass
+            raise
+
+    def _start_with_model_lock(self, *, executable: str | Path,
+                               executable_sha256: str, model_path: str | Path,
+                               timeout: int = DEFAULT_TIMEOUT,
+                               threads: int | None = None,
+                               context: int | None = None,
+                               memory_limit_bytes: int | None = None) -> dict:
         startup_started = time.perf_counter()
         if type(timeout) is not int or not 1 <= timeout <= MAX_TIMEOUT:
             raise ValueError("Startup timeout must be 1–180 seconds")
@@ -488,11 +840,8 @@ class ManagedLlamaServer:
         # and binary bytes, immediately before starting the native server.
         # A competing app may have consumed RAM during the slow SHA-256 pass.
         memory = system_memory()
-        if model_file.stat().st_size > safe_model_file_budget(memory):
-            raise RuntimeError(
-                "Free RAM fell below the conservative model budget "
-                "before native inference startup; close other apps "
-                "or choose a smaller verified GGUF")
+        kv_cache_estimate = _check_managed_memory_preflight(
+            model_file, context, memory)
         runtime_ceiling = managed_runtime_memory_ceiling(
             memory, memory_limit_bytes)
         if os.name == "nt" and not runtime_ceiling:
@@ -544,13 +893,25 @@ class ManagedLlamaServer:
                         data = response.read(256)
                     if len(data) > 256 or json.loads(data).get("status") != "ok":
                         raise RuntimeError("Unexpected llama-server health response")
-                    models = LocalChatModel(
+                    owner_pid = _listener_owner_pid(port)
+                    if owner_pid != self.process.pid:
+                        raise RuntimeError(
+                            "Loopback listener is not owned by the launched "
+                            "llama-server process; refusing to send model prompts")
+                    client = LocalChatModel(
                         backend="llama.cpp", model=ALIAS,
-                        endpoint=self.endpoint, api_key=key).installed()
+                        endpoint=self.endpoint, api_key=key)
+                    # Bind both sides of the authenticated catalog exchange
+                    # to the child PID. The earlier readiness PID check alone
+                    # left a rebinding window before/during the request.
+                    client._listener_owner_check = self.verify_listener_ownership
+                    models = client.installed()
+                    self.verify_listener_ownership()
                     if not any(item["name"] == ALIAS for item in models):
                         raise RuntimeError("Managed server reported the wrong model")
                     self.model_identity = dict(manifest)
                     self.context_tokens = context
+                    self.estimated_kv_cache_bytes = kv_cache_estimate
                     self.thread_count = threads
                     self.memory_ceiling_bytes = runtime_ceiling
                     self.startup_elapsed_seconds = round(
@@ -575,6 +936,7 @@ class ManagedLlamaServer:
         self.process = None
         job = self._windows_job
         self._windows_job = None
+        child_stopped_confirmed = process is None
         try:
             job_error = None
             if job is not None:
@@ -608,6 +970,7 @@ class ManagedLlamaServer:
                             pass
                 try:
                     process.wait(timeout=4)
+                    child_stopped_confirmed = True
                 except subprocess.TimeoutExpired as exc:
                     # Even a force-killed process may fail to exit/reap within
                     # the second deadline. Preserve a bounded shutdown and
@@ -620,6 +983,7 @@ class ManagedLlamaServer:
                     try:
                         process.kill()
                         process.wait(timeout=4)
+                        child_stopped_confirmed = True
                     except (OSError, subprocess.TimeoutExpired):
                         stop_error = stop_error or exc
                 except OSError as exc:
@@ -629,6 +993,7 @@ class ManagedLlamaServer:
                     try:
                         process.kill()
                         process.wait(timeout=4)
+                        child_stopped_confirmed = True
                     except (OSError, subprocess.TimeoutExpired):
                         pass
             if job_error is not None:
@@ -637,14 +1002,25 @@ class ManagedLlamaServer:
                 raise stop_error
         finally:
             # Native Windows process handles must close even when poll(),
-            # wait(), termination, or Job Object cleanup raises.
-            try:
-                if hasattr(process, "close"):
-                    process.close()
-            finally:
-                self._clear_managed_session()
+            # wait(), termination, or Job Object cleanup raises. If the child
+            # may still be alive, retain its handles and both admission locks
+            # so another process cannot launch a second heavy model or retire
+            # weights it may still have mapped.
+            child_may_be_running = not child_stopped_confirmed
+            if child_may_be_running:
+                self.process = process
+                self._windows_job = job
+            else:
+                try:
+                    if hasattr(process, "close"):
+                        process.close()
+                finally:
+                    self._clear_managed_session()
+            if child_may_be_running:
+                self._clear_managed_session(release_lifecycle_locks=False)
 
-    def _clear_managed_session(self) -> None:
+    def _clear_managed_session(self, *,
+                               release_lifecycle_locks: bool = True) -> None:
         """Release ephemeral credentials and reset lifecycle state on all paths."""
         temporary = self._secrets
         self._secrets = None
@@ -660,6 +1036,16 @@ class ManagedLlamaServer:
             self.model_identity = None
             self.runtime_release_tag = None
             self.context_tokens = None
+            self.estimated_kv_cache_bytes = None
             self.thread_count = None
             self.memory_ceiling_bytes = None
             self.startup_elapsed_seconds = None
+            if release_lifecycle_locks:
+                model_lock, self._model_lock = self._model_lock, None
+                runtime_lock, self._runtime_lock = self._runtime_lock, None
+                try:
+                    if model_lock is not None:
+                        model_lock.__exit__(None, None, None)
+                finally:
+                    if runtime_lock is not None:
+                        runtime_lock.__exit__(None, None, None)

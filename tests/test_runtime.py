@@ -4,9 +4,10 @@ import json
 import tempfile
 import os
 import unittest
+from unittest.mock import patch
 
 from forgeos.test_runtime import (
-    MARKER, create_test_snapshot, remove_test_snapshot,
+    MARKER, MAX_MARKER_BYTES, create_test_snapshot, remove_test_snapshot,
 )
 
 
@@ -24,6 +25,20 @@ class TestRuntimeTests(unittest.TestCase):
         internal = self.workspace / ".forgeos"
         internal.mkdir()
         (internal / "secret-journal").write_text("do-not-copy")
+
+    def test_marker_write_failure_allows_snapshot_retry(self):
+        def fail_write(value, stream, **kwargs):
+            stream.write("{")
+            raise OSError("marker write failed")
+
+        with patch("forgeos.test_runtime.json.dump", side_effect=fail_write):
+            with self.assertRaisesRegex(OSError, "marker write failed"):
+                create_test_snapshot(self.workspace)
+        self.assertEqual(list(self.root.iterdir()), [self.workspace])
+
+        runtime = create_test_snapshot(self.workspace)
+        self.assertTrue((runtime.path / "app.py").is_file())
+        remove_test_snapshot(self.workspace)
 
     def test_snapshot_is_outside_workspace_and_excludes_internal_journal(self):
         runtime = create_test_snapshot(self.workspace)
@@ -88,3 +103,31 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertTrue(runtime.path.exists())
         self.assertTrue(
             runtime.path.with_name(runtime.path.name + MARKER).exists())
+
+    def test_dangling_ownership_paths_are_preserved(self):
+        runtime = self.root / f".forgeos-exec-{self.workspace.name}"
+        marker = runtime.with_name(runtime.name + MARKER)
+        for path in (runtime, marker):
+            with self.subTest(path=path.name):
+                try:
+                    path.symlink_to(self.root / "missing",
+                                    target_is_directory=path == runtime)
+                except OSError:
+                    self.skipTest("Symlinks unavailable")
+                try:
+                    for operation in (create_test_snapshot, remove_test_snapshot):
+                        with self.assertRaises(ValueError):
+                            operation(self.workspace)
+                    self.assertTrue(path.is_symlink())
+                finally:
+                    path.unlink()
+
+    def test_oversized_ownership_marker_preserves_snapshot(self):
+        runtime = create_test_snapshot(self.workspace)
+        marker = runtime.path.with_name(runtime.path.name + MARKER)
+        original = marker.read_bytes()
+        marker.write_bytes(original.ljust(MAX_MARKER_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "marker is invalid"):
+            remove_test_snapshot(self.workspace)
+        self.assertTrue(runtime.path.is_dir())
+        self.assertEqual(marker.stat().st_size, MAX_MARKER_BYTES + 1)

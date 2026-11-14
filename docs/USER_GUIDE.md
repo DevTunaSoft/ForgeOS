@@ -22,6 +22,11 @@ a heavyweight renderer, web browser or network connection. The Windows
 EXE bundles this canonical file at build time. In editable source checkouts
 the guide is read from the `docs` directory.
 
+The desktop app also has a **Getting started & help** tab with a short first-task
+workflow, shortcuts to repository selection/readiness/model discovery, and
+plain-language tips for common setup and model errors. Use Tab/Shift+Tab to
+move between controls.
+
 This guide is updated **in the same pull request** as user-facing features.
 See the [documentation maintenance policy](DOCUMENTATION_POLICY.md).
 
@@ -160,8 +165,8 @@ Examples for advanced users:
 ```powershell
 forgeos models --backend llama.cpp
 forgeos model-catalog search "Qwen2.5-Coder"
-forgeos model-catalog files Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
-forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-K-M.gguf
+forgeos model-catalog inspect Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+forgeos model-download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF EXACT-Q4-K-M.gguf --revision EXACT_40_DIGIT_REVISION
 forgeos plan 1 --backend lm-studio --model your-exact-local-model-id
 ```
 
@@ -190,7 +195,7 @@ The one-window desktop prototype has **two tabs**:
 | **Development** | Project repository and **Browse** | Points ForgeOS to a local Git repository |
 | **Development** | **Tell ForgeOS what to build** | Plain-English development task description |
 | **Development** | Local model | Ollama or explicit local compatible model; `auto` requires available model-size metadata |
-| **Development** | Run verified local GGUF | Experimental one-GUI managed CPU llama.cpp start/stop with SHA-pinned user-provided executable and downloaded verified GGUF |
+| **Development** | Run verified local GGUF | Experimental one-GUI managed CPU llama.cpp start/stop with opt-in pinned official installer or SHA-pinned user-provided executable and downloaded verified GGUF |
 | **Development** | Test suite | Framework preset (availability depends on runtime) |
 | **Development** | Repair retries | Limits how many correction attempts are allowed |
 | **Development** | Workspace folder | Separate destination for temporary Git worktrees |
@@ -300,6 +305,15 @@ the usual complete JSON report remains the default. Streaming does not relax
 checkpoint checks, sandbox permissions, model selection or the need to inspect
 a workspace before recovery.
 
+**Automatic startup recovery:** Select an existing workspace folder and enable
+**Resume eligible tasks at startup and allow their tests to run on this computer**.
+ForgeOS saves this permission immediately for that folder. It uses the same
+checkpoint checks as manual recovery and may run eligible project tests on your
+computer. Enable it only for workspaces you trust. To authorize a different
+folder, turn the setting off, select the folder, and turn it back on. Check
+**Activity & diagnostics** for the outcome. Checkpoints that need a running
+authenticated managed model may still require manual recovery.
+
 **GUI recovery memory limits:** The **Resume safe blocked tasks** action now
 uses the same streaming recovery path automatically. The Activity tab shows
 the interrupted-task count, totals of resumed/skipped/failed tasks, and only
@@ -315,7 +329,7 @@ audit log. No additional service or background polling is started.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.
 
-**Use resume commands only for trusted workspaces.** Recovery checks are strict; the CLI should reject ineligible or changed checkpoints rather than overwrite unverified edits. Actual supported resume phases are `test_pending` and `repair_pending`; not every interruption can be resumed. Supplying `auto` for resumption is subject to the engine's saved model/contract checks. If an exact resume fails, inspect the recorded checkpoint and avoid deleting any data.
+**Use resume commands only for trusted workspaces.** Recovery checks are strict; the CLI should reject ineligible or changed checkpoints rather than overwrite unverified edits. Supported phases are `generation_pending`, `test_pending` and `repair_pending`; not every interruption can be resumed. Pre-edit model generation is capped at three calls total. That checkpoint is retried only when the task's Git HEAD and clean worktree still match and no transaction journal remains. Supplying `auto` for resumption is subject to the engine's saved model/contract checks. If an exact resume fails, inspect the recorded checkpoint and avoid deleting any data.
 
 ## 7. Commands at a glance
 
@@ -333,6 +347,7 @@ audit log. No additional service or background polling is started.
 | `py -m forgeos diagnostics stats` | Output evidence statistics |
 | `py -m forgeos learning stats` | Verified repair-learning statistics |
 | `py -m forgeos memory` | One-time own-process memory measurement |
+| `py -m forgeos search-project PATH "function or class name"` | Search bounded Python declaration names locally; returns file/line/signature metadata, not source bodies |
 
 The CLI has a broader list of test preset names than the secure Windows packaged runner actually supports. **Preset visibility does not imply it is safe or usable in every environment.** For the packaged Windows EXE, `python-pytest` now uses the **bundled pytest module** in the same restricted AppContainer as unittest; the package is optional for source-only installations. Its logging file is redirected away from Windows `NUL` into the disposable snapshot and watched against a 32 MiB per-file limit. Other third-party pytest plugins do not autoload in that sandbox.
 
@@ -411,15 +426,63 @@ The packaged Windows AppContainer runner enforces its separate native output-fil
 The **Run verified local GGUF** window now offers **Choose from ForgeOS
 downloads**, which lists existing GGUF files that still have a matching
 pinned download manifest. The list is metadata-only and does **not**
-rehash multi-gigabyte models; a full rehash is performed when the managed
-server is started.
+rehash multi-gigabyte models. Select a present entry and choose
+**Reverify SHA-256** for a background, cancellable full-file check. A model
+verified in the current view is still checked again before the server loads it.
+Inventory states use readable labels such as **Present; not verified**,
+**Size changed**, and **Unsafe link/file type**. Unsafe and missing entries stay
+visible for diagnosis but cannot be selected.
+When a safe inventory row's SHA-256 matches the exact model hash verified by
+the running managed runtime, its status reads **Loaded in active runtime**.
+The loaded label reports the running process identity; startup still rechecks
+the on-disk model before every launch.
+Use **Estimate memory** to compare its weight plus a metadata-based f16 KV
+cache estimate at the current default context against ForgeOS's safe model
+budget. Unsupported metadata, native buffers and changing system load limit
+the estimate; startup performs the actual admission check again.
 
 Advanced users can run `forgeos models-local` to list model weights and
 `forgeos model-verify-local "C:\\Users\\You\\.forgeos\\models\\...\\model.gguf"`
 to recheck one SHA-256 explicitly, without downloading or running anything.
+The inventory JSON includes source repository/revision, pinned SHA-256,
+supported format, expected and observed file sizes, and bounded `metadata_claims`
+captured during repository inspection. License, quantization and context values
+inside those claims are marked `hub-card-unverified`; they are author-supplied
+metadata, not licensing, quantization or compatibility verification. Imported
+files explicitly report unknown provenance. The offline inventory reports
+runtime compatibility as `not-recorded`; the GUI's loaded label is live
+session state, not a persisted compatibility result.
+Verification takes the same per-model lifecycle lock as managed startup,
+downloads and retirement, and reports an active operation instead of hashing
+the file concurrently with it. The GUI check reports byte progress and can be
+cancelled between bounded reads; cancellation leaves the model files untouched.
 Do not treat a model shown in the list as independently compatible,
 licensed, executable or memory-safe. Missing/changed weights may be
 displayed as unavailable and cannot be used by the managed process.
+
+For a damaged managed download, select its row and choose **Repair selected
+download**. After confirmation, ForgeOS reads the local pinned manifest and
+fetches that exact repository revision and SHA-256. It refuses imported files,
+unsafe paths, untrusted manifests and models referenced by blocked task
+checkpoints. If the current bytes are corrupt, ForgeOS preserves them in a
+unique quarantine file before installing the verified replacement; both the
+quarantine and any resumable partial count toward the model-store cap. The
+operation runs in the background and can be cancelled; retry the same repair
+to resume an interrupted transfer. A missing model can be restored from its
+manifest without a quarantine copy.
+
+The CLI equivalent requires an existing task database and explicit
+confirmation:
+
+```powershell
+python -m forgeos --db PATH_TO_EXISTING_TASK_DATABASE model-repair-local "ABSOLUTE_PATH.gguf" --confirm
+```
+
+Add `--directory MODEL_STORE` when the model store is not the default. A
+healthy file is simply reverified. The GUI uses the configured model-store
+cap. CLI repair accepts an optional per-operation cap through
+`--storage-quota-gib 64`. Repair never substitutes a newer upstream revision
+for the manifest's pinned identity.
 
 
 ### Managed model shutdown and process cleanup (experimental)
@@ -453,29 +516,50 @@ If ForgeOS reports a conflicting manifest, an inconsistent download journal or a
 Pausing is cooperative, not instantaneous while a network socket read is blocked (up to the configured timeout). Closing the entire ForgeOS process forcibly is not equivalent to using Pause. Verification itself may also be paused before final publication. This feature has simulated transfer tests; real multi-gigabyte Windows download, pause, resume and power-loss testing remain pending.
 
 
+### Check and limit model storage
+
+Use `python -m forgeos models-storage` to report ForgeOS-managed GGUF weight bytes. The bounded offline scan includes active downloads, retired weights, resumable `.part` files and quarantined corrupt files; it does not hash model contents. Imported models referenced outside the managed model directory are not included. In the desktop **Execution** settings, choose a model store cap (0 disables the extra cap; available values are 16–512 GiB). The CLI can set a per-download cap with `python -m forgeos model-download OWNER/REPOSITORY MODEL.gguf --storage-quota-gib 64`. Quota-checked downloads serialize within one store; if a limit is reached, free space or raise it and retry the same model and revision to resume. This accounting is separate from the operating system's free-disk safety reserve. Physical quota behavior on Windows still needs acceptance testing.
+
+
 ### Memory warning when starting a local GGUF model
 
-ForgeOS chooses a conservative default context based on available system RAM. If a manually entered context exceeds the current RAM profile, startup is refused rather than risking a large llama.cpp KV-cache allocation. The app also checks available RAM again just before launching the local server, because memory may have changed while verifying the model's large SHA-256. Close competing applications, select a smaller GGUF, or use a smaller context within the suggested memory profile, then retry. A passed check cannot promise there will never be a later out-of-memory failure.
+ForgeOS chooses a conservative default context based on available system RAM. When the GGUF exposes supported architecture metadata, startup estimates the default f16 KV cache and checks the weight plus cache estimate against available model headroom. Unsupported metadata falls back to a conservative weight-size check. The app samples available RAM again just before launching because memory may have changed during SHA-256 verification. If admission fails, close competing applications, select a smaller GGUF, or use a smaller context within the suggested profile. These checks cannot account exactly for all native buffers or promise there will never be a later out-of-memory failure.
+
+
+### Import an existing GGUF without copying
+
+In **Managed local GGUF**, select **Import existing GGUF without copying** and choose a local `.gguf` file. ForgeOS explicitly asks before hashing the selected file. It leaves the model bytes in place and records their path and SHA-256 in ForgeOS's local model inventory, so the source folder can be read-only. ForgeOS rehashes the model before each managed inference session. This records integrity only: source repository, revision and license remain **unknown** unless you independently verify them. Do not treat the SHA-256 as proof that the model is trustworthy or licensed for your use.
 
 
 ### Recoverable GGUF retirement and restoration
 
-When you no longer want a local downloaded GGUF in the active inventory, first stop any llama.cpp server using it. The experimental CLI-only retirement feature moves the selected file and its pinned manifest into local, same-volume recovery storage. This is a reversible removal from the active list, **not disk space reclamation**. No cloud calls, inference, or deletion occur.
+When you no longer want a local downloaded GGUF in the active inventory, first stop any llama.cpp server using it. The experimental retirement feature moves the selected file and its pinned manifest into local, same-volume recovery storage. This is a reversible removal from the active list, **not disk space reclamation**. No cloud calls, inference, or deletion occur.
 
 1. Inspect active models using: python -m forgeos models-local
 2. Optionally recheck the weights with: python -m forgeos model-verify-local "ABSOLUTE_PATH.gguf"
 3. Explicitly retire just one model with: python -m forgeos model-retire-local "ABSOLUTE_PATH.gguf" --confirm
 4. Save the 32-character retirement ID from the output. To inspect all IDs use: python -m forgeos models-retired
 5. Restore with: python -m forgeos model-restore-local "RETIREMENT_ID"
+6. To permanently remove one retired model, review its ID and run: python -m forgeos model-purge-retired "RETIREMENT_ID" --confirm
 
 Each command accepts --directory PATH to select nondefault model storage. A retirement refuses an unfinished .part or .part.json transfer. A complete SHA-256 check occurs under the existing exclusive download lock. The recovery journal is written *before* either original file is moved, and remains available if one rename fails. Restoration rechecks the identity and SHA-256, refuses overwriting existing files, and handles either half-completed move. If models-retired says interrupted_retirement_or_restore, use its ID for a retry. If it says needs_manual_inspection, do not manually delete files; preserve them for diagnosis.
+
+Permanent purge is irreversible. It requires `--confirm`, an existing readable ForgeOS task database, and a clear scan of blocked task checkpoints. It refuses any model already restored to its original path, active download, invalid/hard-linked journal, or invalid remaining weights/manifest. It rehashes remaining retired weights under the lifecycle lock before deleting them. If cleanup is interrupted, the journal is removed last so the same purge command can retry; it does not promise power-loss recovery on Windows.
 
 **Safety limitations:** A running external llama-server might still be reading this model, even when the CLI has no evidence of it; stop native inference first. The lock coordinates ForgeOS downloads and retire/restore, not arbitrary foreign processes. Windows junction/reparse-point races, real power-loss resilience, and active-model GUI interlocks still require real-machine acceptance.
 
 
 ### Recoverable model retirement from the desktop
 
-The Managed local GGUF window's **Choose from ForgeOS downloads** picker now includes **Retire selected GGUF (recoverable)**. Select an existing downloaded GGUF and confirm the dialog. ForgeOS refuses to start this operation while an AI task, local model operation or owned llama.cpp server is active. It computes the entire file SHA-256 outside the GUI event thread, uses the existing exclusive download lock and returns a recovery ID. The picker remains open during verification so the result is not silently lost. Keep the recovery ID for the command-line model-restore-local operation; models-retired can list IDs again. The weights remain on disk and do not free storage. If another independently launched llama-server is running, close it manually before using this feature: ForgeOS can guard only its own managed session.
+The Managed local GGUF window's **Choose from ForgeOS downloads** picker now includes **Retire selected GGUF (recoverable)**. Select an existing GGUF and confirm the dialog. ForgeOS displays SHA-256 byte progress and offers **Cancel verification** while it hashes. Cancellation is cooperative between bounded reads. ForgeOS refuses to start this operation while an AI task, local model operation or owned llama.cpp server is active, and checks blocked task checkpoints for the selected model's SHA-256. A matching checkpoint or one that cannot be safely inspected prevents retirement. Managed llama.cpp also holds the same OS-backed lock used by download and retirement for its full server lifetime, including when another ForgeOS process owns the server. The model hash is rechecked after acquiring that lock. If shutdown cannot confirm the server exited, ForgeOS keeps the lock held. The picker remains open during verification so the result is not silently lost. Keep the recovery ID for the command-line model-restore-local operation; models-retired can list IDs again. The weights remain on disk and do not free storage. If another independently launched llama-server is running, close it manually before using this feature: ForgeOS can guard only its own managed session.
+
+For an imported model, the same picker action removes only its path from ForgeOS's active local inventory. ForgeOS displays SHA-256 byte progress and supports cooperative cancellation before changing the inventory. It protects any blocked checkpoint that references its identity and checks the managed model lock. The original GGUF stays in place, so this does not reclaim disk space. Use **Import existing GGUF without copying** to register it again later.
+
+To reclaim space from an imported model, select it in the local model picker and choose **Delete imported permanently**. ForgeOS requires a separate confirmation, refuses while a blocked checkpoint references the model, and verifies the full SHA-256 before removing the GGUF and its registry entry. A failed or interrupted deletion leaves the registry identity available for a retry. This cannot be undone; stop any external inference process using that path first. The CLI equivalent is `python -m forgeos --db PATH_TO_EXISTING_TASK_DATABASE model-purge-imported "MODEL.gguf" --confirm` (add `--directory MODEL_STORE` when using a non-default model store).
+
+The **Restore a retired GGUF** dialog also displays SHA-256 progress and supports cancellation. The recovery journal remains available after cancellation, including when a restore had already moved files; retry the restore from the same ID. The command-line operation supports the same optional Python cancellation and progress callbacks.
+
+To reclaim space, select a retired model and choose **Delete permanently**. ForgeOS asks for confirmation, checks that no blocked checkpoint references the model, refuses while a task or managed model is active, and rehashes remaining weights under the shared lock before deleting them. This cannot be undone. If cleanup is interrupted, the recovery journal is kept for a retry. External inference servers are not detectable; stop them yourself before permanently deleting a model.
 
 
 ### Restore a recoverably retired local model in the desktop app
@@ -688,6 +772,10 @@ Create a trusted folder for backups first, then use these PowerShell commands:
 py -m forgeos db-check
 py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup.sqlite3"
 ```
+
+Choose a new destination file for both backup and restore. If the file already
+exists or another process creates it during the copy, ForgeOS preserves it
+and exits with status 1.
 
 Always supply a **new filename**. An existing backup is never overwritten.
 ForgeOS includes committed SQLite WAL changes and checks the completed

@@ -205,6 +205,16 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(len({row["id"] for row in first + middle + last}), 360)
         self.assertEqual(self.store.counts()["total"], 510)
 
+    def test_blocked_checkpoint_scan_stops_at_minimum_sqlite_id(self):
+        task_id = self.store.add(str(self.repo), "Minimum SQLite row ID")
+        minimum = -(1 << 63)
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE tasks SET id=?, status='blocked' WHERE id=?",
+                (minimum, task_id))
+        self.assertEqual(
+            [row["id"] for row in self.store.iter_blocked_checkpoints()], [minimum])
+
     def test_blocked_checkpoint_scan_bounded_by_bytes_and_uses_multiple_pages(self):
         import json
         blocked = []

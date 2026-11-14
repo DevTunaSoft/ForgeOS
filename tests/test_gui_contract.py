@@ -3,11 +3,76 @@ from pathlib import Path
 from unittest.mock import Mock
 from forgeos.gui import (
     PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
-    _retirement_allowed,
+    _model_inventory_status_label, _retirement_allowed,
+    _runtime_compatibility_label,
 )
 
 
 class DashboardContractTests(unittest.TestCase):
+    def test_model_inventory_statuses_are_plain_language_and_unknown_fails_safe(self):
+        self.assertEqual(
+            _model_inventory_status_label("unsafe_path"),
+            "Unsafe link/file type")
+        self.assertEqual(
+            _model_inventory_status_label("present_not_reverified"),
+            "Present; not verified")
+        self.assertEqual(
+            _model_inventory_status_label(
+                "present_not_reverified", loaded=True),
+            "Loaded in active runtime")
+        self.assertEqual(
+            _model_inventory_status_label("unsafe_path", loaded=True),
+            "Unsafe link/file type")
+        self.assertEqual(
+            _model_inventory_status_label("unexpected_new_status"),
+            "Needs inspection")
+
+    def test_runtime_compatibility_label_discloses_hash_pair_self_test(self):
+        self.assertEqual(_runtime_compatibility_label("not-recorded"),
+                         "Not self-tested")
+        self.assertEqual(_runtime_compatibility_label("unavailable"),
+                         "History unavailable")
+        self.assertEqual(_runtime_compatibility_label({
+            "status": "self_test_passed",
+            "pairs": [{"runtime_sha256": "a" * 64}],
+        }, "1" * 64), "Passed: 11111111/aaaaaaaa")
+        self.assertEqual(_runtime_compatibility_label({
+            "status": "self_test_passed",
+            "pairs": [{"runtime_sha256": "a" * 64},
+                      {"runtime_sha256": "b" * 64},
+                      {"runtime_sha256": "c" * 64}],
+        }, "1" * 64), "Passed: 11111111/aaaaaaaa, 11111111/bbbbbbbb, +1")
+        self.assertEqual(_runtime_compatibility_label({
+            "status": "self_test_passed",
+            "pairs": [{"runtime_sha256": "unsafe"}],
+        }, "1" * 64), "Needs inspection")
+
+    def test_getting_started_view_has_workflow_recovery_and_keyboard_guidance(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Getting started & help"', source)
+        self.assertIn('"Getting started & help"]', source)
+        self.assertIn('text="Choose Git repository"', source)
+        self.assertIn('text="Check setup"', source)
+        self.assertIn('text="Find a local model"', source)
+        self.assertIn('text="When something fails"', source)
+        self.assertIn('Keyboard: use ', source)
+        self.assertIn('to move between controls;', source)
+        self.assertIn('does not silently switch to cloud inference', source)
+
+    def test_hugging_face_inspection_details_are_scrollable(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('info_scroll = ttk.Scrollbar(', source)
+        self.assertIn('info.configure(yscrollcommand=info_scroll.set)', source)
+        self.assertIn('Hub license (unverified)', source)
+        self.assertIn('catalog_file_status(', source)
+        self.assertIn('local: {local}', source)
+        self.assertIn('text="More results"', source)
+        self.assertIn('search_gguf_page(', source)
+        self.assertIn('max_search_pages = 10', source)
+        self.assertIn('catalog_error_message(exc)', source)
+
     def test_desktop_settings_are_restored_and_saved(self):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
@@ -15,6 +80,108 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("save_settings(settings_path", source)
         self.assertIn("if not acceptance:", source)
         self.assertNotIn('"allow_host_tests": allow_host_tests.get()', source)
+
+    def test_model_storage_cap_is_configurable_and_forwarded_to_download(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Model store cap (GiB; 0 = no extra cap)"', source)
+        self.assertIn('"storage_quota_bytes": None', source)
+        self.assertIn('storage_quota_bytes=state["storage_quota_bytes"]', source)
+        self.assertIn('"model_storage_quota_gib": model_storage_quota_gib.get()', source)
+
+    def test_model_picker_exposes_damaged_inventory_without_allowing_use_or_retire(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('entry for entry in list_downloads()', source)
+        self.assertIn('Missing, changed-size or unsafe entries', source)
+        self.assertIn('entry["status"] not in selectable_statuses', source)
+        self.assertIn('listing.bind("<<TreeviewSelect>>", update_selection_controls)', source)
+        self.assertIn('retire_btn.configure(state="disabled")', source)
+
+    def test_picker_marks_only_matching_safe_sha_as_loaded(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('loaded_sha256 = (', source)
+        self.assertIn('entry.get("sha256") == loaded_sha256', source)
+        self.assertIn('loaded=loaded)', source)
+
+    def test_local_model_sha_reverification_is_background_progress_and_cancelable(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Reverify SHA-256"',
+                'text="Cancel verification"',
+                'from .model_inventory import verify_download',
+                'progress_callback=progress',
+                'cancel_event=cancel_event',
+                'chooser.after(150, poll_verification)',
+                'threading.Thread(target=worker, daemon=True).start()',
+                'status"] = "verified"',
+                'size_text = (f"{size/(1024**3):.2f} GiB"'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
+    def test_damaged_managed_downloads_offer_confirmed_pinned_repair(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Repair selected download…"',
+                '"missing", "size_mismatch", "present_not_reverified"',
+                'entry.get("kind") != "imported"',
+                'repair_downloaded_gguf(',
+                'storage_quota_bytes=quota_bytes',
+                'checkpoint_references_managed_model(',
+                'text="Cancel verify/repair"',
+                'The previous bytes remain in storage quarantine'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
+    def test_hugging_face_card_claims_are_persisted_as_unverified_metadata(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('"inspected_claims": None', source)
+        self.assertIn('state["inspected_claims"] = dict(repo_info["claims"])', source)
+        self.assertIn('catalog_claims=term[3]', source)
+        self.assertIn('catalog_claims_revision=term[2]', source)
+
+    def test_local_model_memory_estimate_reuses_admission_policy(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Estimate memory"',
+                '_managed_memory_preflight_report(',
+                'system_memory()',
+                'min(4096, local_memory_settings()["num_ctx"])',
+                'threading.Thread(target=worker, daemon=True).start()',
+                'This omits other native buffers; startup checks again.',
+                'GGUF cache metadata is unsupported.'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
+    def test_startup_recovery_is_scoped_to_an_explicitly_authorized_workspace(self):
+        source = (Path(__file__).resolve().parents[1] /
+                 "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Resume eligible tasks at startup and allow their tests to run on this computer"', source)
+        self.assertIn('"startup_resume_workspace": scope', source)
+        self.assertIn('Path(path).expanduser().resolve(strict=True)', source)
+        self.assertIn('str(chosen_workspace) != path', source)
+        self.assertIn('root.after_idle(lambda: resume_blocked_tasks(startup=True))', source)
+        self.assertIn('if not startup and not allow_host_tests.get():', source)
+        self.assertIn('if not acceptance and startup_resume_workspace:', source)
+
+    def test_local_gguf_import_is_explicit_and_does_not_copy_or_claim_provenance(self):
+        source = (Path(__file__).resolve().parents[1] /
+                 "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('text="Import existing GGUF without copying…"', source)
+        self.assertIn("import_local_gguf(\n                        selected, cancel_event=cancel_event,", source)
+        self.assertIn('text="Cancel import"', source)
+        self.assertIn('"import-progress"', source)
+        self.assertIn('"import-cancelled"', source)
+        self.assertIn('"provenance": "unknown"',
+                      (Path(__file__).resolve().parents[1] /
+                       "src" / "forgeos" / "model_import.py").read_text(encoding="utf-8"))
+        self.assertIn("Source/revision/license are unknown.", source)
+        self.assertIn('managed_events.put((\n                        "import"', source)
 
     def test_primary_actions_precede_expanding_queue(self):
         source = (Path(__file__).resolve().parents[1] / "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
@@ -84,7 +251,11 @@ class DashboardContractTests(unittest.TestCase):
         text = (Path(__file__).resolve().parents[1] /
                 "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertIn('text="Test local model"', text)
-        self.assertIn("controller.inference_self_test()", text)
+        self.assertIn("record_runtime_self_test(controller)", text)
+        compatibility = (Path(__file__).resolve().parents[1] /
+                         "src" / "forgeos" /
+                         "model_compatibility.py").read_text(encoding="utf-8")
+        self.assertIn("controller.inference_self_test()", compatibility)
         self.assertIn('("smoke", controller, outcome, None)', text)
         self.assertIn('elif action == "smoke":', text)
 
@@ -243,6 +414,18 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('if retirement["busy"]:', source)
         self.assertIn("this DOES NOT free storage space", source)
         self.assertIn('gguf_path.set("")', source)
+        self.assertIn('"imported_not_reverified"', source)
+        self.assertIn('entry.get("kind") == "imported"', source)
+        self.assertIn("unregister_imported_gguf(", source)
+        self.assertIn('text="Delete imported permanently"', source)
+        self.assertIn("purge_imported_gguf(", source)
+        self.assertIn('post_retirement_event(("purged", index, outcome, None))', source)
+        self.assertIn('cancel_event=cancel_event', source)
+        self.assertIn('text="Cancel verification"', source)
+        self.assertIn('"Verifying model SHA-256:', source)
+        self.assertIn("checkpoint_references_managed_model(", source)
+        self.assertIn('entry["sha256"]', source)
+        self.assertIn("worker_store = Store(db_path)", source)
 
     def test_restore_gui_reuses_existing_retirement_journal_and_worker(self):
         from pathlib import Path
@@ -250,14 +433,21 @@ class DashboardContractTests(unittest.TestCase):
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         for required in (
                 'text="Restore a retired GGUF (recoverable)"',
+                'text="Delete permanently"',
                 'from .model_retirement import list_retired',
                 'from .model_retirement import restore_download',
+                'from .model_retirement import purge_retired_download',
                 'restore_events = Queue(maxsize=1)',
                 'chooser.after(200, poll_restore)',
                 'chooser.protocol("WM_DELETE_WINDOW", close_restoration)',
                 'if restore_state["busy"]:',
                 'managed["busy"] = True',
-                'managed["busy"] = False'):
+                'managed["busy"] = False',
+                'cancel_event=cancel_event',
+                'def cancel_restoration():',
+                'def post_restore_event(event):',
+                'checkpoint_references_managed_model(store, digest)',
+                'f"Verifying model SHA-256: {percent}% "'):
             with self.subTest(fragment=required):
                 self.assertIn(required, source)
 
@@ -318,6 +508,7 @@ class DashboardContractTests(unittest.TestCase):
                 'api_key=active_manager.api_key',
                 'instance.managed_model_sha256 = active_manager.model_sha256',
                 'instance.managed_runtime_sha256 = active_manager.runtime_sha256',
+                'active_manager.verify_listener_ownership',
                 'allow_host_tests=True',
                 'managed["busy"] = True',
                 'managed["busy"] = False'):

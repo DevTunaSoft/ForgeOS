@@ -1,0 +1,558 @@
+{
+  "image_files_checked": 57,
+  "alpha_safe_zone_failures": [],
+  "ico_sizes": [
+    [
+      16,
+      16
+    ],
+    [
+      24,
+      24
+    ],
+    [
+      32,
+      32
+    ],
+    [
+      48,
+      48
+    ],
+    [
+      64,
+      64
+    ],
+    [
+      128,
+      128
+    ],
+    [
+      256,
+      256
+    ]
+  ],
+  "files": [
+    {
+      "path": "01_Original_Concepts/Autonomous_Core_Logo.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "01_Original_Concepts/Fire_Concepts_Overview.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "01_Original_Concepts/Fire_Full_Splash_Screen.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "01_Original_Concepts/Original_Six_Logo_Ideas.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "01_Original_Concepts/Six_Development_Concepts.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "01_Original_Concepts/Six_Icon_Concepts.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "01_Original_Concepts/Three_AI_Logo_Directions.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/AI_Foundry.png",
+      "dimensions": [
+        307,
+        420
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Autonomous_Core.png",
+      "dimensions": [
+        476,
+        457
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Builder.png",
+      "dimensions": [
+        476,
+        457
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Circuit_Anvil.png",
+      "dimensions": [
+        476,
+        457
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Classic_Forge.png",
+      "dimensions": [
+        307,
+        420
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Development_Engine.png",
+      "dimensions": [
+        308,
+        420
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Gear_F.png",
+      "dimensions": [
+        476,
+        457
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Infinite_Flame.png",
+      "dimensions": [
+        476,
+        457
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Infinite_Forge.png",
+      "dimensions": [
+        307,
+        420
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Metallic_F.png",
+      "dimensions": [
+        476,
+        457
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "02_Reference_Crops_Not_Print_Masters/Neural_Forge.png",
+      "dimensions": [
+        307,
+        420
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Cinematic_Wordmark_Original.png",
+      "dimensions": [
+        1672,
+        941
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Fire_Splash_Original.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Flame_Core_Transparent_2048.png",
+      "dimensions": [
+        2048,
+        2048
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Flaming_Emblem_Original.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Icon_1024.png",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Icon_128.png",
+      "dimensions": [
+        128,
+        128
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Icon_256.png",
+      "dimensions": [
+        256,
+        256
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Icon_512.png",
+      "dimensions": [
+        512,
+        512
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Icon_64.png",
+      "dimensions": [
+        64,
+        64
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "03_Production_Assets/ForgeOS_Windows_Icon.ico",
+      "dimensions": [
+        256,
+        256
+      ],
+      "format": "ICO"
+    },
+    {
+      "path": "04_Application_Ready/About_Brand_Panel.png",
+      "dimensions": [
+        1200,
+        700
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_DarkTile_128.png",
+      "dimensions": [
+        128,
+        128
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_DarkTile_16.png",
+      "dimensions": [
+        16,
+        16
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_DarkTile_24.png",
+      "dimensions": [
+        24,
+        24
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_DarkTile_256.png",
+      "dimensions": [
+        256,
+        256
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_DarkTile_32.png",
+      "dimensions": [
+        32,
+        32
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_DarkTile_48.png",
+      "dimensions": [
+        48,
+        48
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_DarkTile_64.png",
+      "dimensions": [
+        64,
+        64
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Horizontal_Wordmark_dark.png",
+      "dimensions": [
+        1800,
+        480
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Horizontal_Wordmark_light.png",
+      "dimensions": [
+        1800,
+        480
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_1024.png",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        112,
+        112,
+        911,
+        911
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_128.png",
+      "dimensions": [
+        128,
+        128
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        14,
+        14,
+        114,
+        114
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_16.png",
+      "dimensions": [
+        16,
+        16
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        2,
+        3,
+        14,
+        14
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_2048.png",
+      "dimensions": [
+        2048,
+        2048
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        225,
+        225,
+        1822,
+        1822
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_24.png",
+      "dimensions": [
+        24,
+        24
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        2,
+        4,
+        21,
+        21
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_256.png",
+      "dimensions": [
+        256,
+        256
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        28,
+        28,
+        228,
+        228
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_32.png",
+      "dimensions": [
+        32,
+        32
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        3,
+        5,
+        28,
+        28
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_48.png",
+      "dimensions": [
+        48,
+        48
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        5,
+        5,
+        42,
+        42
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_512.png",
+      "dimensions": [
+        512,
+        512
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        56,
+        56,
+        455,
+        455
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Icon_64.png",
+      "dimensions": [
+        64,
+        64
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        7,
+        7,
+        57,
+        57
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Transparent_Master.png",
+      "dimensions": [
+        2048,
+        2048
+      ],
+      "format": "PNG",
+      "alpha_bounds": [
+        225,
+        225,
+        1822,
+        1822
+      ]
+    },
+    {
+      "path": "04_Application_Ready/ForgeOS_Windows_Icon.ico",
+      "dimensions": [
+        256,
+        256
+      ],
+      "format": "ICO"
+    },
+    {
+      "path": "04_Application_Ready/GitHub_Banner.png",
+      "dimensions": [
+        1600,
+        500
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/Social_Preview.png",
+      "dimensions": [
+        1280,
+        640
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "04_Application_Ready/Windows_Splash.png",
+      "dimensions": [
+        1600,
+        900
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "05_High_Quality_Proofs/ForgeOS_Icon_Size_Proof.png",
+      "dimensions": [
+        1800,
+        680
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "05_High_Quality_Proofs/ForgeOS_Proof_Sheet_01.png",
+      "dimensions": [
+        2400,
+        2720
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "05_High_Quality_Proofs/ForgeOS_Proof_Sheet_02.png",
+      "dimensions": [
+        2400,
+        1870
+      ],
+      "format": "PNG"
+    },
+    {
+      "path": "07_QA_Verification/ALL_PNG_ASSETS_VISUAL_PROOF.jpg",
+      "dimensions": [
+        1240,
+        3430
+      ],
+      "format": "JPEG"
+    }
+  ]
+}

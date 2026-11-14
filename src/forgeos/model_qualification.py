@@ -4,8 +4,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
+
+from .model_roles import MODEL_ROLES
 
 FINAL_JSON_RATE = 0.95
 FINAL_OBJECTIVE_RATE = 0.80
@@ -40,15 +43,16 @@ def qualify_role_evidence(record: dict) -> dict:
     """Validate final role evidence. Screening records can never qualify."""
     if not isinstance(record, dict):
         raise TypeError("Qualification record required")
-    if record.get("schema") != QUALIFICATION_SCHEMA:
+    if (type(record.get("schema")) is not int
+            or record.get("schema") != QUALIFICATION_SCHEMA):
         raise ValueError("Unsupported qualification schema")
     if record.get("kind") != "role-qualification":
         raise ValueError("Final role qualification evidence required")
     model_sha = _sha(record.get("model_sha256"), "model SHA-256")
     runtime_sha = _sha(record.get("runtime_sha256"), "runtime SHA-256")
     role = record.get("role")
-    if not isinstance(role, str) or not role:
-        raise ValueError("Qualification role required")
+    if not isinstance(role, str) or role not in MODEL_ROLES:
+        raise ValueError("Invalid qualification role")
     backend = record.get("backend")
     model_name = record.get("model_name")
     if backend not in SUPPORTED_QUALIFIED_BACKENDS:
@@ -76,7 +80,14 @@ def qualify_role_evidence(record: dict) -> dict:
         raise ValueError("Invalid model size")
     if type(peak) is not int or peak <= 0:
         raise ValueError("Invalid peak memory")
-    if type(latency) not in (int, float) or isinstance(latency, bool) or latency < 0:
+    if (type(latency) not in (int, float) or isinstance(latency, bool)
+            or latency < 0):
+        raise ValueError("Invalid latency")
+    try:
+        latency = float(latency)
+    except OverflowError as exc:
+        raise ValueError("Invalid latency") from exc
+    if not math.isfinite(latency):
         raise ValueError("Invalid latency")
     json_rate = json_ok / total
     objective_rate = objective_ok / total
@@ -105,7 +116,7 @@ def qualify_role_evidence(record: dict) -> dict:
         "safety_violations": safety_violations,
         "model_bytes": model_bytes,
         "peak_memory_bytes": peak,
-        "median_latency_seconds": float(latency),
+        "median_latency_seconds": latency,
         "qualified": passed,
     }
     normalized["evidence_sha256"] = hashlib.sha256(
@@ -153,8 +164,8 @@ def route_qualified_role(role: str, records: list[dict], *,
                          runtime_sha256: str | None = None,
                          evidence_sha256: str | None = None) -> dict:
     """Choose the smallest measured-qualified model that fits memory."""
-    if not isinstance(role, str) or not role:
-        raise ValueError("Role required")
+    if not isinstance(role, str) or role not in MODEL_ROLES:
+        raise ValueError("Invalid qualification role")
     if type(memory_budget_bytes) is not int or memory_budget_bytes <= 0:
         raise ValueError("Positive memory budget required")
     if not isinstance(records, list):

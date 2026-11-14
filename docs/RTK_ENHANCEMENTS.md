@@ -7,10 +7,10 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 
 - [x] Intelligent output compression (prototype integrated)
 - [x] Smart test summaries (structured counts plus failure-aware text)
-- [ ] Optimized Git command output
+- [x] Optimized Git command output (experimental streamed 1 MiB command cap and marked 256 KiB diff previews)
 - [x] Relevant source code reading (bounded AST metadata prototype)
-- [ ] Optimized project search
-- [ ] Adaptive context budgets
+- [x] Optimized project search (experimental bounded Python declaration-name search; returns signatures only)
+- [x] Adaptive context budgets (experimental character-budget heuristic in the existing task engine; exact model tokenization/window still unverified)
 - [ ] Context-aware compression
 - [x] Repeated log deduplication (noncritical run collapse)
 - [x] Configurable rules (optional pinned JSON literal rules)
@@ -47,7 +47,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Safe command interpretation
 - [ ] Transactional configuration updates
 - [x] Fail-open-to-raw on archive errors (prototype integrated)
-- [ ] Checkpoint-linked evidence
+- [x] Checkpoint-linked test evidence (experimental SHA-256 reference in repair checkpoints; archived bytes are reverified on resume)
 - [x] Trusted optimization rule verification (content hash pinning)
 
 ## ForgeOS GUI & visibility (7)
@@ -71,7 +71,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Real Windows GUI and packaged acceptance
 - [ ] Structured parser golden-fixture tests
 - [ ] Cross-platform optimization tests
-- [ ] End-to-end recovery exercise
+- [x] End-to-end recovery exercise (experimental hard-process-exit rehearsal for a repair-pending task; OS reboot and physical Windows acceptance remain open)
 
 ## Implemented baseline: diagnostic output archive
 

@@ -192,8 +192,14 @@ kernel32.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p,
 kernel32.WriteFile.restype = wintypes.BOOL
 payload = ctypes.create_string_buffer(b'LEAKED')
 written = wintypes.DWORD()
-ok = kernel32.WriteFile(wintypes.HANDLE({handle}), payload, 6,
-                         ctypes.byref(written), None)
+try:
+    ok = kernel32.WriteFile(wintypes.HANDLE({handle}), payload, 6,
+                             ctypes.byref(written), None)
+except OSError:
+    # Python 3.15 may surface ERROR_INVALID_HANDLE as OSError instead of
+    # returning a false BOOL. That is the expected result when the parent
+    # handle was correctly excluded from the child handle list.
+    ok = False
 print('write=' + str(int(bool(ok))))
 """
             try:

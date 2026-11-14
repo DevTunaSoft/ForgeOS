@@ -1,13 +1,43 @@
 """Regression coverage for lossless PDF code-line wrapping."""
 import ast
 import importlib.util
+import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 SOURCE = Path(__file__).resolve().parents[1] / "scripts" / "export_master_handoff.py"
 
 
 class HandoffPdfWrappingTests(unittest.TestCase):
+    def test_failed_validation_preserves_output_directory(self):
+        module = ast.parse(SOURCE.read_text(encoding="utf-8"))
+        build = next(node for node in module.body
+                     if isinstance(node, ast.FunctionDef) and node.name == "build")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "handoff.pdf"
+
+            def fail_validation(_, staged, minimum):
+                staged.write_bytes(b"invalid PDF")
+                raise ValueError("validation failed")
+
+            render = Mock(side_effect=fail_validation)
+            namespace = {"Path": Path, "os": os, "tempfile": tempfile,
+                         "_build_pdf": render}
+            exec(compile(ast.Module(body=[build], type_ignores=[]),
+                         str(SOURCE), "exec"), namespace)
+            with self.assertRaisesRegex(ValueError, "validation failed"):
+                namespace["build"](root, output, 35)
+            self.assertEqual(list(root.iterdir()), [])
+
+            output.write_bytes(b"previous PDF")
+            with self.assertRaises(FileExistsError):
+                namespace["build"](root, output, 35)
+            self.assertEqual(output.read_bytes(), b"previous PDF")
+            render.assert_called_once()
+
     def test_long_line_round_trip(self):
         # Parse only the helper, so this test does not require PDF dependencies.
         module = ast.parse(SOURCE.read_text(encoding="utf-8"))

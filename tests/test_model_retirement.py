@@ -3,10 +3,13 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+from threading import Event
 import unittest
 from unittest.mock import patch
 from forgeos.model_inventory import list_downloads, verify_download
-from forgeos.model_retirement import retire_download, restore_download, list_retired
+from forgeos.model_retirement import (
+    list_retired, purge_retired_download, restore_download, retire_download,
+)
 
 
 class ModelRetirementTests(unittest.TestCase):
@@ -48,6 +51,14 @@ class ModelRetirementTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "bounded scan limit"):
                 list_retired(self.root)
 
+    def test_retired_inventory_flags_reparse_point_entries(self):
+        entry = self.root / ".forgeos-retired" / ("a" * 32)
+        entry.mkdir(parents=True)
+        with patch("forgeos.model_retirement._is_reparse_point",
+                   side_effect=lambda path: path == entry):
+            self.assertEqual(list_retired(self.root), [{
+                "id": "a" * 32, "status": "needs_manual_inspection"}])
+
     def test_full_recovery_and_inventory_hides_retired_weight_without_network(self):
         with patch("forgeos.huggingface_catalog.search_gguf") as remote, \
              patch("forgeos.managed_llama.subprocess.Popen") as spawned:
@@ -62,6 +73,139 @@ class ModelRetirementTests(unittest.TestCase):
             self.assertEqual(list_retired(self.root), [])
             remote.assert_not_called()
             spawned.assert_not_called()
+
+    def test_retirement_reports_hash_progress_and_cancellation_keeps_files(self):
+        from forgeos.model_inventory import VerificationCancelled
+        progress = []
+        event = Event()
+
+        def cancel_after_progress(stage, completed, total):
+            progress.append((stage, completed, total))
+            event.set()
+
+        with self.assertRaises(VerificationCancelled):
+            retire_download(self.model, directory=self.root,
+                            cancel_event=event,
+                            progress_callback=cancel_after_progress)
+        self.assertEqual(progress, [("verify", len(self.data), len(self.data))])
+        self.assertEqual(self.model.read_bytes(), self.data)
+        self.assertTrue(self.manifest.exists())
+        self.assertEqual(list_retired(self.root), [])
+
+    def test_restore_cancellation_after_moves_keeps_retryable_journal(self):
+        from forgeos.model_inventory import VerificationCancelled
+        from forgeos import model_retirement as retirement
+        ticket = self.retire()
+        event = Event()
+        move = retirement._move
+        moves = 0
+
+        def cancel_after_moves(source, target):
+            nonlocal moves
+            move(source, target)
+            moves += 1
+            if moves == 2:
+                event.set()
+
+        with patch("forgeos.model_retirement._move",
+                   side_effect=cancel_after_moves):
+            with self.assertRaises(VerificationCancelled):
+                restore_download(ticket["id"], directory=self.root,
+                                 cancel_event=event)
+        self.assertTrue(self.model.exists())
+        self.assertTrue(self.manifest.exists())
+        self.assertEqual(list_retired(self.root)[0]["status"],
+                         "interrupted_retirement_or_restore")
+        self.assertEqual(self.restore(ticket["id"])["status"], "restored")
+
+    def test_retirement_rejects_invalid_progress_options(self):
+        with self.assertRaisesRegex(TypeError, "threading.Event"):
+            retire_download(self.model, directory=self.root, cancel_event=object())
+        with self.assertRaisesRegex(TypeError, "callable"):
+            restore_download("a" * 32, directory=self.root,
+                             progress_callback=object())
+
+    def test_purge_requires_explicit_confirmation_and_checkpoint_clearance(self):
+        ticket = self.retire()
+        for kwargs in (
+                {"confirm": False, "checkpoint_check": lambda _sha: False},
+                {"confirm": True, "checkpoint_check": lambda _sha: True},
+                {"confirm": True, "checkpoint_check": lambda _sha: None}):
+            with self.subTest(kwargs=kwargs), self.assertRaises((ValueError, RuntimeError)):
+                purge_retired_download(
+                    ticket["id"], directory=self.root, **kwargs)
+        saved = self.root / ".forgeos-retired" / ticket["id"]
+        self.assertTrue((saved / "weights.gguf").exists())
+        self.assertTrue((saved / "manifest.json").exists())
+        self.assertTrue((saved / "journal.json").exists())
+
+    def test_confirmed_purge_verifies_and_removes_only_retired_model(self):
+        from forgeos.model_inventory import list_downloads
+        sibling = self.model.with_name("sibling.gguf")
+        sibling.write_bytes(b"keep this")
+        ticket = self.retire()
+        result = purge_retired_download(
+            ticket["id"], directory=self.root, confirm=True,
+            checkpoint_check=lambda digest: digest == "not-the-model")
+        self.assertEqual(result["status"], "purged")
+        self.assertEqual(result["sha256"], self.info["sha256"])
+        self.assertEqual(sibling.read_bytes(), b"keep this")
+        self.assertEqual(list_retired(self.root), [])
+        self.assertEqual(list_downloads(self.root), [])
+
+    def test_purge_refuses_restored_destination_and_preserves_journal(self):
+        ticket = self.retire()
+        self.model.write_bytes(b"independent file")
+        with self.assertRaisesRegex(RuntimeError, "already restored"):
+            purge_retired_download(
+                ticket["id"], directory=self.root, confirm=True,
+                checkpoint_check=lambda _sha: False)
+        self.assertTrue((self.root / ".forgeos-retired" /
+                         ticket["id"] / "journal.json").exists())
+        self.assertEqual(self.model.read_bytes(), b"independent file")
+
+    def test_purge_refuses_active_model_lock_and_corrupt_retired_bytes(self):
+        from forgeos import model_retirement as retirement
+        ticket = self.retire()
+        lock = self.model.with_name(self.model.name + ".lock")
+        with retirement._exclusive_download_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                purge_retired_download(
+                    ticket["id"], directory=self.root, confirm=True,
+                    checkpoint_check=lambda _sha: False)
+        saved = (self.root / ".forgeos-retired" /
+                 ticket["id"] / "weights.gguf")
+        saved.write_bytes(b"tampered but still GGUF".ljust(len(self.data), b"x"))
+        with self.assertRaisesRegex(RuntimeError, "SHA-256"):
+            purge_retired_download(
+                ticket["id"], directory=self.root, confirm=True,
+                checkpoint_check=lambda _sha: False)
+        self.assertTrue(saved.exists())
+        self.assertTrue((saved.parent / "journal.json").exists())
+
+    def test_interrupted_purge_can_retry_with_journal_last(self):
+        ticket = self.retire()
+        manifest = (self.root / ".forgeos-retired" /
+                    ticket["id"] / "manifest.json")
+        unlink = Path.unlink
+
+        def fail_manifest_once(path, *args, **kwargs):
+            if path == manifest:
+                raise OSError("injected manifest deletion failure")
+            return unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", fail_manifest_once):
+            with self.assertRaisesRegex(OSError, "injected"):
+                purge_retired_download(
+                    ticket["id"], directory=self.root, confirm=True,
+                    checkpoint_check=lambda _sha: False)
+        entry = self.root / ".forgeos-retired" / ticket["id"]
+        self.assertFalse((entry / "weights.gguf").exists())
+        self.assertTrue(manifest.exists())
+        self.assertTrue((entry / "journal.json").exists())
+        self.assertEqual(purge_retired_download(
+            ticket["id"], directory=self.root, confirm=True,
+            checkpoint_check=lambda _sha: False)["status"], "purged")
 
     def test_sibling_unchanged_and_modified_hash_rejected(self):
         sibling = self.model.with_name("other.gguf")
@@ -158,8 +302,8 @@ class ModelRetirementTests(unittest.TestCase):
         from forgeos import model_retirement as retirement
         ticket = self.retire()
         real_validate = retirement._validate_bytes
-        def inject_conflict(path, root, info):
-            real_validate(path, root, info)
+        def inject_conflict(path, root, info, **kwargs):
+            real_validate(path, root, info, **kwargs)
             self.model.write_bytes(b"important independent data")
         with patch("forgeos.model_retirement._validate_bytes",
                    side_effect=inject_conflict):
@@ -318,6 +462,24 @@ class ModelRetirementTests(unittest.TestCase):
             self.assertEqual(main(["model-restore-local", ticket["id"],
                                    "--directory", str(self.root)]), 0)
         self.assertEqual(json.loads(output.getvalue())["status"], "restored")
+
+    def test_cli_purge_requires_confirmation_and_existing_checkpoint_database(self):
+        from forgeos.cli import main
+        from forgeos.core import Store
+        from contextlib import redirect_stdout
+        from io import StringIO
+        ticket = self.retire()
+        database = self.root / "tasks.sqlite3"
+        Store(database).close()
+        with self.assertRaisesRegex(ValueError, "--confirm"):
+            main(["--db", str(database), "model-purge-retired", ticket["id"],
+                  "--directory", str(self.root)])
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main([
+                "--db", str(database), "model-purge-retired", ticket["id"],
+                "--directory", str(self.root), "--confirm"]), 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "purged")
 
     def test_symlinked_model_target_rejected(self):
         ticket = self.retire()

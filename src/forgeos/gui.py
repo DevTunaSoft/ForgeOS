@@ -25,6 +25,52 @@ STATUS_LABELS = {
     "editing": "Editing", "testing": "Testing", "passed": "Passed",
     "failed": "Failed", "blocked": "Blocked",
 }
+MODEL_INVENTORY_STATUS_LABELS = {
+    "present_not_reverified": "Present; not verified",
+    "imported_not_reverified": "Imported; not verified",
+    "verified": "Verified",
+    "missing": "Missing",
+    "size_mismatch": "Size changed",
+    "unsafe_path": "Unsafe link/file type",
+    "needs_manual_inspection": "Needs inspection",
+}
+
+
+def _model_inventory_status_label(status: str, *, loaded: bool = False) -> str:
+    """Show readable local-model status without weakening its selection gate."""
+    if loaded and status in {
+            "present_not_reverified", "imported_not_reverified", "verified"}:
+        return "Loaded in active runtime"
+    return MODEL_INVENTORY_STATUS_LABELS.get(status, "Needs inspection")
+
+
+def _runtime_compatibility_label(value, model_sha256: str | None = None) -> str:
+    """Describe local self-test history without implying publisher trust."""
+    if value == "not-recorded":
+        return "Not self-tested"
+    if value == "unavailable":
+        return "History unavailable"
+    if (not isinstance(value, dict) or value.get("status") != "self_test_passed"
+            or not isinstance(value.get("pairs"), list)
+            or not isinstance(model_sha256, str)
+            or len(model_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in model_sha256)):
+        return "Needs inspection"
+    runtimes = []
+    for pair in value["pairs"]:
+        if (not isinstance(pair, dict)
+                or not isinstance(pair.get("runtime_sha256"), str)
+                or len(pair["runtime_sha256"]) != 64
+                or any(char not in "0123456789abcdef"
+                       for char in pair["runtime_sha256"])):
+            return "Needs inspection"
+        runtimes.append(model_sha256[:8] + "/" + pair["runtime_sha256"][:8])
+    if not runtimes:
+        return "Not self-tested"
+    visible = ", ".join(runtimes[:2])
+    if len(runtimes) > 2:
+        visible += f", +{len(runtimes) - 2}"
+    return "Passed: " + visible
 
 
 def _retirement_allowed(*, task_busy: bool, operation_busy: bool,
@@ -53,6 +99,28 @@ def user_guide_path() -> Path | None:
         try:
             if (not candidate.is_symlink() and candidate.is_file()
                     and candidate.stat().st_size <= 256 * 1024):
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def application_icon_path() -> Path | None:
+    """Return the verified ForgeOS app icon in source or frozen builds."""
+    bundle = getattr(sys, "_MEIPASS", None)
+    kit = Path("ForgeOS_Master_Branding_Kit") / "04_Application_Ready"
+    candidates = ([Path(bundle) / "branding" /
+                   "ForgeOS_Transparent_Icon_128.png"] if bundle else [])
+    candidates.append(Path(__file__).resolve().parents[2] / "assets" /
+                      "branding" / kit / "ForgeOS_Transparent_Icon_128.png")
+    source_root = Path.cwd()
+    if (source_root / "src" / "forgeos" / "gui.py").is_file():
+        candidates.append(source_root / "assets" / "branding" / kit /
+                          "ForgeOS_Transparent_Icon_128.png")
+    for candidate in candidates:
+        try:
+            if (not candidate.is_symlink() and candidate.is_file()
+                    and candidate.stat().st_size <= 128 * 1024):
                 return candidate
         except OSError:
             continue
@@ -105,6 +173,10 @@ def launch(db_path, *, acceptance: bool = False):
     except BaseException:
         store.close()
         raise
+    app_icon_path = application_icon_path()
+    if app_icon_path is not None:
+        root._forgeos_icon_image = tk.PhotoImage(file=str(app_icon_path))
+        root.iconphoto(True, root._forgeos_icon_image)
     root.title("ForgeOS | Autonomous Development Dashboard")
     root.geometry("1160x790")
     root.minsize(880, 620)
@@ -132,9 +204,14 @@ def launch(db_path, *, acceptance: bool = False):
     task_role = tk.StringVar(value=setting("task_role", "implementation"))
     backend = tk.StringVar(value=setting("backend", "ollama"))
     endpoint = tk.StringVar(value=setting("endpoint", ""))
+    token_parameter = tk.StringVar(value=setting("token_parameter", "max_tokens"))
+    model_storage_quota_gib = tk.IntVar(
+        value=setting("model_storage_quota_gib", 0))
     preset = tk.StringVar(value=setting("preset", "python-unittest"))
     workspaces = tk.StringVar(value=setting("workspaces", str(Path.home() / ".forgeos" / "workspaces")))
     allow_host_tests = tk.BooleanVar(value=False)
+    startup_resume_workspace = setting("startup_resume_workspace", "")
+    startup_resume = tk.BooleanVar(value=bool(startup_resume_workspace))
     repair_count = tk.IntVar(value=setting("repair_count", 2))
     status = tk.StringVar(value="Ready")
     counts = tk.StringVar(value="")
@@ -146,7 +223,8 @@ def launch(db_path, *, acceptance: bool = False):
     acceptance_events = Queue(maxsize=1)
     managed = {"controller": None, "busy": False, "last_used": None,
                "unexpected_exit": False, "stop_failed": False,
-               "screening_cancel": None, "qualification_cancel": None}
+               "screening_cancel": None, "qualification_cancel": None,
+               "import_cancel": None}
     busy = {"value": False}
     closing = {"value": False}
 
@@ -163,8 +241,79 @@ def launch(db_path, *, acceptance: bool = False):
     tabs.pack(fill="both", expand=True)
     dashboard = ttk.Frame(tabs, padding=10)
     activity = ttk.Frame(tabs, padding=10)
+    getting_started = ttk.Frame(tabs, padding=16)
     tabs.add(dashboard, text="Development")
     tabs.add(activity, text="Activity & diagnostics")
+    tabs.add(getting_started, text="Getting started & help")
+
+    ttk.Label(getting_started, text="Build a task with ForgeOS",
+              style="Title.TLabel").pack(anchor="w", pady=(0, 8))
+    ttk.Label(
+        getting_started,
+        text=("ForgeOS works with a local model and a Git repository. It creates "
+              "task changes in an isolated Git worktree so you can review them "
+              "before applying them to your project."),
+        wraplength=900, justify="left").pack(anchor="w", pady=(0, 12))
+
+    guide_actions = ttk.Frame(getting_started)
+    guide_actions.pack(fill="x", pady=(0, 12))
+    ttk.Button(
+        guide_actions, text="Choose Git repository",
+        command=lambda: project.set(
+            filedialog.askdirectory(title="Select Git repository") or project.get()),
+    ).pack(side="left", padx=(0, 8))
+    ttk.Button(
+        guide_actions, text="Check setup",
+        command=lambda: (tabs.select(dashboard), run_readiness_check()),
+    ).pack(side="left", padx=(0, 8))
+    ttk.Button(
+        guide_actions, text="Find a local model",
+        command=lambda: (tabs.select(dashboard), browse_hub_models()),
+    ).pack(side="left", padx=(0, 8))
+    ttk.Button(
+        guide_actions, text="Open development",
+        command=lambda: tabs.select(dashboard),
+    ).pack(side="left")
+
+    guide_body = ttk.LabelFrame(getting_started, text="First task", padding=12)
+    guide_body.pack(fill="x", pady=(0, 10))
+    ttk.Label(
+        guide_body,
+        text=("1. Choose your Git repository and an existing workspace folder.\n"
+              "2. Describe one small, specific change. Use Generate plan first to "
+              "review what the model proposes.\n"
+              "3. Choose a local model and test suite. If using a local OpenAI "
+              "compatible server, start it first and enter its exact model name.\n"
+              "4. Enable host test execution only when you trust the project and "
+              "understand that generated tests run on this computer.\n"
+              "5. Run the task, inspect its diff and test results in Activity & "
+              "diagnostics, then merge or copy the changes yourself."),
+        wraplength=940, justify="left").pack(anchor="w")
+
+    guide_help = ttk.LabelFrame(getting_started, text="When something fails", padding=12)
+    guide_help.pack(fill="x", pady=(0, 10))
+    ttk.Label(
+        guide_help,
+        text=("Setup check: follow each NEEDS ATTENTION message before starting.\n"
+              "Local model unavailable: start the selected local server, check its "
+              "loopback address and port, and use the exact model ID it reports.\n"
+              "Request rejected: choose max_completion_tokens only if your server "
+              "does not accept the default max_tokens field.\n"
+              "Model search cannot connect: check internet access; Hugging Face "
+              "search and downloads are optional and require a network connection.\n"
+              "No trusted download hash: choose a GGUF file with an LFS SHA-256 "
+              "listed by the repository. A Hub license or model-card claim is "
+              "unverified until you review it yourself.\n"
+              "Not enough memory: stop other model servers and choose a smaller "
+              "model. ForgeOS does not silently switch to cloud inference."),
+        wraplength=940, justify="left").pack(anchor="w")
+    ttk.Label(
+        getting_started,
+        text=("Keyboard: use Tab or Shift+Tab to move between controls; press "
+              "Space or Enter to activate the focused button. Use the notebook "
+              "tabs to return to Development or open diagnostics."),
+        wraplength=940, justify="left", foreground="#52647b").pack(
+            anchor="w", pady=(4, 0))
 
     repo_row = ttk.LabelFrame(dashboard, text="Project repository", padding=10)
     repo_row.pack(fill="x", pady=(0, 10))
@@ -200,6 +349,10 @@ def launch(db_path, *, acceptance: bool = False):
                  state="readonly", width=17).pack(side="left", padx=(6, 16))
     ttk.Label(provider_row, text="Local endpoint (optional)").pack(side="left")
     ttk.Entry(provider_row, textvariable=endpoint, width=37).pack(side="left", padx=6)
+    ttk.Label(provider_row, text="Token limit field").pack(side="left", padx=(6, 0))
+    ttk.Combobox(provider_row, textvariable=token_parameter,
+                 values=("max_tokens", "max_completion_tokens"),
+                 state="readonly", width=24).pack(side="left", padx=6)
     ttk.Button(provider_row, text="Browse Hugging Face",
                command=lambda: browse_hub_models()).pack(side="left", padx=6)
     managed_row = ttk.Frame(options)
@@ -211,6 +364,18 @@ def launch(db_path, *, acceptance: bool = False):
         text="Experimental CPU llama.cpp: user-provided trusted executable + "
              "SHA-256, downloaded verified GGUF; unloads after 5m idle; no Docker",
         foreground="#52647b").pack(side="left", padx=(9, 0))
+    storage_row = ttk.Frame(options)
+    storage_row.pack(fill="x", pady=(6, 0))
+    ttk.Label(storage_row, text="Model store cap (GiB; 0 = no extra cap)").pack(
+        side="left")
+    ttk.Combobox(
+        storage_row, textvariable=model_storage_quota_gib,
+        values=(0, 16, 32, 64, 128, 256, 512),
+        state="readonly", width=9).pack(side="left", padx=6)
+    ttk.Label(
+        storage_row,
+        text="Counts active, retired and partial ForgeOS weights; does not hash files.",
+        foreground="#52647b").pack(side="left", padx=6)
     second = ttk.Frame(options)
     second.pack(fill="x", pady=(8, 0))
     ttk.Label(second, text="Workspace folder").pack(side="left")
@@ -223,6 +388,31 @@ def launch(db_path, *, acceptance: bool = False):
         text="Allow tests to run on this computer (generated code is NOT sandboxed)",
         variable=allow_host_tests,
     ).pack(anchor="w", pady=(8, 0))
+
+    def save_startup_resume():
+        nonlocal startup_resume_workspace
+        try:
+            scope = ""
+            if startup_resume.get():
+                workspace = Path(workspaces.get()).expanduser().resolve(strict=True)
+                if not workspace.is_dir():
+                    raise ValueError("Select an existing workspace folder")
+                scope = str(workspace)
+                if len(scope) > 2048:
+                    raise ValueError("Workspace folder path is too long")
+            save_settings(settings_path, {
+                **load_settings(settings_path), "startup_resume_workspace": scope,
+            })
+            startup_resume_workspace = scope
+        except (OSError, ValueError, RuntimeError) as exc:
+            startup_resume.set(bool(startup_resume_workspace))
+            messagebox.showerror("Startup recovery preference not saved", str(exc))
+
+    ttk.Checkbutton(
+        options,
+        text="Resume eligible tasks at startup and allow their tests to run on this computer",
+        variable=startup_resume, command=save_startup_resume,
+    ).pack(anchor="w")
 
     # Keep the primary actions above the expanding queue so they stay visible
     # at minimum window height and at high Windows display scaling.
@@ -394,22 +584,29 @@ def launch(db_path, *, acceptance: bool = False):
         activity, text="Run local acceptance snapshot",
         command=run_acceptance_snapshot).pack(anchor="w", pady=(0, 8))
 
-    def resume_blocked_tasks():
+    def resume_blocked_tasks(*, startup=False):
         if busy["value"] or managed["busy"]:
             messagebox.showerror(
                 "Recovery busy",
                 "Finish the current task or managed-model operation first.")
             return
-        if not allow_host_tests.get():
+        if not startup and not allow_host_tests.get():
             messagebox.showerror(
                 "Recovery requires test permission",
                 "Enable the host test execution checkbox before recovery. "
                 "Recovered tasks may execute project tests.")
             return
         try:
-            chosen_workspace = Path(workspaces.get()).expanduser().resolve(strict=True)
-        except OSError as exc:
-            messagebox.showerror("Recovery workspace unavailable", str(exc))
+            path = startup_resume_workspace if startup else workspaces.get()
+            chosen_workspace = Path(path).expanduser().resolve(strict=True)
+            if startup and (not path or str(chosen_workspace) != path
+                            or not chosen_workspace.is_dir()):
+                raise ValueError("The authorized startup recovery folder changed")
+        except (OSError, ValueError, RuntimeError) as exc:
+            if startup:
+                log(f"Startup recovery skipped: {exc}")
+            else:
+                messagebox.showerror("Recovery workspace unavailable", str(exc))
             return
         manager = managed["controller"]
         active_manager = manager if manager is not None and manager.running() else None
@@ -434,9 +631,13 @@ def launch(db_path, *, acceptance: bool = False):
                     instance = create_model(
                         backend="llama.cpp", model="forgeos-managed",
                         endpoint=active_manager.endpoint,
-                        api_key=active_manager.api_key)
+                        api_key=active_manager.api_key,
+                        token_parameter=contract.get(
+                            "token_parameter", "max_tokens"))
                     instance.managed_model_sha256 = active_manager.model_sha256
                     instance.managed_runtime_sha256 = active_manager.runtime_sha256
+                    instance._listener_owner_check = (
+                        active_manager.verify_listener_ownership)
                     return instance
 
                 # Recover without accumulating one result object per task.
@@ -581,6 +782,7 @@ def launch(db_path, *, acceptance: bool = False):
         exe_path = tk.StringVar()
         expected_hash = tk.StringVar()
         gguf_path = tk.StringVar()
+        import_status = tk.StringVar(value="Import records a local SHA-256 without copying the GGUF.")
         memory_cap_mib = tk.StringVar()
         screening_role = tk.StringVar(value=MODEL_ROLES[0])
         screening_status = tk.StringVar(
@@ -603,6 +805,85 @@ def launch(db_path, *, acceptance: bool = False):
                 side="left", fill="x", expand=True, padx=(0, 6))
             ttk.Button(line, text="Browse", command=lambda v=variable, f=selector:
                        v.set(f() or v.get())).pack(side="left")
+
+        def import_existing_gguf():
+            if managed["busy"] or busy["value"]:
+                messagebox.showinfo(
+                    "Model operation in progress",
+                    "Wait for the current task or local model operation to finish.",
+                    parent=popup)
+                return
+            selected = filedialog.askopenfilename(
+                parent=popup, title="Import existing GGUF without copying",
+                filetypes=[("GGUF model", "*.gguf")])
+            if not selected:
+                return
+            if not messagebox.askyesno(
+                    "Record local model identity",
+                    "ForgeOS will not copy or upload this model. It will hash "
+                    "the file and record its identity in ForgeOS's local "
+                    "model inventory. The source folder can be read-only. "
+                    "Source, revision and license provenance remain "
+                    "unknown unless you verify them separately. Continue?",
+                    parent=popup):
+                return
+            managed["busy"] = True
+            cancel_event = threading.Event()
+            managed["import_cancel"] = cancel_event
+            import_cancel_btn.configure(state="normal")
+            import_status.set("Hashing the existing GGUF; large files may take a while...")
+
+            def worker():
+                try:
+                    from .model_import import ImportCancelled, import_local_gguf
+                    def report_progress(stage, done, total):
+                        event = ("import-progress", (popup, import_status),
+                                 {"stage": stage, "done": done,
+                                  "total": total}, None)
+                        try:
+                            managed_events.put_nowait(event)
+                        except Full:
+                            # Progress is replaceable; terminal results are not.
+                            try:
+                                managed_events.get_nowait()
+                            except Empty:
+                                pass
+                            try:
+                                managed_events.put_nowait(event)
+                            except Full:
+                                pass
+                    outcome = import_local_gguf(
+                        selected, cancel_event=cancel_event,
+                        progress_callback=report_progress)
+                    managed_events.put((
+                        "import", (popup, import_status), outcome, None))
+                except ImportCancelled:
+                    managed_events.put((
+                        "import-cancelled", (popup, import_status), None, None))
+                except Exception as exc:
+                    managed_events.put((
+                        "import", (popup, import_status), None,
+                        f"{type(exc).__name__}: {exc}"))
+            threading.Thread(target=worker, daemon=True).start()
+
+        def cancel_existing_import():
+            cancel_event = managed["import_cancel"]
+            if cancel_event is not None:
+                cancel_event.set()
+                import_cancel_btn.configure(state="disabled")
+                import_status.set(
+                    "Cancellation requested; waiting for the current file read...")
+
+        import_cancel_btn = ttk.Button(
+            panel, text="Cancel import", state="disabled",
+            command=cancel_existing_import)
+        import_cancel_btn.pack(anchor="w", pady=(0, 6))
+
+        ttk.Button(
+            panel, text="Import existing GGUF without copying…",
+            command=import_existing_gguf).pack(anchor="w", pady=(0, 4))
+        ttk.Label(panel, textvariable=import_status, wraplength=820).pack(
+            anchor="w", pady=(0, 8))
         hash_line = ttk.Frame(panel)
         hash_line.pack(fill="x", pady=(0, 7))
         ttk.Label(hash_line, text="Trusted binary SHA-256", width=23).pack(side="left")
@@ -663,44 +944,85 @@ def launch(db_path, *, acceptance: bool = False):
             from .model_inventory import list_downloads
             try:
                 records = [
-                    entry for entry in list_downloads()
-                    if entry["status"] == "present_not_reverified"]
+                    entry for entry in list_downloads()]
             except (OSError, RuntimeError, ValueError) as exc:
                 messagebox.showerror(
                     "Cannot list local GGUF files", str(exc), parent=popup)
                 return
             if not records:
                 messagebox.showinfo(
-                    "No downloaded models",
-                    "Download a SHA-verified GGUF using Browse Hugging Face "
-                    "before starting a managed local model.", parent=popup)
+                    "No local models",
+                    "Download a verified GGUF or explicitly import an existing "
+                    "local file before starting managed inference.", parent=popup)
                 return
             chooser = tk.Toplevel(popup)
             chooser.title("ForgeOS | Downloaded GGUF weights")
-            chooser.geometry("795x400")
+            chooser.geometry("1120x430")
             body = ttk.Frame(chooser, padding=12)
             body.pack(fill="both", expand=True)
             ttk.Label(
-                body, wraplength=760,
+                body, wraplength=1080,
                 text="Metadata-only inventory (no large file is rehashed "
-                     "in this view). ForgeOS verifies SHA-256 again "
-                     "when you start the model.").pack(anchor="w", pady=(0, 8))
+                     "in this view). Missing, changed-size or unsafe entries "
+                     "are shown for diagnosis but cannot be selected for use "
+                     "or retirement. Reverify SHA-256 here before use; full "
+                     "checks run in the background and can be cancelled. "
+                     "Damaged downloads can be restored from their exact "
+                     "pinned manifest after confirmation. "
+                     "Imported files have unknown source and license. "
+                     "Compatibility lists local ForgeOS self-tests for exact "
+                     "model/runtime SHA-256 pairs; it is not publisher proof."
+            ).pack(anchor="w", pady=(0, 8))
             listing = ttk.Treeview(
-                body, columns=("model", "size", "source"),
+                body, columns=("model", "size", "source", "status",
+                               "compatibility"),
                 show="headings", selectmode="browse")
-            for key, width in (("model", 400), ("size", 110), ("source", 210)):
+            for key, width in (("model", 290), ("size", 100),
+                               ("source", 280), ("status", 190),
+                               ("compatibility", 210)):
                 listing.heading(key, text=key.title())
                 listing.column(key, width=width, stretch=key == "model")
             listing.pack(fill="both", expand=True)
+            active_controller = managed["controller"]
+            loaded_sha256 = (
+                active_controller.model_sha256
+                if active_controller is not None and active_controller.running()
+                else None)
             for index, entry in enumerate(records):
+                size = entry.get("bytes")
+                size_text = (f"{size/(1024**3):.2f} GiB"
+                             if type(size) is int else "unknown")
+                loaded = (isinstance(loaded_sha256, str)
+                          and entry.get("sha256") == loaded_sha256)
                 listing.insert("", "end", iid=str(index),
                                values=(entry["file"],
-                                       f'{entry["bytes"]/(1024**3):.2f} GiB',
-                                       entry["repo"]))
+                                       size_text,
+                                       entry["repo"],
+                                       _model_inventory_status_label(
+                                           entry["status"], loaded=loaded),
+                                       _runtime_compatibility_label(
+                                           entry.get("runtime_compatibility"),
+                                           entry.get("sha256"))))
+            selectable_statuses = {
+                "present_not_reverified", "imported_not_reverified", "verified"}
+            verification_events = Queue(maxsize=1)
+            verification = {
+                "busy": False, "cancel_event": None, "operation": None}
+            estimate_events = Queue(maxsize=1)
+            estimate_state = {"busy": False}
+
             def select_local():
                 chosen = listing.selection()
                 if chosen:
-                    gguf_path.set(records[int(chosen[0])]["path"])
+                    entry = records[int(chosen[0])]
+                    if entry["status"] not in selectable_statuses:
+                        messagebox.showerror(
+                            "Model needs inspection",
+                            "This inventory entry is missing, changed or unsafe. "
+                            "ForgeOS will not select it for inference.",
+                            parent=chooser)
+                        return
+                    gguf_path.set(entry["path"])
                     chooser.destroy()
                 else:
                     messagebox.showinfo(
@@ -708,17 +1030,396 @@ def launch(db_path, *, acceptance: bool = False):
                         parent=chooser)
             controls = ttk.Frame(body)
             controls.pack(fill="x", pady=(8, 0))
+            verify_btn = ttk.Button(
+                controls, text="Reverify SHA-256",
+                command=lambda: verify_selected())
+            verify_btn.pack(side="left")
+            repair_btn = ttk.Button(
+                controls, text="Repair selected download…",
+                command=lambda: repair_selected(), state="disabled")
+            repair_btn.pack(side="left", padx=(8, 0))
+            estimate_btn = ttk.Button(
+                controls, text="Estimate memory",
+                command=lambda: estimate_selected_memory())
+            estimate_btn.pack(side="left", padx=(8, 0))
+            cancel_verify_btn = ttk.Button(
+                controls, text="Cancel verify/repair",
+                command=lambda: cancel_verification(), state="disabled")
+            cancel_verify_btn.pack(side="left", padx=(8, 0))
             use_btn = ttk.Button(controls, text="Use selected GGUF",
                                  command=select_local)
             use_btn.pack(side="right")
+
+            def update_selection_controls(_event=None):
+                chosen = listing.selection()
+                eligible = (not verification["busy"]
+                            and not estimate_state["busy"] and bool(chosen)
+                            and records[int(chosen[0])]["status"]
+                            in selectable_statuses)
+                verify_btn.configure(
+                    state="normal" if eligible else "disabled")
+                repair_eligible = (
+                    not verification["busy"] and not estimate_state["busy"]
+                    and not retirement["busy"] and bool(chosen)
+                    and records[int(chosen[0])].get("kind") != "imported"
+                    and records[int(chosen[0])]["status"] in {
+                        "missing", "size_mismatch", "present_not_reverified"}
+                    and _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None))
+                repair_btn.configure(
+                    state="normal" if repair_eligible else "disabled")
+                estimate_btn.configure(
+                    state="normal" if eligible else "disabled")
+                use_btn.configure(state="normal" if eligible else "disabled")
+                retire_btn.configure(state="normal" if eligible else "disabled")
+                imported_eligible = (eligible and
+                    records[int(chosen[0])].get("kind") == "imported")
+                purge_imported_btn.configure(
+                    state="normal" if imported_eligible else "disabled")
+
+            listing.bind("<<TreeviewSelect>>", update_selection_controls)
             retirement_events = Queue(maxsize=1)
-            retirement = {"busy": False}
+            retirement = {"busy": False, "cancel_event": None}
             retirement_status = tk.StringVar(value="")
             ttk.Label(body, textvariable=retirement_status,
                       wraplength=750).pack(anchor="w", pady=(7, 0))
 
+            def post_verification_event(event):
+                try:
+                    verification_events.put_nowait(event)
+                except Full:
+                    try:
+                        verification_events.get_nowait()
+                    except Empty:
+                        pass
+                    try:
+                        verification_events.put_nowait(event)
+                    except Full:
+                        pass
+
+            def verify_selected():
+                if verification["busy"] or estimate_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo(
+                        "Select local model", "Choose one GGUF file.",
+                        parent=chooser)
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if entry["status"] not in selectable_statuses:
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "Only a present inventory entry can be reverified.",
+                        parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish the current task and stop managed inference "
+                        "before rehashing model weights.", parent=chooser)
+                    return
+                cancel_event = threading.Event()
+                verification["busy"] = True
+                verification["cancel_event"] = cancel_event
+                verification["operation"] = "verify"
+                managed["busy"] = True
+                verify_btn.configure(state="disabled")
+                use_btn.configure(state="disabled")
+                retire_btn.configure(state="disabled")
+                cancel_verify_btn.configure(state="normal")
+                retirement_status.set("Starting full SHA-256 verification...")
+
+                def worker():
+                    try:
+                        from .model_inventory import verify_download
+
+                        def progress(_stage, completed, total):
+                            post_verification_event((
+                                "progress", index, completed, total))
+
+                        outcome = verify_download(
+                            entry["path"], cancel_event=cancel_event,
+                            progress_callback=progress)
+                        post_verification_event(("done", index, outcome, None))
+                    except Exception as exc:
+                        post_verification_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(150, poll_verification)
+
+            def poll_verification():
+                try:
+                    event = verification_events.get_nowait()
+                except Empty:
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_verification)
+                    return
+                kind, index, payload, error = event
+                if kind == "progress":
+                    total = error
+                    percent = int(payload * 100 / total) if total else 0
+                    retirement_status.set(
+                        f"Reverifying SHA-256: {percent}% "
+                        f"({payload/(1024**2):.0f} / {total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_verification)
+                    return
+                if kind == "repair-progress":
+                    stage, completed = payload
+                    total = error
+                    percent = int(completed * 100 / total) if total else 0
+                    label = ("Verifying pinned model" if stage == "verify"
+                             else "Downloading pinned model")
+                    retirement_status.set(
+                        f"{label}: {percent}% "
+                        f"({completed/(1024**2):.0f} / "
+                        f"{total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_verification)
+                    return
+                verification["busy"] = False
+                verification["cancel_event"] = None
+                operation = verification["operation"]
+                verification["operation"] = None
+                managed["busy"] = False
+                cancel_verify_btn.configure(state="disabled")
+                if error is not None:
+                    if error.startswith("VerificationCancelled:"):
+                        retirement_status.set(
+                            "Verification cancelled; model files were unchanged.")
+                    elif operation == "repair":
+                        retirement_status.set(
+                            "Repair stopped. Existing bytes remain preserved; "
+                            "an interrupted pinned transfer can be resumed.")
+                        messagebox.showerror(
+                            "Could not repair local model", error,
+                            parent=chooser)
+                    else:
+                        retirement_status.set("SHA-256 verification failed.")
+                        messagebox.showerror(
+                            "Could not verify local model", error,
+                            parent=chooser)
+                else:
+                    records[index]["status"] = "verified"
+                    old = listing.item(str(index), "values")
+                    listing.item(str(index), values=(
+                        old[0], old[1], old[2],
+                        _model_inventory_status_label("verified")))
+                    if payload.get("status") == "repaired":
+                        retirement_status.set(
+                            "Pinned download restored and SHA-256 verified. "
+                            "The previous bytes remain in storage quarantine.")
+                        status.set("Local GGUF repaired from pinned source")
+                        if payload.get("quarantined_path"):
+                            messagebox.showinfo(
+                                "Download repaired",
+                                "The exact pinned GGUF was restored. The prior "
+                                "damaged bytes were preserved in storage "
+                                "quarantine and still count toward storage use.",
+                                parent=chooser)
+                    else:
+                        retirement_status.set(
+                            "SHA-256 verified for this session. Startup still "
+                            "checks model bytes before loading.")
+                        status.set("Local GGUF SHA-256 verified")
+                update_selection_controls()
+
+            def repair_selected():
+                if verification["busy"] or estimate_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if (entry.get("kind") == "imported" or entry["status"] not in {
+                        "missing", "size_mismatch", "present_not_reverified"}):
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "Repair is available only for a managed download with "
+                        "a safe, matching pinned manifest.", parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish the current task and stop managed inference "
+                        "before repairing model weights.", parent=chooser)
+                    return
+                try:
+                    quota_gib = model_storage_quota_gib.get()
+                except tk.TclError:
+                    messagebox.showerror(
+                        "Invalid model storage cap",
+                        "Choose a listed storage cap before repairing.",
+                        parent=chooser)
+                    return
+                if quota_gib not in (0, 16, 32, 64, 128, 256, 512):
+                    messagebox.showerror(
+                        "Invalid model storage cap",
+                        "Choose a listed storage cap before repairing.",
+                        parent=chooser)
+                    return
+                quota_bytes = quota_gib * 1024 ** 3 if quota_gib else None
+                if not messagebox.askyesno(
+                        "Repair pinned model download",
+                        "ForgeOS will use this download's local manifest to "
+                        "fetch the exact same repository revision and SHA-256. "
+                        "If the current file is damaged, its bytes will be "
+                        "preserved in quarantine and count toward storage use. "
+                        "The repair may need space for both copies. ForgeOS "
+                        "will refuse while a saved blocked-task checkpoint "
+                        "references this model. Continue?", parent=chooser):
+                    return
+                cancel_event = threading.Event()
+                verification["busy"] = True
+                verification["cancel_event"] = cancel_event
+                verification["operation"] = "repair"
+                managed["busy"] = True
+                update_selection_controls()
+                cancel_verify_btn.configure(state="normal")
+                retirement_status.set(
+                    "Checking checkpoint references and pinned manifest...")
+
+                def worker():
+                    worker_store = None
+                    try:
+                        from .gguf_download import repair_downloaded_gguf
+                        from .recovery import checkpoint_references_managed_model
+                        worker_store = Store(db_path)
+                        outcome = repair_downloaded_gguf(
+                            entry["path"], confirm=True,
+                            checkpoint_check=lambda digest:
+                            checkpoint_references_managed_model(
+                                worker_store, digest),
+                            cancel_event=cancel_event,
+                            storage_quota_bytes=quota_bytes,
+                            progress_callback=lambda stage, completed, total:
+                            post_verification_event((
+                                "repair-progress", index,
+                                (stage, completed), total)))
+                        post_verification_event(("done", index, outcome, None))
+                    except Exception as exc:
+                        post_verification_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if worker_store is not None:
+                            worker_store.close()
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(150, poll_verification)
+
+            def cancel_verification():
+                cancel_event = verification["cancel_event"]
+                if cancel_event is None:
+                    return
+                cancel_event.set()
+                if verification.get("operation") == "repair":
+                    retirement_status.set(
+                        "Repair cancellation requested; any quarantined original "
+                        "bytes remain preserved.")
+                else:
+                    retirement_status.set(
+                        "Cancellation requested; the current 1 MiB read may finish first.")
+
+            def estimate_selected_memory():
+                if verification["busy"] or estimate_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo(
+                        "Select local model", "Choose one GGUF file.",
+                        parent=chooser)
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if entry["status"] not in selectable_statuses:
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "Only a present inventory entry can be estimated.",
+                        parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish the current task and stop managed inference "
+                        "before estimating another model's memory.", parent=chooser)
+                    return
+                estimate_state["busy"] = True
+                managed["busy"] = True
+                update_selection_controls()
+                retirement_status.set("Estimating model memory from bounded GGUF metadata...")
+
+                def worker():
+                    try:
+                        from .managed_llama import _managed_memory_preflight_report
+                        from .model_routing import (
+                            local_memory_settings, system_memory,
+                        )
+                        context = min(4096, local_memory_settings()["num_ctx"])
+                        report = _managed_memory_preflight_report(
+                            entry["path"], context, system_memory())
+                        estimate_events.put(("done", index, report, None))
+                    except Exception as exc:
+                        estimate_events.put((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(100, poll_memory_estimate)
+
+            def poll_memory_estimate():
+                try:
+                    _kind, index, report, error = estimate_events.get_nowait()
+                except Empty:
+                    if chooser.winfo_exists():
+                        chooser.after(100, poll_memory_estimate)
+                    return
+                estimate_state["busy"] = False
+                managed["busy"] = False
+                if error is not None:
+                    retirement_status.set("Memory estimate unavailable.")
+                    messagebox.showerror(
+                        "Could not estimate model memory", error,
+                        parent=chooser)
+                else:
+                    gib = 1024 ** 3
+                    weight = report["weight_bytes"] / gib
+                    budget = report["safe_model_budget_bytes"] / gib
+                    if report["cache_estimate_available"]:
+                        cache = report["estimated_kv_cache_bytes"] / gib
+                        required = report["estimated_required_bytes"] / gib
+                        state = ("over" if not report["within_budget"]
+                                 else "within")
+                        retirement_status.set(
+                            f"Estimate at {report['context_tokens']} tokens: "
+                            f"weights {weight:.2f} GiB + f16 KV cache "
+                            f"{cache:.2f} GiB = {required:.2f} GiB; "
+                            f"{state} current safe model budget of {budget:.2f} GiB. "
+                            "This omits other native buffers; startup checks again.")
+                    else:
+                        retirement_status.set(
+                            f"GGUF cache metadata is unsupported. Weights are "
+                            f"{weight:.2f} GiB; safe model budget is {budget:.2f} "
+                            "GiB. This weight-only estimate is not an admission "
+                            "guarantee; startup checks again.")
+                    status.set("Local model memory estimate ready")
+                update_selection_controls()
+
             def retire_selected():
-                if retirement["busy"]:
+                if retirement["busy"] or estimate_state["busy"]:
                     return
                 selection = listing.selection()
                 if not selection:
@@ -737,79 +1438,270 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 index = selection[0]
                 entry = records[int(index)]
-                if not messagebox.askyesno(
-                        "Retire verified model",
-                        "Move this GGUF and its SHA-256 manifest to recoverable "
-                        "local storage? The bytes are retained on disk, and "
-                        "this DOES NOT free storage space. Stop any separate "
-                        "llama.cpp server using this file first. The entire "
-                        "GGUF will be rehashed before the move.",
-                        parent=chooser):
+                if entry["status"] not in selectable_statuses:
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "ForgeOS only retires entries with a regular, matching-size "
+                        "weight and a valid identity record. Reverify or repair "
+                        "this entry before trying again.", parent=chooser)
+                    return
+                imported = entry.get("kind") == "imported"
+                title = ("Remove imported model from active inventory" if imported
+                         else "Retire verified model")
+                question = (
+                    "Remove this path from ForgeOS's active model inventory? "
+                    "The GGUF remains at the original location; no disk space "
+                    "is freed. You can import it again "
+                    "later. ForgeOS rehashes the file before unregistering."
+                    if imported else
+                    "Move this GGUF and its SHA-256 manifest to recoverable "
+                    "local storage? The bytes are retained on disk, and "
+                    "this DOES NOT free storage space. Stop any separate "
+                    "llama.cpp server using this file first. The entire "
+                    "GGUF will be rehashed before the move.")
+                if not messagebox.askyesno(title, question, parent=chooser):
                     return
                 retirement["busy"] = True
+                cancel_event = threading.Event()
+                retirement["cancel_event"] = cancel_event
                 managed["busy"] = True
                 use_btn.configure(state="disabled")
                 retire_btn.configure(state="disabled")
+                cancel_retire_btn.configure(state="normal")
                 retirement_status.set(
-                    "Verifying model bytes and writing a recoverable "
-                    "retirement journal...")
+                    "Verifying model and updating its active inventory...")
                 status.set("Retiring local GGUF after full SHA-256 verification...")
 
                 def worker():
+                    worker_store = None
                     try:
-                        from .model_retirement import retire_download
-                        outcome = retire_download(entry["path"])
-                        retirement_events.put((index, outcome, None))
+                        from .recovery import checkpoint_references_managed_model
+                        worker_store = Store(db_path)
+                        if checkpoint_references_managed_model(
+                                worker_store, entry["sha256"]):
+                            raise RuntimeError(
+                                "A blocked task checkpoint still depends on this "
+                                "GGUF. Resume or remove that checkpoint before "
+                                "retiring the model.")
+                        if imported:
+                            from .model_import import unregister_imported_gguf
+                            outcome = unregister_imported_gguf(
+                                entry["path"], cancel_event=cancel_event,
+                                progress_callback=lambda stage, done, total:
+                                post_retirement_event((
+                                    "progress", index, stage, done, total)))
+                        else:
+                            from .model_retirement import retire_download
+                            outcome = retire_download(
+                                entry["path"], cancel_event=cancel_event,
+                                progress_callback=lambda stage, done, total:
+                                post_retirement_event((
+                                    "progress", index, stage, done, total)))
+                        post_retirement_event(("done", index, outcome, None))
                     except Exception as exc:
-                        retirement_events.put((
-                            index, None, f"{type(exc).__name__}: {exc}"))
+                        post_retirement_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if worker_store is not None:
+                            worker_store.close()
                 threading.Thread(target=worker, daemon=True).start()
                 chooser.after(200, poll_retirement)
 
+            def purge_imported_selected():
+                if retirement["busy"] or estimate_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if entry.get("kind") != "imported" or entry["status"] not in selectable_statuses:
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"], operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Cannot delete imported model",
+                        "Finish the current task and stop managed inference first.",
+                        parent=chooser)
+                    return
+                if not messagebox.askyesno(
+                        "Permanently delete imported GGUF",
+                        "Delete this imported GGUF and its ForgeOS registry identity? "
+                        "This cannot be undone. ForgeOS will refuse while a saved "
+                        "task checkpoint references the model and will verify its "
+                        "full SHA-256 before deleting. Stop any separate runtime "
+                        "using this file first.", parent=chooser):
+                    return
+                retirement["busy"] = True
+                cancel_event = threading.Event()
+                retirement["cancel_event"] = cancel_event
+                managed["busy"] = True
+                use_btn.configure(state="disabled")
+                retire_btn.configure(state="disabled")
+                purge_imported_btn.configure(state="disabled")
+                cancel_retire_btn.configure(state="normal")
+                retirement_status.set("Checking checkpoint references and verifying imported GGUF...")
+
+                def worker():
+                    worker_store = None
+                    try:
+                        from .model_import import purge_imported_gguf
+                        from .recovery import checkpoint_references_managed_model
+                        worker_store = Store(db_path)
+                        outcome = purge_imported_gguf(
+                            entry["path"], confirm=True,
+                            checkpoint_check=lambda digest:
+                            checkpoint_references_managed_model(worker_store, digest),
+                            cancel_event=cancel_event,
+                            progress_callback=lambda stage, done, total:
+                            post_retirement_event((
+                                "progress", index, stage, done, total)))
+                        post_retirement_event(("purged", index, outcome, None))
+                    except Exception as exc:
+                        post_retirement_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if worker_store is not None:
+                            worker_store.close()
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(200, poll_retirement)
+
+            def post_retirement_event(event):
+                try:
+                    retirement_events.put_nowait(event)
+                except Full:
+                    try:
+                        retirement_events.get_nowait()
+                    except Empty:
+                        pass
+                    try:
+                        retirement_events.put_nowait(event)
+                    except Full:
+                        pass
+
+            def cancel_retirement():
+                event = retirement.get("cancel_event")
+                if event is not None:
+                    event.set()
+                    retirement_status.set(
+                        "Cancellation requested; waiting for the current bounded read.")
+                    cancel_retire_btn.configure(state="disabled")
+
             def poll_retirement():
                 try:
-                    index, outcome, error = retirement_events.get_nowait()
+                    event = retirement_events.get_nowait()
                 except Empty:
                     if chooser.winfo_exists():
                         chooser.after(200, poll_retirement)
                     return
+                if event[0] == "progress":
+                    _kind, index, stage, completed, total = event
+                    percent = int(completed * 100 / total) if total else 0
+                    retirement_status.set(
+                        f"Verifying model SHA-256: {percent}% "
+                        f"({completed/(1024**2):.0f} / "
+                        f"{total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_retirement)
+                    return
+                _kind, index, outcome, error = event
                 retirement["busy"] = False
+                retirement["cancel_event"] = None
                 managed["busy"] = False
+                cancel_retire_btn.configure(state="disabled")
                 use_btn.configure(state="normal")
                 retire_btn.configure(state="normal")
+                purge_imported_btn.configure(state="disabled")
                 if error is not None:
+                    if "Cancelled" in error:
+                        retirement_status.set(
+                            "Verification cancelled; model and inventory are unchanged.")
+                        status.set("Model retirement cancelled")
+                        update_selection_controls()
+                        return
                     retirement_status.set("Retirement failed; existing "
                                           "files or recovery journal retained.")
                     status.set("Model retirement failed")
                     messagebox.showerror(
                         "Could not retire local model", error, parent=chooser)
                     return
-                retirement_status.set(
-                    "Model retired safely; recovery ID: " + outcome["id"])
-                status.set("Local GGUF retired (recovery available)")
+                imported = records[int(index)].get("kind") == "imported"
+                purged = event[0] == "purged"
+                if purged:
+                    retirement_status.set("Imported GGUF and identity removed permanently.")
+                    status.set("Imported GGUF permanently deleted")
+                    if gguf_path.get() == records[int(index)]["path"]:
+                        gguf_path.set("")
+                    listing.delete(index)
+                    messagebox.showinfo(
+                        "Imported GGUF deleted",
+                        "The selected model and its ForgeOS registry identity were deleted.",
+                        parent=chooser)
+                    update_selection_controls()
+                    return
+                if imported:
+                    retirement_status.set(
+                        "Import removed from active inventory; model file "
+                        "remains at the original path.")
+                    status.set("Imported GGUF removed from active inventory")
+                else:
+                    retirement_status.set(
+                        "Model retired safely; recovery ID: " + outcome["id"])
+                    status.set("Local GGUF retired (recovery available)")
                 if gguf_path.get() == records[int(index)]["path"]:
                     gguf_path.set("")
                 listing.delete(index)
-                messagebox.showinfo(
-                    "Model moved to recoverable local storage",
-                    "Recovery ID: " + outcome["id"] + "\n"
-                    "Use models-retired and model-restore-local to restore. "
-                    "The model still occupies disk space.",
-                    parent=chooser)
+                if imported:
+                    messagebox.showinfo(
+                        "Imported model removed from ForgeOS inventory",
+                        "The model remains unchanged. Use "
+                        "Import existing GGUF without copying to register it again. "
+                        "No disk space was freed.", parent=chooser)
+                else:
+                    messagebox.showinfo(
+                        "Model moved to recoverable local storage",
+                        "Recovery ID: " + outcome["id"] + "\n"
+                        "Use models-retired and model-restore-local to restore. "
+                        "The model still occupies disk space.",
+                        parent=chooser)
 
             def close_chooser():
+                if verification["busy"]:
+                    retirement_status.set(
+                        "Verification or repair is active. Cancel it and wait "
+                        "for the result before closing this window.")
+                    return
+                if estimate_state["busy"]:
+                    retirement_status.set(
+                        "Memory estimation is active. Wait for the result before "
+                        "closing this window.")
+                    return
                 if retirement["busy"]:
                     retirement_status.set(
-                        "Model verification is active. The window remains "
-                        "open so the recovery result cannot be lost.")
+                        "Model verification is active. Cancel it and wait for "
+                        "the recovery result before closing this window.")
                     return
                 chooser.destroy()
 
             chooser.protocol("WM_DELETE_WINDOW", close_chooser)
+            verify_btn.configure(state="disabled")
             retire_btn = ttk.Button(
                 controls, text="Retire selected GGUF (recoverable)",
                 command=retire_selected)
             retire_btn.pack(side="right", padx=8)
+            purge_imported_btn = ttk.Button(
+                controls, text="Delete imported permanently",
+                command=purge_imported_selected, state="disabled")
+            purge_imported_btn.pack(side="right", padx=8)
+            cancel_retire_btn = ttk.Button(
+                controls, text="Cancel verification",
+                command=cancel_retirement, state="disabled")
+            cancel_retire_btn.pack(side="right", padx=8)
+            retire_btn.configure(state="disabled")
+            use_btn.configure(state="disabled")
 
         ttk.Button(
             panel, text="Choose from ForgeOS downloads",
@@ -861,7 +1753,7 @@ def launch(db_path, *, acceptance: bool = False):
                                values=(entry.get("file", "unknown"),
                                        entry["status"], entry["id"]))
             restore_events = Queue(maxsize=1)
-            restore_state = {"busy": False}
+            restore_state = {"busy": False, "cancel_event": None}
             restore_status = tk.StringVar(value="")
             ttk.Label(body, textvariable=restore_status,
                       wraplength=740).pack(anchor="w", pady=(8, 0))
@@ -898,8 +1790,12 @@ def launch(db_path, *, acceptance: bool = False):
                         "never be overwritten.", parent=chooser):
                     return
                 restore_state["busy"] = True
+                cancel_event = threading.Event()
+                restore_state["cancel_event"] = cancel_event
                 managed["busy"] = True
                 restore_btn.configure(state="disabled")
+                purge_btn.configure(state="disabled")
+                cancel_restore_btn.configure(state="normal")
                 restore_status.set(
                     "Verifying pinned bytes and restoring the model...")
                 status.set("Restoring and verifying retired GGUF...")
@@ -908,45 +1804,174 @@ def launch(db_path, *, acceptance: bool = False):
                 def worker():
                     try:
                         from .model_retirement import restore_download
-                        result = restore_download(identifier)
-                        restore_events.put((selection[0], result, None))
+                        result = restore_download(
+                            identifier, cancel_event=cancel_event,
+                            progress_callback=lambda stage, done, total:
+                            post_restore_event((
+                                "progress", "restore", selection[0],
+                                stage, done, total)))
+                        post_restore_event((
+                            "done", "restore", selection[0], result, None))
                     except Exception as exc:
-                        restore_events.put((
-                            selection[0], None,
+                        post_restore_event((
+                            "done", "restore", selection[0], None,
                             f"{type(exc).__name__}: {exc}"))
                 threading.Thread(target=worker, daemon=True).start()
                 chooser.after(200, poll_restore)
 
+            def begin_purge():
+                if restore_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    messagebox.showinfo(
+                        "Select a model", "Choose a retired model first.",
+                        parent=chooser)
+                    return
+                selected = records[int(selection[0])]
+                if selected["status"] not in (
+                        "retired", "interrupted_retirement_or_restore"):
+                    messagebox.showerror(
+                        "Cannot purge model",
+                        "This journal needs manual inspection.", parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"], operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish tasks and stop the managed server first.",
+                        parent=chooser)
+                    return
+                gib = selected.get("bytes", 0) / (1024 ** 3)
+                if not messagebox.askyesno(
+                        "Permanently delete retired GGUF",
+                        f"Permanently delete {selected.get('file', 'this model')} "
+                        f"({gib:.2f} GiB) and its recovery journal? This cannot "
+                        "be undone. ForgeOS will refuse if a blocked checkpoint "
+                        "references the model.", parent=chooser):
+                    return
+                restore_state["busy"] = True
+                cancel_event = threading.Event()
+                restore_state["cancel_event"] = cancel_event
+                managed["busy"] = True
+                restore_btn.configure(state="disabled")
+                purge_btn.configure(state="disabled")
+                cancel_restore_btn.configure(state="normal")
+                restore_status.set("Verifying and permanently removing retired weights...")
+                status.set("Purging retired GGUF after checkpoint and SHA-256 checks...")
+                identifier = selected["id"]
+
+                def worker():
+                    store = None
+                    try:
+                        from .recovery import checkpoint_references_managed_model
+                        from .model_retirement import purge_retired_download
+                        store = Store(db_path)
+                        result = purge_retired_download(
+                            identifier, confirm=True,
+                            checkpoint_check=lambda digest:
+                            checkpoint_references_managed_model(store, digest),
+                            cancel_event=cancel_event,
+                            progress_callback=lambda stage, done, total:
+                            post_restore_event((
+                                "progress", "purge", selection[0],
+                                stage, done, total)))
+                        post_restore_event((
+                            "done", "purge", selection[0], result, None))
+                    except Exception as exc:
+                        post_restore_event((
+                            "done", "purge", selection[0], None,
+                            f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if store is not None:
+                            store.close()
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(200, poll_restore)
+
+            def post_restore_event(event):
+                try:
+                    restore_events.put_nowait(event)
+                except Full:
+                    try:
+                        restore_events.get_nowait()
+                    except Empty:
+                        pass
+                    try:
+                        restore_events.put_nowait(event)
+                    except Full:
+                        pass
+
+            def cancel_restoration():
+                event = restore_state.get("cancel_event")
+                if event is not None:
+                    event.set()
+                    restore_status.set(
+                        "Cancellation requested; preserving the recovery journal.")
+                    cancel_restore_btn.configure(state="disabled")
+
             def poll_restore():
                 try:
-                    index, result, error = restore_events.get_nowait()
+                    event = restore_events.get_nowait()
                 except Empty:
                     if chooser.winfo_exists():
                         chooser.after(200, poll_restore)
                     return
+                if event[0] == "progress":
+                    _kind, _action, _index, stage, completed, total = event
+                    percent = int(completed * 100 / total) if total else 0
+                    restore_status.set(
+                        f"Verifying model SHA-256: {percent}% "
+                        f"({completed/(1024**2):.0f} / "
+                        f"{total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_restore)
+                    return
+                _kind, action, index, result, error = event
                 restore_state["busy"] = False
+                restore_state["cancel_event"] = None
                 managed["busy"] = False
                 restore_btn.configure(state="normal")
+                purge_btn.configure(state="normal")
+                cancel_restore_btn.configure(state="disabled")
                 if error:
+                    if "Cancelled" in error:
+                        restore_status.set(
+                            "Verification cancelled; recovery journal retained. "
+                            "You can retry the operation safely.")
+                        status.set("Retired GGUF operation cancelled")
+                        return
                     restore_status.set(
+                        ("Purge failed; any remaining recovery journal can be "
+                         "used to retry. Check the retired-model list.")
+                        if action == "purge" else
                         "Restore failed; original recovery journal retained.")
-                    status.set("Local GGUF restore failed")
+                    status.set("Retired GGUF purge failed" if action == "purge"
+                               else "Local GGUF restore failed")
                     messagebox.showerror(
                         "Could not restore local GGUF", error, parent=chooser)
                     return
                 listing.delete(index)
-                restore_status.set(
-                    "Restored GGUF to " + result["path"])
-                status.set("Local GGUF restored and SHA-256 verified")
-                messagebox.showinfo(
-                    "Local model restored",
-                    "Verified weight restored. Choose it from ForgeOS "
-                    "downloads to run it.", parent=chooser)
+                if action == "purge":
+                    restore_status.set(
+                        "Permanently deleted retired weights and recovery journal.")
+                    status.set("Retired GGUF permanently purged")
+                    messagebox.showinfo(
+                        "Retired model deleted",
+                        "Verified retired model and its recovery journal were "
+                        "permanently deleted.", parent=chooser)
+                else:
+                    restore_status.set("Restored GGUF to " + result["path"])
+                    status.set("Local GGUF restored and SHA-256 verified")
+                    messagebox.showinfo(
+                        "Local model restored",
+                        "Verified weight restored. Choose it from ForgeOS "
+                        "downloads to run it.", parent=chooser)
 
             def close_restoration():
                 if restore_state["busy"]:
                     restore_status.set(
-                        "Restore is active. Keep this dialog open until "
+                        "A retired-model operation is active. Keep this dialog open until "
                         "the recovery operation finishes.")
                     return
                 chooser.destroy()
@@ -954,7 +1979,15 @@ def launch(db_path, *, acceptance: bool = False):
             restore_btn = ttk.Button(
                 body, text="Restore selected GGUF",
                 command=begin_restore)
-            restore_btn.pack(anchor="e", pady=(8, 0))
+            restore_btn.pack(side="right", pady=(8, 0))
+            purge_btn = ttk.Button(
+                body, text="Delete permanently",
+                command=begin_purge)
+            purge_btn.pack(side="right", padx=(0, 8), pady=(8, 0))
+            cancel_restore_btn = ttk.Button(
+                body, text="Cancel verification",
+                command=cancel_restoration, state="disabled")
+            cancel_restore_btn.pack(side="right", padx=(0, 8), pady=(8, 0))
 
         ttk.Button(
             panel, text="Restore a retired GGUF (recoverable)",
@@ -1076,7 +2109,8 @@ def launch(db_path, *, acceptance: bool = False):
             status.set("Testing managed local model structured output...")
             def worker():
                 try:
-                    outcome = controller.inference_self_test()
+                    from .model_compatibility import record_runtime_self_test
+                    outcome = record_runtime_self_test(controller)
                     managed_events.put(("smoke", controller, outcome, None))
                 except Exception as exc:
                     managed_events.put((
@@ -1313,8 +2347,11 @@ def launch(db_path, *, acceptance: bool = False):
 
     def browse_hub_models():
         """Opt-in GGUF browser and verified downloader without Tk thread blocking."""
-        from .huggingface_catalog import search_gguf, list_gguf_files
+        from .huggingface_catalog import (
+            catalog_error_message, inspect_gguf_repo, search_gguf_page,
+        )
 
+        max_search_pages = 10
         popup = tk.Toplevel(root)
         popup.title("ForgeOS | Hugging Face GGUF catalog and downloads")
         popup.geometry("790x590")
@@ -1333,8 +2370,10 @@ def launch(db_path, *, acceptance: bool = False):
         results = ttk.Treeview(
             frame, columns=("repository", "downloads", "license"),
             show="headings", height=11, selectmode="browse")
-        for key, width in (("repository", 430), ("downloads", 100), ("license", 150)):
-            results.heading(key, text=key.title())
+        for key, width in (("repository", 410), ("downloads", 100), ("license", 200)):
+            heading = ("Hub license (unverified)" if key == "license"
+                       else key.title())
+            results.heading(key, text=heading)
             results.column(key, width=width, stretch=key == "repository")
         results.pack(fill="both", expand=True)
         choose_row = ttk.Frame(frame)
@@ -1345,15 +2384,26 @@ def launch(db_path, *, acceptance: bool = False):
             choose_row, textvariable=file_choice, values=(),
             state="readonly", width=60)
         file_picker.pack(side="left", fill="x", expand=True, padx=6)
-        info = tk.Text(frame, height=7, wrap="word", state="disabled")
-        info.pack(fill="x", pady=(8, 0))
+        info_frame = ttk.Frame(frame)
+        info_frame.pack(fill="x", pady=(8, 0))
+        info = tk.Text(info_frame, height=7, wrap="word", state="disabled")
+        info_scroll = ttk.Scrollbar(
+            info_frame, orient="vertical", command=info.yview)
+        info.configure(yscrollcommand=info_scroll.set)
+        info.pack(side="left", fill="both", expand=True)
+        info_scroll.pack(side="right", fill="y")
         hub_events = Queue(maxsize=2)
         progress_events = Queue(maxsize=1)
         transfer_status = tk.StringVar(value="")
         ttk.Label(frame, textvariable=transfer_status, wraplength=740).pack(
             anchor="w", pady=(6, 0))
         state = {"busy": False, "catalog": [], "inspected_repo": None,
-                 "action": None, "cancel": None, "close_after": False}
+                 "inspected_revision": None,
+                 "inspected_claims": None,
+                 "search_query": "", "pending_query": "",
+                 "next_page_url": None, "search_pages": 0,
+                 "action": None, "cancel": None, "close_after": False,
+                 "storage_quota_bytes": None}
 
         def report_transfer(stage, current, total):
             # Worker threads never touch Tk. Drop stale progress events
@@ -1410,9 +2460,31 @@ def launch(db_path, *, acceptance: bool = False):
                         "The download will not load or execute the model.",
                         parent=popup):
                     return
-                term = (state["inspected_repo"], file_choice.get())
+                try:
+                    quota_gib = model_storage_quota_gib.get()
+                except tk.TclError:
+                    messagebox.showerror(
+                        "Invalid model storage cap", "Choose a listed storage cap.",
+                        parent=popup)
+                    return
+                if quota_gib not in (0, 16, 32, 64, 128, 256, 512):
+                    messagebox.showerror(
+                        "Invalid model storage cap", "Choose a listed storage cap.",
+                        parent=popup)
+                    return
+                state["storage_quota_bytes"] = (
+                    quota_gib * 1024 ** 3 if quota_gib else None)
+                term = (state["inspected_repo"], file_choice.get(),
+                        state["inspected_revision"],
+                        state["inspected_claims"])
+            elif action == "more":
+                if (not state["next_page_url"]
+                        or state["search_pages"] >= max_search_pages):
+                    return
+                term = (state["search_query"], state["next_page_url"])
             else:
                 term = query.get().strip()
+                state["pending_query"] = term
             state["busy"] = True
             state["action"] = action
             state["cancel"] = threading.Event() if action == "download" else None
@@ -1425,6 +2497,7 @@ def launch(db_path, *, acceptance: bool = False):
             pause_btn.configure(state="normal" if action == "download" else "disabled")
             search_btn.configure(state="disabled")
             files_btn.configure(state="disabled")
+            more_btn.configure(state="disabled")
             download_btn.configure(state="disabled")
             info.configure(state="normal")
             info.delete("1.0", "end")
@@ -1436,23 +2509,45 @@ def launch(db_path, *, acceptance: bool = False):
 
             def run_lookup():
                 try:
-                    if action == "search":
-                        data = search_gguf(term)
+                    if action in ("search", "more"):
+                        search_term, page_url = ((term, None) if action == "search"
+                                                 else term)
+                        data = search_gguf_page(
+                            search_term, next_page_url=page_url)
                     elif action == "files":
-                        data = list_gguf_files(term)
+                        data = inspect_gguf_repo(term)
+                        from .model_inventory import (
+                            catalog_file_status, list_downloads,
+                        )
+                        try:
+                            local_records = list_downloads()
+                            for file_info in data["files"]:
+                                file_info["local_status"] = catalog_file_status(
+                                    data["repo"], data["revision"], file_info,
+                                    local_records)
+                        except (OSError, RuntimeError, ValueError):
+                            data["local_inventory_available"] = False
                     else:
                         from .gguf_download import download_gguf
                         data = download_gguf(
-                            term[0], term[1], cancel_event=state["cancel"],
-                            progress_callback=report_transfer)
+                            term[0], term[1], revision=term[2],
+                            cancel_event=state["cancel"],
+                            progress_callback=report_transfer,
+                            storage_quota_bytes=state["storage_quota_bytes"],
+                            catalog_claims=term[3],
+                            catalog_claims_revision=term[2])
                     hub_events.put((action, data, None))
                 except Exception as exc:
-                    hub_events.put((action, None, f"{type(exc).__name__}: {exc}"))
+                    hub_events.put((action, None, catalog_error_message(exc)))
             threading.Thread(target=run_lookup, daemon=True).start()
 
         search_btn = ttk.Button(
             search_row, text="Search", command=lambda: begin("search"))
         search_btn.pack(side="left", padx=5)
+        more_btn = ttk.Button(
+            search_row, text="More results", state="disabled",
+            command=lambda: begin("more"))
+        more_btn.pack(side="left", padx=(0, 5))
         files_btn = ttk.Button(
             search_row, text="Inspect GGUF sizes", command=lambda: begin("files"))
         files_btn.pack(side="left")
@@ -1492,6 +2587,10 @@ def launch(db_path, *, acceptance: bool = False):
                     return
                 search_btn.configure(state="normal")
                 files_btn.configure(state="normal")
+                more_btn.configure(
+                    state=("normal" if state["next_page_url"]
+                           and state["search_pages"] < max_search_pages
+                           else "disabled"))
                 download_btn.configure(
                     state="normal" if state["inspected_repo"]
                     and file_choice.get() else "disabled")
@@ -1499,33 +2598,72 @@ def launch(db_path, *, acceptance: bool = False):
                 info.delete("1.0", "end")
                 if error:
                     info.insert("end", error)
-                elif action == "search":
-                    state["catalog"] = data
+                elif action in ("search", "more"):
+                    if action == "search":
+                        state["catalog"] = []
+                        state["search_query"] = state["pending_query"]
+                        state["search_pages"] = 1
+                        results.delete(*results.get_children())
+                    else:
+                        state["search_pages"] += 1
+                    items = data["items"]
+                    state["next_page_url"] = data["next_page_url"]
                     state["inspected_repo"] = None
+                    state["inspected_revision"] = None
+                    state["inspected_claims"] = None
                     file_choice.set("")
                     file_picker.configure(values=())
                     download_btn.configure(state="disabled")
-                    results.delete(*results.get_children())
-                    for index, item in enumerate(data):
+                    known = {item["repo"] for item in state["catalog"]}
+                    for item in items:
+                        if item["repo"] in known:
+                            continue
+                        index = len(state["catalog"])
+                        state["catalog"].append(item)
+                        known.add(item["repo"])
                         results.insert("", "end", iid=str(index), values=(
                             item["repo"], item["downloads"], item["license_tag"]))
                     info.insert(
-                        "end", f"Found {len(data)} candidate repositories. "
+                        "end", f"Showing {len(state['catalog'])} candidate repositories. "
                         "A repository listing is not a license or compatibility "
-                        "verification. Select one and inspect its GGUF files.")
+                        "verification. Select one and inspect its GGUF files. "
+                        + ("More results are available."
+                           if state["next_page_url"]
+                           and state["search_pages"] < max_search_pages
+                           else "Search page limit reached."
+                           if state["next_page_url"]
+                           else "No further result page was provided."))
                 elif action == "files":
+                    repo_info = data
+                    data = repo_info["files"]
                     selected = results.selection()
                     state["inspected_repo"] = (
                         state["catalog"][int(selected[0])]["repo"]
                         if selected else None)
+                    state["inspected_revision"] = repo_info["revision"]
+                    state["inspected_claims"] = dict(repo_info["claims"])
                     choices = [item["path"] for item in data if item["sha256"]]
                     file_picker.configure(values=choices)
                     file_choice.set(choices[0] if choices else "")
                     download_btn.configure(state="normal" if choices else "disabled")
+                    info.insert("end", "Repository supplied card claims (unverified):\n")
+                    info.insert("end", f"Inspected immutable revision: {repo_info['revision']}\n")
+                    claims = repo_info["claims"]
+                    if claims:
+                        for key, value in claims.items():
+                            rendered = ", ".join(value) if isinstance(value, list) else value
+                            info.insert("end", f"{key}: {rendered}\n")
+                    else:
+                        info.insert("end", "No supported card fields were provided.\n")
+                    info.insert("end", "\nGGUF files (Hub-reported sizes and hashes):\n")
                     for item in data[:30]:
                         size = item["bytes"] / (1024 ** 3)
                         verified = "LFS SHA-256 provided" if item["sha256"] else "Hash unavailable"
-                        info.insert("end", f'{item["path"]}: {size:.2f} GiB; {verified}\n')
+                        local = (item.get("local_status", "unavailable")
+                                 if repo_info.get("local_inventory_available", True)
+                                 else "local inventory unavailable")
+                        info.insert("end", f'{item["path"]}: {size:.2f} GiB; '
+                                            f'{verified}; local: {local}\n')
                     if not data:
                         info.insert("end", "No GGUF files found in the returned listing.")
                     elif not choices:
@@ -1582,6 +2720,9 @@ def launch(db_path, *, acceptance: bool = False):
             chosen_model = model.get().strip()
             chosen_backend = backend.get()
             chosen_endpoint = endpoint.get().strip()
+            chosen_token_parameter = token_parameter.get()
+            if chosen_token_parameter not in ("max_tokens", "max_completion_tokens"):
+                raise ValueError("Choose a supported local token limit field")
             manager = managed["controller"]
             if managed["busy"]:
                 raise ValueError("Managed model is starting or stopping")
@@ -1624,12 +2765,15 @@ def launch(db_path, *, acceptance: bool = False):
             def selected_model():
                 instance = create_model(
                     backend=chosen_backend, model=chosen_model,
-                    endpoint=chosen_endpoint, api_key=managed_key)
+                    endpoint=chosen_endpoint, api_key=managed_key,
+                    token_parameter=chosen_token_parameter)
                 if managed_key is not None:
                     # Store both verified immutable content identities in
                     # the engine checkpoint; NEVER persist the API secret.
                     instance.managed_model_sha256 = manager.model_sha256
                     instance.managed_runtime_sha256 = manager.runtime_sha256
+                    instance._listener_owner_check = (
+                        manager.verify_listener_ownership)
                 return instance
             try:
                 worker_store = Store(db_path)
@@ -1776,6 +2920,13 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 while True:
                     action, controller, outcome, error = managed_events.get_nowait()
+                    if action == "import-progress":
+                        popup, import_status_var = controller
+                        if popup.winfo_exists():
+                            import_status_var.set(
+                                "Verifying local GGUF: "
+                                f'{outcome["done"]:,} / {outcome["total"]:,} bytes')
+                        continue
                     if action == "screening-progress":
                         status.set(
                             "Screening " + outcome["role"] + ": "
@@ -1789,6 +2940,15 @@ def launch(db_path, *, acceptance: bool = False):
                             + str(outcome["total"]) + " complete")
                         continue
                     managed["busy"] = False
+                    if action in ("import", "import-cancelled"):
+                        managed["import_cancel"] = None
+                        import_cancel_btn.configure(state="disabled")
+                    if action == "import-cancelled":
+                        if controller[0].winfo_exists():
+                            controller[1].set(
+                                "Import cancelled; no identity was recorded.")
+                        status.set("Local GGUF import cancelled")
+                        continue
                     if action == "screening":
                         managed["screening_cancel"] = None
                     if action == "qualification":
@@ -1802,6 +2962,8 @@ def launch(db_path, *, acceptance: bool = False):
                             managed["qualification_cancel"] = None
                         if action == "install" and controller[0].winfo_exists():
                             controller[1].set("CPU runtime installation failed: " + error)
+                        if action == "import" and controller[0].winfo_exists():
+                            controller[1].set("Model import failed: " + error)
                         status.set("Managed llama.cpp operation failed")
                         log("Managed local model: " + error)
                         tabs.select(activity)
@@ -1814,6 +2976,18 @@ def launch(db_path, *, acceptance: bool = False):
                         log("Pinned CPU runtime installed: release " + outcome["tag"]
                             + ", ZIP SHA-256 " + outcome["asset_sha256"]
                             + ". Select a GGUF and Start installed CPU runtime.")
+                    elif action == "import":
+                        if controller[0].winfo_exists():
+                            gguf_path.set(outcome["path"])
+                            controller[1].set(
+                                "Imported without copying. SHA-256 "
+                                + outcome["sha256"]
+                                + ". Source/revision/license are unknown.")
+                        status.set("Local GGUF imported and SHA-256 recorded")
+                        log("Imported local GGUF without copying: "
+                            + outcome["path"] + "\nSHA-256: "
+                            + outcome["sha256"]
+                            + "\nProvenance: unknown; no source or license claim was made.")
                     elif action == "screening":
                         managed["last_used"] = time.monotonic()
                         record = outcome["record"]
@@ -1865,12 +3039,16 @@ def launch(db_path, *, acceptance: bool = False):
                         tabs.select(activity)
                     elif action == "smoke":
                         managed["last_used"] = time.monotonic()
-                        status.set("Managed local model self-test passed")
+                        status.set(
+                            "Self-test passed; model/runtime pair recorded")
                         memory = outcome.get("memory")
                         detail = (
                             "Managed local model self-test passed in "
                             + str(outcome["elapsed_seconds"]) + " seconds; "
-                            + str(outcome["response_bytes"]) + " response bytes.")
+                            + str(outcome["response_bytes"]) + " response bytes.\n"
+                            + "Recorded exact model/runtime SHA-256 pair: "
+                            + outcome["model_sha256"][:12] + " / "
+                            + outcome["runtime_sha256"][:12] + ".")
                         if (isinstance(memory, dict)
                                 and memory.get("peak_job_memory_used_bytes")
                                 is not None):
@@ -1958,9 +3136,13 @@ def launch(db_path, *, acceptance: bool = False):
                 save_settings(settings_path, {
                     "project": project.get(), "model": model.get(),
                     "task_role": task_role.get(), "backend": backend.get(),
-                    "endpoint": endpoint.get(), "preset": preset.get(),
+                    "endpoint": endpoint.get(),
+                    "token_parameter": token_parameter.get(),
+                    "model_storage_quota_gib": model_storage_quota_gib.get(),
+                    "preset": preset.get(),
                     "workspaces": workspaces.get(),
                     "repair_count": repair_count.get(),
+                    "startup_resume_workspace": startup_resume_workspace,
                 })
             except (OSError, ValueError) as exc:
                 messagebox.showwarning("Settings not saved", str(exc))
@@ -2010,7 +3192,8 @@ def launch(db_path, *, acceptance: bool = False):
             try:
                 root.update_idletasks()
                 names = [tabs.tab(tab, "text") for tab in tabs.tabs()]
-                if names != ["Development", "Activity & diagnostics"]:
+                if names != ["Development", "Activity & diagnostics",
+                             "Getting started & help"]:
                     raise RuntimeError("Unexpected GUI tab configuration")
                 if not tree.winfo_exists():
                     raise RuntimeError("Task queue was not constructed")
@@ -2068,6 +3251,8 @@ def launch(db_path, *, acceptance: bool = False):
         root.after(300, verify_gui)
     if not acceptance and project.get().strip():
         root.after(400, lambda: run_readiness_check(show_dialog=False))
+    if not acceptance and startup_resume_workspace:
+        root.after_idle(lambda: resume_blocked_tasks(startup=True))
     poll()
     root.mainloop()
     return report if acceptance else None

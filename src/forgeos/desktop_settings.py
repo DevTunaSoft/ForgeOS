@@ -7,7 +7,9 @@ import tempfile
 DEFAULTS = {
     "project": "", "model": "auto", "task_role": "implementation",
     "backend": "ollama", "endpoint": "", "preset": "python-unittest",
-    "workspaces": "", "repair_count": 2,
+    "token_parameter": "max_tokens",
+    "model_storage_quota_gib": 0,
+    "workspaces": "", "repair_count": 2, "startup_resume_workspace": "",
 }
 ALLOWED_BACKENDS = ("ollama", "llama.cpp", "lm-studio", "openai-local")
 ALLOWED_PRESETS = ("python-unittest", "python-pytest", "npm-test",
@@ -19,12 +21,14 @@ def _sanitize(values):
     if not isinstance(values, dict):
         return {}
     cleaned = {}
-    for key in ("project", "model", "endpoint", "workspaces"):
+    for key in ("project", "model", "endpoint", "workspaces",
+                "startup_resume_workspace"):
         value = values.get(key)
         if isinstance(value, str) and len(value) <= 2048 and "\x00" not in value:
             cleaned[key] = value
     for key, choices in (("backend", ALLOWED_BACKENDS),
-                         ("preset", ALLOWED_PRESETS)):
+                         ("preset", ALLOWED_PRESETS),
+                         ("token_parameter", ("max_tokens", "max_completion_tokens"))):
         if values.get(key) in choices:
             cleaned[key] = values[key]
     role = values.get("task_role")
@@ -33,6 +37,9 @@ def _sanitize(values):
     retries = values.get("repair_count")
     if type(retries) is int and 0 <= retries <= 5:
         cleaned["repair_count"] = retries
+    quota = values.get("model_storage_quota_gib")
+    if type(quota) is int and quota in (0, 16, 32, 64, 128, 256, 512):
+        cleaned["model_storage_quota_gib"] = quota
     return cleaned
 
 

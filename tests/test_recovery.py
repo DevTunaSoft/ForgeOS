@@ -3,10 +3,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from forgeos.core import MAX_CHECKPOINT_BYTES, Store
-from forgeos.recovery import resume_safe
+from forgeos.recovery import checkpoint_references_managed_model, resume_safe
 
 
 class FakeStore:
@@ -23,9 +23,11 @@ class FakeStore:
             if task["status"] != "blocked":
                 continue
             payload = task["result"]
-            size = len(payload.encode("utf-8"))
-            yield {**task, "result": payload if size <= MAX_CHECKPOINT_BYTES else None,
-                   "checkpoint_bytes": size}
+            size = (len(payload.encode("utf-8")) if isinstance(payload, str)
+                    else len(payload) if payload is not None else None)
+            if size is not None and size > MAX_CHECKPOINT_BYTES:
+                payload = None
+            yield {**task, "result": payload, "checkpoint_bytes": size}
 
 
 class RecoveryTests(unittest.TestCase):
@@ -58,6 +60,29 @@ class RecoveryTests(unittest.TestCase):
             qualification_evidence_sha256="c" * 64,
             qualification_directory="")
         return value
+
+    def test_retirement_protects_models_referenced_by_blocked_checkpoints(self):
+        contract = self.managed_contract()
+        payload = json.dumps({"phase": "test_pending", "contract": contract})
+        row = {"status": "blocked", "result": payload,
+               "checkpoint_bytes": len(payload.encode("utf-8"))}
+        self.assertTrue(checkpoint_references_managed_model(
+            FakeStore([row]), "a" * 64))
+        self.assertFalse(checkpoint_references_managed_model(
+            FakeStore([row]), "e" * 64))
+
+    def test_retirement_fails_closed_when_checkpoint_identity_is_unreadable(self):
+        for row in (
+                {"status": "blocked",
+                 "result": "x" * (MAX_CHECKPOINT_BYTES + 1)},
+                {"status": "blocked", "result": b"not json",
+                 "checkpoint_bytes": 8},
+                {"status": "blocked", "result": b"[]",
+                 "checkpoint_bytes": 2}):
+            with self.subTest(row=row):
+                with self.assertRaises(RuntimeError):
+                    checkpoint_references_managed_model(
+                        FakeStore([row]), "a" * 64)
 
     def test_qualified_managed_checkpoint_replays_exact_evidence(self):
         contract = self.qualified_managed_contract()
@@ -105,6 +130,34 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("qualified-model", report["skipped"][0]["reason"])
         runner.assert_not_called()
 
+    def test_qualification_path_resolution_failure_skips_only_damaged_task(self):
+        directory = self.parent / "qualification"
+        contract = self.qualified_managed_contract()
+        contract["qualification_directory"] = str(directory)
+        tasks = [
+            self.task(1, {"phase": "test_pending",
+                          "workspace": str(self.parent / "task-1"),
+                          "contract": contract}),
+            self.task(2, {"phase": "test_pending",
+                          "workspace": str(self.parent / "task-2"),
+                          "contract": self.contract()}),
+        ]
+        resolve = Path.resolve
+
+        def resolve_path(path, *args, **kwargs):
+            if path == directory:
+                raise RuntimeError("Symlink loop")
+            return resolve(path, *args, **kwargs)
+
+        runner = Mock(return_value={"passed": True})
+        with patch.object(Path, "resolve", resolve_path):
+            report = resume_safe(FakeStore(tasks), self.parent,
+                                 allow_host_tests=True, execute=runner)
+        self.assertEqual(report["skipped"], [
+            {"id": 1, "reason": "Qualification evidence directory is unavailable"}])
+        self.assertEqual(report["resumed"], [2])
+        runner.assert_called_once()
+
     def test_managed_checkpoint_requires_authenticated_runtime_factory(self):
         checkpoint = {
             "phase": "test_pending",
@@ -118,6 +171,13 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(report["resumed"], [])
         self.assertIn("authenticated", report["skipped"][0]["reason"].lower())
         runner.assert_not_called()
+
+        sink = Mock(side_effect=BrokenPipeError("closed output"))
+        with self.assertRaisesRegex(BrokenPipeError, "closed output"):
+            resume_safe(FakeStore([self.task(70, checkpoint)]), self.parent,
+                        allow_host_tests=True, execute=runner, on_event=sink)
+        sink.assert_called_once()
+        self.assertEqual(sink.call_args.args[0]["event"], "skipped")
 
     def test_managed_checkpoint_resumes_only_with_exact_attested_identity(self):
         contract = self.managed_contract()
@@ -209,6 +269,39 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(runner.call_count, 1)
         self.assertTrue(runner.call_args.kwargs["resume"])
 
+    def test_invalid_checkpoint_fields_do_not_abort_later_recovery(self):
+        tasks = [
+            self.task(1, {"phase": []}),
+            self.task(2, {
+                "phase": "test_pending",
+                "workspace": str(self.parent / "task-2"),
+                "contract": self.contract(preset={}),
+            }),
+            {**self.task(3, None), "result": "[" * 12000 + "]" * 12000},
+            {**self.task(5, None), "result": None},
+            self.task(4, {
+                "phase": "test_pending",
+                "workspace": str(self.parent / "task-4"),
+                "contract": self.contract(),
+            }),
+        ]
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(
+            FakeStore(tasks), self.parent, allow_host_tests=True, execute=runner)
+        self.assertEqual(report["skipped"][:2], [
+            {"id": 1, "reason": "No resumable checkpoint"},
+            {"id": 2, "reason": "Invalid checkpoint test preset"},
+        ])
+        self.assertEqual(len(report["skipped"]), 4)
+        self.assertEqual(report["skipped"][2]["id"], 3)
+        self.assertIn(report["skipped"][2]["reason"],
+                      ("No structured checkpoint", "No resumable checkpoint"))
+        self.assertEqual(report["skipped"][3],
+                         {"id": 5, "reason": "No structured checkpoint"})
+        self.assertEqual(report["resumed"], [4])
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[1], 4)
+
     def test_bad_workspace_path_does_not_abort_later_recovery(self):
         malformed = self.task(1, {
             "phase": "test_pending",
@@ -284,6 +377,35 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(report["skipped"], [])
         self.assertEqual(runner.call_count, 1)
 
+    def test_generation_pending_checkpoint_is_eligible_with_remaining_budget(self):
+        checkpoint = {
+            "phase": "generation_pending",
+            "generation_attempts": 1,
+            "workspace": str(self.parent / "task-12"),
+            "contract": self.contract(),
+        }
+        runner = Mock(return_value={"passed": True})
+        report = resume_safe(
+            FakeStore([self.task(12, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [12])
+        self.assertTrue(runner.call_args.kwargs["resume"])
+
+    def test_exhausted_generation_checkpoint_is_skipped(self):
+        checkpoint = {
+            "phase": "generation_pending",
+            "generation_attempts": 3,
+            "workspace": str(self.parent / "task-13"),
+            "contract": self.contract(),
+        }
+        runner = Mock()
+        report = resume_safe(
+            FakeStore([self.task(13, checkpoint)]), self.parent,
+            allow_host_tests=True, execute=runner)
+        self.assertEqual(report["resumed"], [])
+        self.assertIn("retry limit", report["skipped"][0]["reason"])
+        runner.assert_not_called()
+
     def test_replays_saved_contract_per_task(self):
         tasks = [
             self.task(5, {"phase": "test_pending",
@@ -353,11 +475,19 @@ class RecoveryTests(unittest.TestCase):
             eligible.append(task_id)
             history_id = store.add(str(repo), f"completed task {index}")
             store.update(history_id, "passed", result="P" * (80 * 1024))
+        damaged = store.add(str(repo), "damaged checkpoint encoding")
+        with store.db:
+            store.db.execute(
+                "UPDATE tasks SET status='blocked', result=CAST(? AS TEXT) WHERE id=?",
+                (b'\xff', damaged))
+        with self.assertRaisesRegex(ValueError, "checkpoint is not valid UTF-8"):
+            store.get_task_inputs(damaged, resume=True)
         runner = Mock(return_value={"passed": True})
         report = resume_safe(store, self.parent, allow_host_tests=True,
                              execute=runner)
         self.assertEqual(report["resumed"], list(reversed(eligible)))
-        self.assertEqual(report["skipped"], [])
+        self.assertEqual(report["skipped"], [
+            {"id": damaged, "reason": "No structured checkpoint"}])
         self.assertEqual(runner.call_count, 41)
 
     def test_large_exception_reasons_are_bounded_for_gui_and_cli(self):
@@ -451,6 +581,14 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "callable"):
             resume_safe(store, self.parent, allow_host_tests=True,
                         on_event="not callable")
+        self.assertEqual(store.recovery_calls, 0)
+
+    def test_invalid_preset_override_rejected_before_store_mutation(self):
+        store = FakeStore([])
+        for preset in ([], {}, "unknown"):
+            with self.subTest(preset=preset):
+                with self.assertRaisesRegex(ValueError, "Invalid test preset override"):
+                    resume_safe(store, self.parent, allow_host_tests=True, preset=preset)
         self.assertEqual(store.recovery_calls, 0)
 
     def test_manual_review_checkpoint_is_skipped_without_model_or_runner(self):

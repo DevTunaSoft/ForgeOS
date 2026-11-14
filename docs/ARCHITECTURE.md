@@ -39,7 +39,7 @@ flowchart TB
 | `src/forgeos/secure_runner.py`, `appcontainer.py`, `windows_containment.py`, `sandbox_runner.py` | Frozen Windows execution containment |
 | `src/forgeos/diagnostics.py`, `output_capture.py`, `output_rules.py` | Evidence archive, bounded output, summaries, trusted filters |
 | `src/forgeos/error_learning.py`, `optimizer_metrics.py`, `insights.py` | Test-verified repair signatures, efficiency and advisory diagnostic views |
-| `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
+| `src/forgeos/context_index.py` | Shared bounded project traversal, prompt metadata and on-demand Python declaration-name search; no bodies in search results |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
 | `src/forgeos/local_models.py` | Experimental loopback-only chat adapter for llama.cpp, LM Studio and configurable local OpenAI-style endpoints; bounded requests/responses, no proxy/redirects |
 | `src/forgeos/huggingface_catalog.py` | Opt-in public GGUF metadata, pinned commit revision, hash/size inspection |
@@ -74,6 +74,14 @@ loading remain outside these adapters, so there is no claimed full
 resource governor or native GGUF execution. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
+Managed llama.cpp startup additionally verifies that the loopback listener PID
+matches ForgeOS's child before authenticated model discovery. The catalog
+request checks ownership immediately before and after the HTTP exchange and
+startup checks once more before reporting readiness. This narrows the
+port-rebinding window; it does not bind the TCP connection atomically to a
+process. Target-host Windows IP Helper access and real server identity still
+need acceptance.
+
 ## Low-memory SQLite read boundary
 
 The persistent `Store.get()` API remains available for explicit detailed history and evidence inspection, but **regular development, planning and manual test actions** use the narrower `Store.get_task_inputs()` projection. Its normal path selects only the project, status and bounded UTF-8 task description, without fetching historical result/error data. Direct resumption uses the same bounded projection but requests an existing checkpoint only when at most 64 KiB. Oversized legacy description/checkpoint values are rejected within the SQLite projection before Python materializes them; the original stored rows are not modified.
@@ -93,7 +101,7 @@ The Tkinter Live Activity Monitor uses `Store.get_status()` to select one scalar
 
 The task engine does not hold an operating-system filesystem lock while generating/editing: a lease may expire during a long-running external call. Lease fencing prevents stale *database publications*, but a worktree touched before detecting the expired lease still requires careful inspection; recovery must not silently overwrite it.
 
-Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, branch and saved execution parameters must match. Not all interrupted phases can resume. `resume-safe` reads only blocked checkpoint fields through SQLite keyset pages of 16 records; any checkpoint over 64 KiB is reported as skipped without loading its payload into Python. It does not scan completed-task test output or bypass execution leases.
+Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, branch and saved execution parameters must match. Pre-edit generation retries are bound to the original Git HEAD and require a clean worktree without a pending edit journal; generation calls are capped at three. Test-pending and repair-pending checkpoints retain their existing file-hash checks. Other interrupted phases remain ineligible. `resume-safe` reads only blocked checkpoint fields through SQLite keyset pages of 16 records; any checkpoint over 64 KiB is reported as skipped without loading its payload into Python. It does not scan completed-task test output or bypass execution leases.
 
 ## Execution security: differentiate the environments
 
@@ -150,12 +158,33 @@ partial lines without a summary; never treat such output as success.
 - `managed_llama.py` is one GUI-session-owned CPU-only subprocess
   lifecycle controller; user-provided trusted executable SHA-256 and
   previously downloaded GGUF SHA-256 are checked before process launch.
+  A kernel-held per-user runtime lock under the existing model storage root
+  prevents other ForgeOS processes from starting a second managed GGUF, even
+  when they select different files; it remains held until child exit is
+  confirmed. This does not coordinate external inference servers or builds.
   Startup/large hashing run on a background worker, with readiness
   and authenticated catalog responses crossing through the GUI event queue.
 - `model_inventory.py` reads `gguf_download.py`'s existing
   pinned-revision manifests with bounded `os.scandir`. Inventory
   metadata does **not** reread full weights; explicit re-verification
-  streams SHA-256 on demand and does no inference/network IO.
+  streams SHA-256 on demand and does no inference/network IO. It rejects
+  hard-linked model/manifest files and rechecks the model's link count after
+  hashing, alongside size, modification time and file identity. The metadata
+  inventory also marks hard-linked or non-regular weights as unsafe, so the
+  existing model picker cannot select them before verification. The existing
+  pinned manifest can retain a bounded snapshot of public Hub card claims for
+  license, quantization and declared context, explicitly marked
+  `hub-card-unverified` and tied to the inspected revision. Offline inventory
+  reports expected versus observed disk bytes and does not infer actual runtime
+  compatibility from those claims.
+- `gguf_download.repair_downloaded_gguf()` is the explicit damaged-download
+  recovery path. It validates the original local pinned manifest and uses the
+  same revision/SHA-256 through the canonical downloader. Under the existing
+  per-file lock it checks task-checkpoint references, refuses linked or
+  unresolved-journal files, quarantines only a mismatched single-link weight,
+  and retains that quarantine in storage quota accounting. The model picker
+  and `model-repair-local --confirm` CLI command call this path; imported or
+  untrusted-manifest files are not repairable.
 - `recovery.py` fails closed on the ephemeral `forgeos-managed`
   alias because a random port and transient token are not adequate
   cross-reboot model identities. Pinned binary/model contract plus
@@ -175,7 +204,7 @@ are tracked in the detailed [multi-LLM roadmap](MULTI_LLM_ROADMAP.md).
 
 The offline model-retirement module reuses the canonical model_inventory manifest/path validation and the gguf_download per-file exclusive lock, rather than creating another model database, scheduler or daemon. The operator chooses a model and explicitly confirms. After a complete streamed hash verification under the lock, a private same-volume directory within the existing model root receives a versioned journal (capped at 4096 bytes) identifying the original revision-specific model, size and SHA-256. Weight and manifest then move in separate atomic renames. A crash between renames leaves a recoverable journal; a restore by random 32-hex ID verifies the pinned identity and bytes, checks both original and archived locations, refuses overwrite and unfinished downloads, then removes its journal only after a full verification of the restored model.
 
-Retired weight files are preserved; this is *not* deletion or free-space recovery. Active inventory excludes the retired directory; a bounded offline retired listing is available. The lock coordinates cooperative ForgeOS downloaders, not foreign processes. File-swap/reparse and in-use native server detection are not comprehensively solved. Physical Windows acceptance is mandatory.
+Retired weight files are preserved; this is *not* deletion or free-space recovery. Active inventory excludes the retired directory; a bounded offline retired listing is available. The lock coordinates cooperative ForgeOS downloaders, not foreign processes. Known symbolic links, junctions and other reparse points in managed storage paths fail closed; concurrent file-swap races and in-use native server detection are not comprehensively solved. Physical Windows acceptance is mandatory.
 
 
 On POSIX systems, the retirement writer synchronizes the directory containing its durable journal before moving files, then fsyncs source/destination directories after each rename. Journal removal receives the same treatment. Windows has no equivalent portable directory fsync through Python's standard library, so NTFS power-loss resilience remains experimental and requires live recovery testing.
