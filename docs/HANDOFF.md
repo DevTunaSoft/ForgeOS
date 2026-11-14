@@ -3088,3 +3088,23 @@ and restore under constrained filesystems.
   target host. The checks do not atomically bind an HTTP connection to a
   process. Native llama.cpp crash/restart, frozen EXE, model inference and
   target-device RAM acceptance remain open for issue #53 and #56.
+
+### 2026-11-14 — preserve a valid manual stop retry after a Job close
+
+- **Source commit:** `149567ed2b7923aae85aef5780ccfda8be5dca39` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Change:** when the Windows kill-on-close Job Object has closed but the
+  child process cannot be reaped within the bounded stop deadlines, the
+  controller retains the process handle and both lifecycle locks without
+  retaining the closed Job handle. A subsequent explicit Stop uses the
+  process handle directly. This avoids retrying a stale native Job handle
+  while the child may still be alive.
+- **Verification:** the new Windows fault-injection case passed: two wait
+  timeouts retained both locks and erased credentials, then a manual retry
+  reaped the process without closing the Job twice and released both locks.
+  The full `tests.test_managed_llama` module passed 47 tests with 7 skips;
+  Python compilation and `git diff --check` passed.
+- **Limits / next:** this simulated an unresponsive process handle using a
+  test double. Real llama.cpp crash/restart, PID-table access, frozen EXE,
+  physical process-tree cleanup and target-device memory measurements remain
+  unverified for issues #53 and #56.
