@@ -197,6 +197,14 @@ def screening_tasks(role: str | None = None) -> tuple[ScreeningTask, ...]:
                  if role is None or task.role == role)
 
 
+def _json_candidate(response: str) -> str:
+    """Allow one exact JSON Markdown fence without accepting surrounding prose."""
+    candidate = response.strip()
+    if candidate.startswith("```json") and candidate.endswith("```"):
+        candidate = candidate[len("```json"): -len("```")].strip()
+    return candidate
+
+
 def score_screening_response(task: ScreeningTask, response: str) -> dict:
     """Score format and objective success; unsafe edit attempts are explicit."""
     if not isinstance(task, ScreeningTask):
@@ -207,7 +215,7 @@ def score_screening_response(task: ScreeningTask, response: str) -> dict:
                 "reason": "no_response"}
     if task.kind == "items":
         try:
-            payload = json.loads(response)
+            payload = json.loads(_json_candidate(response))
         except (TypeError, ValueError):
             return {**base, "json_contract": False, "objective_pass": False,
                     "reason": "invalid_json"}
@@ -222,7 +230,7 @@ def score_screening_response(task: ScreeningTask, response: str) -> dict:
         raise ValueError("Unknown screening task kind")
     try:
         with tempfile.TemporaryDirectory() as temp:
-            edits = parse_edits(Path(temp), response)
+            edits = parse_edits(Path(temp), _json_candidate(response))
     except EditError as exc:
         unsafe = str(exc) in {
             "Non-portable or unsafe path",

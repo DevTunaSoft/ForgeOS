@@ -3293,3 +3293,16 @@ and restore under constrained filesystems.
   task/edit/restart/reboot acceptance, AppContainer in a normal user session,
   power-loss and physical disk-full behavior, broader model-quality corpus,
   and full roadmap verification remain open. Do not mark ForgeOS finished.
+
+### 2026-11-14 — preserve fenced JSON in qualification scoring
+
+- **Source:** the real Qwen Windows run returned a single Markdown JSON fence
+  for its empty self-test. The same behavior can occur in the 20-task role
+  qualification corpus, so `model_benchmark.score_screening_response` now
+  removes only one exact ` ```json ... ``` ` wrapper before applying the
+  existing JSON, edit-path, safety and objective checks. Surrounding prose and
+  unsafe paths remain failures.
+- **Verification:** the model-benchmark and qualification modules passed all
+  32 tests with one environment skip. Python compilation and `git diff --check`
+  passed. This improves compatibility parsing but does not qualify a model or
+  replace the real multi-role benchmark corpus.
