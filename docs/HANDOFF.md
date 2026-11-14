@@ -3157,3 +3157,26 @@ and restore under constrained filesystems.
   the full managed-runtime module passed 48 tests with 7 skips. Python
   compilation and `git diff --check` passed locally. Hosted verification of
   this fix and the remaining Windows faults is pending.
+
+### 2026-11-14 — confirm Linux matrix and correct Windows fault fixtures
+
+- **Third hosted run at `c697cd0`:** Ubuntu Python 3.10 and 3.12 unit jobs
+  passed. Documentation run `43617936458` and Windows EXE run
+  `43617939486` passed. Windows Python 3.12 still failed 10 injected
+  hard-link/reparse/purge cases; Windows 3.10 was still running when this
+  entry was written. These jobs verify hosted runners, not the physical
+  Windows release machine or a real GGUF inference session.
+- **Fixture commit:** `c23ac223f7ba56d1836826981c061d066ccb48ce`
+  compares fault-injection targets with the same canonical paths used by
+  the inventory, import and retirement code. Windows temporary paths can
+  have equivalent spellings; the previous mock comparisons missed the
+  production calls and incorrectly reported that the safety checks failed.
+  No production hard-link or reparse guard was relaxed.
+- **Local verification:** the inventory/import/retirement modules ran
+  78 tests with 6 skips and one intermittent Windows file-sharing error
+  during a retirement move. The affected test and the amended purge retry
+  case both passed when rerun in isolation; `git diff --check` passed.
+  Hosted Windows matrix verification at the new head is still required.
+- **Next:** rerun the full hosted matrix on the new head, resolve any real
+  failures, and retain physical Windows llama.cpp/GGUF acceptance as an
+  explicit release gate.
