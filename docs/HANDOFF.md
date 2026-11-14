@@ -3341,3 +3341,26 @@ and restore under constrained filesystems.
 - **Verification:** documentation formatting and handoff integrity were
   checked locally. This is a source-contract update, not a claim that the
   remaining adapters or release gates are complete.
+
+### 2026-11-14 — expand native Windows role qualification evidence
+
+- **Live target-host qualification:** using the pinned Qwen2.5-Coder-1.5B
+  Q4_K_M GGUF at revision `f86cb2c1fa58255f8052cc32aeede1b7482d4361` and
+  official llama.cpp b12199 runtime, the fixed 20-task corpora produced:
+  planning `20/20` JSON and objective passes (qualified), documentation
+  `20/20` (qualified), security review `20/20` JSON and `18/20` objective
+  passes (qualified), and context summarization `20/20` JSON but `1/20`
+  objective passes (completed not qualified).
+- **Measured identity and performance:** all persisted records are bound to
+  model SHA `cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046`
+  and runtime SHA
+  `26f942409862276c2a19e784af4892ce0c9cdfec68d740ad2d9f9b2b753b903c`.
+  Median per-task latency was 2.153 s for planning, 0.907 s for security
+  review, 1.681 s for documentation and 1.393 s for summarization. The
+  summarization miss is retained as negative evidence; no automatic role
+  routing is enabled from these records.
+- **Remaining qualification work:** implementation, review/refactor,
+  debugging and test-generation corpora remain unrun. The records are stored
+  in the disposable Windows acceptance evidence directory and are not claimed
+  as repository release artifacts until the broader corpus and benchmark
+  table are complete.
