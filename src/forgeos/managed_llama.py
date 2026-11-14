@@ -445,6 +445,90 @@ def _listener_owner_pid(port: int) -> int | None:
     raise RuntimeError("Listener ownership verification is unsupported on this OS")
 
 
+def _parse_linux_process_start_time(pid: int, raw: bytes | str) -> int:
+    """Parse Linux /proc/<pid>/stat field 22 without trusting comm spacing."""
+    if (type(pid) is not int or pid <= 1
+            or not isinstance(raw, (bytes, str)) or len(raw) > 4096):
+        raise ValueError("Invalid Linux process identity record")
+    separator = b" (" if isinstance(raw, bytes) else " ("
+    terminator = b")" if isinstance(raw, bytes) else ")"
+    open_at = raw.find(separator)
+    close_at = raw.rfind(terminator)
+    if open_at <= 0 or close_at <= open_at:
+        raise ValueError("Malformed Linux process identity record")
+    try:
+        reported_pid = int(raw[:open_at])
+        fields = raw[close_at + 1:].split()
+        # The remainder starts at field 3 (state), so field 22 is index 19.
+        start_time = int(fields[19])
+    except (ValueError, IndexError) as exc:
+        raise ValueError("Malformed Linux process identity record") from exc
+    if reported_pid != pid or start_time <= 0:
+        raise ValueError("Linux process identity does not match its PID")
+    return start_time
+
+
+def _linux_process_start_time(pid: int) -> int:
+    """Read a process start tick that remains unique across PID reuse."""
+    try:
+        with (Path("/proc") / str(pid) / "stat").open("rb") as stream:
+            raw = stream.read(4097)
+    except OSError as exc:
+        raise RuntimeError("Could not verify managed process identity") from exc
+    if len(raw) > 4096:
+        raise RuntimeError("Linux process identity record exceeds its size limit")
+    return _parse_linux_process_start_time(pid, raw)
+
+
+def _windows_process_creation_time(handle) -> int:
+    """Return a process handle's creation FILETIME for PID-reuse checks."""
+    import ctypes
+    from ctypes import wintypes
+
+    class FILETIME(ctypes.Structure):
+        _fields_ = [("dwLowDateTime", wintypes.DWORD),
+                    ("dwHighDateTime", wintypes.DWORD)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    get_times = kernel32.GetProcessTimes
+    get_times.argtypes = [wintypes.HANDLE, ctypes.POINTER(FILETIME),
+                          ctypes.POINTER(FILETIME), ctypes.POINTER(FILETIME),
+                          ctypes.POINTER(FILETIME)]
+    get_times.restype = wintypes.BOOL
+    created, exited, kernel, user = FILETIME(), FILETIME(), FILETIME(), FILETIME()
+    if not get_times(handle, ctypes.byref(created), ctypes.byref(exited),
+                     ctypes.byref(kernel), ctypes.byref(user)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return (int(created.dwHighDateTime) << 32) | int(created.dwLowDateTime)
+
+
+def _listener_process_identity(pid: int) -> tuple[str, int]:
+    """Resolve the current owner PID to a stable process-instance identity."""
+    if type(pid) is not int or pid <= 1:
+        raise ValueError("Invalid listener owner PID")
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        open_process.restype = wintypes.HANDLE
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+        handle = open_process(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            return ("windows", _windows_process_creation_time(handle))
+        finally:
+            close_handle(handle)
+    if sys.platform.startswith("linux"):
+        return ("linux", _linux_process_start_time(pid))
+    raise RuntimeError("Process-instance verification is unsupported on this OS")
+
+
 class _WindowsNativeProcess:
     """Minimal Popen-compatible wrapper for a suspended native Windows child."""
 
@@ -452,6 +536,7 @@ class _WindowsNativeProcess:
         self._handle = handle
         self.pid = int(pid)
         self.returncode = None
+        self.creation_time = _windows_process_creation_time(handle)
 
     def poll(self):
         if self.returncode is not None:
@@ -496,6 +581,18 @@ class _WindowsNativeProcess:
             from . import windows_containment as win
             win.kernel32.CloseHandle(self._handle)
             self._handle = None
+
+
+def _managed_process_identity(process) -> tuple[str, int] | None:
+    """Capture the launched process instance, retaining mock-test support."""
+    if isinstance(process, _WindowsNativeProcess):
+        return ("windows", process.creation_time)
+    if (sys.platform.startswith("linux")
+            and isinstance(process, subprocess.Popen)):
+        return ("linux", _linux_process_start_time(process.pid))
+    # Unit-test doubles do not represent a kernel process. Production launch
+    # paths above always capture an identity before polling the listener.
+    return None
 
 
 def _launch_windows_suspended_job(argv: list[str], cwd: Path,
@@ -634,6 +731,7 @@ class ManagedLlamaServer:
         self.startup_elapsed_seconds: float | None = None
         self._model_lock = None
         self._runtime_lock = None
+        self._process_identity: tuple[str, int] | None = None
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -649,8 +747,16 @@ class ManagedLlamaServer:
         owner_pid = _listener_owner_pid(port)
         if owner_pid != self.process.pid:
             raise RuntimeError(
-                "Managed loopback listener ownership changed; refusing to "
-                "send project prompts")
+                "Managed loopback listener is not owned by the exact launched "
+                "process instance; ownership changed, refusing to send "
+                "project prompts")
+        if self._process_identity is not None:
+            owner_identity = _listener_process_identity(owner_pid)
+            if owner_identity != self._process_identity:
+                raise RuntimeError(
+                    "Managed loopback listener is not owned by the exact "
+                    "launched process instance; ownership changed, refusing "
+                    "to send project prompts")
 
     def memory_report(self) -> dict:
         """Return one-shot managed-runtime accounting; never background-poll."""
@@ -874,6 +980,7 @@ class ManagedLlamaServer:
                     env=_child_environment(), stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     start_new_session=True)
+            self._process_identity = _managed_process_identity(self.process)
             self.api_key = key
             self.endpoint = f"http://127.0.0.1:{port}/v1"
             self.model_name = ALIAS
@@ -893,11 +1000,7 @@ class ManagedLlamaServer:
                         data = response.read(256)
                     if len(data) > 256 or json.loads(data).get("status") != "ok":
                         raise RuntimeError("Unexpected llama-server health response")
-                    owner_pid = _listener_owner_pid(port)
-                    if owner_pid != self.process.pid:
-                        raise RuntimeError(
-                            "Loopback listener is not owned by the launched "
-                            "llama-server process; refusing to send model prompts")
+                    self.verify_listener_ownership()
                     client = LocalChatModel(
                         backend="llama.cpp", model=ALIAS,
                         endpoint=self.endpoint, api_key=key)
@@ -1040,6 +1143,7 @@ class ManagedLlamaServer:
             self.thread_count = None
             self.memory_ceiling_bytes = None
             self.startup_elapsed_seconds = None
+            self._process_identity = None
             if release_lifecycle_locks:
                 model_lock, self._model_lock = self._model_lock, None
                 runtime_lock, self._runtime_lock = self._runtime_lock, None

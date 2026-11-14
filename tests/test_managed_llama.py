@@ -942,6 +942,47 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
         self.assertIsNone(controller.process)
         self.assertIsNone(controller.api_key)
 
+    def test_listener_ownership_rejects_a_reused_pid(self):
+        controller = ManagedLlamaServer()
+        controller.process = Mock()
+        controller.process.pid = 12345
+        controller.process.poll.return_value = None
+        controller.endpoint = "http://127.0.0.1:17091/v1"
+        controller._process_identity = ("test", 100)
+        with (patch("forgeos.managed_llama._listener_owner_pid",
+                    return_value=12345),
+              patch("forgeos.managed_llama._listener_process_identity",
+                    return_value=("test", 101)) as owner_identity):
+            with self.assertRaisesRegex(RuntimeError, "ownership changed"):
+                controller.verify_listener_ownership()
+        owner_identity.assert_called_once_with(12345)
+
+    def test_listener_ownership_accepts_the_same_process_instance(self):
+        controller = ManagedLlamaServer()
+        controller.process = Mock()
+        controller.process.pid = 12345
+        controller.process.poll.return_value = None
+        controller.endpoint = "http://127.0.0.1:17091/v1"
+        controller._process_identity = ("test", 100)
+        with (patch("forgeos.managed_llama._listener_owner_pid",
+                    return_value=12345),
+              patch("forgeos.managed_llama._listener_process_identity",
+                    return_value=("test", 100)) as owner_identity):
+            controller.verify_listener_ownership()
+        owner_identity.assert_called_once_with(12345)
+
+    def test_linux_process_start_time_parser_handles_parentheses_in_command(self):
+        from forgeos.managed_llama import _parse_linux_process_start_time
+        fields = ["S"] + [str(value) for value in range(1, 19)] + ["98765"]
+        raw = "321 (worker (nested) name)) " + " ".join(fields)
+        self.assertEqual(_parse_linux_process_start_time(321, raw), 98765)
+        binary_raw = b"321 (worker \xff name)) " + " ".join(fields).encode("ascii")
+        self.assertEqual(_parse_linux_process_start_time(321, binary_raw), 98765)
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            _parse_linux_process_start_time(322, raw)
+        with self.assertRaisesRegex(ValueError, "Malformed"):
+            _parse_linux_process_start_time(321, "321 (truncated) S 1")
+
     def test_listener_owner_resolver_identifies_current_process(self):
         from forgeos.managed_llama import _listener_owner_pid
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
@@ -1010,6 +1051,13 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
                                model_path=self.model, timeout=1)
         self.assertIsNone(instance.api_key)
         self.assertIsNone(instance.process)
+        self.assertEqual(
+            self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+            "acquired")
+        self.assertEqual(
+            self.child_model_lock(
+                self.model.with_name(self.model.name + ".lock")
+            ).stdout.strip(), "acquired")
 
     def test_connection_failure_times_out_and_terminates(self):
         proc = Mock()
