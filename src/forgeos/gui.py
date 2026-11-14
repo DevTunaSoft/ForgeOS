@@ -44,6 +44,35 @@ def _model_inventory_status_label(status: str, *, loaded: bool = False) -> str:
     return MODEL_INVENTORY_STATUS_LABELS.get(status, "Needs inspection")
 
 
+def _runtime_compatibility_label(value, model_sha256: str | None = None) -> str:
+    """Describe local self-test history without implying publisher trust."""
+    if value == "not-recorded":
+        return "Not self-tested"
+    if value == "unavailable":
+        return "History unavailable"
+    if (not isinstance(value, dict) or value.get("status") != "self_test_passed"
+            or not isinstance(value.get("pairs"), list)
+            or not isinstance(model_sha256, str)
+            or len(model_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in model_sha256)):
+        return "Needs inspection"
+    runtimes = []
+    for pair in value["pairs"]:
+        if (not isinstance(pair, dict)
+                or not isinstance(pair.get("runtime_sha256"), str)
+                or len(pair["runtime_sha256"]) != 64
+                or any(char not in "0123456789abcdef"
+                       for char in pair["runtime_sha256"])):
+            return "Needs inspection"
+        runtimes.append(model_sha256[:8] + "/" + pair["runtime_sha256"][:8])
+    if not runtimes:
+        return "Not self-tested"
+    visible = ", ".join(runtimes[:2])
+    if len(runtimes) > 2:
+        visible += f", +{len(runtimes) - 2}"
+    return "Passed: " + visible
+
+
 def _retirement_allowed(*, task_busy: bool, operation_busy: bool,
                         model_present: bool) -> bool:
     """Only allow an opt-in model move when the owned model is inactive."""
@@ -928,11 +957,11 @@ def launch(db_path, *, acceptance: bool = False):
                 return
             chooser = tk.Toplevel(popup)
             chooser.title("ForgeOS | Downloaded GGUF weights")
-            chooser.geometry("900x430")
+            chooser.geometry("1120x430")
             body = ttk.Frame(chooser, padding=12)
             body.pack(fill="both", expand=True)
             ttk.Label(
-                body, wraplength=860,
+                body, wraplength=1080,
                 text="Metadata-only inventory (no large file is rehashed "
                      "in this view). Missing, changed-size or unsafe entries "
                      "are shown for diagnosis but cannot be selected for use "
@@ -940,13 +969,17 @@ def launch(db_path, *, acceptance: bool = False):
                      "checks run in the background and can be cancelled. "
                      "Damaged downloads can be restored from their exact "
                      "pinned manifest after confirmation. "
-                     "Imported files have unknown source and license."
+                     "Imported files have unknown source and license. "
+                     "Compatibility lists local ForgeOS self-tests for exact "
+                     "model/runtime SHA-256 pairs; it is not publisher proof."
             ).pack(anchor="w", pady=(0, 8))
             listing = ttk.Treeview(
-                body, columns=("model", "size", "source", "status"),
+                body, columns=("model", "size", "source", "status",
+                               "compatibility"),
                 show="headings", selectmode="browse")
             for key, width in (("model", 290), ("size", 100),
-                               ("source", 280), ("status", 190)):
+                               ("source", 280), ("status", 190),
+                               ("compatibility", 210)):
                 listing.heading(key, text=key.title())
                 listing.column(key, width=width, stretch=key == "model")
             listing.pack(fill="both", expand=True)
@@ -966,7 +999,10 @@ def launch(db_path, *, acceptance: bool = False):
                                        size_text,
                                        entry["repo"],
                                        _model_inventory_status_label(
-                                           entry["status"], loaded=loaded)))
+                                           entry["status"], loaded=loaded),
+                                       _runtime_compatibility_label(
+                                           entry.get("runtime_compatibility"),
+                                           entry.get("sha256"))))
             selectable_statuses = {
                 "present_not_reverified", "imported_not_reverified", "verified"}
             verification_events = Queue(maxsize=1)
@@ -2073,7 +2109,8 @@ def launch(db_path, *, acceptance: bool = False):
             status.set("Testing managed local model structured output...")
             def worker():
                 try:
-                    outcome = controller.inference_self_test()
+                    from .model_compatibility import record_runtime_self_test
+                    outcome = record_runtime_self_test(controller)
                     managed_events.put(("smoke", controller, outcome, None))
                 except Exception as exc:
                     managed_events.put((
@@ -3002,12 +3039,16 @@ def launch(db_path, *, acceptance: bool = False):
                         tabs.select(activity)
                     elif action == "smoke":
                         managed["last_used"] = time.monotonic()
-                        status.set("Managed local model self-test passed")
+                        status.set(
+                            "Self-test passed; model/runtime pair recorded")
                         memory = outcome.get("memory")
                         detail = (
                             "Managed local model self-test passed in "
                             + str(outcome["elapsed_seconds"]) + " seconds; "
-                            + str(outcome["response_bytes"]) + " response bytes.")
+                            + str(outcome["response_bytes"]) + " response bytes.\n"
+                            + "Recorded exact model/runtime SHA-256 pair: "
+                            + outcome["model_sha256"][:12] + " / "
+                            + outcome["runtime_sha256"][:12] + ".")
                         if (isinstance(memory, dict)
                                 and memory.get("peak_job_memory_used_bytes")
                                 is not None):

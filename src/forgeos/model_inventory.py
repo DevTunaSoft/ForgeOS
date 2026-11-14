@@ -99,7 +99,17 @@ def _import_metadata(path: Path, checksum: str) -> dict:
     return info
 
 
-def _list_imports(root: Path) -> list[dict]:
+def _compatibility_for(model_sha256: str,
+                      compatibility: dict[str, list[dict]] | None):
+    if compatibility is None:
+        return "unavailable"
+    pairs = compatibility.get(model_sha256, [])
+    return ({"status": "self_test_passed", "pairs": pairs}
+            if pairs else "not-recorded")
+
+
+def _list_imports(root: Path,
+                  compatibility: dict[str, list[dict]] | None) -> list[dict]:
     output = []
     for record in _import_records(root):
         path, checksum = record["path"], record["sha256"]
@@ -131,7 +141,8 @@ def _list_imports(root: Path) -> list[dict]:
             "revision": None, "file": path.name, "bytes": amount,
             "disk_bytes": amount, "sha256": checksum, "format": "GGUF",
             "metadata_claims": {}, "metadata_claims_status": "unknown-import",
-            "runtime_compatibility": "not-recorded",
+            "runtime_compatibility": _compatibility_for(
+                checksum, compatibility),
             "status": status, "kind": "imported",
         })
     return output
@@ -178,6 +189,13 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
     verify_download() has streamed its file contents successfully.
     """
     root = _safe_storage_root(directory)
+    try:
+        from .model_compatibility import list_runtime_self_tests
+        compatibility = list_runtime_self_tests(directory=root)
+    except (OSError, RuntimeError, ValueError):
+        # Compatibility history is optional UI evidence. Its corruption must
+        # not make otherwise usable model weights disappear from inventory.
+        compatibility = None
     pending = [(root, 0)]
     examined = 0
     results = []
@@ -233,12 +251,13 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
                     "metadata_claims_status": (
                         "hub-card-unverified" if info.get("hub_claims")
                         else "not-recorded"),
-                    "runtime_compatibility": "not-recorded",
+                    "runtime_compatibility": _compatibility_for(
+                        info["sha256"], compatibility),
                     "status": status,
                 })
                 if len(results) > MAX_LISTED_MODELS:
                     raise RuntimeError("GGUF inventory exceeds model count limit")
-    results.extend(_list_imports(root))
+    results.extend(_list_imports(root, compatibility))
     if len(results) > MAX_LISTED_MODELS:
         raise RuntimeError("GGUF inventory exceeds model count limit")
     results.sort(key=lambda x: (x["repo"].lower(), x["file"].lower()))

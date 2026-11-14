@@ -68,6 +68,56 @@ class GGUFInventoryTests(unittest.TestCase):
         self.assertEqual(items[0]["repo"], "Owner/CodeModel")
         self.assertEqual(items[0]["sha256"], self.sha)
 
+    def test_runtime_self_test_history_matches_only_exact_model_hash(self):
+        from forgeos.model_compatibility import record_runtime_self_test
+
+        class Controller:
+            def __init__(inner, model_hash, runtime_hash):
+                inner.model_sha256 = model_hash
+                inner.runtime_sha256 = runtime_hash
+
+            def running(inner):
+                return True
+
+            def inference_self_test(inner):
+                return {"status": "passed", "response_bytes": 12,
+                        "elapsed_seconds": 0.2, "memory": None}
+
+        record_runtime_self_test(
+            Controller(self.sha, "c" * 64), directory=self.root)
+        other = self.parent / "other.gguf"
+        other_content = b"GGUF" + b"\x01" * 60
+        other.write_bytes(other_content)
+        other_sha = hashlib.sha256(other_content).hexdigest()
+        (other.with_name(other.name + ".forgeos.json")).write_text(
+            json.dumps({"repo": "Owner/CodeModel", "revision": self.version,
+                        "file": other.name, "bytes": len(other_content),
+                        "sha256": other_sha}), encoding="utf-8")
+        record_runtime_self_test(
+            Controller(other_sha, "d" * 64), directory=self.root)
+        with patch("forgeos.model_inventory._digest") as hashing:
+            items = list_downloads(self.root)
+        hashing.assert_not_called()
+        target = next(item for item in items if item["file"] == self.path.name)
+        self.assertEqual(target["runtime_compatibility"]["status"],
+                         "self_test_passed")
+        self.assertEqual([pair["runtime_sha256"] for pair in
+                          target["runtime_compatibility"]["pairs"]], ["c" * 64])
+        self.assertRegex(target["runtime_compatibility"]["pairs"][0][
+            "tested_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        different = next(item for item in items if item["file"] == other.name)
+        self.assertEqual([pair["runtime_sha256"] for pair in
+                          different["runtime_compatibility"]["pairs"]], ["d" * 64])
+
+    def test_corrupt_compatibility_history_does_not_hide_model_inventory(self):
+        (self.root / ".forgeos-runtime-compatibility.json").write_text(
+            '{"version":1,"pairs":[{"model_sha256":"bad"}]}',
+            encoding="utf-8")
+        records = list_downloads(self.root)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["sha256"], self.sha)
+        self.assertEqual(records[0]["runtime_compatibility"], "unavailable")
+
     def test_listing_rejects_unverified_card_claims_from_another_revision(self):
         self.write_manifest(hub_claims={
             "source": "huggingface_card_unverified",

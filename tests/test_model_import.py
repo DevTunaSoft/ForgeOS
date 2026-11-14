@@ -52,6 +52,24 @@ class LocalModelImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
             _verified_model(self.model, directory=self.models)
 
+    def test_compatibility_history_uses_imported_model_sha(self):
+        from forgeos.model_compatibility import record_runtime_self_test
+
+        imported = import_local_gguf(self.model, directory=self.models)
+        controller = SimpleNamespace(
+            model_sha256=imported["sha256"], runtime_sha256="e" * 64,
+            running=lambda: True,
+            inference_self_test=lambda: {
+                "status": "passed", "response_bytes": 12,
+                "elapsed_seconds": 0.1, "memory": None,
+            })
+        record_runtime_self_test(controller, directory=self.models)
+        row = list_downloads(self.models)[0]
+        self.assertEqual(row["runtime_compatibility"]["status"],
+                         "self_test_passed")
+        self.assertEqual(row["runtime_compatibility"]["pairs"][0][
+            "runtime_sha256"], "e" * 64)
+
     def test_import_supports_read_only_source_directory(self):
         from forgeos import model_import
         home = self.root / "home"

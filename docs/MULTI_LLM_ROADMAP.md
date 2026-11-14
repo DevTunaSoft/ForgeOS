@@ -376,7 +376,8 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 - [x] Expose source, pinned identity, format, expected/on-disk byte counts and metadata-claim status through the bounded offline inventory for downloaded and imported models.
 - [x] Keep metadata claims outside the model integrity decision; malformed/oversized claims fail closed, while all present weights still require hash verification before inference.
 - [x] Add regressions for pinned claim persistence, inventory disclosure, revision mismatch, bounded text, restart/cache reuse and existing managed/import/retirement compatibility.
-- [ ] Persist actual model/runtime load compatibility keyed by both hashes and validate the metadata capture against real Hub data; review license obligations separately.
+- [x] Persist ForgeOS structured-output self-test history keyed by the exact model and runtime executable SHA-256 pair; show the recorded hash prefixes in the existing offline model picker.
+- [ ] Validate metadata capture against real Hub data; review license obligations separately. Run real model/runtime and frozen EXE acceptance on physical Windows before claiming release compatibility.
 
 
 - [x] Harden journal and rename durability with POSIX directory fsync, plus fault injection for synchronization interruption. Windows directory durability requires physical NTFS acceptance before any power-loss guarantee.
@@ -529,3 +530,12 @@ loaded and before any model prompt is sent.
 - [x] Save atomically under `~/.forgeos/acceptance`; no background sampler or second database.
 - [x] Expose the recorder in Activity & diagnostics plus a host-only CLI command.
 - [ ] Run the recorder on the target Windows 11 i7-1370P / 32 GiB machine using the exact shipping candidate and real managed GGUF; attach/report the resulting evidence before closing #53/#55/#56.
+
+
+### #54 persistent model/runtime self-test history (2026-11-13)
+
+- [x] Run the existing explicit **Test local model** structured-output check and save a bounded local record only after it passes.
+- [x] Bind each record to the exact SHA-256 pair already verified by the managed controller; update repeated tests of the same pair and preserve distinct runtime identities.
+- [x] Load compatibility history through the bounded offline inventory and show it in the existing picker without hashing GGUF weights or weakening the pre-start SHA-256 gate.
+- [x] Reject malformed, linked, oversized, duplicate or changing history records; keep the history local and clearly label it as mutable self-test evidence, not publisher verification.
+- [ ] Test successful real inference, restart persistence and the frozen EXE on target Windows; independently review Hub license claims and model/runtime behavior.

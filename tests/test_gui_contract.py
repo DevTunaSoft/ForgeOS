@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from forgeos.gui import (
     PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
     _model_inventory_status_label, _retirement_allowed,
+    _runtime_compatibility_label,
 )
 
 
@@ -25,6 +26,26 @@ class DashboardContractTests(unittest.TestCase):
         self.assertEqual(
             _model_inventory_status_label("unexpected_new_status"),
             "Needs inspection")
+
+    def test_runtime_compatibility_label_discloses_hash_pair_self_test(self):
+        self.assertEqual(_runtime_compatibility_label("not-recorded"),
+                         "Not self-tested")
+        self.assertEqual(_runtime_compatibility_label("unavailable"),
+                         "History unavailable")
+        self.assertEqual(_runtime_compatibility_label({
+            "status": "self_test_passed",
+            "pairs": [{"runtime_sha256": "a" * 64}],
+        }, "1" * 64), "Passed: 11111111/aaaaaaaa")
+        self.assertEqual(_runtime_compatibility_label({
+            "status": "self_test_passed",
+            "pairs": [{"runtime_sha256": "a" * 64},
+                      {"runtime_sha256": "b" * 64},
+                      {"runtime_sha256": "c" * 64}],
+        }, "1" * 64), "Passed: 11111111/aaaaaaaa, 11111111/bbbbbbbb, +1")
+        self.assertEqual(_runtime_compatibility_label({
+            "status": "self_test_passed",
+            "pairs": [{"runtime_sha256": "unsafe"}],
+        }, "1" * 64), "Needs inspection")
 
     def test_getting_started_view_has_workflow_recovery_and_keyboard_guidance(self):
         source = (Path(__file__).resolve().parents[1] /
@@ -230,7 +251,11 @@ class DashboardContractTests(unittest.TestCase):
         text = (Path(__file__).resolve().parents[1] /
                 "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
         self.assertIn('text="Test local model"', text)
-        self.assertIn("controller.inference_self_test()", text)
+        self.assertIn("record_runtime_self_test(controller)", text)
+        compatibility = (Path(__file__).resolve().parents[1] /
+                         "src" / "forgeos" /
+                         "model_compatibility.py").read_text(encoding="utf-8")
+        self.assertIn("controller.inference_self_test()", compatibility)
         self.assertIn('("smoke", controller, outcome, None)', text)
         self.assertIn('elif action == "smoke":', text)
 

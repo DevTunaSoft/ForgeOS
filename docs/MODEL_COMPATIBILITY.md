@@ -76,6 +76,19 @@ install LM Studio. Model inference uses a temporary bearer API key. No Docker or
    the private localhost endpoint. Generate a small plan; generated edits
    continue through existing restricted worktree/test workflows. Stop from
    the same dialog or let idle unload occur after five inactive minutes.
+6. After starting a model, click **Test local model** to run ForgeOS's
+   synthetic structured-output check. A passing result is saved locally in
+   `~/.forgeos/models/.forgeos-runtime-compatibility.json`, keyed by the exact
+   model and runtime executable SHA-256 pair. The downloaded-model picker
+   shows the tested hash prefixes and labels missing history as **Not
+   self-tested**. A failed check or an unsafe history file cannot create a
+   compatibility record.
+
+This is local, mutable test history—not a publisher signature, license check,
+or proof that the current on-disk GGUF still matches its recorded hash. ForgeOS
+still re-verifies the full model SHA-256 before every managed start. Manual
+runtime records cover the executable SHA-256 only; companion DLL provenance
+and real model behavior on the target Windows machine remain separate gates.
 
 **Current limits:** one GUI-owned managed server per ForgeOS session; model
 in-place model updates are not implemented: downloading a newer pinned revision

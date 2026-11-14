@@ -3033,3 +3033,36 @@ and restore under constrained filesystems.
   load compatibility is currently session-visible only and is not persisted
   against a model/runtime hash pair. Latest hosted CI, frozen EXE, real Hub
   metadata and physical Windows acceptance remain open.
+
+### 2026-11-13 — persist exact managed model/runtime self-test pairs
+
+- **Source increment:** the explicit **Test local model** action now records
+  a bounded local result only after ForgeOS's structured-output self-test
+  passes. Each entry is keyed by the exact model and runtime executable
+  SHA-256 values already established by managed startup. Repeating a passing
+  test updates that pair; a different runtime hash remains a distinct result.
+  The offline inventory associates these records with both downloaded and
+  imported models by model hash, and the existing picker displays the short
+  model/runtime hash prefixes. No model weights are rehashed to list history,
+  and the existing full verification before managed start remains required.
+- **Persistence and trust:** a bounded, atomically replaced local index lives
+  in the model store. Linked, oversized, malformed, duplicate, unstable or
+  invalid-timestamp records fail closed as compatibility history, but do not
+  hide otherwise usable inventory rows. Records are mutable local test
+  history, not publisher signatures, license review or proof that current disk
+  bytes still match the model hash. Raw model output and API keys are never
+  stored.
+- **Verification:** compatibility (6), inventory (24), GUI contract (47),
+  download (48), managed runtime (43), import (26) and retirement (28)
+  modules passed: 222 tests, 14 platform/environment skips. `compileall` and
+  `git diff --check` passed. Initial grouped Windows runs encountered
+  intermittent WinError 5/32 file-sharing failures in existing repair,
+  import-index and retirement temporary-file operations; affected tests were
+  rerun individually and each complete affected module subsequently passed.
+- **Limits / next:** no real GGUF inference or successful compatibility record
+  was exercised on hardware in this increment. The frozen EXE, actual model
+  and runtime, live Hub claims, feature-level persisted-record display,
+  Windows process ownership and physical NTFS behavior remain target-device
+  acceptance work. The updated source GUI was visually opened on Windows with
+  an isolated synthetic model; its five-column picker fit at desktop scale and
+  showed **Not self-tested**. No real inference was attempted.
