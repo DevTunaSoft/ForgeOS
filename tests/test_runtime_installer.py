@@ -100,6 +100,19 @@ class CPUInstallerTests(unittest.TestCase):
         self.assertEqual(ri.install_pinned_cpu_runtime(self.directory), result)
         self.assertEqual(before, opened.call_count)  # no automatic network
 
+    def test_runtime_bundle_rejects_reparse_point_members(self):
+        self.install_fixture()
+        result = ri.install_pinned_cpu_runtime(self.directory)
+        root = Path(result["path"]).parents[1]
+        for redirected in (root / "bin", root / "bin" / "ggml-base.dll"):
+            with patch.object(
+                    ri, "_is_reparse_point",
+                    side_effect=lambda path, expected=redirected:
+                        Path(path) == expected):
+                with self.assertRaisesRegex(RuntimeError,
+                                            "reparse point|redirected"):
+                    ri.verify_installed_cpu_runtime(self.directory)
+
     def test_tampered_dll_is_refused_even_if_manifest_forged(self):
         self.install_fixture()
         result = ri.install_pinned_cpu_runtime(self.directory)

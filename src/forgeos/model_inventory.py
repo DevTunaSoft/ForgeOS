@@ -16,7 +16,7 @@ from threading import Event
 
 from .gguf_download import (
     DownloadCancelled, MAX_MODEL_BYTES, _digest, _exclusive_download_lock,
-    _reject_existing_link,
+    _is_reparse_point, _reject_existing_link,
     _safe_name, _safe_storage_root,
 )
 from .huggingface_catalog import REPO_ID
@@ -34,8 +34,8 @@ CHECKSUM = re.compile(r"[a-f0-9]{64}\Z")
 
 def _import_records(root: Path) -> list[dict]:
     index = root / IMPORT_INDEX
-    if index.is_symlink():
-        raise RuntimeError("Local GGUF import index is a symbolic link")
+    if _is_reparse_point(index):
+        raise RuntimeError("Local GGUF import index is linked or redirected")
     if not index.exists():
         return []
     if not index.is_file() or index.stat().st_size > MAX_IMPORT_INDEX_BYTES:
@@ -68,7 +68,7 @@ def _import_records(root: Path) -> list[dict]:
 
 def _import_metadata(path: Path, checksum: str) -> dict:
     sidecar = path.with_name(path.name + ".forgeos.json")
-    if sidecar.is_symlink():
+    if _is_reparse_point(sidecar):
         raise ValueError("Imported GGUF identity sidecar is unsafe")
     if not sidecar.exists():
         info = {"format": IMPORT_FORMAT, "source_path": str(path),
@@ -106,7 +106,7 @@ def _list_imports(root: Path) -> list[dict]:
         amount = None
         try:
             if path.exists():
-                if any(item.is_symlink() for item in (path, *path.parents)):
+                if any(_is_reparse_point(item) for item in (path, *path.parents)):
                     status = "unsafe_path"
                 else:
                     info = _import_metadata(path, checksum)
@@ -131,7 +131,7 @@ def _list_imports(root: Path) -> list[dict]:
 
 
 def _manifest_model_file(manifest: Path, root: Path) -> tuple[Path, dict]:
-    if (manifest.is_symlink() or not manifest.is_file()
+    if (_is_reparse_point(manifest) or not manifest.is_file()
             or manifest.stat().st_size > MAX_MANIFEST_BYTES):
         raise ValueError("Missing or oversized GGUF manifest")
     try:
@@ -175,7 +175,7 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
                 examined += 1
                 if examined > MAX_SCAN_ENTRIES:
                     raise RuntimeError("GGUF inventory exceeds bounded scan limit")
-                if item.is_symlink():
+                if _is_reparse_point(Path(item.path)):
                     continue
                 if folder == root and item.name == ".forgeos-retired":
                     # Retired weights have their own bounded inventory.
@@ -194,7 +194,7 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
                     # Untrusted/malformed metadata cannot become a selectable
                     # model, even if a matching .gguf file happens to exist.
                     continue
-                if model.is_symlink():
+                if _is_reparse_point(model):
                     continue
                 try:
                     file_size = model.stat().st_size if model.is_file() else None
@@ -241,8 +241,9 @@ def storage_usage(directory: str | Path | None = None) -> dict:
                 examined += 1
                 if examined > MAX_SCAN_ENTRIES:
                     raise RuntimeError("GGUF storage exceeds bounded usage scan limit")
-                if item.is_symlink():
-                    continue
+                if _is_reparse_point(Path(item.path)):
+                    raise RuntimeError(
+                        "GGUF storage contains a linked or reparse-point entry")
                 if item.is_dir(follow_symlinks=False):
                     pending.append((Path(item.path), depth + 1))
                     continue
@@ -308,8 +309,8 @@ def _verify_download_unlocked(path: str | Path, root: Path, *,
     imported = next((record for record in _import_records(root)
                      if record["path"] == selected), None)
     if imported is not None:
-        if any(item.is_symlink() for item in (selected, *selected.parents)):
-            raise ValueError("Imported GGUF path contains a symbolic link")
+        if any(_is_reparse_point(item) for item in (selected, *selected.parents)):
+            raise ValueError("Imported GGUF path contains a link or reparse point")
         selected = selected.resolve(strict=True)
         if selected != imported["path"] or not selected.is_file():
             raise ValueError("Select the registered local imported GGUF")
@@ -376,12 +377,12 @@ def verify_download(path: str | Path, *,
     imported = next((record for record in _import_records(root)
                      if record["path"] == selected), None)
     if imported is not None:
-        if any(item.is_symlink() for item in (selected, *selected.parents)):
-            raise ValueError("Imported GGUF path contains a symbolic link")
+        if any(_is_reparse_point(item) for item in (selected, *selected.parents)):
+            raise ValueError("Imported GGUF path contains a link or reparse point")
         from .model_import import _import_lifecycle_lock_path
         lock = _import_lifecycle_lock_path(selected.resolve(strict=False), root)
-        if any(item.is_symlink() for item in (lock, *lock.parents)):
-            raise ValueError("Imported GGUF lifecycle lock is a symbolic link")
+        if any(_is_reparse_point(item) for item in (lock, *lock.parents)):
+            raise ValueError("Imported GGUF lifecycle lock is linked or redirected")
         if os.path.lexists(lock) and (
                 not lock.is_file() or lock.stat().st_nlink != 1):
             raise ValueError("Imported GGUF lifecycle lock is unsafe")

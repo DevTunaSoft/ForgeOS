@@ -24,7 +24,8 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 import zipfile
 
 from .gguf_download import (
-    _exclusive_download_lock, _reject_existing_link, _safe_storage_root,
+    _exclusive_download_lock, _is_reparse_point, _reject_existing_link,
+    _safe_storage_root,
 )
 
 MIB = 1024 * 1024
@@ -232,14 +233,14 @@ def _extract(archive_path: Path, stage: Path):
 def _verify_files(target: Path):
     archive_path = target / ARCHIVE_FILE
     manifest = target / MANIFEST_FILE
-    if archive_path.is_symlink() or manifest.is_symlink():
-        raise RuntimeError("Installed runtime archive or manifest is a symlink")
+    if _is_reparse_point(archive_path) or _is_reparse_point(manifest):
+        raise RuntimeError("Installed runtime archive or manifest is redirected")
     if (not archive_path.is_file()
             or archive_path.stat().st_size != RELEASE_BYTES
             or _sha256(archive_path) != RELEASE_SHA256):
         raise RuntimeError("Installed runtime source archive failed pinned SHA-256")
     license_path = target / LICENSE_FILE
-    if (license_path.is_symlink() or not license_path.is_file()
+    if (_is_reparse_point(license_path) or not license_path.is_file()
             or license_path.stat().st_size > 8192
             or _sha256(license_path) != LICENSE_SHA256
             or license_path.read_bytes() != _license_notice()):
@@ -252,12 +253,14 @@ def _verify_files(target: Path):
             relative = Path(folder).relative_to(target)
             for directory in dirs:
                 d = Path(folder) / directory
-                if d.is_symlink():
-                    raise RuntimeError("Installed runtime folder contains a symlink")
+                if _is_reparse_point(d):
+                    raise RuntimeError(
+                        "Installed runtime folder contains a reparse point")
             for name in filenames:
                 current = Path(folder) / name
-                if current.is_symlink():
-                    raise RuntimeError("Installed runtime contains a linked file")
+                if _is_reparse_point(current):
+                    raise RuntimeError(
+                        "Installed runtime contains a linked or redirected file")
                 relative_path = current.relative_to(target).as_posix()
                 if relative_path in (ARCHIVE_FILE, MANIFEST_FILE, LICENSE_FILE):
                     continue

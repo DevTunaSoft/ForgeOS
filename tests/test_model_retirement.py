@@ -51,6 +51,14 @@ class ModelRetirementTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "bounded scan limit"):
                 list_retired(self.root)
 
+    def test_retired_inventory_flags_reparse_point_entries(self):
+        entry = self.root / ".forgeos-retired" / ("a" * 32)
+        entry.mkdir(parents=True)
+        with patch("forgeos.model_retirement._is_reparse_point",
+                   side_effect=lambda path: path == entry):
+            self.assertEqual(list_retired(self.root), [{
+                "id": "a" * 32, "status": "needs_manual_inspection"}])
+
     def test_full_recovery_and_inventory_hides_retired_weight_without_network(self):
         with patch("forgeos.huggingface_catalog.search_gguf") as remote, \
              patch("forgeos.managed_llama.subprocess.Popen") as spawned:

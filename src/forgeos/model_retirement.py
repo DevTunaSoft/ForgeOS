@@ -10,7 +10,8 @@ import uuid
 
 from .gguf_download import (
     DownloadCancelled, MAX_MODEL_BYTES, _digest, _exclusive_download_lock, _gguf_header,
-    _reject_existing_link, _safe_name, _safe_storage_root, _write_json_atomic,
+    _is_reparse_point, _reject_existing_link, _safe_name, _safe_storage_root,
+    _write_json_atomic,
 )
 from .huggingface_catalog import REPO_ID
 from .model_inventory import (
@@ -231,12 +232,19 @@ def list_retired(directory: str | Path | None = None) -> list[dict]:
             examined += 1
             if examined > MAX_SCAN_ENTRIES:
                 raise RuntimeError("Retired model inventory exceeds bounded scan limit")
-            if not TOKEN.fullmatch(item.name) or item.is_symlink() \
-                    or not item.is_dir(follow_symlinks=False):
+            if not TOKEN.fullmatch(item.name):
+                continue
+            entry = Path(item.path)
+            if _is_reparse_point(entry):
+                if len(output) >= 200:
+                    raise RuntimeError("Retired model inventory limit exceeded")
+                output.append({"id": item.name,
+                               "status": "needs_manual_inspection"})
+                continue
+            if not item.is_dir(follow_symlinks=False):
                 continue
             if len(output) >= 200:
                 raise RuntimeError("Retired model inventory limit exceeded")
-            entry = Path(item.path)
             try:
                 original, info = _record(root, entry)
                 weight = entry / "weights.gguf"

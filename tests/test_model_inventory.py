@@ -87,6 +87,14 @@ class GGUFInventoryTests(unittest.TestCase):
             "files": 4,
         })
 
+    def test_storage_usage_fails_closed_on_reparse_point_entries(self):
+        redirected = self.root / "redirected"
+        redirected.mkdir()
+        with patch("forgeos.model_inventory._is_reparse_point",
+                   side_effect=lambda path: path == redirected):
+            with self.assertRaisesRegex(RuntimeError, "reparse-point entry"):
+                storage_usage(self.root)
+
     def test_explicit_verify_streams_bytes_and_detects_corruption(self):
         proof = verify_download(self.path, directory=self.root)
         self.assertEqual(proof["status"], "verified")
