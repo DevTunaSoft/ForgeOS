@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import random
+import sqlite3
 import string
 import threading
 import time
@@ -23,6 +24,47 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(self.store.get(task)['status'],'queued')
         self.store.close(); self.store=Store(self.root/'state'/'tasks.sqlite3')
         self.assertEqual(self.store.get(task)['description'],'Improve startup')
+
+    def test_event_journal_records_bounded_lifecycle_and_is_append_only(self):
+        task = self.store.add(str(self.repo), 'Journal recovery lifecycle')
+        self.assertTrue(self.store.acquire_lease(task, 'journal-worker'))
+        self.assertTrue(self.store.transition(
+            task, ('queued',), 'planning', lease_owner='journal-worker'))
+        self.assertTrue(self.store.release_lease(task, 'journal-worker'))
+        events = list(self.store.iter_events(task_id=task, limit=20))
+        self.assertEqual(
+            [event['event_type'] for event in reversed(events)],
+            ['task.created', 'lease.acquired', 'task.transitioned',
+             'lease.released'])
+        self.assertTrue(all(len(event['details'].encode()) <= 2048
+                            for event in events))
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'append-only'):
+            self.store.db.execute(
+                'UPDATE forgeos_events SET details=? WHERE id=?',
+                ('tampered', events[0]['id']))
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'append-only'):
+            self.store.db.execute(
+                'DELETE FROM forgeos_events WHERE id=?', (events[0]['id'],))
+
+    def test_event_journal_failure_rolls_back_task_transition(self):
+        task = self.store.add(str(self.repo), 'Keep journal atomic')
+        with patch.object(self.store, '_record_event',
+                          side_effect=RuntimeError('journal unavailable')):
+            with self.assertRaisesRegex(RuntimeError, 'journal unavailable'):
+                self.store.transition(task, ('queued',), 'planning')
+        self.assertEqual(self.store.get_status(task), 'queued')
+
+    def test_event_journal_page_is_bounded_and_filterable(self):
+        first = self.store.add(str(self.repo), 'First journal task')
+        second = self.store.add(str(self.repo), 'Second journal task')
+        self.assertEqual(len(list(self.store.iter_events(limit=1))), 1)
+        only_first = list(self.store.iter_events(task_id=first, limit=10))
+        self.assertEqual(len(only_first), 1)
+        self.assertTrue(all(event['task_id'] == first for event in only_first))
+        with self.assertRaises(ValueError):
+            list(self.store.iter_events(limit=501))
+        with self.assertRaises(ValueError):
+            list(self.store.iter_events(task_id=second, limit=0))
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES

@@ -218,3 +218,13 @@ both publication branches and restore reuses the same helper. The change is
 source-level and requires the exact-head Linux/Windows matrix plus physical
 Windows NTFS fault-injection evidence; encrypted backup, power-loss recovery,
 and active-database replacement remain open.
+
+### 2026-11-14 — append-only recovery event journal
+
+The task database now records bounded lifecycle events for task creation,
+guarded transitions, lease ownership and stale-recovery reconciliation in an
+append-only `forgeos_events` table. State changes and their journal rows share
+one SQLite transaction, and update/delete triggers prevent recovery history
+rewriting. The bounded `journal` CLI view supports diagnosis without loading
+task result blobs. Full active-database restoration, encryption, external
+evidence/worktree bundles and physical power-loss acceptance remain open.

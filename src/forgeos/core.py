@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import time
@@ -21,6 +22,27 @@ LEASE_SCHEMA = """CREATE TABLE IF NOT EXISTS task_leases (
  acquired REAL NOT NULL, heartbeat REAL NOT NULL
 );"""
 
+EVENT_SCHEMA = """CREATE TABLE IF NOT EXISTS forgeos_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ task_id INTEGER,
+ event_type TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT '',
+ actor TEXT NOT NULL DEFAULT '',
+ created REAL NOT NULL,
+ details TEXT NOT NULL DEFAULT '',
+ FOREIGN KEY(task_id) REFERENCES tasks(id)
+);"""
+EVENT_INDEX = """CREATE INDEX IF NOT EXISTS idx_forgeos_events_task_time
+ ON forgeos_events(task_id, id);"""
+EVENT_NO_UPDATE = """CREATE TRIGGER IF NOT EXISTS forgeos_events_no_update
+ BEFORE UPDATE ON forgeos_events BEGIN
+ SELECT RAISE(ABORT, 'ForgeOS event journal is append-only');
+ END;"""
+EVENT_NO_DELETE = """CREATE TRIGGER IF NOT EXISTS forgeos_events_no_delete
+ BEFORE DELETE ON forgeos_events BEGIN
+ SELECT RAISE(ABORT, 'ForgeOS event journal is append-only');
+ END;"""
+
 # Index only active tasks: past task history remains outside this small lookup.
 # Non-unique so older databases with duplicate active tasks can migrate safely.
 ACTIVE_TASK_LOOKUP_INDEX = """CREATE INDEX IF NOT EXISTS idx_forgeos_active_task_lookup
@@ -33,6 +55,10 @@ MAX_CHECKPOINT_BYTES = 64 * 1024
 MAX_TASK_DESCRIPTION_BYTES = 16 * 1024
 MAX_LOCAL_PROMPT_BYTES = 64 * 1024
 CHECKPOINT_PAGE_SIZE = 16
+MAX_EVENT_TYPE_BYTES = 64
+MAX_EVENT_ACTOR_BYTES = 128
+MAX_EVENT_DETAILS_BYTES = 2048
+EVENT_TYPE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
 
 
 class LeaseLostError(RuntimeError):
@@ -108,8 +134,64 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute(SCHEMA)
         self.db.execute(LEASE_SCHEMA)
+        self.db.execute(EVENT_SCHEMA)
+        self.db.execute(EVENT_INDEX)
+        self.db.execute(EVENT_NO_UPDATE)
+        self.db.execute(EVENT_NO_DELETE)
         self.db.execute(ACTIVE_TASK_LOOKUP_INDEX)
         self.db.commit()
+
+    @staticmethod
+    def _validate_event_text(value: str, limit: int, label: str) -> str:
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"Event {label} must be nonempty text")
+        if len(value.encode("utf-8")) > limit:
+            raise ValueError(f"Event {label} exceeds {limit} bytes")
+        return value
+
+    def _record_event(self, event_type: str, *, task_id: int | None = None,
+                      status: str = '', actor: str = '', details: str = '') -> None:
+        """Append a bounded lifecycle event inside the caller's transaction."""
+        event_type = self._validate_event_text(
+            event_type, MAX_EVENT_TYPE_BYTES, 'type')
+        if not EVENT_TYPE_PATTERN.fullmatch(event_type):
+            raise ValueError('Event type contains unsupported characters')
+        if task_id is not None and (
+                type(task_id) is not int or task_id < 1):
+            raise ValueError('Event task ID must be a positive integer')
+        if status and status not in STATUSES:
+            raise ValueError('Event status is invalid')
+        if actor:
+            self._validate_event_text(actor, MAX_EVENT_ACTOR_BYTES, 'actor')
+        if not isinstance(details, str):
+            raise ValueError('Event details must be text')
+        if len(details.encode('utf-8')) > MAX_EVENT_DETAILS_BYTES:
+            raise ValueError('Event details exceed 2048 bytes')
+        self.db.execute(
+            'INSERT INTO forgeos_events(task_id,event_type,status,actor,created,details) '
+            'VALUES(?,?,?,?,?,?)',
+            (task_id, event_type, status, actor, time.time(), details))
+
+    def iter_events(self, *, task_id: int | None = None, limit: int = 100):
+        """Yield a bounded journal page without materializing all history."""
+        if task_id is not None and (type(task_id) is not int or task_id < 1):
+            raise ValueError('Task ID must be a positive integer')
+        if type(limit) is not int or isinstance(limit, bool) or not 1 <= limit <= 500:
+            raise ValueError('Event page limit must be 1..500')
+        if task_id is None:
+            cursor = self.db.execute(
+                'SELECT id,task_id,event_type,status,actor,created,details '
+                'FROM forgeos_events ORDER BY id DESC LIMIT ?', (limit,))
+        else:
+            cursor = self.db.execute(
+                'SELECT id,task_id,event_type,status,actor,created,details '
+                'FROM forgeos_events WHERE task_id=? ORDER BY id DESC LIMIT ?',
+                (task_id, limit))
+        try:
+            for row in cursor:
+                yield dict(row)
+        finally:
+            cursor.close()
 
     def check_integrity(self) -> None:
         """Explicitly check SQLite integrity and ForgeOS task schema."""
@@ -227,7 +309,9 @@ class Store:
             cur = self.db.execute(
                 'INSERT INTO tasks(project,description,created,updated) VALUES(?,?,?,?)',
                 (project_key, description, now, now))
-        return int(cur.lastrowid)
+            task_id = int(cur.lastrowid)
+            self._record_event('task.created', task_id=task_id, status='queued')
+        return task_id
 
     def list(self, *, brief: bool = False, limit: int | None = None,
              offset: int = 0):
@@ -358,9 +442,11 @@ class Store:
         if status not in STATUSES:
             raise ValueError('Invalid status')
         with self.db:
-            self.db.execute(
+            cur = self.db.execute(
                 'UPDATE tasks SET status=?,updated=?,last_error=?,result=?,attempts=attempts+? WHERE id=?',
                 (status, time.time(), error, result, int(increment), task_id))
+            if cur.rowcount == 1:
+                self._record_event('task.updated', task_id=task_id, status=status)
 
     def transition(self, task_id: int, expected, status: str, *,
                    increment: bool = False, result: str | None = None,
@@ -398,6 +484,9 @@ class Store:
             params.extend((lease_owner, now - DEFAULT_LEASE_SECONDS, now + 60))
         with self.db:
             cur = self.db.execute(sql, params)
+            if cur.rowcount == 1:
+                self._record_event('task.transitioned', task_id=task_id,
+                                   status=status, actor=lease_owner or '')
         return cur.rowcount == 1
 
     def acquire_lease(self, task_id: int, owner: str,
@@ -420,6 +509,7 @@ class Store:
                     (task_id, owner, now, now))
             except sqlite3.IntegrityError:
                 return False
+            self._record_event('lease.acquired', task_id=task_id, actor=owner)
         return True
 
     def heartbeat_lease(self, task_id: int, owner: str) -> bool:
@@ -437,6 +527,8 @@ class Store:
             cur = self.db.execute(
                 'DELETE FROM task_leases WHERE task_id=? AND owner=?',
                 (task_id, owner))
+            if cur.rowcount == 1:
+                self._record_event('lease.released', task_id=task_id, actor=owner)
         return cur.rowcount == 1
 
     def recover(self, stale_after: int = DEFAULT_LEASE_SECONDS) -> int:
@@ -460,6 +552,8 @@ class Store:
                 "AND NOT EXISTS (SELECT 1 FROM task_leases l WHERE l.task_id=tasks.id)",
                 (now,))
             changed += cur.rowcount
+            if changed:
+                self._record_event('recovery.reconciled', details=f'count={changed}')
         return changed
 
     def close(self):
