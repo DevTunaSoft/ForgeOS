@@ -2846,3 +2846,23 @@ and restore under constrained filesystems.
 - **Limits / next:** this managed session cannot create/inspect a real NTFS
   junction as an acceptance test. Concurrent path replacement, live model
   downloads, and physical Windows reparse handling remain open release gates.
+
+### 2026-11-13 — exercise managed-runtime owner crash on Windows
+
+- **Source implementation commit:**
+  `a22d8ee33158685d6b081365c5c6107fd1c0170e` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** verify that an unexpected ForgeOS owner-process exit does not
+  leave a managed model child running after the cross-process admission slot
+  becomes available.
+- **Changes:** a Windows-only subprocess regression acquires the same
+  kernel-held runtime lock, launches a real sleeping child in the existing
+  kill-on-close Job Object, then forcibly exits the owner. The test verifies
+  that the child exits and a fresh OS process can acquire the model slot.
+- **Verification:** managed runtime, model import, documentation and roadmap
+  suites passed: 82 tests, 8 platform/environment skips. This included the
+  native Windows Job Object owner-crash test. Compilation and
+  `git diff --check` passed.
+- **Limits / next:** the child is a controlled Python process, not llama.cpp;
+  the test does not load a GGUF, check native DLLs, or measure RAM/latency.
+  Real runtime crash/restart and target Windows 11 acceptance remain open.
