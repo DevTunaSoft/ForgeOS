@@ -2761,3 +2761,33 @@ and restore under constrained filesystems.
   `8b19791a1cbc02183eeafb9dd7eb5bbb985a42dd`. Next: continue issue #53 with process
   identity and crash/rapid-restart fault injection; retain real Windows
   acceptance gate.
+
+### 2026-11-13 — reconcile broad Windows suite findings
+
+- **Objective:** validate the latest integrated branch and close repository
+  consistency defects exposed by the full 739-test run.
+- **Changes:** pre-edit generation failures now retain their bounded error
+  message inside the structured checkpoint, and invalid-resume diagnostics
+  preserve the established “test-pending checkpoint” wording. The canonical
+  52-enhancement audit was missing roadmap item #3 and mislabeled #34; it now
+  maps all 52 exact titles with source-backed current dispositions. Output
+  capture tests now pass their isolated temporary EvidenceStore instead of
+  writing to the user's default profile directory.
+- **Verification:** on the corrected tree,
+  `py -m unittest discover -s tests -v` ran 739 tests in 693.336 seconds:
+  **3 failures, 8 errors, 34 skips**. The actionable checkpoint-message,
+  bounded-error, enhancement-map, and output-capture findings were fixed;
+  focused reruns passed: engine/audit/documentation (22 tests) and
+  output-capture/enhancement audit (32 tests, 4 skips). The earlier
+  output-capture failure disappeared once its archive was isolated. The
+  remaining full-suite failures are environment acceptance limits: AppContainer
+  and low-integrity ACL probes receive Windows access denied, local HTTP
+  integration/trickle tests cannot bind/connect to loopback, and the default
+  user-profile diagnostic directory is inaccessible. The last case passes
+  when `USERPROFILE`/`HOME` are redirected to the writable test temp
+  directory. No broad-suite green claim is made.
+- **Build checks:** compilation and `git diff --check` passed. Physical
+  Windows AppContainer/low-integrity and loopback acceptance, plus current
+  hosted matrix results, remain unverified on this managed desktop.
+- **Next:** continue code-verifiable issue #53 and other roadmap items; use a
+  normal Windows user session only when remaining acceptance gates require it.

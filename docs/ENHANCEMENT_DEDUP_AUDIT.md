@@ -4,7 +4,7 @@
 
 **Purpose:** avoid reimplementing what ForgeOS already has. The number 52 describes requested **outcomes**, **not 52 independent systems**, modules, or tickets. An existing basic implementation is not a claim that the production acceptance criteria are complete.
 
-**Disposition summary:** 22 existing baselines, 13 extend-in-place items, 12 genuinely new capability gaps, 5 Phase 3 additions under review. **52 total, 52 mapped, zero omitted.** "Existing" means source exists; "extend" means an acceptance gap remains. PR31 capabilities are not in released main until merged.
+**Disposition summary:** 22 existing baselines, 15 extend-in-place items, 10 genuinely new capability gaps, 5 Phase 3 additions under review. **52 total, 52 mapped, zero omitted.** "Existing" means source exists; "extend" means an acceptance gap remains. PR31 capabilities are not in released main until merged.
 
 ## One owner per capability, without duplicate infrastructure
 
@@ -32,7 +32,7 @@ Dispositions: **EXISTING** = code already provides this baseline; **EXTEND** = r
 |---:|---|---|---|---|
 | 1 | Intelligent output compression | **EXISTING** · A | `src/forgeos/diagnostics.py` | Existing lossless-by-recall output pipeline. Do not build another compressor. |
 | 2 | Smart test summaries | **EXISTING** · A | `src/forgeos/diagnostics.py` | Already parses test counts and prioritizes error lines; #28 supplies parser. Add fixtures, not a second summarizer. |
-| 3 | Optimized Git command output | **NEW at audit baseline** · B | `src/forgeos/workspace.py` | Since this historical baseline, the feature branch extends the existing shell=False Git wrapper with capped streamed output and marked bounded diff previews; no second Git client. |
+| 3 | Optimized Git command output | **EXTEND** · B | `src/forgeos/workspace.py` | The canonical shell=False Git wrapper now caps streamed output and offers marked bounded diff previews; retain one Git client and add platform acceptance. |
 | 4 | Relevant source code reading | **EXISTING** · B | `src/forgeos/context_index.py` | AST-based bounded file inventory already exists; add useful precision tests rather than a new index. |
 | 5 | Optimized project search | **EXTEND** · B | `src/forgeos/context_index.py` | The feature branch adds an on-demand bounded Python declaration-name search to the shared scanner; it returns signature metadata only, not source bodies. |
 | 6 | Adaptive context budgets | **NEW** · C | `src/forgeos/diagnostics.py` | Current 12k budget is fixed. Add validated per-model sizing in the existing diagnostics pipeline. |
@@ -63,7 +63,7 @@ Dispositions: **EXISTING** = code already provides this baseline; **EXTEND** = r
 | 31 | Safe command interpretation | **EXISTING** · G | `src/forgeos/core.py` | Preset allowlisting and shell=False Git/test execution exist. Extend rule audits, not a generic command interpreter. |
 | 32 | Transactional configuration updates | **EXTEND** · D | `src/forgeos/transactions.py` | Journaled transactional edits exist; adapt proven mechanism to config changes, not another transaction engine. |
 | 33 | Fail-open-to-raw on archive errors | **EXISTING** · A | `src/forgeos/diagnostics.py` | Raw result is returned if evidence archive fails; keep that invariant. |
-| 34 | Checkpoint-linked evidence | **NEW** · J | `src/forgeos/engine.py` | Checkpoint saving exists but lacks diagnostic SHA reference; extend checkpoint format compatibly. |
+| 34 | Checkpoint-linked test evidence | **EXTEND** · J | `src/forgeos/engine.py` | Repair checkpoints now retain and verify archived test-evidence SHA references; older checkpoints without references remain compatible. |
 | 35 | Trusted optimization rule verification | **EXISTING** · D | `src/forgeos/output_rules.py` | File-hash verification and explicit trust implemented in #9, not another rule verifier. |
 | 36 | AI efficiency dashboard | **EXTEND** · E | `src/forgeos/gui.py` | Activity tab already shows efficiency totals. Build richer view in same GUI, not a second dashboard. |
 | 37 | Development performance metrics | **EXTEND** · E | `src/forgeos/optimizer_metrics.py` | Attempts + total saved bytes exist; add run duration/session KPI into same store. |

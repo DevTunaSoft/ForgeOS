@@ -379,7 +379,9 @@ def _execute_task(
                     or Path(saved_workspace).resolve() != ws.path.resolve()
                     or checkpoint.get("branch") != ws.branch
                     or phase not in ("generation_pending", "test_pending", "repair_pending")):
-                raise ValueError("No valid pre-edit, test-pending or repair-pending checkpoint")
+                raise ValueError(
+                    "No valid test-pending checkpoint or repair-pending checkpoint; "
+                    "pre-edit generation checkpoints are also supported")
             saved_contract = checkpoint.get("contract")
             if saved_contract != contract:
                 raise ValueError("Checkpoint execution contract mismatch")
@@ -580,6 +582,11 @@ def _execute_task(
                         "manual_review_required"
                     )):
                 details = saved
+                if saved.get("phase") == "generation_pending":
+                    # The pre-edit checkpoint is the recovery authority, but
+                    # keep its last bounded failure alongside that identity
+                    # so existing task-history readers retain useful context.
+                    details["error"] = failure
         except (ValueError, TypeError, RecursionError):
             pass
         if incomplete_test_evidence:
