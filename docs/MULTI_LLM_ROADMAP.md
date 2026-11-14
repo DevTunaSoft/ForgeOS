@@ -362,6 +362,14 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 - [ ] Test a real multi-GiB repair, quota exhaustion, interrupted transfer and restart on physical Windows; reparse/hard-link and external-runtime acceptance remain open.
 
 
+### Surface active GGUF runtime state in the inventory picker (2026-11-13)
+
+- [x] Show **Loaded in active runtime** only when an inventory entry's pinned SHA-256 matches the exact identity the running managed controller verified at startup.
+- [x] Keep missing, linked, non-regular and manual-inspection states visible instead of masking them with a loaded label.
+- [x] Add contract regressions for a matching loaded model and an unsafe row that remains unsafe.
+- [ ] Visually verify the status in the Windows GUI and frozen EXE with a real model start/stop cycle.
+
+
 - [x] Harden journal and rename durability with POSIX directory fsync, plus fault injection for synchronization interruption. Windows directory durability requires physical NTFS acceptance before any power-loss guarantee.
 
 

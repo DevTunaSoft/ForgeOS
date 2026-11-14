@@ -2997,3 +2997,19 @@ and restore under constrained filesystems.
   Linux/Windows hosted CI, frozen EXE/AppContainer, real multi-GiB download
   repair and quota exhaustion, actual NTFS hard-link behavior, GUI visual
   acceptance and external inference-process detection remain unverified.
+
+### 2026-11-13 — identify the active model in the inventory picker
+
+- **Source increment:** the existing picker displays **Loaded in active
+  runtime** only when a safe inventory entry's pinned model SHA-256 matches
+  the identity verified by the running managed controller. Missing,
+  hard-linked, non-regular and manual-inspection rows retain their existing
+  warnings. The inventory status does not claim that an on-disk file remained
+  unchanged after runtime startup; startup independently rehashes it before
+  each launch.
+- **Verification:** `test_gui_contract` passed 45 tests. Tests verify matching
+  loaded identity labeling and confirm an unsafe row stays unsafe. `compileall`
+  and `git diff --check` passed.
+- **Limits / next:** the model picker has not been visually checked with a real
+  running model or frozen EXE. The loaded state is session-derived and does
+  not persist across application restarts.

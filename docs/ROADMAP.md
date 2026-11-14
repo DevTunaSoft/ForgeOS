@@ -144,6 +144,12 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   resumes the same pinned revision after interruption. This remains pending
   current-head hosted CI, frozen EXE and real Windows/network acceptance.
 
+- **Issue #54 GUI state:** the local inventory now labels a model **Loaded in
+  active runtime** only when its recorded SHA-256 matches the verified model
+  identity held by the running managed controller. Unsafe file states remain
+  visible and are never replaced with a loaded label. Visual Windows/EXE
+  acceptance remains open.
+
 
 ### 2026-11-11 — low-allocation deterministic routing checkpoint
 

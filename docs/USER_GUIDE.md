@@ -432,6 +432,10 @@ verified in the current view is still checked again before the server loads it.
 Inventory states use readable labels such as **Present; not verified**,
 **Size changed**, and **Unsafe link/file type**. Unsafe and missing entries stay
 visible for diagnosis but cannot be selected.
+When a safe inventory row's SHA-256 matches the exact model hash verified by
+the running managed runtime, its status reads **Loaded in active runtime**.
+The loaded label reports the running process identity; startup still rechecks
+the on-disk model before every launch.
 Use **Estimate memory** to compare its weight plus a metadata-based f16 KV
 cache estimate at the current default context against ForgeOS's safe model
 budget. Unsupported metadata, native buffers and changing system load limit
