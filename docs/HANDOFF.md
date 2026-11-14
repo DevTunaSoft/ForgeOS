@@ -2824,3 +2824,25 @@ and restore under constrained filesystems.
   inference servers, unrelated builds or OS sessions with separate homes.
   Real Windows install/inference, runtime DLL behavior, physical memory and
   latency acceptance remain release gates.
+
+### 2026-11-13 — reject reparse points in model storage paths
+
+- **Source implementation commit:**
+  `532962e63057f272bd1e0e502b610f138fc26fc3` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** continue P1 issue #54 supply-chain hardening; Windows junctions
+  and other NTFS reparse points can redirect paths even where no symbolic-link
+  privilege is available.
+- **Changes:** the canonical managed-storage validator now detects symlinks,
+  `Path.is_junction()` results and the Windows reparse-point file attribute.
+  Download journals, imported GGUF paths and registry sidecars use the same
+  fail-closed check. The existing shared helper extends the protection to
+  model inventory, retirement and the pinned runtime-install directory.
+- **Verification:** 130 downloader, import, inventory, retirement, runtime
+  installer, documentation and roadmap tests passed with 7 platform skips.
+  Compilation and `git diff --check` passed. A synthetic
+  `FILE_ATTRIBUTE_REPARSE_POINT` test covers the Windows flag without requiring
+  junction-creation privileges.
+- **Limits / next:** this managed session cannot create/inspect a real NTFS
+  junction as an acceptance test. Concurrent path replacement, live model
+  downloads, and physical Windows reparse handling remain open release gates.
