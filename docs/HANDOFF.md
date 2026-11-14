@@ -3384,3 +3384,15 @@ and restore under constrained filesystems.
   comparison, context-tier testing, tokens-per-second/build correctness,
   failure-recovery scoring, LM Studio/Ollama compatibility and production
   routing policy remain open.
+
+### 2026-11-14 — expose qualification history safely
+
+- **Source:** added `model-qualification report`, which loads only bounded
+  local final-qualification records, validates each record through the same
+  fail-closed gate used for routing, and reports per-role record counts,
+  qualified counts, routeability and sanitized identity/performance fields.
+  Raw model responses and malformed records never become routeable evidence.
+- **Verification:** qualification-summary and documentation tests passed,
+  compilation and handoff integrity passed, and the live acceptance evidence
+  reports seven routeable roles with context summarization correctly marked
+  non-routeable.
