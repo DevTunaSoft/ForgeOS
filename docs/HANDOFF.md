@@ -3445,3 +3445,19 @@ and restore under constrained filesystems.
 - **Verification:** routing tests, documentation checks and handoff integrity
   passed. LM Studio was not available on the target host (no listener on its
   usual port 1234), so no LM Studio inference claim is made.
+
+### 2026-11-14 — bounded Ollama model comparison probe
+
+- **Live target-host results:** the installed Ollama catalog reported
+  Qwen2.5-Coder 3B (1,929,912,626 bytes, digest
+  `f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225`), Qwen3
+  4B (2,497,293,931 bytes, digest
+  `359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7`) and
+  Qwen3.5 4B (3,324,173,934 bytes, digest
+  `d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04`).
+  The same bounded strict-edit probe passed for Qwen2.5-Coder 3B in 3.97 s.
+- **Negative evidence:** Qwen3 4B and Qwen3.5 4B each exceeded ForgeOS's
+  60-second per-operation socket bound on two attempts; neither produced an
+  accepted structured manifest. No model recommendation or production routing
+  change follows from this small probe. Full quality, hardware, context-tier,
+  server-version and restart benchmarks remain open.
