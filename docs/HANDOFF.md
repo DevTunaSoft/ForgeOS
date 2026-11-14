@@ -3136,3 +3136,24 @@ and restore under constrained filesystems.
   matrix job, then fix remaining Windows hard-link, reparse and purge failures
   without weakening the safety contracts. Physical Windows 11 inference,
   real GGUF download and 16/32 GiB acceptance remain open.
+
+### 2026-11-14 — narrow hosted failures to startup timing and Windows paths
+
+- **Second hosted run at `730e682`:** documentation run `43617523377`
+  and Windows EXE run `43617525350` passed. Ubuntu Python 3.10 and 3.12
+  each ran 787 tests and failed only the real local-process startup case:
+  the server was still opening its loopback listener when the first health
+  request ran. Windows Python 3.12 ran 787 tests and reported 10 failures in
+  hard-link/reparse detection and injected purge retries; the Windows 3.10
+  job was still running when this entry was written. The full matrix is not
+  green and the Windows package pass does not satisfy physical acceptance.
+- **Source fix:** `6cd795c56e511ff353c2ae9fe4c9018850567aab` gives
+  local transport and HTTP 5xx failures a specific `RuntimeError` subtype.
+  Managed startup retries only that transient class to its existing bounded
+  deadline; listener ownership and authentication errors still fail closed.
+  The real-process test now checks unauthenticated HTTP status with the raw
+  loopback client, matching the adapter's intentional error translation.
+- **Verification:** the focused transport and startup timeout cases passed;
+  the full managed-runtime module passed 48 tests with 7 skips. Python
+  compilation and `git diff --check` passed locally. Hosted verification of
+  this fix and the remaining Windows faults is pending.
