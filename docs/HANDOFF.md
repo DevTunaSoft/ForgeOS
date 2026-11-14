@@ -2793,3 +2793,34 @@ and restore under constrained filesystems.
   hosted matrix results, remain unverified on this managed desktop.
 - **Next:** continue code-verifiable issue #53 and other roadmap items; use a
   normal Windows user session only when remaining acceptance gates require it.
+
+### 2026-11-13 — reserve one managed model across ForgeOS processes
+
+- **Source implementation commit:**
+  `66e17e603f20ba3fb3ee2ac39259539e89f41afc` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** close the work package F race where two ForgeOS instances
+  could each start a different large managed GGUF after independently passing
+  RAM preflight.
+- **Changes:** managed runtime startup now acquires a kernel-held per-user
+  admission lock in the existing `.forgeos/models` storage root before the
+  per-model lifecycle lock. This prevents a second ForgeOS GUI/CLI process
+  from starting another managed GGUF. The slot stays held until process exit
+  is confirmed; a failed reap retains both runtime and model locks. Architecture
+  and roadmap now state the external-runtime and measurement limits.
+- **Verification:** managed runtime, documentation and roadmap suites passed:
+  58 tests, 7 platform/environment skips. The managed-runtime tests include a
+  second controller attempting a different model, a separate OS process
+  checking the active lock, and retention after failed shutdown. Compilation
+  and `git diff --check` passed. No real llama.cpp inference or target-device
+  resource measurement was performed.
+- **Branding request:** the attached corrected ZIP's 65 entries were compared
+  byte-for-byte with `assets/branding/ForgeOS_Master_Branding_Kit`; all match.
+  The existing commit already includes the full kit, README banner, source and
+  frozen application icons, and PyInstaller icon wiring. No duplicate files
+  were added.
+- **Limits / next:** the admission lock coordinates ForgeOS processes that share
+  this user's model storage profile; it does not coordinate Ollama, third-party
+  inference servers, unrelated builds or OS sessions with separate homes.
+  Real Windows install/inference, runtime DLL behavior, physical memory and
+  latency acceptance remain release gates.
