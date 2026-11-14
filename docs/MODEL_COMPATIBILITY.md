@@ -41,6 +41,10 @@ choice is captured in the checkpoint and restored during recovery. Other
 backend/version differences and measured context limits remain open release
 work.
 
+ForgeOS sends no tool definitions to local model adapters; tool execution is
+not part of the current request contract. Structured JSON output is requested
+only where the adapter supports it and is validated again before use.
+
 ForgeOS has one GUI and no extra Python dependencies for these adapters.
 The external endpoint adapters talk only to a server on **the same machine**.
 The **optional experimental managed GGUF control** in the existing GUI now
