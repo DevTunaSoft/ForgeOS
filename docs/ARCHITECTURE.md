@@ -169,7 +169,9 @@ partial lines without a summary; never treat such output as success.
   metadata does **not** reread full weights; explicit re-verification
   streams SHA-256 on demand and does no inference/network IO. It rejects
   hard-linked model/manifest files and rechecks the model's link count after
-  hashing, alongside size, modification time and file identity.
+  hashing, alongside size, modification time and file identity. The metadata
+  inventory also marks hard-linked or non-regular weights as unsafe, so the
+  existing model picker cannot select them before verification.
 - `recovery.py` fails closed on the ephemeral `forgeos-managed`
   alias because a random port and transient token are not adequate
   cross-reboot model identities. Pinned binary/model contract plus

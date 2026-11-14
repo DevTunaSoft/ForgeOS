@@ -2934,3 +2934,24 @@ and restore under constrained filesystems.
   Windows filesystem denied real hard-link creation. Same-user concurrent
   path replacement, physical Windows hard-link behavior and actual model load
   remain unverified.
+
+### 2026-11-13 — surface unsafe model links in the existing picker
+
+- **Source implementation commit:**
+  `c20366dad67299430db5abf5eb0ccd9901a7a328` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** keep multiply linked or non-regular GGUFs from appearing
+  ready-to-select when ForgeOS already rejects them at the verification or
+  managed-start boundary.
+- **Changes:** bounded metadata-only inventory now labels downloaded and
+  imported weights with multiple links or non-regular file types as
+  `unsafe_path`. Catalog status gives a plain-language explanation. The
+  existing GUI picker only allows known safe inventory states, so these rows
+  are visible for diagnosis but cannot be selected.
+- **Verification:** inventory, import and GUI-contract suites passed 86 tests
+  with 2 environment skips. The regressions synthesize hard-link metadata for
+  imported and downloaded weights; no weight bytes are hashed by listing.
+  Compilation and `git diff --check` passed.
+- **Limits / next:** real NTFS hard-link creation is denied in this managed
+  filesystem. Physical link behavior and the remaining roadmap's target-device
+  acceptance still require the user's Windows machine.

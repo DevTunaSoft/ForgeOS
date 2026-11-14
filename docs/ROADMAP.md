@@ -352,3 +352,17 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   isolation. Compilation and `git diff --check` passed.
 - **Limits:** physical NTFS hard-link mutation and same-user concurrent path
   replacement remain target-device acceptance work.
+
+### 2026-11-13 — surface unsafe model links in the existing picker
+
+- **Implemented experimentally on the feature branch:** metadata-only model
+  inventory now marks hard-linked or non-regular downloaded and imported GGUFs
+  as `unsafe_path`. Hugging Face file status reports the same state in plain
+  language. The existing GUI's allowlist disables selection for this state;
+  no separate model manager or large-file hash was added.
+- **Verification:** inventory, import and GUI-contract suites passed 86 tests
+  with 2 environment skips. Synthetic link-count fixtures cover both local
+  downloads and imported paths. Compilation and `git diff --check` passed.
+- **Limits:** link-count metadata was simulated because this managed Windows
+  filesystem denies real hard-link creation. Physical NTFS behavior remains
+  an acceptance item.
