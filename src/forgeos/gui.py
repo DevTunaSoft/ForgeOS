@@ -935,6 +935,8 @@ def launch(db_path, *, acceptance: bool = False):
                      "are shown for diagnosis but cannot be selected for use "
                      "or retirement. Reverify SHA-256 here before use; full "
                      "checks run in the background and can be cancelled. "
+                     "Damaged downloads can be restored from their exact "
+                     "pinned manifest after confirmation. "
                      "Imported files have unknown source and license."
             ).pack(anchor="w", pady=(0, 8))
             listing = ttk.Treeview(
@@ -958,7 +960,8 @@ def launch(db_path, *, acceptance: bool = False):
             selectable_statuses = {
                 "present_not_reverified", "imported_not_reverified", "verified"}
             verification_events = Queue(maxsize=1)
-            verification = {"busy": False, "cancel_event": None}
+            verification = {
+                "busy": False, "cancel_event": None, "operation": None}
             estimate_events = Queue(maxsize=1)
             estimate_state = {"busy": False}
 
@@ -985,12 +988,16 @@ def launch(db_path, *, acceptance: bool = False):
                 controls, text="Reverify SHA-256",
                 command=lambda: verify_selected())
             verify_btn.pack(side="left")
+            repair_btn = ttk.Button(
+                controls, text="Repair selected download…",
+                command=lambda: repair_selected(), state="disabled")
+            repair_btn.pack(side="left", padx=(8, 0))
             estimate_btn = ttk.Button(
                 controls, text="Estimate memory",
                 command=lambda: estimate_selected_memory())
             estimate_btn.pack(side="left", padx=(8, 0))
             cancel_verify_btn = ttk.Button(
-                controls, text="Cancel verification",
+                controls, text="Cancel verify/repair",
                 command=lambda: cancel_verification(), state="disabled")
             cancel_verify_btn.pack(side="left", padx=(8, 0))
             use_btn = ttk.Button(controls, text="Use selected GGUF",
@@ -1005,6 +1012,18 @@ def launch(db_path, *, acceptance: bool = False):
                             in selectable_statuses)
                 verify_btn.configure(
                     state="normal" if eligible else "disabled")
+                repair_eligible = (
+                    not verification["busy"] and not estimate_state["busy"]
+                    and not retirement["busy"] and bool(chosen)
+                    and records[int(chosen[0])].get("kind") != "imported"
+                    and records[int(chosen[0])]["status"] in {
+                        "missing", "size_mismatch", "present_not_reverified"}
+                    and _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None))
+                repair_btn.configure(
+                    state="normal" if repair_eligible else "disabled")
                 estimate_btn.configure(
                     state="normal" if eligible else "disabled")
                 use_btn.configure(state="normal" if eligible else "disabled")
@@ -1063,6 +1082,7 @@ def launch(db_path, *, acceptance: bool = False):
                 cancel_event = threading.Event()
                 verification["busy"] = True
                 verification["cancel_event"] = cancel_event
+                verification["operation"] = "verify"
                 managed["busy"] = True
                 verify_btn.configure(state="disabled")
                 use_btn.configure(state="disabled")
@@ -1106,14 +1126,36 @@ def launch(db_path, *, acceptance: bool = False):
                     if chooser.winfo_exists():
                         chooser.after(150, poll_verification)
                     return
+                if kind == "repair-progress":
+                    stage, completed = payload
+                    total = error
+                    percent = int(completed * 100 / total) if total else 0
+                    label = ("Verifying pinned model" if stage == "verify"
+                             else "Downloading pinned model")
+                    retirement_status.set(
+                        f"{label}: {percent}% "
+                        f"({completed/(1024**2):.0f} / "
+                        f"{total/(1024**2):.0f} MiB)")
+                    if chooser.winfo_exists():
+                        chooser.after(150, poll_verification)
+                    return
                 verification["busy"] = False
                 verification["cancel_event"] = None
+                operation = verification["operation"]
+                verification["operation"] = None
                 managed["busy"] = False
                 cancel_verify_btn.configure(state="disabled")
                 if error is not None:
                     if error.startswith("VerificationCancelled:"):
                         retirement_status.set(
                             "Verification cancelled; model files were unchanged.")
+                    elif operation == "repair":
+                        retirement_status.set(
+                            "Repair stopped. Existing bytes remain preserved; "
+                            "an interrupted pinned transfer can be resumed.")
+                        messagebox.showerror(
+                            "Could not repair local model", error,
+                            parent=chooser)
                     else:
                         retirement_status.set("SHA-256 verification failed.")
                         messagebox.showerror(
@@ -1125,19 +1167,124 @@ def launch(db_path, *, acceptance: bool = False):
                     listing.item(str(index), values=(
                         old[0], old[1], old[2],
                         _model_inventory_status_label("verified")))
-                    retirement_status.set(
-                        "SHA-256 verified for this session. Startup still "
-                        "checks model bytes before loading.")
-                    status.set("Local GGUF SHA-256 verified")
+                    if payload.get("status") == "repaired":
+                        retirement_status.set(
+                            "Pinned download restored and SHA-256 verified. "
+                            "The previous bytes remain in storage quarantine.")
+                        status.set("Local GGUF repaired from pinned source")
+                        if payload.get("quarantined_path"):
+                            messagebox.showinfo(
+                                "Download repaired",
+                                "The exact pinned GGUF was restored. The prior "
+                                "damaged bytes were preserved in storage "
+                                "quarantine and still count toward storage use.",
+                                parent=chooser)
+                    else:
+                        retirement_status.set(
+                            "SHA-256 verified for this session. Startup still "
+                            "checks model bytes before loading.")
+                        status.set("Local GGUF SHA-256 verified")
                 update_selection_controls()
+
+            def repair_selected():
+                if verification["busy"] or estimate_state["busy"]:
+                    return
+                selection = listing.selection()
+                if not selection:
+                    return
+                index = int(selection[0])
+                entry = records[index]
+                if (entry.get("kind") == "imported" or entry["status"] not in {
+                        "missing", "size_mismatch", "present_not_reverified"}):
+                    messagebox.showerror(
+                        "Model needs inspection",
+                        "Repair is available only for a managed download with "
+                        "a safe, matching pinned manifest.", parent=chooser)
+                    return
+                if not _retirement_allowed(
+                        task_busy=busy["value"],
+                        operation_busy=managed["busy"],
+                        model_present=managed["controller"] is not None):
+                    messagebox.showerror(
+                        "Model in use",
+                        "Finish the current task and stop managed inference "
+                        "before repairing model weights.", parent=chooser)
+                    return
+                try:
+                    quota_gib = model_storage_quota_gib.get()
+                except tk.TclError:
+                    messagebox.showerror(
+                        "Invalid model storage cap",
+                        "Choose a listed storage cap before repairing.",
+                        parent=chooser)
+                    return
+                if quota_gib not in (0, 16, 32, 64, 128, 256, 512):
+                    messagebox.showerror(
+                        "Invalid model storage cap",
+                        "Choose a listed storage cap before repairing.",
+                        parent=chooser)
+                    return
+                quota_bytes = quota_gib * 1024 ** 3 if quota_gib else None
+                if not messagebox.askyesno(
+                        "Repair pinned model download",
+                        "ForgeOS will use this download's local manifest to "
+                        "fetch the exact same repository revision and SHA-256. "
+                        "If the current file is damaged, its bytes will be "
+                        "preserved in quarantine and count toward storage use. "
+                        "The repair may need space for both copies. ForgeOS "
+                        "will refuse while a saved blocked-task checkpoint "
+                        "references this model. Continue?", parent=chooser):
+                    return
+                cancel_event = threading.Event()
+                verification["busy"] = True
+                verification["cancel_event"] = cancel_event
+                verification["operation"] = "repair"
+                managed["busy"] = True
+                update_selection_controls()
+                cancel_verify_btn.configure(state="normal")
+                retirement_status.set(
+                    "Checking checkpoint references and pinned manifest...")
+
+                def worker():
+                    worker_store = None
+                    try:
+                        from .gguf_download import repair_downloaded_gguf
+                        from .recovery import checkpoint_references_managed_model
+                        worker_store = Store(db_path)
+                        outcome = repair_downloaded_gguf(
+                            entry["path"], confirm=True,
+                            checkpoint_check=lambda digest:
+                            checkpoint_references_managed_model(
+                                worker_store, digest),
+                            cancel_event=cancel_event,
+                            storage_quota_bytes=quota_bytes,
+                            progress_callback=lambda stage, completed, total:
+                            post_verification_event((
+                                "repair-progress", index,
+                                (stage, completed), total)))
+                        post_verification_event(("done", index, outcome, None))
+                    except Exception as exc:
+                        post_verification_event((
+                            "done", index, None,
+                            f"{type(exc).__name__}: {exc}"))
+                    finally:
+                        if worker_store is not None:
+                            worker_store.close()
+                threading.Thread(target=worker, daemon=True).start()
+                chooser.after(150, poll_verification)
 
             def cancel_verification():
                 cancel_event = verification["cancel_event"]
                 if cancel_event is None:
                     return
                 cancel_event.set()
-                retirement_status.set(
-                    "Cancellation requested; the current 1 MiB read may finish first.")
+                if verification.get("operation") == "repair":
+                    retirement_status.set(
+                        "Repair cancellation requested; any quarantined original "
+                        "bytes remain preserved.")
+                else:
+                    retirement_status.set(
+                        "Cancellation requested; the current 1 MiB read may finish first.")
 
             def estimate_selected_memory():
                 if verification["busy"] or estimate_state["busy"]:
@@ -1478,8 +1625,8 @@ def launch(db_path, *, acceptance: bool = False):
             def close_chooser():
                 if verification["busy"]:
                     retirement_status.set(
-                        "Verification is active. Cancel it and wait for the "
-                        "result before closing this window.")
+                        "Verification or repair is active. Cancel it and wait "
+                        "for the result before closing this window.")
                     return
                 if estimate_state["busy"]:
                     retirement_status.set(

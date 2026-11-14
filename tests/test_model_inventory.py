@@ -277,6 +277,31 @@ class GGUFInventoryTests(unittest.TestCase):
                 "--directory", str(self.root)]), 0)
         self.assertEqual(json.loads(output.getvalue())["status"], "verified")
 
+    def test_cli_model_repair_requires_confirmation_before_opening_database(self):
+        from forgeos.cli import main
+        database = self.root / "must-not-be-created.sqlite3"
+        with self.assertRaisesRegex(ValueError, "Explicit --confirm"):
+            main(["--db", str(database), "model-repair-local", str(self.path)])
+        self.assertFalse(database.exists())
+
+    def test_cli_model_repair_uses_requested_storage_cap(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from forgeos.cli import main
+        from forgeos.core import Store
+        database = self.root / "tasks.sqlite3"
+        Store(database).close()
+        with patch("forgeos.gguf_download.repair_downloaded_gguf",
+                   return_value={"status": "repaired"}) as repair, \
+                redirect_stdout(StringIO()):
+            self.assertEqual(main([
+                "--db", str(database), "model-repair-local", str(self.path),
+                "--directory", str(self.root), "--confirm",
+                "--storage-quota-gib", "16"]), 0)
+        self.assertEqual(
+            repair.call_args.kwargs["storage_quota_bytes"], 16 * 1024**3)
+
     def test_no_automatic_network_or_model_execution(self):
         with patch("forgeos.huggingface_catalog.search_gguf") as remote, \
              patch("forgeos.managed_llama.subprocess.Popen") as spawn:

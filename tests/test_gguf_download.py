@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 
 from forgeos.gguf_download import (
     DownloadCancelled, _allowed_download_url, _is_reparse_point, _safe_name,
-    _safe_storage_root, download_gguf,
+    _safe_storage_root, download_gguf, repair_downloaded_gguf,
 )
 
 REPO = "Qwen/Coder-GGUF"
@@ -548,6 +548,161 @@ class GGUFDownloadTests(unittest.TestCase):
             self.assertEqual(self.download()["status"], "already_verified")
             network.assert_not_called()
         self.assertEqual(json.loads(manifest.read_text())["sha256"], DIGEST)
+
+    def test_explicit_repair_quarantines_corrupt_bytes_and_restores_pinned_file(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        corrupt = b"X" * len(BODY)
+        model.write_bytes(corrupt)
+        checked = []
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)) as network:
+            result = repair_downloaded_gguf(
+                model, directory=self.root, confirm=True,
+                checkpoint_check=lambda digest: checked.append(digest) or False)
+        self.assertEqual(result["status"], "repaired")
+        self.assertEqual(result["sha256"], DIGEST)
+        self.assertEqual(model.read_bytes(), BODY)
+        self.assertEqual(checked, [DIGEST])
+        quarantined = Path(result["quarantined_path"])
+        self.assertEqual(quarantined.read_bytes(), corrupt)
+        self.assertEqual(network.call_count, 1)
+        from forgeos.model_inventory import storage_usage
+        self.assertEqual(storage_usage(self.root), {
+            "bytes": len(BODY) * 2, "files": 2})
+
+    def test_repair_refuses_checkpoint_dependency_and_preserves_corrupt_file(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        corrupt = b"X" * len(BODY)
+        model.write_bytes(corrupt)
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "checkpoint references"):
+                repair_downloaded_gguf(
+                    model, directory=self.root, confirm=True,
+                    checkpoint_check=lambda _digest: True)
+            network.assert_not_called()
+        self.assertEqual(model.read_bytes(), corrupt)
+        self.assertEqual(list(self.root.rglob("*.corrupt-*")), [])
+
+    def test_repair_checks_checkpoint_before_replacing_a_missing_download(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        model.unlink()
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "checkpoint references"):
+                repair_downloaded_gguf(
+                    model, directory=self.root, confirm=True,
+                    checkpoint_check=lambda _digest: True)
+            network.assert_not_called()
+        self.assertFalse(model.exists())
+
+    def test_explicit_repair_restores_a_missing_pinned_download(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        model.unlink()
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            result = repair_downloaded_gguf(
+                model, directory=self.root, confirm=True,
+                checkpoint_check=lambda _digest: False)
+        self.assertEqual(result["status"], "repaired")
+        self.assertNotIn("quarantined_path", result)
+        self.assertEqual(model.read_bytes(), BODY)
+
+    def test_repair_quota_exhaustion_preserves_old_bytes_and_can_retry(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        corrupt = b"X" * len(BODY)
+        model.write_bytes(corrupt)
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "preserved in quarantine"):
+                repair_downloaded_gguf(
+                    model, directory=self.root, confirm=True,
+                    checkpoint_check=lambda _digest: False,
+                    storage_quota_bytes=len(BODY))
+            network.assert_not_called()
+        quarantine = next(self.root.rglob(FILE + ".corrupt-*"))
+        self.assertEqual(quarantine.read_bytes(), corrupt)
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            result = repair_downloaded_gguf(
+                model, directory=self.root, confirm=True,
+                checkpoint_check=lambda _digest: False,
+                storage_quota_bytes=2 * len(BODY))
+        self.assertEqual(result["status"], "repaired")
+        self.assertEqual(model.read_bytes(), BODY)
+        self.assertEqual(quarantine.read_bytes(), corrupt)
+
+    def test_repair_refuses_synthetic_hardlinked_destination(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        model.write_bytes(b"X" * len(BODY))
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            info = original_stat(path, *args, **kwargs)
+            if path == model:
+                return SimpleNamespace(
+                    st_mode=info.st_mode, st_size=info.st_size,
+                    st_mtime_ns=info.st_mtime_ns, st_ino=info.st_ino,
+                    st_nlink=2)
+            return info
+
+        with patch.object(Path, "stat", report_hardlink), \
+                patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError, "single-link"):
+                repair_downloaded_gguf(
+                    model, directory=self.root, confirm=True,
+                    checkpoint_check=lambda _digest: False)
+            network.assert_not_called()
+        self.assertEqual(model.read_bytes(), b"X" * len(BODY))
+        self.assertEqual(list(self.root.rglob("*.corrupt-*")), [])
+
+    def test_interrupted_repair_preserves_quarantine_and_resumes_exact_revision(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        corrupt = b"X" * len(BODY)
+        model.write_bytes(corrupt)
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY[:13], headers={
+                       "Content-Length": str(len(BODY))})):
+            with self.assertRaisesRegex(RuntimeError, "preserved in quarantine"):
+                repair_downloaded_gguf(
+                    model, directory=self.root, confirm=True,
+                    checkpoint_check=lambda _digest: False)
+        quarantine = next(self.root.rglob(FILE + ".corrupt-*"))
+        self.assertEqual(quarantine.read_bytes(), corrupt)
+        self.assertFalse(model.exists())
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY[13:], status=206, headers={
+                       "Content-Range": f"bytes 13-{len(BODY)-1}/{len(BODY)}",
+                       "Content-Length": str(len(BODY)-13)})) as network:
+            result = repair_downloaded_gguf(
+                model, directory=self.root, confirm=True,
+                checkpoint_check=lambda _digest: False)
+        self.assertEqual(result["status"], "repaired")
+        self.assertEqual(model.read_bytes(), BODY)
+        self.assertEqual(quarantine.read_bytes(), corrupt)
+        self.assertEqual(network.call_args.args[0].headers.get("Range"),
+                         "bytes=13-")
+
+    def test_repair_requires_confirmation_and_valid_checkpoint_guard(self):
+        with self.assertRaisesRegex(ValueError, "confirmation"):
+            repair_downloaded_gguf(
+                self.root / FILE, directory=self.root,
+                checkpoint_check=lambda _digest: False)
+        with self.assertRaisesRegex(TypeError, "checkpoint_check"):
+            repair_downloaded_gguf(
+                self.root / FILE, directory=self.root, confirm=True,
+                checkpoint_check=None)
 
     def test_interruption_preserves_partial_and_exact_resume(self):
         first = BODY[:13]

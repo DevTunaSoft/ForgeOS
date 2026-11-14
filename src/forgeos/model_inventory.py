@@ -256,7 +256,8 @@ def storage_usage(directory: str | Path | None = None) -> dict:
                     continue
                 name = item.name.lower()
                 is_weight = (name.endswith(".gguf") or name.endswith(".gguf.part")
-                             or ".gguf.part.corrupt-" in name)
+                             or ".gguf.part.corrupt-" in name
+                             or ".gguf.corrupt-" in name)
                 if not is_weight or not item.is_file(follow_symlinks=False):
                     continue
                 info = item.stat(follow_symlinks=False)

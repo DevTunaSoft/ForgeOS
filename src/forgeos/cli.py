@@ -52,6 +52,15 @@ def main(argv=None):
         'model-verify-local',help='Explicit SHA-256 recheck of one downloaded GGUF')
     local_verify.add_argument('filename')
     local_verify.add_argument('--directory',default='')
+    local_repair=sub.add_parser(
+        'model-repair-local',
+        help='Restore one damaged managed GGUF from its original pinned manifest')
+    local_repair.add_argument('filename', help='Exact managed GGUF path')
+    local_repair.add_argument('--directory', default='')
+    local_repair.add_argument('--confirm', action='store_true')
+    local_repair.add_argument(
+        '--storage-quota-gib', type=int,
+        help='Optional total ForgeOS model-store cap in GiB (1–16384)')
     retired=sub.add_parser('models-retired',help='List retired GGUF models')
     retired.add_argument('--directory',default='')
     retire=sub.add_parser('model-retire-local',help='Retire verified GGUF without erasing it')
@@ -164,6 +173,24 @@ def main(argv=None):
     if args.action == 'model-verify-local':
         from .model_inventory import verify_download
         result = verify_download(args.filename, directory=args.directory or None)
+        print(json.dumps(result, indent=2))
+        return 0
+    if args.action == 'model-repair-local':
+        if not args.confirm:
+            raise ValueError('Explicit --confirm required to repair GGUF')
+        Store.inspect_existing_database(args.db)
+        from .gguf_download import repair_downloaded_gguf
+        from .recovery import checkpoint_references_managed_model
+        store = Store(args.db)
+        try:
+            result = repair_downloaded_gguf(
+                args.filename, directory=args.directory or None, confirm=True,
+                checkpoint_check=lambda digest:
+                checkpoint_references_managed_model(store, digest),
+                storage_quota_bytes=(args.storage_quota_gib * 1024**3
+                                     if args.storage_quota_gib is not None else None))
+        finally:
+            store.close()
         print(json.dumps(result, indent=2))
         return 0
     if args.action == 'models-retired':

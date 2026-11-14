@@ -86,6 +86,21 @@ class DashboardContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 
+    def test_damaged_managed_downloads_offer_confirmed_pinned_repair(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        for fragment in (
+                'text="Repair selected download…"',
+                '"missing", "size_mismatch", "present_not_reverified"',
+                'entry.get("kind") != "imported"',
+                'repair_downloaded_gguf(',
+                'storage_quota_bytes=quota_bytes',
+                'checkpoint_references_managed_model(',
+                'text="Cancel verify/repair"',
+                'The previous bytes remain in storage quarantine'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
     def test_local_model_memory_estimate_reuses_admission_policy(self):
         source = (Path(__file__).resolve().parents[1] /
                   "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")

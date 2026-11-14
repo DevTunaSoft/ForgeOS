@@ -278,7 +278,10 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
                             cancel_event: Event | None = None,
                             progress_callback=None,
                             storage_quota_bytes: int | None = None,
-                            deadline: float | None = None) -> dict:
+                            deadline: float | None = None,
+                            repair_corrupt: bool = False,
+                            checkpoint_check=None,
+                            repair_state: dict | None = None) -> dict:
     """Fetch one explicitly chosen GGUF with revision and SHA-256 verification.
 
     A failure never publishes an incomplete file. Interrupted partial bytes
@@ -335,45 +338,93 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
     with _exclusive_download_lock(lock):
         _check_cancelled(cancel_event)
         _check_deadline(deadline)
+        if (repair_corrupt
+                and checkpoint_check(checksum) is not False):
+            raise RuntimeError(
+                "A blocked task checkpoint references this GGUF; repair refused")
         if destination.exists():
-            if (not destination.is_file() or destination.stat().st_size != size
-                    or _digest(
-                        destination, cancel_event=cancel_event,
-                        progress_callback=progress_callback,
-                        deadline=deadline) != checksum):
+            before = destination.stat()
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                    or before.st_size < 0 or before.st_size > MAX_MODEL_BYTES):
+                raise RuntimeError(
+                    "Existing GGUF is not an ordinary single-link model file")
+            matches = before.st_size == size
+            if matches:
+                matches = (_digest(
+                    destination, cancel_event=cancel_event,
+                    progress_callback=progress_callback,
+                    deadline=deadline) == checksum)
+            after = destination.stat()
+            if ((before.st_size, before.st_mtime_ns, before.st_ino,
+                 before.st_nlink) !=
+                    (after.st_size, after.st_mtime_ns, after.st_ino,
+                     after.st_nlink) or after.st_nlink != 1):
+                raise RuntimeError("Existing GGUF changed during verification")
+            if matches:
+                if not _gguf_header(destination):
+                    raise RuntimeError("Existing GGUF is missing the GGUF header")
+                # Repair a lost manifest after a crash only when the bytes
+                # already match the requested immutable source identity.
+                if manifest.exists():
+                    if (not manifest.is_file() or manifest.stat().st_nlink != 1
+                            or manifest.stat().st_size > 4096):
+                        raise RuntimeError("Existing GGUF manifest is not a valid file")
+                    try:
+                        installed = json.loads(manifest.read_text(encoding="utf-8"))
+                    except (OSError, UnicodeError, ValueError) as exc:
+                        raise RuntimeError("Corrupt existing GGUF manifest") from exc
+                    if installed != expected:
+                        raise RuntimeError("Existing GGUF manifest identity mismatch")
+                if metadata.exists():
+                    if (not metadata.is_file() or metadata.stat().st_nlink != 1
+                            or metadata.stat().st_size > 4096):
+                        raise RuntimeError("Corrupt published GGUF download journal")
+                    try:
+                        prior = json.loads(metadata.read_text(encoding="utf-8"))
+                    except (OSError, UnicodeError, ValueError) as exc:
+                        raise RuntimeError("Corrupt published GGUF download journal") from exc
+                    if prior != expected:
+                        raise RuntimeError("Published GGUF journal identifies different weights")
+                if partial.exists():
+                    raise RuntimeError("Published GGUF has unresolved partial download")
+                _check_cancelled(cancel_event)
+                _check_deadline(deadline)
+                if not manifest.exists():
+                    _write_json_atomic(manifest, expected)
+                if metadata.exists():
+                    metadata.unlink()
+                return {"status": "already_verified", "path": str(destination),
+                        **expected}
+
+            if not repair_corrupt:
                 raise RuntimeError("Existing GGUF does not match the pinned checksum")
-            if not _gguf_header(destination):
-                raise RuntimeError("Existing GGUF is missing the GGUF header")
-            # Repair the manifest after a crash between the weight rename
-            # and its atomic metadata publication, without redownloading.
-            if manifest.exists():
-                if not manifest.is_file() or manifest.stat().st_size > 4096:
-                    raise RuntimeError("Existing GGUF manifest is not a valid file")
-                try:
-                    installed = json.loads(manifest.read_text(encoding="utf-8"))
-                except (OSError, UnicodeError, ValueError) as exc:
-                    raise RuntimeError("Corrupt existing GGUF manifest") from exc
-                if installed != expected:
-                    raise RuntimeError("Existing GGUF manifest identity mismatch")
-            if metadata.exists():
-                if not metadata.is_file() or metadata.stat().st_size > 4096:
-                    raise RuntimeError("Corrupt published GGUF download journal")
-                try:
-                    prior = json.loads(metadata.read_text(encoding="utf-8"))
-                except (OSError, UnicodeError, ValueError) as exc:
-                    raise RuntimeError("Corrupt published GGUF download journal") from exc
-                if prior != expected:
-                    raise RuntimeError("Published GGUF journal identifies different weights")
-            if partial.exists():
-                raise RuntimeError("Published GGUF has unresolved partial download")
-            _check_cancelled(cancel_event)
-            _check_deadline(deadline)
-            if not manifest.exists():
-                _write_json_atomic(manifest, expected)
-            if metadata.exists():
-                metadata.unlink()
-            return {"status": "already_verified", "path": str(destination),
-                    **expected}
+            if partial.exists() or metadata.exists():
+                raise RuntimeError(
+                    "Existing GGUF has an unresolved download journal; repair refused")
+            if (not manifest.is_file() or manifest.stat().st_nlink != 1
+                    or manifest.stat().st_size > 4096):
+                raise RuntimeError(
+                    "Repair requires the original single-link pinned GGUF manifest")
+            try:
+                installed = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise RuntimeError("Repair manifest is unreadable") from exc
+            if installed != expected:
+                raise RuntimeError("Repair manifest does not match the pinned source")
+            quarantined = destination.with_name(
+                destination.name + ".corrupt-" + uuid.uuid4().hex)
+            _reject_existing_link(quarantined, root)
+            if os.path.lexists(quarantined):
+                raise RuntimeError("Could not reserve a unique corrupt-model quarantine path")
+            current = destination.stat()
+            if ((after.st_size, after.st_mtime_ns, after.st_ino,
+                 after.st_nlink) !=
+                    (current.st_size, current.st_mtime_ns, current.st_ino,
+                     current.st_nlink) or current.st_nlink != 1):
+                raise RuntimeError("Existing GGUF changed before repair quarantine")
+            os.replace(destination, quarantined)
+            if repair_state is not None:
+                repair_state["quarantined"] = str(quarantined)
         if partial.exists() != metadata.exists():
             raise RuntimeError("Incomplete download journal needs manual inspection")
         if partial.exists():
@@ -498,7 +549,13 @@ def _download_gguf_unlocked(repo: str, filename: str, *, revision: str | None = 
         os.replace(partial, destination)
         _write_json_atomic(manifest, expected)
         metadata.unlink(missing_ok=True)
-        return {"status": "verified", "path": str(destination), **expected}
+        repaired_path = (repair_state.get("quarantined")
+                         if repair_state is not None else None)
+        return {"status": ("repaired" if repair_state is not None
+                            and repair_state.get("requested") else "verified"),
+                "path": str(destination), **expected,
+                **({"quarantined_path": repaired_path}
+                   if repaired_path else {})}
 
 
 def download_gguf(repo: str, filename: str, *, revision: str | None = None,
@@ -507,7 +564,9 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
                   cancel_event: Event | None = None,
                   progress_callback=None,
                   storage_quota_bytes: int | None = None,
-                  max_duration_seconds: int = MAX_DOWNLOAD_DURATION_SECONDS) -> dict:
+                  max_duration_seconds: int = MAX_DOWNLOAD_DURATION_SECONDS,
+                  repair_corrupt: bool = False,
+                  checkpoint_check=None) -> dict:
     """Download one verified GGUF, optionally enforcing a whole-store quota.
 
     Quota-checked transfers take a blocking per-store lock, measure existing
@@ -520,29 +579,83 @@ def download_gguf(repo: str, filename: str, *, revision: str | None = None,
         raise TypeError("cancel_event must be a threading.Event")
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable")
+    if not isinstance(repair_corrupt, bool):
+        raise TypeError("repair_corrupt must be boolean")
+    if repair_corrupt and not callable(checkpoint_check):
+        raise TypeError("repair requires a checkpoint_check callback")
     if (type(max_duration_seconds) is not int
             or not 1 <= max_duration_seconds <= MAX_DOWNLOAD_DURATION_SECONDS):
         raise ValueError("Invalid total model download time limit")
     deadline = time.monotonic() + max_duration_seconds
-    if storage_quota_bytes is None:
-        return _download_gguf_unlocked(
-            repo, filename, revision=revision, directory=directory,
-            max_bytes=max_bytes, timeout=timeout, cancel_event=cancel_event,
-            progress_callback=progress_callback, deadline=deadline)
-    if (type(storage_quota_bytes) is not int
+    if storage_quota_bytes is not None and (
+            type(storage_quota_bytes) is not int
             or not 1 <= storage_quota_bytes <= MAX_MODEL_STORAGE_QUOTA_BYTES):
         raise ValueError("Invalid model storage quota")
-    root = _safe_storage_root(directory)
-    quota_lock = root / ".forgeos-storage-quota.lock"
-    _reject_existing_link(quota_lock, root)
-    if quota_lock.exists() and (not quota_lock.is_file()
-                                or quota_lock.stat().st_nlink != 1):
-        raise ValueError("Model storage quota lock is not a safe regular file")
-    with _exclusive_download_lock(
-            quota_lock, blocking=True, deadline=deadline,
-            cancel_event=cancel_event):
+    root = (_safe_storage_root(directory) if storage_quota_bytes is not None
+            else directory)
+    repair_state = {"requested": repair_corrupt}
+
+    def transfer():
         return _download_gguf_unlocked(
             repo, filename, revision=revision, directory=root,
             max_bytes=max_bytes, timeout=timeout, cancel_event=cancel_event,
             progress_callback=progress_callback,
-            storage_quota_bytes=storage_quota_bytes, deadline=deadline)
+            storage_quota_bytes=storage_quota_bytes, deadline=deadline,
+            repair_corrupt=repair_corrupt,
+            checkpoint_check=checkpoint_check, repair_state=repair_state)
+
+    try:
+        if storage_quota_bytes is None:
+            return transfer()
+        quota_lock = root / ".forgeos-storage-quota.lock"
+        _reject_existing_link(quota_lock, root)
+        if quota_lock.exists() and (not quota_lock.is_file()
+                                    or quota_lock.stat().st_nlink != 1):
+            raise ValueError("Model storage quota lock is not a safe regular file")
+        with _exclusive_download_lock(
+                quota_lock, blocking=True, deadline=deadline,
+                cancel_event=cancel_event):
+            return transfer()
+    except Exception as exc:
+        if repair_state.get("quarantined"):
+            raise RuntimeError(
+                "Repair stopped; the original bytes are preserved in quarantine "
+                f"as {Path(repair_state['quarantined']).name}. Retry the same "
+                "pinned revision after resolving the download or storage issue.") from exc
+        raise
+
+
+def repair_downloaded_gguf(path: Path | str, *,
+                           directory: Path | str | None = None,
+                           confirm: bool = False, checkpoint_check,
+                           cancel_event: Event | None = None,
+                           progress_callback=None,
+                           storage_quota_bytes: int | None = None,
+                           max_duration_seconds: int = MAX_DOWNLOAD_DURATION_SECONDS) -> dict:
+    """Restore one selected download from its pinned local manifest.
+
+    A mismatched one-link file is preserved under a unique quarantine name.
+    Imported files and untrusted/missing manifests are never repaired here.
+    """
+    if confirm is not True:
+        raise ValueError("Explicit confirmation is required to repair a GGUF")
+    if not callable(checkpoint_check):
+        raise TypeError("checkpoint_check must be callable")
+    root = _safe_storage_root(directory)
+    selected = Path(path).expanduser().absolute()
+    _reject_existing_link(selected, root)
+    selected = selected.resolve(strict=False)
+    manifest = selected.with_name(selected.name + ".forgeos.json")
+    _reject_existing_link(manifest, root)
+    from .model_inventory import _manifest_model_file
+    expected, info = _manifest_model_file(manifest, root)
+    if expected != selected:
+        raise ValueError(
+            "Select a downloaded GGUF with its original pinned manifest")
+    return download_gguf(
+        info["repo"], info["file"], revision=info["revision"],
+        directory=root, cancel_event=cancel_event,
+        progress_callback=progress_callback,
+        storage_quota_bytes=storage_quota_bytes,
+        max_duration_seconds=max_duration_seconds,
+        repair_corrupt=True, checkpoint_check=checkpoint_check)
