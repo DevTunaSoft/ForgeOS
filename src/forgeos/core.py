@@ -39,6 +39,20 @@ class LeaseLostError(RuntimeError):
     """An expired, reclaimed, or concurrently changed task cannot be published."""
 
 
+def _publish_database_copy(staging: Path, target: Path) -> None:
+    """Publish a staged SQLite copy without replacing a concurrent destination.
+
+    Windows rename fails when the destination already exists, giving the same
+    no-overwrite publication contract without relying on hard-link support.
+    POSIX keeps the hard-link publication used by the existing same-volume
+    atomic path.
+    """
+    if os.name == "nt":
+        os.rename(staging, target)
+    else:
+        os.link(staging, target)
+
+
 def _utf8_size(value: str) -> int:
     try:
         return len(value.encode("utf-8"))
@@ -142,7 +156,7 @@ class Store:
             with staging.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # Exclusive atomic publication; never replace another backup.
-            os.link(staging, target)
+            _publish_database_copy(staging, target)
             return target
         finally:
             staging.unlink(missing_ok=True)
@@ -184,7 +198,7 @@ class Store:
             with staged.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # No-overwrite publication also protects concurrent users.
-            os.link(staged, target)
+            _publish_database_copy(staged, target)
             return target
         finally:
             staged.unlink(missing_ok=True)
