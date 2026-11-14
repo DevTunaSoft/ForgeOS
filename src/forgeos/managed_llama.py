@@ -1042,11 +1042,13 @@ class ManagedLlamaServer:
         child_stopped_confirmed = process is None
         try:
             job_error = None
+            job_released = False
             if job is not None:
                 # A Windows Job Object release can fail. Do not skip the
                 # process cleanup when the native API reports an error.
                 try:
                     _release_windows_job(job)
+                    job_released = True
                 except OSError as exc:
                     job_error = exc
             stop_error = None
@@ -1112,7 +1114,9 @@ class ManagedLlamaServer:
             child_may_be_running = not child_stopped_confirmed
             if child_may_be_running:
                 self.process = process
-                self._windows_job = job
+                # A successfully closed Job Object cannot be closed again on
+                # manual retry. Retain only the still-valid process handle.
+                self._windows_job = None if job_released else job
             else:
                 try:
                     if hasattr(process, "close"):

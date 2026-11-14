@@ -222,6 +222,46 @@ class ManagedLlamaTests(unittest.TestCase):
         controller._runtime_lock.__exit__(None, None, None)
         controller._runtime_lock = None
 
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object retry")
+    def test_closed_job_is_not_released_again_after_wait_timeout(self):
+        controller = ManagedLlamaServer()
+        process = Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired("llama-server", 4),
+            subprocess.TimeoutExpired("llama-server", 4), 0]
+        controller.process = process
+        controller._windows_job = 4321
+        controller.api_key = "secret"
+        controller.endpoint = "http://127.0.0.1:12345/v1"
+        model_lock_path = self.model.with_name(self.model.name + ".lock")
+        model_lock = _exclusive_download_lock(model_lock_path)
+        model_lock.__enter__()
+        controller._model_lock = model_lock
+        runtime_lock = _exclusive_download_lock(self.runtime_lock_path)
+        runtime_lock.__enter__()
+        controller._runtime_lock = runtime_lock
+        with patch("forgeos.managed_llama._release_windows_job") as release:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                controller.stop()
+            self.assertIs(controller.process, process)
+            self.assertIsNone(controller._windows_job)
+            self.assertIsNone(controller.api_key)
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "busy")
+            controller.stop()
+            release.assert_called_once_with(4321)
+        process.terminate.assert_called_once_with()
+        process.close.assert_called_once_with()
+        self.assertIsNone(controller.process)
+        self.assertEqual(
+            self.child_model_lock(model_lock_path).stdout.strip(), "acquired")
+        self.assertEqual(
+            self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+            "acquired")
+
     def test_secret_cleanup_failure_still_clears_session_identity(self):
         controller = ManagedLlamaServer()
         controller.api_key = "secret"
