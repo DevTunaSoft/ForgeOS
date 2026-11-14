@@ -201,6 +201,65 @@ class HuggingFaceCatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             list_gguf_files("Qwen/Coder-GGUF", revision="../main")
 
+    def test_file_listing_follows_pinned_tree_pages(self):
+        revision = "c" * 40
+        base = ("https://huggingface.co/api/models/Qwen/Coder-GGUF/tree/"
+                + revision + "?recursive=true")
+        next_url = base + "&cursor=second"
+        first = Response(json.dumps([{"type": "file", "path": "one.gguf",
+                                      "size": 10}]).encode(), {
+            "Link": f'<{next_url}>; rel="next"',
+        })
+        second = Response(json.dumps([{"type": "file", "path": "two.gguf",
+                                       "size": 20}]).encode())
+        with patch("forgeos.huggingface_catalog._open_hub",
+                   side_effect=[first, second]) as opened:
+            files = list_gguf_files("Qwen/Coder-GGUF", revision=revision)
+        self.assertEqual([entry["path"] for entry in files],
+                         ["one.gguf", "two.gguf"])
+        self.assertEqual(opened.call_args.args[0].full_url, next_url)
+
+    def test_file_listing_rejects_changed_revision_and_repeated_page(self):
+        revision = "c" * 40
+        base = ("https://huggingface.co/api/models/Qwen/Coder-GGUF/tree/"
+                + revision + "?recursive=true")
+        changed_url = base.replace(revision, "d" * 40) + "&cursor=x"
+        first = Response(b"[]", {"Link": f'<{changed_url}>; rel="next"'})
+        with patch("forgeos.huggingface_catalog._open_hub",
+                   return_value=first) as opened:
+            with self.assertRaisesRegex(RuntimeError, "untrusted continuation"):
+                list_gguf_files("Qwen/Coder-GGUF", revision=revision)
+            self.assertEqual(opened.call_count, 1)
+
+        repeated_url = base + "&cursor=x"
+        link = {"Link": f'<{repeated_url}>; rel="next"'}
+        first = Response(b"[]", link)
+        second = Response(b"[]", link)
+        with patch("forgeos.huggingface_catalog._open_hub",
+                   side_effect=[first, second]) as opened:
+            with self.assertRaisesRegex(RuntimeError,
+                                        "untrusted continuation"):
+                list_gguf_files("Qwen/Coder-GGUF", revision=revision)
+            self.assertEqual(opened.call_count, 2)
+
+    def test_file_listing_has_cumulative_entry_and_page_limits(self):
+        from forgeos.huggingface_catalog import MAX_TREE_PAGES
+        base = ("https://huggingface.co/api/models/Qwen/Coder-GGUF/tree/"
+                + "c" * 40 + "?recursive=true")
+        pages = [([{}] * 1001, base + "&cursor=second"),
+                 ([{}] * 1000, None)]
+        with patch("forgeos.huggingface_catalog._hub_json_response",
+                   side_effect=pages):
+            with self.assertRaisesRegex(RuntimeError, "oversized"):
+                list_gguf_files("Qwen/Coder-GGUF", revision="c" * 40)
+        pages = [([], base + f"&cursor={page}")
+                 for page in range(MAX_TREE_PAGES)]
+        with patch("forgeos.huggingface_catalog._hub_json_response",
+                   side_effect=pages) as opened:
+            with self.assertRaisesRegex(RuntimeError, "page limit"):
+                list_gguf_files("Qwen/Coder-GGUF", revision="c" * 40)
+            self.assertEqual(opened.call_count, MAX_TREE_PAGES)
+
     def test_repo_inspection_returns_bounded_unverified_card_claims_and_files(self):
         from forgeos.huggingface_catalog import inspect_gguf_repo
         metadata = {"id": "Qwen/model-GGUF", "cardData": {

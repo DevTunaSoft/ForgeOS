@@ -18,6 +18,8 @@ from urllib.request import (
 
 MAX_HUB_JSON_BYTES = 2 * 1024 * 1024
 MAX_HUB_RESPONSE_SECONDS = 30
+MAX_TREE_PAGES = 10
+MAX_TREE_ENTRIES = 2000
 MAX_GGUF_BYTES = 16 * 1024 ** 3
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
 SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
@@ -301,22 +303,51 @@ def list_gguf_files(repo: str, *, revision: str = "main") -> list[dict]:
     url = ("https://huggingface.co/api/models/" +
            "/".join(quote(part, safe="") for part in repo.split("/")) +
            "/tree/" + revision + "?recursive=true")
-    payload = _hub_json(url)
-    if not isinstance(payload, list) or len(payload) > 2000:
-        raise RuntimeError("Unexpected or oversized Hugging Face file listing")
     output = []
-    for item in payload:
-        if not isinstance(item, dict) or item.get("type") != "file":
-            continue
-        name = item.get("path")
-        size = item.get("size")
-        if (not _safe_hub_gguf_path(name) or type(size) is not int
-                or not 0 < size <= MAX_GGUF_BYTES):
-            continue
-        lfs = item.get("lfs")
-        oid = lfs.get("oid") if isinstance(lfs, dict) else None
-        output.append({
-            "path": name, "bytes": size,
-            "sha256": oid.lower() if isinstance(oid, str) and SHA256.fullmatch(oid) else None,
-        })
+    seen = {url}
+    count = 0
+    for _ in range(MAX_TREE_PAGES):
+        payload, continuation = _hub_json_response(url)
+        if not isinstance(payload, list) or count + len(payload) > MAX_TREE_ENTRIES:
+            raise RuntimeError("Unexpected or oversized Hugging Face file listing")
+        count += len(payload)
+        for item in payload:
+            if not isinstance(item, dict) or item.get("type") != "file":
+                continue
+            name = item.get("path")
+            size = item.get("size")
+            if (not _safe_hub_gguf_path(name) or type(size) is not int
+                    or not 0 < size <= MAX_GGUF_BYTES):
+                continue
+            lfs = item.get("lfs")
+            oid = lfs.get("oid") if isinstance(lfs, dict) else None
+            output.append({
+                "path": name, "bytes": size,
+                "sha256": oid.lower() if isinstance(oid, str) and SHA256.fullmatch(oid) else None,
+            })
+        if continuation is None:
+            return output
+        url = _tree_next_url(continuation, url, seen)
+        seen.add(url)
+    raise RuntimeError("Hugging Face file listing exceeded its page limit")
+
+
+def _tree_next_url(continuation: str, current: str, seen: set[str]) -> str:
+    if not isinstance(continuation, str) or len(continuation) > 4096:
+        raise RuntimeError("Hugging Face file listing has an invalid continuation")
+    try:
+        target = urlsplit(continuation)
+        source = urlsplit(current)
+        port = target.port
+    except ValueError as exc:
+        raise RuntimeError("Hugging Face file listing has an invalid continuation") from exc
+    params = parse_qs(target.query, keep_blank_values=True)
+    if (target.scheme != "https" or target.hostname != "huggingface.co"
+            or port not in (None, 443) or target.username is not None
+            or target.password is not None or target.path != source.path
+            or target.fragment or params.get("recursive") != ["true"]
+            or len(params.get("cursor", [])) != 1
+            or not params["cursor"][0] or continuation in seen):
+        raise RuntimeError("Hugging Face file listing has an untrusted continuation")
+    return continuation
     return output
