@@ -318,3 +318,20 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - Verification and exact implementation revision are recorded in the
   cumulative handoff. The capability is an identifier search, not full-text
   search or a replacement for conventional code navigation.
+
+### 2026-11-13 — reject hard-linked installed runtime members
+
+- **Implemented experimentally on the feature branch:** pinned llama.cpp
+  installation verification now rejects hard-linked or non-regular runtime
+  files, including the original release ZIP, inventory manifest and license
+  notices. This prevents a verified bundle member from also aliasing a file
+  outside the runtime directory.
+- **Verification:** runtime installer, GGUF download, model import, inventory
+  and retirement suites passed 119 tests with 8 platform/environment skips;
+  the hard-link metadata regression passed. `compileall` and `git diff --check`
+  passed. Exact revision and the real-filesystem test limitation are recorded
+  in the cumulative handoff.
+- **Limits:** this managed Windows filesystem denied real hard-link creation,
+  so the physical-link regression skipped; metadata-based rejection was
+  exercised. Concurrent same-user path replacement and actual model loading
+  remain target-device acceptance work.

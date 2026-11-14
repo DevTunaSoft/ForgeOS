@@ -2888,3 +2888,25 @@ and restore under constrained filesystems.
   session lacks that privilege; reparse flags were tested synthetically.
   Concurrent path replacement, physical Windows storage scans and real model
   loading still require target-device acceptance.
+
+### 2026-11-13 — reject hard-linked installed runtime members
+
+- **Source implementation commit:**
+  `85a768a437e086da615de5ceed9b9654f08235fa` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** close the runtime-install trust gap where a DLL or executable
+  could be hard-linked outside the pinned bundle while still matching the
+  bundle's verified bytes.
+- **Changes:** installation verification now requires a regular file with one
+  link for every runtime-tree member, and also checks link counts for the
+  preserved official archive, generated manifest and bundled license notice.
+  Added a deterministic multiple-link metadata regression and a real hard-link
+  regression that runs where the filesystem permits link creation.
+- **Verification:** runtime installer, GGUF download, model import, inventory
+  and retirement suites passed 119 tests with 8 skips. The deterministic
+  multiple-link test passed. The real hard-link test skipped because Windows
+  returned access denied for `os.link` in this managed filesystem. Compilation
+  and `git diff --check` passed.
+- **Limits / next:** physical NTFS hard-link behavior, concurrent same-user
+  path replacement and real CPU model loading remain target-device acceptance
+  work. This is integrity hardening, not a complete local-adversary boundary.
