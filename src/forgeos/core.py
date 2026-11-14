@@ -470,6 +470,9 @@ class Store:
 
 
 MAX_OLLAMA_RESPONSE_BYTES = 8 * 1024 * 1024
+# A cold local model load can legitimately exceed a short connect timeout.
+# The monotonic deadline below remains the end-to-end safety boundary.
+OLLAMA_SOCKET_TIMEOUT_SECONDS = 60
 
 
 class Ollama:
@@ -508,7 +511,7 @@ class Ollama:
         # zero-copy getvalue() on CPython when the buffer is no longer mutated.
         bounded = BytesIO()
         total = 0
-        with urlopen(req, timeout=30) as response:
+        with urlopen(req, timeout=OLLAMA_SOCKET_TIMEOUT_SECONDS) as response:
             while True:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Local AI response exceeded 180s total deadline")

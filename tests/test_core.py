@@ -370,6 +370,23 @@ class ForgeOSTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "memory limit"):
                 Ollama().generate_edits("test")
 
+    def test_ollama_allows_bounded_cold_model_startup_timeout(self):
+        import io
+        import json
+        from forgeos.core import OLLAMA_SOCKET_TIMEOUT_SECONDS
+
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        with patch("forgeos.core.urlopen",
+                   return_value=Response(json.dumps(
+                       {"response": "ready"}).encode())) as mocked:
+            self.assertEqual(Ollama().plan("ready"), "ready")
+        self.assertEqual(mocked.call_args.kwargs["timeout"],
+                         OLLAMA_SOCKET_TIMEOUT_SECONDS)
+        self.assertEqual(OLLAMA_SOCKET_TIMEOUT_SECONDS, 60)
+
     def test_ollama_response_uses_bounded_incremental_reads(self):
         import io
         import json

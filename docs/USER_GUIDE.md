@@ -720,7 +720,7 @@ The loopback OpenAI-compatible adapters now read responses in **8 KiB chunks** w
 
 ### Slow local AI responses (pending CI verification)
 
-ForgeOS applies a 180-second monotonic response deadline to its built-in Ollama generator and retains an 8 MiB response-size ceiling. If a local model streams too slowly, the request fails with a deadline or socket timeout instead of waiting indefinitely. Socket reads may overshoot the exact wall-clock deadline by up to the configured per-read timeout; the lease guard still prevents stale task results from being published. This does not impose a deadline on other model backends.
+ForgeOS applies a 180-second monotonic response deadline to its built-in Ollama generator and retains an 8 MiB response-size ceiling. The per-operation socket timeout is 60 seconds so a cold local model load can complete; if a local model streams too slowly, the request still fails with a deadline or socket timeout instead of waiting indefinitely. Socket reads may overshoot the exact wall-clock deadline by up to the configured per-read timeout; the lease guard still prevents stale task results from being published. This does not impose a deadline on other model backends.
 
 
 ### GitHub Desktop Git detection (Windows)

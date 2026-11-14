@@ -3410,3 +3410,15 @@ and restore under constrained filesystems.
   target host, but this is compatibility evidence rather than quality or
   release acceptance. Broader task quality, restart behavior, timeout/slow
   load behavior, and LM Studio remain open.
+
+### 2026-11-14 — tolerate bounded Ollama cold starts
+
+- **Source:** raised the Ollama per-operation socket timeout from 30 to 60
+  seconds while retaining the existing 180-second monotonic end-to-end
+  deadline and 8 MiB response cap. This allows a legitimate local model load
+  to finish without permitting an unbounded or slow-trickle response.
+- **Verification:** focused cold-start-timeout and slow-trickle deadline tests,
+  compilation and documentation checks passed. A broader local `test_core`
+  run also reproduced the existing managed-session diagnostic-archive failure
+  in `test_unittest_preset_passes`; that environment-limited failure is
+  unrelated to the Ollama timeout change and was not hidden.
