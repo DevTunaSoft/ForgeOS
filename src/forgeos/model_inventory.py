@@ -110,10 +110,13 @@ def _list_imports(root: Path) -> list[dict]:
                     status = "unsafe_path"
                 else:
                     info = _import_metadata(path, checksum)
-                    stat_result = path.stat()
+                    stat_result = path.stat(follow_symlinks=False)
                     amount = stat_result.st_size
-                    status = ("size_mismatch" if amount != info["bytes"]
-                              else "imported_not_reverified")
+                    status = (
+                        "unsafe_path" if (not stat.S_ISREG(stat_result.st_mode)
+                                          or stat_result.st_nlink != 1) else
+                        "size_mismatch" if amount != info["bytes"] else
+                        "imported_not_reverified")
             else:
                 # Preserve a visible inventory entry when the original weight
                 # was moved or disconnected; it cannot be selected for use.
@@ -198,12 +201,15 @@ def list_downloads(directory: str | Path | None = None) -> list[dict]:
                 if _is_reparse_point(model):
                     continue
                 try:
-                    file_size = model.stat().st_size if model.is_file() else None
+                    file_info = model.stat(follow_symlinks=False)
                 except OSError:
-                    file_size = None
-                status = ("missing" if file_size is None
-                          else "size_mismatch" if file_size != info["bytes"]
-                          else "present_not_reverified")
+                    file_info = None
+                status = (
+                    "missing" if file_info is None else
+                    "unsafe_path" if (not stat.S_ISREG(file_info.st_mode)
+                                      or file_info.st_nlink != 1) else
+                    "size_mismatch" if file_info.st_size != info["bytes"] else
+                    "present_not_reverified")
                 results.append({
                     "path": str(model), "repo": info["repo"],
                     "revision": info["revision"], "file": info["file"],
@@ -281,6 +287,7 @@ def catalog_file_status(repo: str, revision: str, file_info: dict,
             "present_not_reverified": "present; SHA-256 not reverified in this view",
             "missing": "recorded locally; file is missing",
             "size_mismatch": "local file size differs from its manifest",
+            "unsafe_path": "local model file is linked or not a regular file",
         }
         return labels.get(exact[0].get("status"),
                           "local entry needs manual inspection")
@@ -295,6 +302,8 @@ def catalog_file_status(repo: str, revision: str, file_info: dict,
                     return "import registry claims same SHA-256, but local file is missing"
                 if state == "size_mismatch":
                     return "import registry claims same SHA-256, but local size differs"
+                if state == "unsafe_path":
+                    return "matching imported model is linked or not a regular file"
                 return "matching imported registry entry needs manual inspection"
     return "not in local model inventory"
 

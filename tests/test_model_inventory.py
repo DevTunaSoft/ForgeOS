@@ -68,6 +68,26 @@ class GGUFInventoryTests(unittest.TestCase):
         self.assertEqual(items[0]["repo"], "Owner/CodeModel")
         self.assertEqual(items[0]["sha256"], self.sha)
 
+    def test_listing_marks_hardlinked_download_unsafe(self):
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.path:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_hardlink), \
+             patch("forgeos.model_inventory._digest") as hashing:
+            records = list_downloads(self.root)
+        hashing.assert_not_called()
+        self.assertEqual(records[0]["status"], "unsafe_path")
+        self.assertIn("linked", catalog_file_status(
+            "Owner/CodeModel", self.version,
+            {"path": self.path.name, "sha256": self.sha}, records))
+
     def test_storage_usage_counts_active_partial_retired_and_quarantined_weights(self):
         partial = self.parent / "next.gguf.part"
         partial.write_bytes(b"partial")

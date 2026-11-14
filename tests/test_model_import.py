@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from forgeos.gguf_download import _exclusive_download_lock
 from forgeos.managed_llama import _verified_model
-from forgeos.model_inventory import list_downloads, verify_download
+from forgeos.model_inventory import (
+    catalog_file_status, list_downloads, verify_download,
+)
 from forgeos.model_import import (
     import_local_gguf, imported_model_lock_path, purge_imported_gguf,
     unregister_imported_gguf,
@@ -407,6 +409,25 @@ class LocalModelImportTests(unittest.TestCase):
              patch("forgeos.model_inventory._digest", side_effect=finish_hash):
             with self.assertRaisesRegex(RuntimeError, "changed while verifying"):
                 verify_download(self.model, directory=self.models)
+
+    def test_import_inventory_marks_hardlinked_model_unsafe(self):
+        import_local_gguf(self.model, directory=self.models)
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.model:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_hardlink):
+            records = list_downloads(self.models)
+        self.assertEqual(records[0]["status"], "unsafe_path")
+        file_info = {"path": "candidate.gguf", "sha256": records[0]["sha256"]}
+        self.assertIn("linked", catalog_file_status(
+            "Other/Repo", "a" * 40, file_info, records))
 
 
 if __name__ == "__main__":
