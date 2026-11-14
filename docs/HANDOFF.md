@@ -3196,3 +3196,23 @@ and restore under constrained filesystems.
 - **Next:** rerun the exact-head hosted matrix and package job. Even a green
   hosted matrix does not prove real llama.cpp/GGUF inference, physical
   Windows 11 behavior, 16/32 GiB memory or large download acceptance.
+
+### 2026-11-14 — six hosted checks pass after CI repair
+
+- **Verified source head:** `8f24009a8495c1c2ddaaf35348f6e06841504229`
+  on draft PR #68. The manually dispatched Foundation run `43618834473`
+  completed successfully in all four Python jobs: Ubuntu 3.10/3.12 and
+  Windows 3.10/3.12. Each job passed source compilation, the complete unit
+  suite and the 12 MiB × 3 memory capture benchmark.
+- **Additional hosted gates:** documentation run `43618836887` passed both
+  link/heading verification and documentation-change coverage. Windows EXE
+  run `43618838825` passed packaging, frozen headless smoke, artifact/source
+  identity, frozen Tkinter startup/cleanup, secure AppContainer boundary
+  smoke and artifact upload. All six job conclusions were read from the
+  exact-head GitHub Actions records; draft PR event jobs remained skipped
+  by policy and are not counted as passes.
+- **Remaining acceptance:** these are hosted CI results. They do not prove
+  a real pinned llama.cpp release running a compatible GGUF, large live Hub
+  downloads, physical Windows 11 restart/reparse behavior, or measured
+  16/32 GiB model performance. Continue issues #53–#56 and run the full
+  release checklist on the intended build before merging or shipping.
