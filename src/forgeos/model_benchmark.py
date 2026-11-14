@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import inspect
 import os
 from pathlib import Path
 import platform
@@ -197,6 +198,27 @@ def screening_tasks(role: str | None = None) -> tuple[ScreeningTask, ...]:
                  if role is None or task.role == role)
 
 
+def _json_candidate(response: str) -> str:
+    """Allow one exact JSON Markdown fence without accepting surrounding prose."""
+    candidate = response.strip()
+    if candidate.startswith("```json") and candidate.endswith("```"):
+        candidate = candidate[len("```json"): -len("```")].strip()
+    return candidate
+
+
+def _benchmark_prompt(controller, task: ScreeningTask) -> str:
+    """Request the task's structured shape while retaining old test doubles."""
+    method = getattr(controller, "benchmark_prompt")
+    try:
+        supports_kind = "structured_kind" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        supports_kind = False
+    if supports_kind:
+        return method(task.prompt, structured_kind=(
+            "items" if task.kind == "items" else "files"))
+    return method(task.prompt)
+
+
 def score_screening_response(task: ScreeningTask, response: str) -> dict:
     """Score format and objective success; unsafe edit attempts are explicit."""
     if not isinstance(task, ScreeningTask):
@@ -207,7 +229,7 @@ def score_screening_response(task: ScreeningTask, response: str) -> dict:
                 "reason": "no_response"}
     if task.kind == "items":
         try:
-            payload = json.loads(response)
+            payload = json.loads(_json_candidate(response))
         except (TypeError, ValueError):
             return {**base, "json_contract": False, "objective_pass": False,
                     "reason": "invalid_json"}
@@ -222,7 +244,7 @@ def score_screening_response(task: ScreeningTask, response: str) -> dict:
         raise ValueError("Unknown screening task kind")
     try:
         with tempfile.TemporaryDirectory() as temp:
-            edits = parse_edits(Path(temp), response)
+            edits = parse_edits(Path(temp), _json_candidate(response))
     except EditError as exc:
         unsafe = str(exc) in {
             "Non-portable or unsafe path",
@@ -410,7 +432,7 @@ def run_screening(controller, *, role: str | None = None,
         started = time.perf_counter()
         response = None
         try:
-            response = controller.benchmark_prompt(task.prompt)
+            response = _benchmark_prompt(controller, task)
             scored = score_screening_response(task, response)
             error_type = None
         except Exception as exc:
@@ -616,7 +638,7 @@ def run_qualification(controller, *, role: str, cancel_event=None,
         started = time.perf_counter()
         response = None
         try:
-            response = controller.benchmark_prompt(task.prompt)
+            response = _benchmark_prompt(controller, task)
             scored = score_screening_response(task, response)
             error_type = None
         except Exception as exc:

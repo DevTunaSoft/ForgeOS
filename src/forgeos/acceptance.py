@@ -14,6 +14,7 @@ import uuid
 
 SCHEMA_VERSION = 1
 MAX_RECORD_BYTES = 128 * 1024
+MAX_BUILD_INFO_BYTES = 4096
 HASH_CHUNK_BYTES = 1024 * 1024
 
 
@@ -29,14 +30,12 @@ def _sha256_file(path: Path) -> str:
 
 
 def _source_commit() -> str | None:
-    """Return exact Git HEAD only for a real source checkout; never invoke a shell."""
-    roots = []
-    cwd = Path.cwd()
-    roots.append(cwd)
+    """Return Git HEAD only when tracked checkout content matches it."""
+    if getattr(sys, "frozen", False):
+        return None
     source = Path(__file__).resolve()
-    roots.extend(source.parents[:4])
     seen = set()
-    for root in roots:
+    for root in source.parents[:4]:
         try:
             resolved = root.resolve()
         except OSError:
@@ -58,7 +57,15 @@ def _source_commit() -> str | None:
                 int(value, 16)
             except ValueError:
                 continue
-            return value
+            try:
+                clean = subprocess.run(
+                    ["git", "-C", str(resolved), "diff", "--quiet",
+                     "--no-ext-diff", value, "--"],
+                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=5, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                return None
+            return value if clean.returncode == 0 else None
     return None
 
 
@@ -69,16 +76,18 @@ def _embedded_build_commit() -> str | None:
         return None
     path = Path(bundle) / "forgeos" / "build_info.json"
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError, TypeError):
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_BUILD_INFO_BYTES + 1)
+        if len(raw) > MAX_BUILD_INFO_BYTES:
+            return None
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError):
         return None
     value = payload.get("source_commit") if isinstance(payload, dict) else None
     if not isinstance(value, str) or len(value) != 40:
         return None
     value = value.lower()
-    try:
-        int(value, 16)
-    except ValueError:
+    if any(character not in "0123456789abcdef" for character in value):
         return None
     return value
 
@@ -179,7 +188,7 @@ def collect_acceptance_snapshot(controller=None, *, physical_target: bool = Fals
         },
         "limitations": [
             "This snapshot is evidence from the current machine, not a release sign-off.",
-            "A source commit is absent when ForgeOS is not running from a Git checkout.",
+            "Source commit identity requires a verifiable Git checkout with unchanged tracked files.",
             "A frozen executable SHA-256 is absent for source-mode execution.",
             "Managed-model evidence is absent unless a verified ForgeOS-managed model is running.",
             "LM Studio/Ollama/other backend acceptance requires separate real-runtime exercises.",

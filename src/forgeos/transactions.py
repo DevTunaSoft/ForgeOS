@@ -110,7 +110,7 @@ def recover_edits(root: Path) -> bool:
         raise TransactionError("Transaction manifest exceeds safety limit")
     try:
         data = json.loads(raw)
-    except (UnicodeError, ValueError) as exc:
+    except (ValueError, RecursionError) as exc:
         raise TransactionError("Invalid transaction manifest JSON") from exc
     if (not isinstance(data, dict) or data.get("version") != 1
             or data.get("state") not in ("pending", "committed")):

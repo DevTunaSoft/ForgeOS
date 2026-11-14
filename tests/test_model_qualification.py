@@ -2,7 +2,7 @@ import copy
 import unittest
 
 from forgeos.model_qualification import (
-    qualify_role_evidence, route_qualified_role,
+    qualify_role_evidence, qualification_summary, route_qualified_role,
 )
 
 
@@ -49,9 +49,28 @@ class ModelQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Final role qualification"):
             qualify_role_evidence(item)
 
+    def test_unknown_roles_cannot_be_qualified_or_routed(self):
+        item = evidence(role="invented-role")
+        with self.assertRaisesRegex(ValueError, "Invalid qualification role"):
+            qualify_role_evidence(item)
+        with self.assertRaisesRegex(ValueError, "Invalid qualification role"):
+            route_qualified_role(
+                "invented-role", [evidence()], memory_budget_bytes=8_000_000_000)
+
     def test_requires_meaningful_final_corpus(self):
         with self.assertRaisesRegex(ValueError, "counts"):
             qualify_role_evidence(evidence(tasks=5, json_ok=5, objective_ok=5))
+
+    def test_schema_and_latency_reject_boolean_and_nonfinite_numbers(self):
+        item = evidence()
+        item["schema"] = True
+        with self.assertRaisesRegex(ValueError, "schema"):
+            qualify_role_evidence(item)
+        for latency in (True, float("nan"), float("inf"), float("-inf"),
+                        10 ** 10000):
+            with self.subTest(latency=latency):
+                with self.assertRaisesRegex(ValueError, "latency"):
+                    qualify_role_evidence(evidence(latency=latency))
 
     def test_runtime_failure_and_safety_gates_fail_closed(self):
         self.assertTrue(qualify_role_evidence(
@@ -69,6 +88,8 @@ class ModelQualificationTests(unittest.TestCase):
         self.assertEqual(chosen["model_sha256"], "1" * 64)
         self.assertEqual(chosen["selection_policy"],
                          "smallest-measured-qualified-model")
+        self.assertIn("smallest measured-qualified", chosen["selection_explanation"])
+        self.assertIn("implementation role", chosen["selection_explanation"])
         self.assertEqual(chosen["backend"], "llama.cpp")
         self.assertEqual(chosen["model_name"], "forgeos-managed")
 
@@ -117,6 +138,25 @@ class ModelQualificationTests(unittest.TestCase):
             values = load_qualification_records(root)
         self.assertEqual(len(values), 1)
         self.assertEqual(values[0]["model_name"], "forgeos-managed")
+
+    def test_summary_is_sanitized_and_marks_only_qualified_roles_routeable(self):
+        summary = qualification_summary([
+            evidence(role="implementation"),
+            evidence(role="context_summarization", objective_ok=1),
+            {"not": "qualification"},
+        ])
+        implementation = summary["roles"]["implementation"]
+        context = summary["roles"]["context_summarization"]
+        self.assertTrue(implementation["routeable"])
+        self.assertEqual(implementation["qualified"], 1)
+        self.assertFalse(context["routeable"])
+        self.assertEqual(context["qualified"], 0)
+        self.assertEqual(summary["invalid_records"], 1)
+        self.assertNotIn("results", implementation["candidates"][0])
+
+    def test_summary_rejects_non_list_input(self):
+        with self.assertRaises(TypeError):
+            qualification_summary(None)
 
     def test_router_can_pin_exact_evidence_digest_for_resume(self):
         from forgeos.model_qualification import qualify_role_evidence

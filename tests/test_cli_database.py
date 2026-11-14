@@ -1,6 +1,6 @@
 """CLI integration for explicit SQLite verification and backup."""
 import io
-from contextlib import closing, redirect_stdout
+from contextlib import closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -11,6 +11,23 @@ from forgeos.core import Store
 
 
 class DatabaseCommandsTests(unittest.TestCase):
+    def test_publication_collision_reports_a_new_destination(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.sqlite3"
+            Store(source).close()
+            destination = str(Path(directory) / "copy.sqlite3")
+            for command in (
+                    ["--db", str(source), "db-backup", destination],
+                    ["db-restore-copy", str(source), destination]):
+                with self.subTest(command=command):
+                    error = io.StringIO()
+                    with patch("forgeos.core._publish_database_copy",
+                               side_effect=FileExistsError), redirect_stderr(error):
+                        self.assertEqual(main(command), 1)
+                    self.assertIn("Choose a new file.", error.getvalue())
+
     def test_restore_copy_does_not_open_default_active_database(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:
@@ -35,8 +52,10 @@ class DatabaseCommandsTests(unittest.TestCase):
             with closing(sqlite3.connect(destination)) as restored:
                 self.assertEqual(restored.execute(
                     "SELECT description FROM tasks").fetchone()[0], "safe restore")
-            with self.assertRaisesRegex(ValueError, "new file"):
-                main(["db-restore-copy", str(source), str(destination)])
+            error = io.StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(["db-restore-copy", str(source), str(destination)]), 1)
+            self.assertIn("new file", error.getvalue())
 
     def test_database_commands_never_initialize_a_missing_database(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -96,8 +115,10 @@ class DatabaseCommandsTests(unittest.TestCase):
                 self.assertEqual(
                     copied.execute("SELECT description FROM tasks").fetchone()[0],
                     "backup cli test")
-            with self.assertRaisesRegex(ValueError, "new file"):
-                main(["--db", str(db_path), "db-backup", str(target)])
+            error = io.StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(["--db", str(db_path), "db-backup", str(target)]), 1)
+            self.assertIn("new file", error.getvalue())
 
 
 if __name__ == "__main__":

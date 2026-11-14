@@ -10,11 +10,15 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
-import tempfile
+import threading
 
 
 class WorkspaceError(RuntimeError):
     """A Git workspace operation failed."""
+
+
+MAX_GIT_OUTPUT_BYTES = 1024 * 1024
+DEFAULT_DIFF_PREVIEW_BYTES = 256 * 1024
 
 
 @dataclass(frozen=True)
@@ -54,19 +58,81 @@ def find_git() -> str:
     )
 
 
-def _git(cwd: Path, *args: str, timeout: int = 30) -> str:
+def _git(cwd: Path, *args: str, timeout: int = 30,
+         max_output_bytes: int = MAX_GIT_OUTPUT_BYTES,
+         truncate_output: bool = False,
+         truncation_marker: str = "") -> str:
+    """Run Git with bounded captured output and a hard process timeout."""
+    if (type(timeout) is not int or timeout < 1
+            or type(max_output_bytes) is not int
+            or not 1024 <= max_output_bytes <= MAX_GIT_OUTPUT_BYTES
+            or type(truncate_output) is not bool
+            or not isinstance(truncation_marker, str)):
+        raise ValueError("Invalid Git output or timeout limit")
+    executable = find_git()
     try:
-        result = subprocess.run(
-            [find_git(), *args], cwd=cwd, shell=False, text=True,
-            capture_output=True, timeout=timeout, errors="replace",
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        process = subprocess.Popen(
+            [executable, *args], cwd=cwd, shell=False,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except OSError as exc:
         raise WorkspaceError(f"Git unavailable or timed out: {exc}") from exc
-    if result.returncode:
+    captured = bytearray()
+    overflow = threading.Event()
+    read_errors = []
+
+    def drain_output():
+        try:
+            while True:
+                part = process.stdout.read(64 * 1024)
+                if not part:
+                    return
+                remaining = max_output_bytes - len(captured)
+                if len(part) > remaining:
+                    captured.extend(part[:remaining])
+                    overflow.set()
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+                    return
+                captured.extend(part)
+        except OSError as exc:
+            read_errors.append(exc)
+            try:
+                process.kill()
+            except OSError:
+                pass
+
+    reader = threading.Thread(
+        target=drain_output, name="forgeos-git-output", daemon=True)
+    reader.start()
+    try:
+        returncode = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        process.kill()
+        process.wait()
+        reader.join()
+        raise WorkspaceError(f"Git operation timed out after {timeout}s") from exc
+    reader.join()
+    if process.stdout is not None:
+        process.stdout.close()
+    if read_errors:
+        raise WorkspaceError(f"Git output could not be read: {read_errors[0]}")
+    if overflow.is_set():
+        if not truncate_output:
+            raise WorkspaceError(
+                f"Git output exceeded the {max_output_bytes}-byte safety limit")
+        marker = truncation_marker.encode("utf-8")
+        if len(marker) >= max_output_bytes:
+            raise ValueError("Git truncation marker exceeds output budget")
+        del captured[max_output_bytes - len(marker):]
+        captured.extend(marker)
+    output = captured.decode("utf-8", errors="replace").strip()
+    if returncode:
         raise WorkspaceError(
-            f"Git operation failed ({result.returncode}): {result.stderr[-2000:]}"
+            f"Git operation failed ({returncode}): {output[-2000:]}"
         )
-    return result.stdout.strip()
+    return output
 
 
 def _repository_root(project: str | Path) -> Path:
@@ -110,9 +176,19 @@ def create_workspace(project: str | Path, task_id: int, destination: str | Path)
     return Workspace(source=source, path=target, branch=branch)
 
 
-def workspace_diff(workspace: Workspace) -> str:
-    """Show tracked changes without staging or committing anything."""
-    return _git(workspace.path, "diff", "--no-ext-diff", "--")
+def workspace_diff(workspace: Workspace, *,
+                   max_bytes: int = DEFAULT_DIFF_PREVIEW_BYTES) -> str:
+    """Show a bounded tracked diff preview without changing the workspace."""
+    if type(max_bytes) is not int or not 1024 <= max_bytes <= MAX_GIT_OUTPUT_BYTES:
+        raise ValueError("Diff preview limit must be 1 KiB..1 MiB")
+    marker = (
+        "\n[ForgeOS: diff preview truncated at its byte limit; "
+        "inspect selected files for the complete patch]\n")
+    return _git(
+        workspace.path, "--literal-pathspecs", "diff", "--no-ext-diff",
+        "--no-textconv", "--no-color", "--",
+        max_output_bytes=max_bytes, truncate_output=True,
+        truncation_marker=marker)
 
 
 def release_workspace(workspace: Workspace) -> None:

@@ -3,6 +3,7 @@ run-name: Documentation • ${{ github.event_name }} • ${{ github.head_ref || 
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
@@ -10,7 +11,7 @@ permissions:
   contents: read
 jobs:
   documentation:
-    if: ${{ github.event.pull_request.draft == false }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -24,5 +25,5 @@ jobs:
         run: python tools/check_documentation.py --links
       - name: Require documentation alongside implementation changes
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || 'origin/main' }}
         run: python tools/check_documentation.py --base "$BASE_SHA" --head HEAD

@@ -80,6 +80,14 @@ class ModelBenchmarkTests(unittest.TestCase):
             task, '{"files":[{"path":"../solution.py","content":"x"}]}')
         self.assertFalse(traversal["json_contract"])
 
+    def test_edit_screening_accepts_one_json_markdown_fence(self):
+        task = screening_tasks("implementation")[0]
+        fenced = ('```json\n{"files":[{"path":"solution.py",'
+                   '"content":"def add(a, b):\\n    return a + b\\n"}]}\n```')
+        scored = score_screening_response(task, fenced)
+        self.assertTrue(scored["json_contract"])
+        self.assertTrue(scored["objective_pass"])
+
     def test_screening_gate_is_four_json_and_three_objective_of_five(self):
         tasks = screening_tasks("planning")
         results = []

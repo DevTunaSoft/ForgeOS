@@ -8,10 +8,12 @@
 ![Models](https://img.shields.io/badge/AI-Ollama%20%2B%20experimental%20local%20endpoints-blue)
 ![Docker](https://img.shields.io/badge/Docker-not%20required-informational)
 
+![ForgeOS branded banner](assets/branding/ForgeOS_Master_Branding_Kit/04_Application_Ready/GitHub_Banner.png)
+
 > [!IMPORTANT]
 > **ForgeOS is under active development, not a production-ready autonomous application builder.** Its desktop application, local AI integration, Git workspaces, guarded code editing, diagnostics, and selected testing/recovery paths are real prototypes. Full hands-off delivery of arbitrary Windows EXEs, Android APKs and websites is a goal—not a current guarantee. Read the [feature status](#current-capabilities-and-limitations) and [security notes](#security-and-responsible-use) before using it on important projects.
 
-**[What ForgeOS will and will not do](docs/PRODUCT_VISION.md) · [Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Multi-LLM implementation roadmap](docs/MULTI_LLM_ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
+**[What ForgeOS will and will not do](docs/PRODUCT_VISION.md) · [Get started](#quick-start) · [Detailed user manual](docs/USER_GUIDE.md) · [Brand kit](docs/BRANDING.md) · [Architecture](docs/ARCHITECTURE.md) · [Windows EXE guide](docs/WINDOWS_BUILD.md) · [Roadmap](docs/ROADMAP.md) · [Multi-LLM implementation roadmap](docs/MULTI_LLM_ROADMAP.md) · [Contributing](CONTRIBUTING.md)**
 
 ## The vision
 
@@ -271,7 +273,7 @@ The existing managed GGUF window can now **restore a retired model** using the s
 
 The **Activity & diagnostics** tab now shows the active task ID, operation, elapsed seconds, and current persisted task stage (planning, editing, testing, blocked, passed, or failed). Stage changes are appended to the bounded diagnostic log. The monitor reuses the GUI's existing event loop and reads the task database at most once per second; it does not start a second polling worker. **Editing** includes both workspace setup and waiting for model output: token-level model progress and subprocess output are not yet streamed. Test results and errors appear when the worker finishes. The monitor does not continue execution after ForgeOS exits.
 
-**Recovery limitation:** The existing **Resume safe blocked tasks** action handles structured test/repair checkpoints, not early model-generation timeouts. Do not create duplicate tasks or delete workspaces to work around a blocked generation task. A guarded pre-edit retry path remains planned and is not yet implemented.
+**Recovery limitation:** The existing **Resume safe blocked tasks** action can retry early generation from a structured pre-edit checkpoint, as well as continue test/repair checkpoints. Pre-edit generation is capped at three calls. Resume requires the same saved execution contract, original Git HEAD and a clean workspace; changed files or a pending transaction require manual inspection. Other interruptions may still need manual recovery.
 
 ### Verified task database backups (experimental)
 

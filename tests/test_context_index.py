@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 import unittest
-from forgeos.context_index import render_context
+from forgeos.context_index import render_context, search_project
 
 class ContextIndexTests(unittest.TestCase):
     def setUp(self):
@@ -64,6 +64,30 @@ class ContextIndexTests(unittest.TestCase):
         out = render_context(self.root, "file")
         self.assertLessEqual(len(out), 8000)
         self.assertLessEqual(out.count("\n- "), 80)
+
+    def test_symbol_search_prioritizes_names_and_never_returns_bodies(self):
+        for index in range(81):
+            (self.root / f"needle_{index:03}.py").write_text(
+                f"def unrelated_{index}():\n return 'PRIVATE_VALUE'\n")
+        (self.root / "z_target.py").write_text(
+            "def needle_symbol(value):\n return 'PRIVATE_VALUE'\n")
+        results = search_project(self.root, "needle")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["path"], "z_target.py")
+        self.assertEqual(results[0]["line"], 1)
+        self.assertEqual(results[0]["signature"], "def needle_symbol(value)")
+        self.assertEqual(results[0]["matched_terms"], ["needle"])
+        self.assertNotIn("PRIVATE_VALUE", str(results))
+
+    def test_symbol_search_excludes_hidden_paths_and_validates_bounds(self):
+        (self.root / ".hidden.py").write_text("def secret_symbol(): pass\n")
+        (self.root / "visible.py").write_text("def safe_symbol(): pass\n")
+        self.assertEqual(search_project(self.root, "secret"), [])
+        self.assertEqual(search_project(self.root, "safe")[0]["path"], "visible.py")
+        for query, limit in (("", 20), ("\0", 20), ("x" * 257, 20),
+                             ("safe", 0), ("safe", 101), ("safe", True)):
+            with self.subTest(query=query, limit=limit), self.assertRaises(ValueError):
+                search_project(self.root, query, limit=limit)
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,9 @@ are rejected. Inference binaries/model weights are managed separately.
 from __future__ import annotations
 
 import json
+import socket
 import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -30,10 +32,44 @@ class _RejectRedirects(HTTPRedirectHandler):
         return None
 
 
+class LocalModelUnavailableError(RuntimeError):
+    """A transient local transport or server failure that may be retried."""
+
+
 def _open(request: Request, *, timeout: int):
     # Explicitly disable environment proxies and cross-host redirects.
-    return build_opener(ProxyHandler({}), _RejectRedirects()).open(
-        request, timeout=timeout)
+    try:
+        return build_opener(ProxyHandler({}), _RejectRedirects()).open(
+            request, timeout=timeout)
+    except HTTPError as exc:
+        try:
+            status = exc.code
+        finally:
+            exc.close()
+        guidance = {
+            400: "The local server rejected the request. Check its model name and token limit field.",
+            401: "The local server requires different authentication. Check its local API key.",
+            403: "The local server refused this request. Check its local access settings.",
+            404: "The local API path or selected model was not found. Check the endpoint and model name.",
+            429: "The local server is busy or rate-limited. Wait for it to finish current work and retry.",
+        }
+        if status in (500, 502, 503, 504):
+            message = "The local inference server failed while handling the request. Check its server log."
+            error_type = LocalModelUnavailableError
+        else:
+            message = guidance.get(
+                status, f"The local inference server returned HTTP {status}.")
+            error_type = RuntimeError
+        raise error_type(message) from None
+    except (URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            message = "The local inference server did not respond before the timeout."
+        else:
+            message = (
+                "ForgeOS could not reach the selected local inference server. "
+                "Start it and check the loopback address and port.")
+        raise LocalModelUnavailableError(message) from None
 
 
 def validate_endpoint(endpoint: str) -> str:
@@ -98,11 +134,14 @@ class LocalChatModel:
     """Compatible with ForgeOS's existing plan/generate_edits interface."""
 
     def __init__(self, *, backend: str, model: str, endpoint: str | None = None,
-                 api_key: str | None = None):
+                 api_key: str | None = None,
+                 token_parameter: str = "max_tokens"):
         if backend not in DEFAULT_ENDPOINTS:
             raise ValueError("Unknown local inference backend")
         if not _valid_model_name(model):
             raise ValueError("Invalid local model identifier")
+        if token_parameter not in ("max_tokens", "max_completion_tokens"):
+            raise ValueError("Unsupported local chat token parameter profile")
         if api_key is not None and (not isinstance(api_key, str)
                 or not 20 <= len(api_key) <= 128
                 or not all(x.isalnum() or x in "-_" for x in api_key)):
@@ -111,6 +150,15 @@ class LocalChatModel:
         self.model = model
         self.base = validate_endpoint(endpoint or DEFAULT_ENDPOINTS[backend])
         self._api_key = api_key
+        self.token_parameter = token_parameter
+        self._listener_owner_check = None
+
+    def _verify_listener_owner(self) -> None:
+        check = self._listener_owner_check
+        if check is not None:
+            if not callable(check):
+                raise RuntimeError("Managed listener ownership check is invalid")
+            check()
 
     @property
     def authenticated(self) -> bool:
@@ -124,8 +172,10 @@ class LocalChatModel:
         return headers
 
     def installed(self) -> list[dict]:
+        self._verify_listener_owner()
         req = Request(self.base + "/models", headers=self._headers())
         payload = _read_json(req, limit=MAX_CATALOG_BYTES, timeout=10)
+        self._verify_listener_owner()
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             raise RuntimeError("Local endpoint did not expose a compatible model catalog")
         if len(payload["data"]) > 1000:
@@ -158,7 +208,9 @@ class LocalChatModel:
             prompt, available=available,
             memory_limit_bytes=safe_model_file_budget(system_memory()))
 
-    def _complete(self, prompt: str, *, edits: bool = False) -> str:
+    def _complete(self, prompt: str, *, edits: bool = False,
+                  structured_kind: str | None = None) -> str:
+        self._verify_listener_owner()
         from .core import validate_local_prompt
         validate_local_prompt(prompt)
         settings = local_memory_settings()
@@ -168,9 +220,46 @@ class LocalChatModel:
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "temperature": 0,
-            "max_tokens": (settings["num_predict"] if edits else
-                           min(900, settings["num_predict"])),
         }
+        request_body[self.token_parameter] = (
+            settings["num_predict"] if edits else min(900, settings["num_predict"]))
+        if edits and structured_kind not in (None, "files", "items"):
+            raise ValueError("Unknown structured response kind")
+        if edits:
+            if structured_kind in (None, "files"):
+                schema = {
+                    "type": "object",
+                    "properties": {
+                        "files": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "path": {"type": "string"},
+                                    "content": {"type": "string"},
+                                },
+                                "required": ["path", "content"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["files"],
+                    "additionalProperties": False,
+                }
+            else:
+                schema = {
+                    "type": "object",
+                    "properties": {
+                        "items": {"type": "array",
+                                  "items": {"type": "string"}},
+                    },
+                    "required": ["items"],
+                    "additionalProperties": False,
+                }
+            request_body["response_format"] = {
+                "type": "json_object",
+                "schema": schema,
+            }
         encoded = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
         if len(encoded) > MAX_REQUEST_BYTES:
             raise ValueError("Model request exceeds the bounded context budget")
@@ -179,6 +268,7 @@ class LocalChatModel:
             headers={**self._headers(), "Content-Type": "application/json"},
             method="POST")
         payload = _read_json(req, limit=MAX_RESPONSE_BYTES, timeout=180)
+        self._verify_listener_owner()
         if not isinstance(payload, dict):
             raise RuntimeError("Local chat response must be a JSON object")
         choices = payload.get("choices")
@@ -195,8 +285,8 @@ class LocalChatModel:
             raise RuntimeError("Local model text exceeds its memory safety limit")
         return value
 
-    def generate_edits(self, prompt: str) -> str:
-        return self._complete(prompt, edits=True)
+    def generate_edits(self, prompt: str, *, structured_kind: str = "files") -> str:
+        return self._complete(prompt, edits=True, structured_kind=structured_kind)
 
     def plan(self, description: str) -> str:
         from .core import validate_task_description
@@ -208,7 +298,8 @@ class LocalChatModel:
 
 
 def create_model(*, backend: str = "ollama", model: str = "auto",
-                 endpoint: str | None = None, api_key: str | None = None):
+                 endpoint: str | None = None, api_key: str | None = None,
+                 token_parameter: str = "max_tokens"):
     """Preserve canonical Ollama integration while adding local adapters."""
     if backend == "ollama":
         if api_key is not None:
@@ -220,4 +311,5 @@ def create_model(*, backend: str = "ollama", model: str = "auto",
         from .core import Ollama
         return Ollama(model=model)
     return LocalChatModel(backend=backend, model=model,
-                          endpoint=endpoint or None, api_key=api_key)
+                          endpoint=endpoint or None, api_key=api_key,
+                          token_parameter=token_parameter)

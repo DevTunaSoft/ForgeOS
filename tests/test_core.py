@@ -205,6 +205,16 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(len({row["id"] for row in first + middle + last}), 360)
         self.assertEqual(self.store.counts()["total"], 510)
 
+    def test_blocked_checkpoint_scan_stops_at_minimum_sqlite_id(self):
+        task_id = self.store.add(str(self.repo), "Minimum SQLite row ID")
+        minimum = -(1 << 63)
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE tasks SET id=?, status='blocked' WHERE id=?",
+                (minimum, task_id))
+        self.assertEqual(
+            [row["id"] for row in self.store.iter_blocked_checkpoints()], [minimum])
+
     def test_blocked_checkpoint_scan_bounded_by_bytes_and_uses_multiple_pages(self):
         import json
         blocked = []
@@ -357,8 +367,45 @@ class ForgeOSTests(unittest.TestCase):
                    return_value=MemorySnapshot(4*1024**3, 3*1024**3)), \
              patch("forgeos.core.urlopen",
                    return_value=response(b"z" * (8*1024*1024+1))):
+            # The request is still constructed before the bounded response
+            # guard rejects the oversized body.
             with self.assertRaisesRegex(RuntimeError, "memory limit"):
                 Ollama().generate_edits("test")
+
+    def test_ollama_allows_bounded_cold_model_startup_timeout(self):
+        import io
+        import json
+        from forgeos.core import OLLAMA_SOCKET_TIMEOUT_SECONDS
+
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        with patch("forgeos.core.urlopen",
+                   return_value=Response(json.dumps(
+                       {"response": "ready"}).encode())) as mocked:
+            self.assertEqual(Ollama().plan("ready"), "ready")
+        self.assertEqual(mocked.call_args.kwargs["timeout"],
+                         OLLAMA_SOCKET_TIMEOUT_SECONDS)
+        self.assertEqual(OLLAMA_SOCKET_TIMEOUT_SECONDS, 60)
+
+    def test_ollama_edit_requests_strict_files_schema(self):
+        import io
+        import json
+
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        payload = json.dumps({
+            "response": '{"files":[{"path":"health.py","content":"ok"}]}'
+        }).encode()
+        with patch("forgeos.core.urlopen",
+                   return_value=Response(payload)) as mocked:
+            Ollama().generate_edits("Return one health file")
+        body = json.loads(mocked.call_args.args[0].data)
+        self.assertEqual(body["format"]["required"], ["files"])
+        self.assertFalse(body["format"]["additionalProperties"])
 
     def test_ollama_response_uses_bounded_incremental_reads(self):
         import io

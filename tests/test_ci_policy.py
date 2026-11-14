@@ -21,6 +21,14 @@ class CIWorkflowPolicyTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn('github.event.pull_request.draft == false', self.read(name))
 
+    def test_draft_branch_can_be_validated_by_manual_dispatch(self):
+        for name in ('ci.yml', 'docs-sync.yml', 'windows-exe.yml'):
+            with self.subTest(workflow=name):
+                self.assertIn('  workflow_dispatch:', self.read(name))
+        self.assertIn(
+            "github.event_name != 'pull_request' || ",
+            self.read('docs-sync.yml'))
+
     def test_required_workflows_cover_documentation_only_prs(self):
         for name in ('ci.yml', 'windows-exe.yml'):
             body = self.read(name)

@@ -53,6 +53,7 @@ class DocumentationTests(unittest.TestCase):
         guide = (docs.ROOT / "docs" / "USER_GUIDE.md").read_text(encoding="utf-8")
         self.assertIn('text="How to use ForgeOS"', gui)
         self.assertIn("docs/USER_GUIDE.md;forgeos", build)
+        self.assertIn("src/forgeos/data/llama.cpp-LICENSE.txt;forgeos/data", build)
         self.assertIn("offline_user_guide_available", build)
         self.assertIn("How to use ForgeOS", guide)
         self.assertTrue("AppContainer" in guide,
@@ -78,6 +79,29 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("docs/PRODUCT_VISION.md", homepage)
         self.assertIn("PRODUCT_VISION.md", policy)
         self.assertIn("[step-by-step user manual](USER_GUIDE.md)", vision)
+
+    def test_model_compatibility_guide_tracks_implemented_source_state(self):
+        guide = (docs.ROOT / "docs" / "MODEL_COMPATIBILITY.md").read_text(
+            encoding="utf-8")
+        self.assertIn("integrated on", guide)
+        self.assertNotIn("proposed multi-model feature branch", guide)
+        self.assertIn("Focused unit coverage exists", guide)
+        self.assertIn("Imported files are rehashed before managed use", guide)
+        self.assertIn("model-catalog inspect", guide)
+        self.assertIn("Adapter capability matrix (source-level contract)", guide)
+        self.assertIn("ForgeOS sends no tool definitions", guide)
+
+    def test_roadmaps_distinguish_mainline_from_pushed_feature_branch(self):
+        overall = (docs.ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+        multi = (docs.ROOT / "docs" / "MULTI_LLM_ROADMAP.md").read_text(
+            encoding="utf-8")
+        compatibility = (docs.ROOT / "docs" / "MODEL_COMPATIBILITY.md").read_text(
+            encoding="utf-8")
+        self.assertIn("table above remains", overall)
+        self.assertIn("not represented as merged", overall)
+        self.assertIn("72 commits ahead", multi)
+        self.assertIn("not yet part of `main`", compatibility)
+        self.assertIn("feature branch", compatibility)
 
     def test_relative_links_in_repository(self):
         self.assertEqual(docs.check_links(), [])

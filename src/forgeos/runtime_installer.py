@@ -24,7 +24,8 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 import zipfile
 
 from .gguf_download import (
-    _exclusive_download_lock, _reject_existing_link, _safe_storage_root,
+    _exclusive_download_lock, _is_reparse_point, _reject_existing_link,
+    _safe_storage_root,
 )
 
 MIB = 1024 * 1024
@@ -37,6 +38,10 @@ READ_SIZE = MIB
 ARCHIVE_FILE = "__forgeos_official_release.zip"
 MANIFEST_FILE = "runtime.forgeos.json"
 MAX_METADATA_BYTES = 256 * 1024
+LICENSE_FILE = "llama.cpp-LICENSE.txt"
+LICENSE_SHA256 = "1cb44076504dba081126e8a0a87e742927c7b03ce7fa4fbfe83038a1322a6374"
+LLVM_OPENMP_LICENSE_FILE = "LICENSE-LLVM-OpenMP"
+LLVM_OPENMP_LICENSE_SHA256 = "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4"
 SAFE_SEGMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+() -]{0,127}\Z")
 RELEASE_TAG = "b12199"
 RELEASE_ASSET = "llama-b12199-bin-win-cpu-x64.zip"
@@ -86,6 +91,17 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: inp.read(READ_SIZE), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _license_notice() -> bytes:
+    """Load the exact upstream license bundled with ForgeOS source/build."""
+    notice = Path(__file__).resolve().parent / "data" / LICENSE_FILE
+    if notice.is_symlink() or not notice.is_file() or notice.stat().st_size > 8192:
+        raise RuntimeError("Bundled llama.cpp license notice is missing or unsafe")
+    content = notice.read_bytes()
+    if hashlib.sha256(content).hexdigest() != LICENSE_SHA256:
+        raise RuntimeError("Bundled llama.cpp license notice failed SHA-256")
+    return content
 
 
 def _runtime_root(directory: Path | str | None):
@@ -180,6 +196,10 @@ def _members(archive: zipfile.ZipFile):
                 if parts[-1].casefold() == "llama-server.exe"]
     if len(binaries) != 1:
         raise RuntimeError("Pinned runtime ZIP must contain exactly one llama-server.exe")
+    licenses = [parts for _, parts in contents
+                if "/".join(parts).casefold() == LLVM_OPENMP_LICENSE_FILE.casefold()]
+    if licenses != [(LLVM_OPENMP_LICENSE_FILE,)]:
+        raise RuntimeError("Pinned runtime ZIP is missing its LLVM OpenMP license notice")
     return contents, binaries[0]
 
 
@@ -213,12 +233,19 @@ def _extract(archive_path: Path, stage: Path):
 def _verify_files(target: Path):
     archive_path = target / ARCHIVE_FILE
     manifest = target / MANIFEST_FILE
-    if archive_path.is_symlink() or manifest.is_symlink():
-        raise RuntimeError("Installed runtime archive or manifest is a symlink")
-    if (not archive_path.is_file()
+    if _is_reparse_point(archive_path) or _is_reparse_point(manifest):
+        raise RuntimeError("Installed runtime archive or manifest is redirected")
+    if (not archive_path.is_file() or archive_path.stat().st_nlink != 1
             or archive_path.stat().st_size != RELEASE_BYTES
             or _sha256(archive_path) != RELEASE_SHA256):
         raise RuntimeError("Installed runtime source archive failed pinned SHA-256")
+    license_path = target / LICENSE_FILE
+    if (_is_reparse_point(license_path) or not license_path.is_file()
+            or license_path.stat().st_nlink != 1
+            or license_path.stat().st_size > 8192
+            or _sha256(license_path) != LICENSE_SHA256
+            or license_path.read_bytes() != _license_notice()):
+        raise RuntimeError("Installed llama.cpp license notice is missing or modified")
     with zipfile.ZipFile(archive_path, "r") as archive:
         members, binary_parts = _members(archive)
         expected_names = {"/".join(parts).casefold() for _, parts in members}
@@ -227,14 +254,21 @@ def _verify_files(target: Path):
             relative = Path(folder).relative_to(target)
             for directory in dirs:
                 d = Path(folder) / directory
-                if d.is_symlink():
-                    raise RuntimeError("Installed runtime folder contains a symlink")
+                if _is_reparse_point(d):
+                    raise RuntimeError(
+                        "Installed runtime folder contains a reparse point")
             for name in filenames:
                 current = Path(folder) / name
-                if current.is_symlink():
-                    raise RuntimeError("Installed runtime contains a linked file")
+                if _is_reparse_point(current):
+                    raise RuntimeError(
+                        "Installed runtime contains a linked or redirected file")
+                file_info = current.stat(follow_symlinks=False)
+                if (not stat.S_ISREG(file_info.st_mode)
+                        or file_info.st_nlink != 1):
+                    raise RuntimeError(
+                        "Installed runtime contains a non-regular or hard-linked file")
                 relative_path = current.relative_to(target).as_posix()
-                if relative_path in (ARCHIVE_FILE, MANIFEST_FILE):
+                if relative_path in (ARCHIVE_FILE, MANIFEST_FILE, LICENSE_FILE):
                     continue
                 key = relative_path.casefold()
                 if key not in expected_names or key in seen:
@@ -256,8 +290,12 @@ def _verify_files(target: Path):
             if amount != info.file_size:
                 raise RuntimeError("Modified runtime file size")
             checksums["/".join(parts)] = digest.hexdigest()
-        if not manifest.is_file() or manifest.stat().st_size > 256 * 1024:
-            raise RuntimeError("Missing official runtime inventory manifest")
+        if checksums.get(LLVM_OPENMP_LICENSE_FILE) != LLVM_OPENMP_LICENSE_SHA256:
+            raise RuntimeError("Pinned LLVM OpenMP license notice failed SHA-256")
+        if (not manifest.is_file() or manifest.stat().st_nlink != 1
+                or manifest.stat().st_size > 256 * 1024):
+            raise RuntimeError(
+                "Missing or linked official runtime inventory manifest")
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, ValueError) as exc:
@@ -265,6 +303,7 @@ def _verify_files(target: Path):
         if (not isinstance(data, dict)
                 or data.get("release") != RELEASE_TAG
                 or data.get("asset_sha256") != RELEASE_SHA256
+                or data.get("license_sha256") != LICENSE_SHA256
                 or data.get("files") != checksums):
             raise RuntimeError("Installed runtime manifest identity mismatch")
         # The manifest checksums alone aren't sufficient to authenticate
@@ -338,10 +377,12 @@ def install_pinned_cpu_runtime(directory: Path | str | None = None):
             if count != RELEASE_BYTES or digest.hexdigest() != RELEASE_SHA256:
                 raise RuntimeError("Official CPU runtime SHA-256 verification failed")
             entries, binary_parts = _extract(archive_path, stage)
+            (stage / LICENSE_FILE).write_bytes(_license_notice())
             manifest_path = stage / MANIFEST_FILE
             with manifest_path.open("x", encoding="utf-8") as output:
                 json.dump({"release": RELEASE_TAG,
                            "asset_sha256": RELEASE_SHA256,
+                           "license_sha256": LICENSE_SHA256,
                            "binary": "/".join(binary_parts),
                            "files": entries}, output, sort_keys=True)
                 output.flush()

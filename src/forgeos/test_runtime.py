@@ -16,6 +16,7 @@ import stat
 MARKER = ".forgeos-execution-owner.json"
 RUNTIME_DIR = ".forgeos-runtime"
 VERSION = 1
+MAX_MARKER_BYTES = 512 * 1024
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,12 @@ def _validate_marker(runtime: Path, workspace: Path) -> Path:
     if not marker.is_file() or marker.is_symlink():
         raise ValueError(f"Refusing to remove unowned execution directory: {runtime}")
     try:
-        data = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError) as exc:
+        with marker.open("rb") as stream:
+            raw = stream.read(MAX_MARKER_BYTES + 1)
+        if len(raw) > MAX_MARKER_BYTES:
+            raise ValueError("Execution runtime marker is too large")
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError) as exc:
         raise ValueError("Execution runtime marker is invalid") from exc
     if (not isinstance(data, dict) or data.get("version") != VERSION
             or data.get("workspace") != str(workspace)
@@ -56,12 +61,14 @@ def remove_test_snapshot(workspace: str | Path) -> bool:
     source = Path(workspace).expanduser().resolve(strict=True)
     runtime = _runtime_path(source)
     marker = _marker_path(runtime)
+    if runtime.is_symlink():
+        raise ValueError("Execution runtime path is not a real directory")
     if not runtime.exists():
-        if marker.exists():
+        if marker.exists() or marker.is_symlink():
             _validate_marker(runtime, source)
             marker.unlink()
         return False
-    if runtime.is_symlink() or not runtime.is_dir():
+    if not runtime.is_dir():
         raise ValueError("Execution runtime path is not a real directory")
     marker = _validate_marker(runtime, source)
     shutil.rmtree(runtime, onerror=_delete_readonly)
@@ -149,14 +156,24 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     if runtime == source or runtime.is_relative_to(source):
         raise ValueError("Execution runtime must be outside the editable workspace")
     marker = _marker_path(runtime)
-    if runtime.exists() or marker.exists():
+    if runtime.exists() or runtime.is_symlink() or marker.exists() or marker.is_symlink():
         remove_test_snapshot(source)
     runtime.mkdir(parents=False)
-    marker.write_text(json.dumps({
-        "version": VERSION,
-        "workspace": str(source),
-        "runtime": str(runtime),
-    }, sort_keys=True), encoding="utf-8")
+    try:
+        stream = marker.open("x", encoding="utf-8")
+        try:
+            with stream:
+                json.dump({
+                    "version": VERSION,
+                    "workspace": str(source),
+                    "runtime": str(runtime),
+                }, stream, sort_keys=True)
+        except BaseException:
+            marker.unlink(missing_ok=True)
+            raise
+    except BaseException:
+        runtime.rmdir()
+        raise
     try:
         shutil.copytree(
             source, runtime, dirs_exist_ok=True, symlinks=True,

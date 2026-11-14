@@ -21,7 +21,8 @@ class GuiAcceptanceCommandTests(unittest.TestCase):
                     "offline_user_guide_available": True,
                     "tasks_verified": 520,
                     "page_sizes": [150, 150, 150, 70],
-                    "tabs": ["Development", "Activity & diagnostics"]}
+                    "tabs": ["Development", "Activity & diagnostics",
+                             "Getting started & help"]}
             with patch("forgeos.gui.launch", return_value=fake) as launch:
                 code = main(["--gui-acceptance-report", str(destination)])
             self.assertEqual(code, 0)

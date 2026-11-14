@@ -85,6 +85,14 @@ def _verify_task_database_connection(db: sqlite3.Connection) -> None:
             raise ValueError("Not a compatible ForgeOS task database")
 
 
+def _publish_database_copy(staging: Path, target: Path) -> None:
+    # Windows rename is exclusive, unlike POSIX rename.
+    if os.name == "nt":
+        os.rename(staging, target)
+    else:
+        os.link(staging, target)
+
+
 class Store:
     def __init__(self, path: str | Path):
         self.path = Path(path).expanduser().resolve()
@@ -142,7 +150,7 @@ class Store:
             with staging.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # Exclusive atomic publication; never replace another backup.
-            os.link(staging, target)
+            _publish_database_copy(staging, target)
             return target
         finally:
             staging.unlink(missing_ok=True)
@@ -184,7 +192,7 @@ class Store:
             with staged.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # No-overwrite publication also protects concurrent users.
-            os.link(staged, target)
+            _publish_database_copy(staged, target)
             return target
         finally:
             staged.unlink(missing_ok=True)
@@ -266,7 +274,7 @@ class Store:
             rows = self.db.execute(
                 "SELECT id,status, "
                 "CASE WHEN length(CAST(result AS BLOB)) <= ? "
-                "THEN result ELSE NULL END AS result, "
+                "THEN CAST(result AS BLOB) ELSE NULL END AS result, "
                 "length(CAST(result AS BLOB)) AS checkpoint_bytes "
                 "FROM tasks WHERE status='blocked' AND id<=? "
                 "ORDER BY id DESC LIMIT ?",
@@ -276,7 +284,10 @@ class Store:
                 return
             for row in rows:
                 yield dict(row)
-            before_id = int(rows[-1]["id"]) - 1
+            last_id = rows[-1]["id"]
+            if last_id == -(1 << 63):
+                return
+            before_id = last_id - 1
 
     def counts(self) -> dict[str, int]:
         """SQL aggregate, not a full scan into Python task objects."""
@@ -321,7 +332,7 @@ class Store:
             sql = (
                 f"SELECT {fields},"
                 "CASE WHEN length(CAST(result AS BLOB)) <= ? "
-                "THEN result ELSE NULL END AS result,"
+                "THEN CAST(result AS BLOB) ELSE NULL END AS result,"
                 "length(CAST(result AS BLOB)) AS checkpoint_bytes "
                 "FROM tasks WHERE id=?"
             )
@@ -337,7 +348,13 @@ class Store:
         if resume and (row["checkpoint_bytes"] is None
                        or row["checkpoint_bytes"] > MAX_CHECKPOINT_BYTES):
             raise ValueError("Resume checkpoint exceeds 64 KiB safety limit")
-        return dict(row)
+        task = dict(row)
+        if resume:
+            try:
+                task["result"] = task["result"].decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("Resume checkpoint is not valid UTF-8") from exc
+        return task
 
     def update(self, task_id: int, status: str, *, error: str = '',
                result: str = '', increment: bool = False):
@@ -453,6 +470,28 @@ class Store:
 
 
 MAX_OLLAMA_RESPONSE_BYTES = 8 * 1024 * 1024
+# A cold local model load can legitimately exceed a short connect timeout.
+# The monotonic deadline below remains the end-to-end safety boundary.
+OLLAMA_SOCKET_TIMEOUT_SECONDS = 60
+OLLAMA_EDIT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["files"],
+    "additionalProperties": False,
+}
 
 
 class Ollama:
@@ -479,7 +518,9 @@ class Ollama:
             'options': options, 'keep_alive': settings['keep_alive'],
         }
         if edits:
-            arguments['format'] = 'json'
+            # Ollama supports a JSON schema in `format`; generic JSON mode
+            # permits alternate shapes that ForgeOS must reject downstream.
+            arguments['format'] = OLLAMA_EDIT_SCHEMA
         payload = json.dumps(arguments).encode()
         req = Request(self.base + '/api/generate', data=payload,
                       headers={'Content-Type': 'application/json'})
@@ -491,7 +532,7 @@ class Ollama:
         # zero-copy getvalue() on CPython when the buffer is no longer mutated.
         bounded = BytesIO()
         total = 0
-        with urlopen(req, timeout=30) as response:
+        with urlopen(req, timeout=OLLAMA_SOCKET_TIMEOUT_SECONDS) as response:
             while True:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Local AI response exceeded 180s total deadline")

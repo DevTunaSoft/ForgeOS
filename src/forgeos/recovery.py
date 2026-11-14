@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .core import MAX_CHECKPOINT_BYTES, Ollama
 from .local_models import DEFAULT_ENDPOINTS, create_model, validate_endpoint
-from .engine import execute_task
+from .engine import execute_task, MAX_PRE_EDIT_GENERATIONS
 
 PRESETS = {"python-unittest", "python-pytest", "npm-test", "cargo-test",
            "go-test", "dotnet-test"}
@@ -20,6 +20,15 @@ MAX_RECOVERY_REASON_CHARS = 400
 
 def _checkpoint_contract(checkpoint):
     contract = checkpoint.get("contract")
+    if isinstance(contract, dict) and "token_parameter" in contract:
+        token_parameter = contract["token_parameter"]
+        if token_parameter not in ("max_tokens", "max_completion_tokens"):
+            raise ValueError("Invalid checkpoint token parameter profile")
+        base = dict(contract)
+        del base["token_parameter"]
+        result = _checkpoint_contract({"contract": base})
+        result["token_parameter"] = token_parameter
+        return result
     legacy = {"preset", "max_repairs", "model"}
     extended = legacy | {"backend", "endpoint"}
     managed_extended = extended | {"managed_model_sha256", "managed_runtime_sha256"}
@@ -33,7 +42,7 @@ def _checkpoint_contract(checkpoint):
     preset = contract["preset"]
     repairs = contract["max_repairs"]
     model = contract["model"]
-    if preset not in PRESETS:
+    if not isinstance(preset, str) or preset not in PRESETS:
         raise ValueError("Invalid checkpoint test preset")
     if (not isinstance(repairs, int) or isinstance(repairs, bool)
             or not 0 <= repairs <= 5):
@@ -72,7 +81,7 @@ def _checkpoint_contract(checkpoint):
                     try:
                         root = Path(directory)
                         resolved = root.resolve(strict=True)
-                    except OSError as exc:
+                    except (OSError, ValueError, RuntimeError) as exc:
                         raise ValueError(
                             "Qualification evidence directory is unavailable") from exc
                     if (not root.is_absolute() or root.is_symlink()
@@ -92,6 +101,51 @@ def _checkpoint_contract(checkpoint):
     return result
 
 
+def checkpoint_references_managed_model(store, model_sha256: str) -> bool:
+    """Return whether a blocked checkpoint still needs this verified GGUF.
+
+    An unreadable or oversized checkpoint makes the answer uncertain, so model
+    retirement fails closed instead of freeing a dependency it cannot inspect.
+    The Store iterator transfers at most one bounded checkpoint page at a time.
+    """
+    if (not isinstance(model_sha256, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", model_sha256)):
+        raise ValueError("Invalid managed model SHA-256")
+    for task in store.iter_blocked_checkpoints():
+        payload = task.get("result")
+        size = task.get("checkpoint_bytes")
+        if payload is None:
+            if size is not None:
+                raise RuntimeError(
+                    "A blocked checkpoint is too large to verify model references")
+            continue
+        try:
+            if isinstance(payload, str):
+                payload = payload.encode("utf-8")
+            checkpoint = json.loads(payload.decode("utf-8"))
+        except (AttributeError, UnicodeError, ValueError) as exc:
+            raise RuntimeError(
+                "A blocked checkpoint is unreadable; model retirement is unsafe") from exc
+        if not isinstance(checkpoint, dict):
+            raise RuntimeError(
+                "A blocked checkpoint has an invalid shape; model retirement is unsafe")
+        contract = checkpoint.get("contract")
+        if contract is None:
+            continue
+        if not isinstance(contract, dict):
+            raise RuntimeError(
+                "A blocked checkpoint contract is unreadable; model retirement is unsafe")
+        if "managed_model_sha256" in contract:
+            identity = contract["managed_model_sha256"]
+            if not isinstance(identity, str) or not re.fullmatch(
+                    r"[a-f0-9]{64}", identity):
+                raise RuntimeError(
+                    "A checkpoint has an untrustworthy managed-model identity")
+            if identity == model_sha256:
+                return True
+    return False
+
+
 def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                 allow_host_tests=False, execute=execute_task,
                 model_factory=Ollama, managed_model_factory=None,
@@ -109,7 +163,7 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         raise ValueError("on_event must be callable")
     if managed_model_factory is not None and not callable(managed_model_factory):
         raise ValueError("managed_model_factory must be callable")
-    if preset is not None and preset not in PRESETS:
+    if preset is not None and (not isinstance(preset, str) or preset not in PRESETS):
         raise ValueError("Invalid test preset override")
     if max_repairs is not None and (
             not isinstance(max_repairs, int) or isinstance(max_repairs, bool)
@@ -143,27 +197,40 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
     for task in store.iter_blocked_checkpoints():
         if task["status"] != "blocked":
             continue
-        if task["checkpoint_bytes"] > MAX_CHECKPOINT_BYTES:
+        checkpoint_bytes = task["checkpoint_bytes"]
+        if checkpoint_bytes is not None and checkpoint_bytes > MAX_CHECKPOINT_BYTES:
             record("skipped", {
                 "id": task["id"],
                 "reason": f"Checkpoint exceeds {MAX_CHECKPOINT_BYTES}-byte safety limit",
             })
             continue
         try:
-            checkpoint = json.loads(task["result"])
-        except (ValueError, TypeError):
+            payload = task["result"]
+            if isinstance(payload, bytes):
+                payload = payload.decode("utf-8")
+            checkpoint = json.loads(payload)
+        except (ValueError, TypeError, RecursionError):
             record("skipped", {"id": task["id"], "reason": "No structured checkpoint"})
             continue
-        if isinstance(checkpoint, dict) and checkpoint.get("phase") == "manual_review_required":
+        phase = checkpoint.get("phase") if isinstance(checkpoint, dict) else None
+        if phase == "manual_review_required":
             record("skipped", {
                 "id": task["id"],
                 "reason": "Incomplete test evidence requires manual review; automatic retry disabled",
             })
             continue
-        if (not isinstance(checkpoint, dict)
-                or checkpoint.get("phase") not in {"test_pending", "repair_pending"}):
+        if phase not in ("generation_pending", "test_pending", "repair_pending"):
             record("skipped", {"id": task["id"], "reason": "No resumable checkpoint"})
             continue
+        if phase == "generation_pending":
+            generations = checkpoint.get("generation_attempts")
+            if (type(generations) is not int
+                    or not 1 <= generations < MAX_PRE_EDIT_GENERATIONS):
+                record("skipped", {
+                    "id": task["id"],
+                    "reason": "Pre-edit generation retry limit reached or invalid",
+                })
+                continue
         # A corrupt, moved or symlinked workspace must not abort recovery
         # of unrelated tasks. Do not follow a task-root symlink.
         saved_workspace = checkpoint.get("workspace")
@@ -193,16 +260,17 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
         if max_repairs is not None and max_repairs != contract["max_repairs"]:
             record("skipped", {"id": task["id"], "reason": "Repair budget override mismatch"})
             continue
+        managed = "managed_model_sha256" in contract
+        if managed and managed_model_factory is None:
+            record("skipped", {
+                "id": task["id"],
+                "reason": (
+                    "Managed GGUF checkpoint requires an authenticated "
+                    "currently running ForgeOS-managed runtime"),
+            })
+            continue
         try:
-            if "managed_model_sha256" in contract:
-                if managed_model_factory is None:
-                    record("skipped", {
-                        "id": task["id"],
-                        "reason": (
-                            "Managed GGUF checkpoint requires an authenticated "
-                            "currently running ForgeOS-managed runtime"),
-                    })
-                    continue
+            if managed:
                 model = managed_model_factory(contract)
                 expected = {
                     "backend": "llama.cpp",
@@ -224,6 +292,7 @@ def resume_safe(store, workspace_parent: Path, *, preset=None, max_repairs=None,
                     backend=contract["backend"],
                     model=contract["model"],
                     endpoint=contract["endpoint"],
+                    token_parameter=contract.get("token_parameter", "max_tokens"),
                 )
             else:
                 # Existing Ollama checkpoints and injected test factories

@@ -72,7 +72,8 @@ class RestoreBackupTests(unittest.TestCase):
 
     def test_failed_publication_cleans_staging_file(self):
         target = self.root / "never-published.sqlite3"
-        with patch("forgeos.core.os.link", side_effect=OSError("no disk space")):
+        with patch("forgeos.core._publish_database_copy",
+                   side_effect=OSError("no disk space")):
             with self.assertRaisesRegex(OSError, "no disk space"):
                 Store.restore_backup_to(self.backup, target)
         self.assertFalse(target.exists())
