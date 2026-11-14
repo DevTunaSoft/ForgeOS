@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from forgeos.cli import main
 from forgeos.core import DEFAULT_LEASE_SECONDS, LeaseLostError, Store
-from forgeos.task_actions import plan_task, test_task
+from forgeos.task_actions import plan_task, test_task as run_task_tests
 
 
 class TaskActionsTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class TaskActionsTests(unittest.TestCase):
             raise RuntimeError("new runner failed")
         with patch("forgeos.task_actions._run_workspace_tests", side_effect=fail):
             with self.assertRaisesRegex(RuntimeError, "new runner failed"):
-                test_task(self.store, self.task, "python-unittest",
+                run_task_tests(self.store, self.task, "python-unittest",
                           allow_host_tests=True)
         record = self.store.get(self.task)
         self.assertEqual(record["status"], "blocked")
@@ -145,7 +145,7 @@ class TaskActionsTests(unittest.TestCase):
                            side_effect=AssertionError("full task row loaded")),
               patch("forgeos.task_actions._run_workspace_tests",
                     return_value=outcome)):
-            result = test_task(
+            result = run_task_tests(
                 self.store, self.task, "python-unittest",
                 allow_host_tests=True)
         self.assertEqual(result, outcome)
@@ -223,7 +223,7 @@ class TaskActionsTests(unittest.TestCase):
     def test_test_permission_refused_before_mutation(self):
         with patch("forgeos.task_actions._run_workspace_tests") as tests:
             with self.assertRaisesRegex(ValueError, "permission"):
-                test_task(self.store, self.task, "python-unittest")
+                run_task_tests(self.store, self.task, "python-unittest")
             tests.assert_not_called()
         self.assertEqual(self.store.get(self.task)["status"], "queued")
 
@@ -232,7 +232,7 @@ class TaskActionsTests(unittest.TestCase):
                    "containment": "test-fixture"}
         with patch("forgeos.task_actions._run_workspace_tests",
                    return_value=outcome) as tests:
-            result = test_task(self.store, self.task, "python-unittest",
+            result = run_task_tests(self.store, self.task, "python-unittest",
                                allow_host_tests=True)
         self.assertEqual(result, outcome)
         # Windows temp directories may have 8.3 aliases; compare against the
@@ -259,7 +259,7 @@ class TaskActionsTests(unittest.TestCase):
                 with patch("forgeos.task_actions._run_workspace_tests",
                            return_value=outcome):
                     with self.assertRaisesRegex(RuntimeError, "invalid outcome"):
-                        test_task(self.store, self.task, "python-unittest",
+                        run_task_tests(self.store, self.task, "python-unittest",
                                   allow_host_tests=True)
                 record = self.store.get(self.task)
                 self.assertEqual(record["status"], "blocked")
@@ -272,7 +272,7 @@ class TaskActionsTests(unittest.TestCase):
     def test_failed_or_incomplete_tests_never_approve_a_task(self):
         with patch("forgeos.task_actions._run_workspace_tests",
                    return_value={"passed": False, "output": "failure"}):
-            failed = test_task(self.store, self.task, "python-unittest",
+            failed = run_task_tests(self.store, self.task, "python-unittest",
                                allow_host_tests=True)
         self.assertFalse(failed["passed"])
         self.assertEqual(self.store.get(self.task)["status"], "failed")
@@ -280,7 +280,7 @@ class TaskActionsTests(unittest.TestCase):
                    return_value={"passed": True, "output": "truncated",
                                  "capture_complete": False}):
             with self.assertRaisesRegex(RuntimeError, "incomplete"):
-                test_task(self.store, self.task, "python-unittest",
+                run_task_tests(self.store, self.task, "python-unittest",
                           allow_host_tests=True)
         self.assertEqual(self.store.get(self.task)["status"], "blocked")
 
@@ -297,7 +297,7 @@ class TaskActionsTests(unittest.TestCase):
                                          "capture_complete": False,
                                          "capture_error": reason}):
                     with self.assertRaisesRegex(RuntimeError, "incomplete"):
-                        test_task(self.store, self.task, "python-unittest",
+                        run_task_tests(self.store, self.task, "python-unittest",
                                   allow_host_tests=True)
                 record = self.store.get(self.task)
                 self.assertEqual(record["status"], "blocked")
@@ -316,7 +316,7 @@ class TaskActionsTests(unittest.TestCase):
         with patch("forgeos.task_actions._run_workspace_tests",
                    return_value=oversized):
             with self.assertRaisesRegex(RuntimeError, "storage budget"):
-                test_task(self.store, self.task, "python-unittest",
+                run_task_tests(self.store, self.task, "python-unittest",
                           allow_host_tests=True)
         record = self.store.get(self.task)
         self.assertEqual(record["status"], "blocked")
@@ -329,7 +329,7 @@ class TaskActionsTests(unittest.TestCase):
         with patch("forgeos.task_actions._run_workspace_tests",
                    side_effect=RuntimeError(original)):
             with self.assertRaisesRegex(RuntimeError, "TEST-ERROR"):
-                test_task(self.store, self.task, "python-unittest",
+                run_task_tests(self.store, self.task, "python-unittest",
                           allow_host_tests=True)
         stored = self.store.get(self.task)
         self.assertEqual(stored["status"], "blocked")
@@ -342,7 +342,7 @@ class TaskActionsTests(unittest.TestCase):
         outcome = {"passed": False, "returncode": 3, "output": output}
         with patch("forgeos.task_actions._run_workspace_tests",
                    return_value=outcome):
-            test_task(self.store, self.task, "python-unittest",
+            run_task_tests(self.store, self.task, "python-unittest",
                       allow_host_tests=True)
         record = self.store.get(self.task)
         self.assertEqual(record["status"], "failed")
@@ -353,7 +353,7 @@ class TaskActionsTests(unittest.TestCase):
         self.store.update(self.task, "passed", result="verified")
         with patch("forgeos.task_actions._run_workspace_tests") as tests:
             with self.assertRaisesRegex(ValueError, "eligible"):
-                test_task(self.store, self.task, "python-unittest",
+                run_task_tests(self.store, self.task, "python-unittest",
                           allow_host_tests=True)
             tests.assert_not_called()
         self.assertEqual(self.store.get(self.task)["result"], "verified")
@@ -375,7 +375,7 @@ class TaskActionsTests(unittest.TestCase):
         with patch("forgeos.task_actions._run_workspace_tests",
                    side_effect=takeover):
             with self.assertRaisesRegex(LeaseLostError, "lease"):
-                test_task(self.store, self.task, "python-unittest",
+                run_task_tests(self.store, self.task, "python-unittest",
                           allow_host_tests=True)
         self.assertEqual(self.store.get(self.task)["status"], "editing")
         self.assertEqual(self.store.get(self.task)["result"], "new checkpoint")

@@ -120,8 +120,13 @@ def _python_runtime_acl_targets() -> list[Path]:
     executable = Path(sys.executable).resolve()
     base = Path(sys.base_prefix).resolve()
     version_tag = f"python{sys.version_info.major}{sys.version_info.minor}"
+    # A Windows venv launcher also needs its adjacent pyvenv.cfg and
+    # access to the base interpreter. Grant only these explicit paths;
+    # do not expose the entire virtualenv or project tree.
     candidates = [
         executable,
+        Path(sys.prefix).resolve() / "pyvenv.cfg",
+        Path(sys._base_executable).resolve(),
         base / "python3.dll",
         base / f"{version_tag}.dll",
         base / "DLLs",

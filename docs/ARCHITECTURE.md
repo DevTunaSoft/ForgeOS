@@ -179,3 +179,11 @@ Retired weight files are preserved; this is *not* deletion or free-space recover
 
 
 On POSIX systems, the retirement writer synchronizes the directory containing its durable journal before moving files, then fsyncs source/destination directories after each rename. Journal removal receives the same treatment. Windows has no equivalent portable directory fsync through Python's standard library, so NTFS power-loss resilience remains experimental and requires live recovery testing.
+
+## Windows AppContainer Python runtime probe (PR #69)
+
+The Windows AppContainer probe starts the active interpreter with `-I -S -c pass` inside a zero-capability AppContainer. A virtual-environment launcher depends on its `pyvenv.cfg` and the underlying base interpreter as well as CPython's DLLs and standard-library paths. The probe's temporary read/execute ACL target list therefore includes the active executable, the virtual-environment configuration file and `sys._base_executable`, alongside existing runtime targets. This is a narrowly scoped compatibility grant, **not** permission to read the project tree or a general sandbox bypass.
+
+The probe creates a temporary AppContainer SID, checks interpreter startup and a write within the explicitly granted test workspace, revokes the temporary runtime ACEs in a `finally` block, verifies that post-revocation access matches the pre-grant baseline, and deletes the temporary profile. A failed grant, startup, verification or revocation must not be interpreted as sandbox availability. This probe does not establish that arbitrary Python applications or third-party native extensions will run safely inside AppContainer; those require separate acceptance testing.
+
+On a Windows 11 Python 3.12.10 virtual environment, the targeted test files passed (29 passed, 1 skipped, 15 subtests passed), followed by the full local suite (591 passed, 7 skipped, 397 subtests passed). These are operator-reported local results; hosted CI must pass independently. The related pytest collection correction aliases an imported `test_task` helper in the test module, without changing production task behavior.
