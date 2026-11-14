@@ -3330,3 +3330,14 @@ and restore under constrained filesystems.
   one known loopback trickle error in this managed session because it cannot
   bind/connect its test server. Other roles and full target-hardware corpus
   execution remain open.
+
+### 2026-11-14 — refresh the adapter capability matrix
+
+- **Documentation:** `docs/MODEL_COMPATIBILITY.md` now reflects the current
+  source contract: managed llama.cpp requests bounded `files` or `items` JSON
+  schemas, generic loopback adapters retain post-response validation, and the
+  target Windows Qwen acceptance evidence is distinguished from still-open
+  Ollama/LM Studio and version-diversity work.
+- **Verification:** documentation formatting and handoff integrity were
+  checked locally. This is a source-contract update, not a claim that the
+  remaining adapters or release gates are complete.

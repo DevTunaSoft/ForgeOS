@@ -4,9 +4,9 @@
 > (PR #51). This checkout also contains additional follow-ups on the
 > `fix/safe-resume-malformed-checkpoints` feature branch; those changes are
 > uploaded for review but are not yet part of `main`. This guide describes
-> checked-out behavior, not production readiness. Real local-model
-> inference, physical Windows acceptance, and the release gates in the roadmap
-> remain unverified.
+> checked-out behavior, not production readiness. One pinned llama.cpp/Qwen
+> CPU path has now passed native Windows acceptance; broader runtime, model,
+> lifecycle and release gates in the roadmap remain open.
 
 **Implementation milestones and completion evidence:** [Full multi-LLM engineering roadmap](MULTI_LLM_ROADMAP.md) (work packages A–J, P0–P3, source owners, RAM targets, safety and release gates). This page remains the user-facing compatibility/setup guide, not a competing implementation tracker.
 
@@ -15,15 +15,15 @@
 | Feature | Source status | Independent runtime proof |
 | --- | --- | --- |
 | Ollama | Existing working integration and automatic installed-model size routing | Real-model Windows acceptance still required |
-| llama.cpp loopback `/v1/chat/completions` | Experimental adapter on main | Real server/Windows integration unverified |
+| llama.cpp loopback `/v1/chat/completions` | Experimental adapter on main; target Windows acceptance now covers pinned b12199 plus Qwen Q4_K_M | Real target-host startup, authenticated inference and one-file edit manifest passed; broader roles and restart acceptance remain open |
 | LM Studio loopback `/v1/chat/completions` | Experimental adapter on main | Real server/Windows integration unverified |
 | Other loopback OpenAI-compatible servers | Experimental adapter on main | Backend-specific compatibility unverified |
 | Hugging Face public GGUF search, pinned inspection and local inventory status | Experimental opt-in metadata catalog on main | Live Hub GUI workflow and actual local-file re-verification unverified |
-| Hugging Face GGUF download and SHA-256 resume verification | Experimental implementation with pinned revisions, partial journal, disk reserve and atomic publish | Real multi-GiB Windows/network acceptance unverified |
-| Integrated GGUF execution via user-provided llama-server | Experimental local authenticated CPU managed server with manual binary selection and optional installed-runtime path | Real CPU GGUF and Windows lifecycle unverified |
-| Managed llama.cpp binaries and process lifecycle | Experimental pinned official Windows x64 CPU archive installer with bundle verification, GUI start/stop and idle unload | Target Windows process ownership, DLL mutation resistance and real-GGUF inference remain unverified |
+| Hugging Face GGUF download and SHA-256 resume verification | Experimental implementation with pinned revisions, partial journal, disk reserve, official CDN redirects and atomic publish | Target Windows downloaded and verified a 1.12 GiB Qwen Q4_K_M at an immutable revision; disk-full/power-loss and broader CDN faults remain open |
+| Integrated GGUF execution via user-provided llama-server | Experimental local authenticated CPU managed server with manual binary selection and optional installed-runtime path | Target Windows passed managed startup, `/models`, JSON self-test, one-file schema edit, memory capture and clean stop; restart/reboot and other models remain open |
+| Managed llama.cpp binaries and process lifecycle | Experimental pinned official Windows x64 CPU archive installer with bundle verification, GUI start/stop and idle unload | Target Windows verified the b12199 bundle and process tree; DLL mutation, restart/reboot and external-process behavior remain open |
 | Role-aware cross-backend task router | **Not implemented** | — |
-| Managed-model memory evidence and idle unload | Experimental one-shot memory reporting and idle unload exist; no continuous governor | Real process-tree/RAM acceptance unverified |
+| Managed-model memory evidence and idle unload | Experimental one-shot memory reporting and idle unload exist; no continuous governor | Target Windows measured roughly 972 MiB peak committed memory for the verified Qwen run; tiered and concurrent pressure tests remain open |
 | Automatic OOM recovery | **Not implemented** | — |
 
 ### Adapter capability matrix (source-level contract)
@@ -31,8 +31,8 @@
 | Adapter | Requests ForgeOS sends | Tools / structured output | Context and output limits | Model files / license | Version identity |
 | --- | --- | --- | --- | --- | --- |
 | Ollama | Local `/api/generate`; non-streaming; edits request JSON mode | No tool calls. JSON mode is requested for edits, then ForgeOS validates the edit manifest | ForgeOS sends bounded `num_ctx` and `num_predict` options from its memory profile | Ollama-managed model formats; ForgeOS does not verify the model license | Server version is not queried by the adapter |
-| Managed llama.cpp | Local `/v1/models` and `/v1/chat/completions`; non-streaming; sends `temperature=0` and a selectable `max_tokens` or `max_completion_tokens` field (default `max_tokens`; selectable field is a feature-branch follow-up) | ForgeOS sends no tool definitions or JSON-schema/response-format parameter; edit JSON is validated afterward | Output budget is sent; context ceiling remains server/model configuration and is not attested in the request | Managed path loads verified GGUF bytes; license remains a Hub/author claim requiring user review | Installed official runtime bundle and GGUF hashes are checked; live server version and physical Windows identity acceptance remain open |
-| User-managed llama.cpp, LM Studio, other loopback OpenAI-compatible | Same local `/v1/models` and non-streaming `/v1/chat/completions` request contract; token-limit field is selectable in GUI/CLI on the current feature branch | No tool calls or schema parameter; ForgeOS validates the returned edit manifest | Output budget is sent; server/model context support is unknown to ForgeOS | Runtime-supported formats and model licenses are provider/user supplied and not verified by the adapter | Server version, binary provenance and model identity are not attested by generic adapters |
+| Managed llama.cpp | Local `/v1/models` and `/v1/chat/completions`; non-streaming; sends `temperature=0`, selectable token field and a bounded `response_format` schema for `files` or qualification `items` | No tool calls; llama.cpp schema-constrained JSON is requested and ForgeOS validates it again | Output budget and schema are sent; context ceiling remains server/model configuration and is not fully attested | Managed path loads verified GGUF bytes; license remains a Hub/author claim requiring user review | Installed official runtime bundle and GGUF hashes are checked; b12199/Qwen target-host identity is recorded, while version diversity remains open |
+| User-managed llama.cpp, LM Studio, other loopback OpenAI-compatible | Same local `/v1/models` and non-streaming `/v1/chat/completions` request contract; token-limit field is selectable in GUI/CLI; schema support depends on the server | No tool calls; schema-constrained output is used for managed llama.cpp, while generic adapters still validate returned edit manifests | Output budget is sent; server/model context and response-format support are unknown to ForgeOS | Runtime-supported formats and model licenses are provider/user supplied and not verified by the adapter | Server version, binary provenance and model identity are not attested by generic adapters |
 
 This matrix records ForgeOS source behavior, not a guarantee that every server
 accepts the same parameters. The current feature branch exposes
