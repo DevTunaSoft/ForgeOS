@@ -32,6 +32,10 @@ class _RejectRedirects(HTTPRedirectHandler):
         return None
 
 
+class LocalModelUnavailableError(RuntimeError):
+    """A transient local transport or server failure that may be retried."""
+
+
 def _open(request: Request, *, timeout: int):
     # Explicitly disable environment proxies and cross-host redirects.
     try:
@@ -51,10 +55,12 @@ def _open(request: Request, *, timeout: int):
         }
         if status in (500, 502, 503, 504):
             message = "The local inference server failed while handling the request. Check its server log."
+            error_type = LocalModelUnavailableError
         else:
             message = guidance.get(
                 status, f"The local inference server returned HTTP {status}.")
-        raise RuntimeError(message) from None
+            error_type = RuntimeError
+        raise error_type(message) from None
     except (URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         if isinstance(reason, (TimeoutError, socket.timeout)):
@@ -63,7 +69,7 @@ def _open(request: Request, *, timeout: int):
             message = (
                 "ForgeOS could not reach the selected local inference server. "
                 "Start it and check the loopback address and port.")
-        raise RuntimeError(message) from None
+        raise LocalModelUnavailableError(message) from None
 
 
 def validate_endpoint(endpoint: str) -> str:

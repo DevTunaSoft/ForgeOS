@@ -28,7 +28,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from .local_models import LocalChatModel, _open
+from .local_models import LocalChatModel, LocalModelUnavailableError, _open
 from .model_routing import (
     local_memory_settings, managed_runtime_memory_ceiling,
     safe_model_file_budget, system_memory,
@@ -1027,7 +1027,8 @@ class ManagedLlamaServer:
                             "startup_elapsed_seconds":
                                 self.startup_elapsed_seconds}
                 except (HTTPError, URLError, TimeoutError, OSError,
-                        ConnectionError, ValueError):
+                        ConnectionError, LocalModelUnavailableError,
+                        ValueError):
                     pass
                 time.sleep(0.2)
             raise RuntimeError("Managed llama-server startup timed out")

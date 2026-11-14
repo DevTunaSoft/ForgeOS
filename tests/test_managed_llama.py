@@ -18,7 +18,8 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from forgeos.local_models import LocalChatModel, create_model
+from forgeos.local_models import (
+    LocalChatModel, LocalModelUnavailableError, create_model)
 from forgeos.managed_llama import (
     ALIAS, ManagedLlamaServer, _check_managed_memory_preflight,
     _managed_memory_preflight_report,
@@ -592,9 +593,9 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertEqual(self_test["status"], "passed")
             self.assertGreater(self_test["response_bytes"], 0)
             self.assertGreaterEqual(self_test["elapsed_seconds"], 0)
-            from forgeos.local_models import _open
+            from urllib.request import urlopen
             with self.assertRaises(HTTPError) as unauthenticated:
-                with _open(Request(details["endpoint"] + "/models"), timeout=3):
+                with urlopen(Request(details["endpoint"] + "/models"), timeout=3):
                     pass
             self.assertEqual(unauthenticated.exception.code, 401)
         finally:
@@ -1121,9 +1122,10 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
               patch("forgeos.managed_llama._launch_windows_suspended_job",
                     return_value=(proc, 1234)),
               patch("forgeos.managed_llama._open",
-                    side_effect=URLError("server unavailable")),
+                    side_effect=LocalModelUnavailableError(
+                        "server unavailable")),
               patch("forgeos.managed_llama.time.monotonic",
-                    side_effect=[0.0, 2.0]),
+                    side_effect=[0.0, 0.0, 2.0]),
               patch("forgeos.managed_llama.time.sleep") as sleep,
               patch("forgeos.managed_llama._launch_windows_suspended_job",
                     return_value=(proc, 1234)),
@@ -1134,7 +1136,7 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             with self.assertRaisesRegex(RuntimeError, "timed out"):
                 controller.start(executable=self.exe, executable_sha256=self.exe_sha,
                                  model_path=self.model, timeout=1)
-            sleep.assert_not_called()
+            sleep.assert_called_once_with(0.2)
         if __import__("os").name != "nt":
             proc.terminate.assert_called_once()
         self.assertIsNone(controller.process)

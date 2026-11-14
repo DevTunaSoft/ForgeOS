@@ -7,7 +7,8 @@ from urllib.request import Request
 from unittest.mock import Mock, patch
 
 from forgeos.local_models import (
-    BACKENDS, MAX_RESPONSE_BYTES, LocalChatModel, create_model,
+    BACKENDS, MAX_RESPONSE_BYTES, LocalChatModel,
+    LocalModelUnavailableError, create_model,
     validate_endpoint,
 )
 
@@ -46,6 +47,7 @@ class LocalModelsTests(unittest.TestCase):
                 _open(Request("http://127.0.0.1:1234/v1/models"), timeout=2)
         self.assertNotIn("http://", str(raised.exception))
         self.assertNotIn("secret resolver", str(raised.exception))
+        self.assertIsInstance(raised.exception, LocalModelUnavailableError)
 
     def test_managed_listener_owner_check_runs_before_model_request(self):
         model = LocalChatModel(
