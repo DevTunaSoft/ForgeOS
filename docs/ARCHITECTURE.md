@@ -167,7 +167,9 @@ partial lines without a summary; never treat such output as success.
 - `model_inventory.py` reads `gguf_download.py`'s existing
   pinned-revision manifests with bounded `os.scandir`. Inventory
   metadata does **not** reread full weights; explicit re-verification
-  streams SHA-256 on demand and does no inference/network IO.
+  streams SHA-256 on demand and does no inference/network IO. It rejects
+  hard-linked model/manifest files and rechecks the model's link count after
+  hashing, alongside size, modification time and file identity.
 - `recovery.py` fails closed on the ephemeral `forgeos-managed`
   alias because a random port and transient token are not adequate
   cross-reboot model identities. Pinned binary/model contract plus

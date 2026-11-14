@@ -335,3 +335,20 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
   so the physical-link regression skipped; metadata-based rejection was
   exercised. Concurrent same-user path replacement and actual model loading
   remain target-device acceptance work.
+
+### 2026-11-13 — re-attest model hard-link identity during hashing
+
+- **Implemented experimentally on the feature branch:** explicit SHA-256
+  verification now rejects a multiply linked downloaded GGUF or manifest
+  before hashing. Imported and downloaded model paths are checked again after
+  hashing, so ForgeOS cannot report `verified` if the link count changed while
+  bytes were being read.
+- **Verification:** model inventory/import regressions exercise both initial
+  hard-link rejection and link-count mutation during hashing. The focused
+  inventory, import, retirement, runtime-installer and downloader suites pass
+  123 tests with 8 platform/environment skips when run in isolated module
+  roots. Combined runs encountered transient Windows temp-file locks in
+  unrelated retirement/installer fixtures; those exact suites passed in
+  isolation. Compilation and `git diff --check` passed.
+- **Limits:** physical NTFS hard-link mutation and same-user concurrent path
+  replacement remain target-device acceptance work.

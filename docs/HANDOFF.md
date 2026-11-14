@@ -2910,3 +2910,27 @@ and restore under constrained filesystems.
 - **Limits / next:** physical NTFS hard-link behavior, concurrent same-user
   path replacement and real CPU model loading remain target-device acceptance
   work. This is integrity hardening, not a complete local-adversary boundary.
+
+### 2026-11-13 — re-attest model hard-link identity during hashing
+
+- **Source implementation commit:**
+  `826e0c128af47394a72b9e5a24308dff3e571273` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** ensure that explicit local GGUF verification does not accept
+  a hard-linked weight or manifest, and does not miss a link-count change
+  during streaming SHA-256 verification.
+- **Changes:** downloaded manifests and downloaded model files now require a
+  single link before verification. Both downloaded and imported model
+  verification compare link counts before and after hashing. Added synthetic
+  metadata regressions for a hard-linked model, hard-linked manifest and a
+  model whose link count changes during the hash.
+- **Verification:** focused GGUF download, model inventory, model import,
+  retirement and runtime-installer suites passed independently: 123 tests,
+  8 platform/environment skips. `compileall` and `git diff --check` passed.
+  Combined attempts had intermittent Windows temporary-file replace/cleanup
+  failures in unrelated tests; the exact cases passed alone and all affected
+  suites passed in module-isolated runs.
+- **Limits / next:** link-count change is synthetic because this managed
+  Windows filesystem denied real hard-link creation. Same-user concurrent
+  path replacement, physical Windows hard-link behavior and actual model load
+  remain unverified.
