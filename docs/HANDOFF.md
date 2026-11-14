@@ -2866,3 +2866,25 @@ and restore under constrained filesystems.
 - **Limits / next:** the child is a controlled Python process, not llama.cpp;
   the test does not load a GGUF, check native DLLs, or measure RAM/latency.
   Real runtime crash/restart and target Windows 11 acceptance remain open.
+
+### 2026-11-13 — cover nested reparse points in model scans and runtime files
+
+- **Source implementation commit:**
+  `432cf2aec25c1b619aebbf6ce59f4ea63434dbe6` on
+  `fix/safe-resume-malformed-checkpoints`.
+- **Objective:** complete the source-side Windows path guard after review found
+  that bounded directory scans could skip redirected entries and installed
+  runtime verification checked only symbolic links among DLLs.
+- **Changes:** inventory skips redirected entries as unusable; quota accounting
+  now fails closed on them; retired entries with reparse points require manual
+  inspection; runtime bundle verification rejects reparse points on nested
+  directories and files, including DLLs. Import/download path checks continue
+  using the same helper.
+- **Verification:** downloader, import, inventory, retirement, runtime
+  installer, documentation and roadmap suites passed: 133 tests, 7 skips.
+  The exact move tests that saw intermittent host file locks passed both alone
+  and in the final fresh-temp suite. Compilation and `git diff --check` passed.
+- **Limits / next:** no actual NTFS junction was created because this managed
+  session lacks that privilege; reparse flags were tested synthetically.
+  Concurrent path replacement, physical Windows storage scans and real model
+  loading still require target-device acceptance.
