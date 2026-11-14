@@ -172,6 +172,14 @@ partial lines without a summary; never treat such output as success.
   hashing, alongside size, modification time and file identity. The metadata
   inventory also marks hard-linked or non-regular weights as unsafe, so the
   existing model picker cannot select them before verification.
+- `gguf_download.repair_downloaded_gguf()` is the explicit damaged-download
+  recovery path. It validates the original local pinned manifest and uses the
+  same revision/SHA-256 through the canonical downloader. Under the existing
+  per-file lock it checks task-checkpoint references, refuses linked or
+  unresolved-journal files, quarantines only a mismatched single-link weight,
+  and retains that quarantine in storage quota accounting. The model picker
+  and `model-repair-local --confirm` CLI command call this path; imported or
+  untrusted-manifest files are not repairable.
 - `recovery.py` fails closed on the ephemeral `forgeos-managed`
   alias because a random port and transient token are not adequate
   cross-reboot model identities. Pinned binary/model contract plus

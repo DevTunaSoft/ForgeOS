@@ -351,6 +351,17 @@ On draft PR #51, the final code head `37af510c` passed **6/6** hosted checks aft
 - [ ] Physically test model retirement and restore with real weights and native Windows file locks. Externally launched inference processes are not yet automatically detectable.
 
 
+### Restore a damaged pinned GGUF download (2026-11-13)
+
+- [x] Add an explicit recovery API that validates the local source manifest and downloads only the same immutable repository revision and SHA-256.
+- [x] Require explicit confirmation, refuse linked/non-regular weights and unresolved journals, and check blocked task checkpoints before any repair mutation.
+- [x] Preserve a corrupt single-link GGUF in a unique same-directory quarantine before replacement; include quarantined bytes in storage usage and keep interrupted exact-revision downloads resumable.
+- [x] Expose the recovery in the existing model picker and `model-repair-local --confirm` CLI command; reject imported models and show progress/cancellation in the GUI.
+- [x] Add offline regressions for checkpoint refusal, damaged-byte quarantine, interrupted resume, missing-file recovery, synthetic hard-link refusal and confirmation.
+- [ ] Verify latest Linux/Windows Python 3.10 and 3.12 CI and frozen Windows EXE/AppContainer.
+- [ ] Test a real multi-GiB repair, quota exhaustion, interrupted transfer and restart on physical Windows; reparse/hard-link and external-runtime acceptance remain open.
+
+
 - [x] Harden journal and rename durability with POSIX directory fsync, plus fault injection for synchronization interruption. Windows directory durability requires physical NTFS acceptance before any power-loss guarantee.
 
 

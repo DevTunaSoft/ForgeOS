@@ -448,6 +448,30 @@ Do not treat a model shown in the list as independently compatible,
 licensed, executable or memory-safe. Missing/changed weights may be
 displayed as unavailable and cannot be used by the managed process.
 
+For a damaged managed download, select its row and choose **Repair selected
+download**. After confirmation, ForgeOS reads the local pinned manifest and
+fetches that exact repository revision and SHA-256. It refuses imported files,
+unsafe paths, untrusted manifests and models referenced by blocked task
+checkpoints. If the current bytes are corrupt, ForgeOS preserves them in a
+unique quarantine file before installing the verified replacement; both the
+quarantine and any resumable partial count toward the model-store cap. The
+operation runs in the background and can be cancelled; retry the same repair
+to resume an interrupted transfer. A missing model can be restored from its
+manifest without a quarantine copy.
+
+The CLI equivalent requires an existing task database and explicit
+confirmation:
+
+```powershell
+python -m forgeos --db PATH_TO_EXISTING_TASK_DATABASE model-repair-local "ABSOLUTE_PATH.gguf" --confirm
+```
+
+Add `--directory MODEL_STORE` when the model store is not the default. A
+healthy file is simply reverified. The GUI uses the configured model-store
+cap. CLI repair accepts an optional per-operation cap through
+`--storage-quota-gib 64`. Repair never substitutes a newer upstream revision
+for the manifest's pinned identity.
+
 
 ### Managed model shutdown and process cleanup (experimental)
 

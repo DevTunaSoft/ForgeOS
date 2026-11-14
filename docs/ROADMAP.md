@@ -137,6 +137,13 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - **Implemented on `main`, test results pending:** the existing retired GGUF inventory reuses the active-model `MAX_SCAN_ENTRIES=4096` cap to fail closed on oversized folders instead of scanning unlimited invalid entries. Added a synthetic 4,097-entry regression without filesystem-heavy test fixtures. Isolated Python reproduction passed; actual repository CI remains unverified.
 - **Still required (#53, #54, #56):** exact-current-head Windows/Linux regression suite, frozen EXE smoke, native Windows process-tree cleanup under injected faults, real CPU GGUF start/infer/stop, 16/32 GiB memory/latency acceptance. Avoid describing these safeguards as production certification. Full evidence and commit SHAs are in [handoff](HANDOFF.md).
 
+- **Issue #54 source progress (2026-11-13):** the existing managed-download
+  picker and CLI can explicitly restore a damaged GGUF only from its original
+  pinned manifest. Repair checks blocked task references, refuses unsafe file
+  types and journals, preserves damaged bytes in quota-counted quarantine, and
+  resumes the same pinned revision after interruption. This remains pending
+  current-head hosted CI, frozen EXE and real Windows/network acceptance.
+
 
 ### 2026-11-11 — low-allocation deterministic routing checkpoint
 

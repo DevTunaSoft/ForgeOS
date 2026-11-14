@@ -2973,3 +2973,27 @@ and restore under constrained filesystems.
 - **Limits / next:** the picker has not been visually exercised on the target
   Windows desktop; keyboard/screen-reader and actual frozen EXE acceptance
   remain release gates.
+
+### 2026-11-13 — restore damaged pinned GGUF downloads
+
+- **Source increment:** explicit `repair_downloaded_gguf()` uses the exact
+  repository, immutable revision and SHA-256 from the existing single-link
+  manifest. It checks blocked task references under the per-file download
+  lock, refuses unsafe files and unresolved journals, preserves corrupt bytes
+  in a unique same-directory quarantine, and retries interrupted replacement
+  from the same pinned transfer journal. Quarantine bytes count toward store
+  usage and quota. The existing model picker offers the confirmed, cancellable
+  operation for managed missing, size-changed or not-yet-reverified entries;
+  imported, unsafe and untrusted-manifest entries are excluded. The CLI is
+  `model-repair-local PATH --confirm` and requires the existing task database.
+- **Verification:** isolated `test_gguf_download`, `test_model_inventory` and
+  `test_gui_contract` modules passed: 111 tests, 2 environment skips.
+  Coverage includes checkpoint refusal for corrupt and missing files,
+  quarantine and quota accounting, quota exhaustion followed by a successful
+  raised-cap retry, interrupted exact-range resume, missing-file recovery,
+  synthetic hard-link refusal, required confirmation, CLI quota forwarding and
+  GUI/CLI exposure. `compileall` and `git diff --check` passed.
+- **Limits / next:** these are offline and synthetic transfer tests. Latest
+  Linux/Windows hosted CI, frozen EXE/AppContainer, real multi-GiB download
+  repair and quota exhaustion, actual NTFS hard-link behavior, GUI visual
+  acceptance and external inference-process detection remain unverified.
