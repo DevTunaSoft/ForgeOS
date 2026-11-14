@@ -473,6 +473,25 @@ MAX_OLLAMA_RESPONSE_BYTES = 8 * 1024 * 1024
 # A cold local model load can legitimately exceed a short connect timeout.
 # The monotonic deadline below remains the end-to-end safety boundary.
 OLLAMA_SOCKET_TIMEOUT_SECONDS = 60
+OLLAMA_EDIT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["files"],
+    "additionalProperties": False,
+}
 
 
 class Ollama:
@@ -499,7 +518,9 @@ class Ollama:
             'options': options, 'keep_alive': settings['keep_alive'],
         }
         if edits:
-            arguments['format'] = 'json'
+            # Ollama supports a JSON schema in `format`; generic JSON mode
+            # permits alternate shapes that ForgeOS must reject downstream.
+            arguments['format'] = OLLAMA_EDIT_SCHEMA
         payload = json.dumps(arguments).encode()
         req = Request(self.base + '/api/generate', data=payload,
                       headers={'Content-Type': 'application/json'})

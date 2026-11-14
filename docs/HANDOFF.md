@@ -3422,3 +3422,15 @@ and restore under constrained filesystems.
   run also reproduced the existing managed-session diagnostic-archive failure
   in `test_unittest_preset_passes`; that environment-limited failure is
   unrelated to the Ollama timeout change and was not hidden.
+
+### 2026-11-14 — constrain Ollama edit manifests
+
+- **Source:** Ollama edit requests now send an explicit JSON Schema requiring a
+  `files` array of `{path, content}` objects, while retaining ForgeOS's full
+  post-response path/content validation. Generic JSON mode is no longer used
+  for edits, preventing alternate shapes from reaching the edit parser.
+- **Live verification:** the target Windows Ollama Qwen2.5-Coder 3B returned a
+  valid `files` manifest under the new schema in 4.48 seconds. The schema
+  contract follows Ollama's structured-output `format` API:
+  https://docs.ollama.com/capabilities/structured-outputs. Focused request,
+  timeout and slow-trickle tests passed.

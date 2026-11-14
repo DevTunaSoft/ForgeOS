@@ -367,6 +367,8 @@ class ForgeOSTests(unittest.TestCase):
                    return_value=MemorySnapshot(4*1024**3, 3*1024**3)), \
              patch("forgeos.core.urlopen",
                    return_value=response(b"z" * (8*1024*1024+1))):
+            # The request is still constructed before the bounded response
+            # guard rejects the oversized body.
             with self.assertRaisesRegex(RuntimeError, "memory limit"):
                 Ollama().generate_edits("test")
 
@@ -386,6 +388,24 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(mocked.call_args.kwargs["timeout"],
                          OLLAMA_SOCKET_TIMEOUT_SECONDS)
         self.assertEqual(OLLAMA_SOCKET_TIMEOUT_SECONDS, 60)
+
+    def test_ollama_edit_requests_strict_files_schema(self):
+        import io
+        import json
+
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        payload = json.dumps({
+            "response": '{"files":[{"path":"health.py","content":"ok"}]}'
+        }).encode()
+        with patch("forgeos.core.urlopen",
+                   return_value=Response(payload)) as mocked:
+            Ollama().generate_edits("Return one health file")
+        body = json.loads(mocked.call_args.args[0].data)
+        self.assertEqual(body["format"]["required"], ["files"])
+        self.assertFalse(body["format"]["additionalProperties"])
 
     def test_ollama_response_uses_bounded_incremental_reads(self):
         import io
