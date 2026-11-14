@@ -114,7 +114,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 
 - [ ] Compare representative Qwen2.5-Coder 1.5B, 3B and 7B quantized GGUF candidates and newer Qwen3.x/other permissively licensed coding alternatives subject to live metadata and hardware fit.
 - [ ] Record exact **model revision, SHA-256, source, license, quantization, runtime version, hardware, OS, RAM, thread count, context and sampling settings**.
-- [ ] Use repeatable offline programming tasks: planning, functional code generation, bug finding, refactoring, tests, security review, documentation and summarization.
+- [ ] Use repeatable offline programming tasks: planning, functional code generation, bug finding, refactoring, tests, security review, documentation and summarization. **Live planning evidence:** the target Windows host completed all 20 fixed planning qualification tasks with 20/20 JSON contracts and objective passes using the pinned Qwen model; the other roles remain unrun.
 - [ ] Score build success, test correctness, defect rate, JSON-manifest acceptance, hallucinations, tool-call/schema compatibility, debugging fixes, time-to-first-token, tokens/s, total completion time and failure recovery. **Qualification parser hardening:** the existing scorer accepts one exact JSON Markdown fence while preserving the same edit-path and schema checks; real multi-role qualification corpus execution remains open.
 - [ ] Compare Q4_K_M/Q5/Q8 where practical; distinguish downloaded weight bytes from peak **working set, commit, mapped pages and KV cache**.
 - [ ] Test 1k/2k/4k/8k contexts and representative workspace sizes; prohibit unbounded context or prompt growth.

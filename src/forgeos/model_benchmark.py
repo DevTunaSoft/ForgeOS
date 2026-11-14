@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import inspect
 import os
 from pathlib import Path
 import platform
@@ -203,6 +204,19 @@ def _json_candidate(response: str) -> str:
     if candidate.startswith("```json") and candidate.endswith("```"):
         candidate = candidate[len("```json"): -len("```")].strip()
     return candidate
+
+
+def _benchmark_prompt(controller, task: ScreeningTask) -> str:
+    """Request the task's structured shape while retaining old test doubles."""
+    method = getattr(controller, "benchmark_prompt")
+    try:
+        supports_kind = "structured_kind" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        supports_kind = False
+    if supports_kind:
+        return method(task.prompt, structured_kind=(
+            "items" if task.kind == "items" else "files"))
+    return method(task.prompt)
 
 
 def score_screening_response(task: ScreeningTask, response: str) -> dict:
@@ -418,7 +432,7 @@ def run_screening(controller, *, role: str | None = None,
         started = time.perf_counter()
         response = None
         try:
-            response = controller.benchmark_prompt(task.prompt)
+            response = _benchmark_prompt(controller, task)
             scored = score_screening_response(task, response)
             error_type = None
         except Exception as exc:
@@ -624,7 +638,7 @@ def run_qualification(controller, *, role: str, cancel_event=None,
         started = time.perf_counter()
         response = None
         try:
-            response = controller.benchmark_prompt(task.prompt)
+            response = _benchmark_prompt(controller, task)
             scored = score_screening_response(task, response)
             error_type = None
         except Exception as exc:

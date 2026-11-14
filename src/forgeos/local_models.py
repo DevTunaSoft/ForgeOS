@@ -208,7 +208,8 @@ class LocalChatModel:
             prompt, available=available,
             memory_limit_bytes=safe_model_file_budget(system_memory()))
 
-    def _complete(self, prompt: str, *, edits: bool = False) -> str:
+    def _complete(self, prompt: str, *, edits: bool = False,
+                  structured_kind: str | None = None) -> str:
         self._verify_listener_owner()
         from .core import validate_local_prompt
         validate_local_prompt(prompt)
@@ -222,10 +223,11 @@ class LocalChatModel:
         }
         request_body[self.token_parameter] = (
             settings["num_predict"] if edits else min(900, settings["num_predict"]))
+        if edits and structured_kind not in (None, "files", "items"):
+            raise ValueError("Unknown structured response kind")
         if edits:
-            request_body["response_format"] = {
-                "type": "json_object",
-                "schema": {
+            if structured_kind in (None, "files"):
+                schema = {
                     "type": "object",
                     "properties": {
                         "files": {
@@ -243,7 +245,20 @@ class LocalChatModel:
                     },
                     "required": ["files"],
                     "additionalProperties": False,
-                },
+                }
+            else:
+                schema = {
+                    "type": "object",
+                    "properties": {
+                        "items": {"type": "array",
+                                  "items": {"type": "string"}},
+                    },
+                    "required": ["items"],
+                    "additionalProperties": False,
+                }
+            request_body["response_format"] = {
+                "type": "json_object",
+                "schema": schema,
             }
         encoded = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
         if len(encoded) > MAX_REQUEST_BYTES:
@@ -270,8 +285,8 @@ class LocalChatModel:
             raise RuntimeError("Local model text exceeds its memory safety limit")
         return value
 
-    def generate_edits(self, prompt: str) -> str:
-        return self._complete(prompt, edits=True)
+    def generate_edits(self, prompt: str, *, structured_kind: str = "files") -> str:
+        return self._complete(prompt, edits=True, structured_kind=structured_kind)
 
     def plan(self, description: str) -> str:
         from .core import validate_task_description

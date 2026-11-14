@@ -808,7 +808,7 @@ class ManagedLlamaServer:
             "startup_elapsed_seconds": self.startup_elapsed_seconds,
         }
 
-    def benchmark_prompt(self, prompt: str) -> str:
+    def benchmark_prompt(self, prompt: str, *, structured_kind: str = "files") -> str:
         """Run one synthetic benchmark prompt through the active managed model."""
         if (not self.running() or not self.endpoint or not self.api_key
                 or self.model_name != ALIAS):
@@ -819,7 +819,9 @@ class ManagedLlamaServer:
             backend="llama.cpp", model=ALIAS, endpoint=self.endpoint,
             api_key=self.api_key)
         client._listener_owner_check = self.verify_listener_ownership
-        return client.generate_edits(prompt)
+        if structured_kind == "files":
+            return client.generate_edits(prompt)
+        return client.generate_edits(prompt, structured_kind=structured_kind)
 
     def inference_self_test(self) -> dict:
         """Exercise the active local model without sending project content."""

@@ -3306,3 +3306,27 @@ and restore under constrained filesystems.
   32 tests with one environment skip. Python compilation and `git diff --check`
   passed. This improves compatibility parsing but does not qualify a model or
   replace the real multi-role benchmark corpus.
+
+### 2026-11-14 — separate qualification item and edit schemas
+
+- **Source:** the first live 20-task planning run showed every item task was
+  being sent through the edit-manifest `files` schema. `LocalChatModel` now
+  supports bounded `files` and `items` JSON schemas, `ManagedLlamaServer` passes
+  the task kind, and the benchmark runner preserves compatibility with older
+  one-argument test controllers. Edit-path and safety validation remain
+  unchanged.
+- **Live verification:** the pinned Qwen Windows run completed all 20 planning
+  qualification tasks: `json_successes=20`, `objective_successes=20`,
+  `runtime_failures=0`, `safety_violations=0`, median latency `2.247 s`, and
+  peak managed memory `1,014,976,512` bytes. The record status was
+  `qualified`, bound to the same model SHA
+  `cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046` and
+  runtime SHA `26f942409862276c2a19e784af4892ce0c9cdfec68d740ad2d9f9b2b753b903c`.
+  The persisted retry was interrupted by the per-user managed-runtime lock;
+  the complete bounded result was printed from the in-memory run and the
+  disposable acceptance directory contains the earlier two completed records.
+- **Verification:** targeted local-model, benchmark, qualification and managed
+  runtime tests passed (83 tests, 8 skips). The broader local-model module has
+  one known loopback trickle error in this managed session because it cannot
+  bind/connect its test server. Other roles and full target-hardware corpus
+  execution remain open.

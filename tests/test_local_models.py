@@ -237,6 +237,20 @@ class LocalModelsTests(unittest.TestCase):
         self.assertEqual(data["response_format"]["type"], "json_object")
         self.assertEqual(data["response_format"]["schema"]["required"], ["files"])
 
+    def test_generate_structured_items_uses_items_schema(self):
+        model = LocalChatModel(backend="llama.cpp", model="coder-3b")
+        answer = '{"items":["one","two"]}'
+        with patch("forgeos.local_models._open",
+                   return_value=payload({"choices": [
+                       {"finish_reason": "stop",
+                        "message": {"content": answer}}
+                   ]})) as opened:
+            self.assertEqual(
+                model.generate_edits("Order the items", structured_kind="items"),
+                answer)
+        data = json.loads(opened.call_args.args[0].data)
+        self.assertEqual(data["response_format"]["schema"]["required"], ["items"])
+
     def test_planning_preserves_contract(self):
         model = LocalChatModel(backend="lm-studio", model="coder")
         with patch("forgeos.local_models._open",
