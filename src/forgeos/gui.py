@@ -73,6 +73,36 @@ def _runtime_compatibility_label(value, model_sha256: str | None = None) -> str:
     return "Passed: " + visible
 
 
+def _model_inventory_details(entry: dict) -> str:
+    """Describe stored model identity without treating Hub claims as verified."""
+    imported = entry.get("kind") == "imported"
+    expected = entry.get("bytes")
+    local = entry.get("disk_bytes")
+    size = (f"{expected:,} bytes expected" if type(expected) is int
+            else "expected size unknown")
+    size += (f"; {local:,} bytes on disk" if type(local) is int
+             else "; local size unavailable")
+    lines = [
+        f"Local state: {_model_inventory_status_label(entry.get('status', ''))}",
+        f"File: {entry.get('path', 'unknown')}",
+        f"Source: {'Local import; origin and license unknown' if imported else entry.get('repo', 'unknown')}",
+        f"Pinned revision: {entry.get('revision') or 'unknown'}",
+        f"GGUF SHA-256 in manifest: {entry.get('sha256', 'unknown')}",
+        f"Format: {entry.get('format', 'unknown')}; size: {size}",
+        "Local compatibility: " + _runtime_compatibility_label(
+            entry.get("runtime_compatibility"), entry.get("sha256")),
+    ]
+    claims = entry.get("metadata_claims")
+    if entry.get("metadata_claims_status") == "hub-card-unverified" and isinstance(claims, dict):
+        lines.append("Hub model card claims (unverified; inspect license terms yourself):")
+        for key, value in sorted(claims.items()):
+            rendered = ", ".join(value) if isinstance(value, list) else str(value)
+            lines.append(f"  {key}: {rendered}")
+    else:
+        lines.append("No verified license, author, or compatibility claims recorded.")
+    return "\n".join(lines)
+
+
 def _retirement_allowed(*, task_busy: bool, operation_busy: bool,
                         model_present: bool) -> bool:
     """Only allow an opt-in model move when the owned model is inactive."""
@@ -957,7 +987,7 @@ def launch(db_path, *, acceptance: bool = False):
                 return
             chooser = tk.Toplevel(popup)
             chooser.title("ForgeOS | Downloaded GGUF weights")
-            chooser.geometry("1120x430")
+            chooser.geometry("1120x570")
             body = ttk.Frame(chooser, padding=12)
             body.pack(fill="both", expand=True)
             ttk.Label(
@@ -983,6 +1013,17 @@ def launch(db_path, *, acceptance: bool = False):
                 listing.heading(key, text=key.title())
                 listing.column(key, width=width, stretch=key == "model")
             listing.pack(fill="both", expand=True)
+            details_frame = ttk.Frame(body)
+            details_frame.pack(fill="x", pady=(8, 0))
+            ttk.Label(details_frame, text="Selected model details").pack(anchor="w")
+            details_scroll = ttk.Scrollbar(details_frame)
+            details_scroll.pack(side="right", fill="y")
+            details = tk.Text(details_frame, height=7, wrap="word",
+                              yscrollcommand=details_scroll.set)
+            details.pack(side="left", fill="x", expand=True)
+            details_scroll.configure(command=details.yview)
+            details.insert("end", "Select a model to inspect its stored identity and claims.")
+            details.configure(state="disabled")
             active_controller = managed["controller"]
             loaded_sha256 = (
                 active_controller.model_sha256
@@ -1052,6 +1093,12 @@ def launch(db_path, *, acceptance: bool = False):
 
             def update_selection_controls(_event=None):
                 chosen = listing.selection()
+                details.configure(state="normal")
+                details.delete("1.0", "end")
+                details.insert("end", _model_inventory_details(
+                    records[int(chosen[0])]) if chosen else
+                    "Select a model to inspect its stored identity and claims.")
+                details.configure(state="disabled")
                 eligible = (not verification["busy"]
                             and not estimate_state["busy"] and bool(chosen)
                             and records[int(chosen[0])]["status"]

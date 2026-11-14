@@ -4,11 +4,37 @@ from unittest.mock import Mock
 from forgeos.gui import (
     PRESETS, STATUS_LABELS, _format_task, _managed_session_event,
     _model_inventory_status_label, _retirement_allowed,
-    _runtime_compatibility_label,
+    _runtime_compatibility_label, _model_inventory_details,
 )
 
 
 class DashboardContractTests(unittest.TestCase):
+    def test_model_picker_details_separate_hub_claims_from_local_identity(self):
+        entry = {
+            "path": "C:/models/coder.gguf", "repo": "Owner/coder-GGUF",
+            "revision": "a" * 40, "sha256": "b" * 64,
+            "format": "GGUF", "bytes": 100, "disk_bytes": 100,
+            "status": "present_not_reverified",
+            "metadata_claims_status": "hub-card-unverified",
+            "metadata_claims": {"license": "apache-2.0", "context_length": "8192"},
+            "runtime_compatibility": "not-recorded",
+        }
+        details = _model_inventory_details(entry)
+        self.assertIn("Present; not verified", details)
+        self.assertIn("Pinned revision: " + "a" * 40, details)
+        self.assertIn("GGUF SHA-256 in manifest: " + "b" * 64, details)
+        self.assertIn("100 bytes expected; 100 bytes on disk", details)
+        self.assertIn("Hub model card claims (unverified", details)
+        self.assertIn("license: apache-2.0", details)
+        self.assertIn("Local compatibility: Not self-tested", details)
+        entry.update({"kind": "imported", "revision": None,
+                      "metadata_claims_status": "unknown-import",
+                      "metadata_claims": {}})
+        imported = _model_inventory_details(entry)
+        self.assertIn("Local import; origin and license unknown", imported)
+        self.assertNotIn("Owner/coder-GGUF", imported)
+        self.assertIn("No verified license", imported)
+
     def test_model_inventory_statuses_are_plain_language_and_unknown_fails_safe(self):
         self.assertEqual(
             _model_inventory_status_label("unsafe_path"),
