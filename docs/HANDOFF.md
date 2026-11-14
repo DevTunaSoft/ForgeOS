@@ -3359,8 +3359,28 @@ and restore under constrained filesystems.
   review, 1.681 s for documentation and 1.393 s for summarization. The
   summarization miss is retained as negative evidence; no automatic role
   routing is enabled from these records.
-- **Remaining qualification work:** implementation, review/refactor,
-  debugging and test-generation corpora remain unrun. The records are stored
+- **At that point, remaining qualification work:** implementation,
+  review/refactor, debugging and test-generation corpora were still unrun;
+  those runs are recorded in the follow-up entry below. The records are stored
   in the disposable Windows acceptance evidence directory and are not claimed
-  as repository release artifacts until the broader corpus and benchmark
-  table are complete.
+  as repository release artifacts until the broader benchmark table is
+  complete.
+
+### 2026-11-14 — complete fixed Windows role corpus
+
+- **Additional live runs:** the same pinned runtime/model qualified
+  implementation (`20/20`, median 2.169 s), review/refactor (`20/20`,
+  2.186 s), debugging (`20/20`, 2.154 s), and test generation (`20/20`,
+  3.442 s). Combined with the prior records, six roles meet the fixed
+  qualification gate; security review remains qualified at `18/20` objective
+  passes.
+- **Negative evidence retained:** context summarization remains
+  `completed_not_qualified` despite `20/20` valid JSON responses, with only
+  `1/20` objective matches. ForgeOS must not route summarization work to this
+  model automatically. All records use the same pinned model/runtime hashes
+  and include peak managed memory measurements.
+- **Scope and remaining gates:** this closes the fixed eight-role corpus
+  execution for one model/runtime, but it is not a release benchmark. Model
+  comparison, context-tier testing, tokens-per-second/build correctness,
+  failure-recovery scoring, LM Studio/Ollama compatibility and production
+  routing policy remain open.
