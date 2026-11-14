@@ -22,6 +22,7 @@ import socket
 import struct
 import sys
 import subprocess
+from subprocess import Popen as _Popen
 import tempfile
 import time
 from urllib.error import HTTPError, URLError
@@ -588,7 +589,7 @@ def _managed_process_identity(process) -> tuple[str, int] | None:
     if isinstance(process, _WindowsNativeProcess):
         return ("windows", process.creation_time)
     if (sys.platform.startswith("linux")
-            and isinstance(process, subprocess.Popen)):
+            and isinstance(process, _Popen)):
         return ("linux", _linux_process_start_time(process.pid))
     # Unit-test doubles do not represent a kernel process. Production launch
     # paths above always capture an identity before polling the listener.

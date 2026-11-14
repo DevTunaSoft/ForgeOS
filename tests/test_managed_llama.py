@@ -1011,6 +1011,14 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             controller.verify_listener_ownership()
         owner_identity.assert_called_once_with(12345)
 
+    def test_mocked_linux_launcher_does_not_replace_process_type(self):
+        from forgeos.managed_llama import _managed_process_identity
+        process = Mock()
+        with (patch("forgeos.managed_llama.sys.platform", "linux"),
+              patch("forgeos.managed_llama.subprocess.Popen",
+                    return_value=process)):
+            self.assertIsNone(_managed_process_identity(process))
+
     def test_linux_process_start_time_parser_handles_parentheses_in_command(self):
         from forgeos.managed_llama import _parse_linux_process_start_time
         fields = ["S"] + [str(value) for value in range(1, 19)] + ["98765"]

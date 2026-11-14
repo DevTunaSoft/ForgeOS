@@ -237,7 +237,7 @@ class ModelRetirementTests(unittest.TestCase):
         except (OSError, NotImplementedError):
             self.skipTest("Manifest hard links unsupported")
         self.addCleanup(lambda: manifest_link.unlink(missing_ok=True))
-        with self.assertRaisesRegex(RuntimeError, "single-link"):
+        with self.assertRaisesRegex(ValueError, "linked"):
             self.retire()
         self.assertTrue(self.manifest.exists())
 

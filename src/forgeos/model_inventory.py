@@ -429,11 +429,13 @@ def verify_download(path: str | Path, *,
         raise TypeError("progress_callback must be callable")
     root = _safe_storage_root(directory)
     selected = Path(path).expanduser().absolute()
+    canonical_selected = selected.resolve(strict=False)
     imported = next((record for record in _import_records(root)
-                     if record["path"] == selected), None)
+                     if record["path"] == canonical_selected), None)
     if imported is not None:
         if any(_is_reparse_point(item) for item in (selected, *selected.parents)):
             raise ValueError("Imported GGUF path contains a link or reparse point")
+        selected = canonical_selected
         from .model_import import _import_lifecycle_lock_path
         lock = _import_lifecycle_lock_path(selected.resolve(strict=False), root)
         if any(_is_reparse_point(item) for item in (lock, *lock.parents)):
