@@ -88,6 +88,8 @@ class ModelQualificationTests(unittest.TestCase):
         self.assertEqual(chosen["model_sha256"], "1" * 64)
         self.assertEqual(chosen["selection_policy"],
                          "smallest-measured-qualified-model")
+        self.assertIn("smallest measured-qualified", chosen["selection_explanation"])
+        self.assertIn("implementation role", chosen["selection_explanation"])
         self.assertEqual(chosen["backend"], "llama.cpp")
         self.assertEqual(chosen["model_name"], "forgeos-managed")
 

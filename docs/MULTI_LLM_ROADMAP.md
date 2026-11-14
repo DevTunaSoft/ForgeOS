@@ -132,7 +132,7 @@ This is a **requirements-to-evidence tracker, not a declaration that all capabil
 - [ ] Run specialized roles **sequentially by default**; avoid several resident model processes on 16/32 GiB unless a measured budget proves safe.
 - [ ] Record chosen backend/model/revision/reason/task role, token/latency metrics, retry count and quality outcome in existing task metadata and diagnostics.
 - [ ] Model switch must preserve worktree, checkpoint, tool state and result integrity. Never silently regenerate applied edits after partial failure.
-- [ ] Add optional manual per-role overrides and explain routing decisions in plain language.
+- [ ] Add optional manual per-role overrides and explain routing decisions in plain language. **Partial routing explanation:** qualified-role selection now returns a bounded plain-language explanation containing the role, measured model/peak-memory facts, budget and evidence digest; automatic production routing and manual per-role preference UI remain open.
 - [ ] Keep reviewer/security findings as evidence; do not auto-approve dangerous commands based only on another model's text.
 
 **Exit:** measurable benefit across role suite, deterministic policy tests, bounded model switching and complete recovery of intermediate artifacts.

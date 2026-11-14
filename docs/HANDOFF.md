@@ -3434,3 +3434,14 @@ and restore under constrained filesystems.
   contract follows Ollama's structured-output `format` API:
   https://docs.ollama.com/capabilities/structured-outputs. Focused request,
   timeout and slow-trickle tests passed.
+
+### 2026-11-14 — explain qualified routing decisions
+
+- **Source:** qualified-role selection now returns a bounded plain-language
+  explanation with the selected role, measured model size, peak memory,
+  admissible memory budget and evidence digest. The selection remains
+  fail-closed and still chooses only final-qualified evidence; no automatic
+  routing or manual override is enabled by this change.
+- **Verification:** routing tests, documentation checks and handoff integrity
+  passed. LM Studio was not available on the target host (no listener on its
+  usual port 1234), so no LM Studio inference claim is made.

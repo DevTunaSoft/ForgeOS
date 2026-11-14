@@ -258,6 +258,13 @@ def route_qualified_role(role: str, records: list[dict], *,
         "peak_memory_bytes": chosen["peak_memory_bytes"],
         "median_latency_seconds": chosen["median_latency_seconds"],
         "selection_policy": "smallest-measured-qualified-model",
+        "selection_explanation": (
+            f"Selected the smallest measured-qualified {chosen['model_name']} "
+            f"for the {role.replace('_', ' ')} role: "
+            f"{chosen['model_bytes']} model bytes, "
+            f"{chosen['peak_memory_bytes']} peak bytes, within the "
+            f"{memory_budget_bytes}-byte memory budget. Evidence "
+            f"{chosen['evidence_sha256']}."),
         "rejected_invalid_records": len(rejected),
     }
 
