@@ -132,8 +132,9 @@ def _list_imports(root: Path) -> list[dict]:
 
 def _manifest_model_file(manifest: Path, root: Path) -> tuple[Path, dict]:
     if (_is_reparse_point(manifest) or not manifest.is_file()
+            or manifest.stat().st_nlink != 1
             or manifest.stat().st_size > MAX_MANIFEST_BYTES):
-        raise ValueError("Missing or oversized GGUF manifest")
+        raise ValueError("Missing, linked or oversized GGUF manifest")
     try:
         info = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
@@ -322,8 +323,10 @@ def _verify_download_unlocked(path: str | Path, root: Path, *,
                    progress_callback=progress_callback) != info["sha256"]:
             raise RuntimeError("Imported GGUF SHA-256 mismatch")
         after = selected.stat()
-        if (before.st_size, before.st_mtime_ns, before.st_ino) != (
-                after.st_size, after.st_mtime_ns, after.st_ino):
+        if (before.st_size, before.st_mtime_ns, before.st_ino,
+                before.st_nlink) != (
+                after.st_size, after.st_mtime_ns, after.st_ino,
+                after.st_nlink) or after.st_nlink != 1:
             raise RuntimeError("Imported GGUF changed while verifying")
         with selected.open("rb") as inp:
             if inp.read(4) != b"GGUF":
@@ -344,13 +347,16 @@ def _verify_download_unlocked(path: str | Path, root: Path, *,
     if selected.stat().st_size != info["bytes"]:
         raise RuntimeError("GGUF size changed since download")
     before = selected.stat()
+    if before.st_nlink != 1:
+        raise RuntimeError("Hard-linked GGUF model files are not trusted")
     if _digest(selected, cancel_event=cancel_event,
                progress_callback=progress_callback) != info["sha256"]:
         raise RuntimeError("GGUF SHA-256 mismatch; file was modified")
     after = selected.stat()
     if (before.st_size != after.st_size or
             before.st_mtime_ns != after.st_mtime_ns or
-            before.st_ino != after.st_ino):
+            before.st_ino != after.st_ino or
+            before.st_nlink != after.st_nlink or after.st_nlink != 1):
         raise RuntimeError("GGUF changed while verifying")
     with selected.open("rb") as inp:
         if inp.read(4) != b"GGUF":

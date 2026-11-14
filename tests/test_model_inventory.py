@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -104,6 +105,61 @@ class GGUFInventoryTests(unittest.TestCase):
                          "present_not_reverified")
         with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
             verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_refuses_hardlinked_model_before_hashing(self):
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.path:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_hardlink), \
+             patch("forgeos.model_inventory._digest") as digest:
+            with self.assertRaisesRegex(RuntimeError, "Hard-linked GGUF"):
+                verify_download(self.path, directory=self.root)
+        digest.assert_not_called()
+
+    def test_explicit_verify_refuses_hardlinked_manifest(self):
+        original_stat = Path.stat
+
+        def report_hardlink(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.manifest:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2)
+            return metadata
+
+        with patch.object(Path, "stat", new=report_hardlink):
+            with self.assertRaisesRegex(ValueError, "linked"):
+                verify_download(self.path, directory=self.root)
+
+    def test_explicit_verify_detects_link_count_change_during_hash(self):
+        original_stat = Path.stat
+        state = {"hash_started": False}
+
+        def report_link_after_hash(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.path and state["hash_started"]:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2,
+                                       st_mtime_ns=metadata.st_mtime_ns,
+                                       st_ino=metadata.st_ino)
+            return metadata
+
+        def finish_hash(*_args, **_kwargs):
+            state["hash_started"] = True
+            return self.sha
+
+        with patch.object(Path, "stat", new=report_link_after_hash), \
+             patch("forgeos.model_inventory._digest", side_effect=finish_hash):
+            with self.assertRaisesRegex(RuntimeError, "changed while verifying"):
+                verify_download(self.path, directory=self.root)
 
     def test_explicit_verify_refuses_active_model_lifecycle(self):
         lock = self.path.with_name(self.path.name + ".lock")

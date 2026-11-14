@@ -2,6 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -381,6 +382,30 @@ class LocalModelImportTests(unittest.TestCase):
         lock = imported_model_lock_path(self.model, directory=self.models)
         with _exclusive_download_lock(lock):
             with self.assertRaisesRegex(RuntimeError, "active elsewhere"):
+                verify_download(self.model, directory=self.models)
+
+    def test_reverify_detects_imported_link_count_change_during_hash(self):
+        import_local_gguf(self.model, directory=self.models)
+        original_stat = Path.stat
+        state = {"hash_started": False}
+
+        def report_link_after_hash(path, *args, **kwargs):
+            metadata = original_stat(path, *args, **kwargs)
+            if path == self.model and state["hash_started"]:
+                return SimpleNamespace(st_mode=metadata.st_mode,
+                                       st_size=metadata.st_size,
+                                       st_nlink=2,
+                                       st_mtime_ns=metadata.st_mtime_ns,
+                                       st_ino=metadata.st_ino)
+            return metadata
+
+        def finish_hash(*_args, **_kwargs):
+            state["hash_started"] = True
+            return hashlib.sha256(self.data).hexdigest()
+
+        with patch.object(Path, "stat", new=report_link_after_hash), \
+             patch("forgeos.model_inventory._digest", side_effect=finish_hash):
+            with self.assertRaisesRegex(RuntimeError, "changed while verifying"):
                 verify_download(self.model, directory=self.models)
 
 
