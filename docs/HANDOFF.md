@@ -2764,6 +2764,8 @@ and restore under constrained filesystems.
 
 ### 2026-11-13 — reconcile broad Windows suite findings
 
+- **Implementation commit:** `acda2ffdf9a9e11072da1ebcda516178de57ae49`
+  on `fix/safe-resume-malformed-checkpoints`.
 - **Objective:** validate the latest integrated branch and close repository
   consistency defects exposed by the full 739-test run.
 - **Changes:** pre-edit generation failures now retain their bounded error
