@@ -1,8 +1,10 @@
-"""Opt-in, single-process, CPU-first llama.cpp server lifecycle.
+"""Opt-in, CPU-first llama.cpp server lifecycle with a per-user process lock.
 
-One managed llama-server belongs to one ForgeOS GUI session. Executables are
-provided explicitly and pinned to a SHA-256 supplied by the operator; no code
-downloads, remote inference, Docker, shell or second desktop application.
+One managed llama-server belongs to one ForgeOS GUI session, and a shared lock
+prevents another ForgeOS process for the same user from starting a second one.
+Executables are provided explicitly and pinned to a SHA-256 supplied by the
+operator; no code downloads, remote inference, Docker, shell or second desktop
+application.
 
 A checksum is integrity evidence, NOT a software publisher signature. Verify
 the upstream binary and adjacent DLL provenance before electing to run it.
@@ -30,7 +32,7 @@ from .model_routing import (
     local_memory_settings, managed_runtime_memory_ceiling,
     safe_model_file_budget, system_memory,
 )
-from .gguf_download import _exclusive_download_lock
+from .gguf_download import _exclusive_download_lock, _safe_storage_root
 
 CHUNK_BYTES = 1024 * 1024
 MAX_MANIFEST_BYTES = 4096
@@ -305,6 +307,17 @@ def _verified_runtime(binary: str | Path, expected_sha256: str) -> Path:
     if after.st_nlink != 1:
         raise ValueError("Hard-linked llama-server binaries are not trusted")
     return path
+
+
+def _managed_runtime_lock_path(directory: str | Path | None = None) -> Path:
+    """Return the per-user lock that admits one managed heavy model process."""
+    root = _safe_storage_root(directory)
+    lock = root / ".managed-runtime.lock"
+    if lock.is_symlink() or (os.path.lexists(lock)
+                             and (not lock.is_file()
+                                  or lock.stat().st_nlink != 1)):
+        raise ValueError("Managed runtime lock file is unsafe")
+    return lock
 
 
 # Minimal operating-system variables only. In particular, do not inherit
@@ -620,6 +633,7 @@ class ManagedLlamaServer:
         self.memory_ceiling_bytes: int | None = None
         self.startup_elapsed_seconds: float | None = None
         self._model_lock = None
+        self._runtime_lock = None
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -762,23 +776,34 @@ class ManagedLlamaServer:
               memory_limit_bytes: int | None = None) -> dict:
         if self.process is not None or self._secrets is not None:
             raise RuntimeError("A managed llama-server session already exists")
-        model_file = _existing_file(model_path, suffix=".gguf")
-        from .model_import import imported_model_lock_path
-        lock_path = imported_model_lock_path(model_file)
-        if lock_path.is_symlink():
-            raise ValueError("Refusing a symbolic link at the model lifecycle lock")
-        model_lock = _exclusive_download_lock(lock_path)
-        model_lock.__enter__()
-        self._model_lock = model_lock
+        runtime_lock = _exclusive_download_lock(_managed_runtime_lock_path())
         try:
+            runtime_lock.__enter__()
+        except RuntimeError as exc:
+            if str(exc) == "This GGUF download is active elsewhere":
+                raise RuntimeError(
+                    "Another ForgeOS process already has a managed model "
+                    "running; stop it before starting another") from exc
+            raise
+        self._runtime_lock = runtime_lock
+        try:
+            model_file = _existing_file(model_path, suffix=".gguf")
+            from .model_import import imported_model_lock_path
+            lock_path = imported_model_lock_path(model_file)
+            if lock_path.is_symlink():
+                raise ValueError(
+                    "Refusing a symbolic link at the model lifecycle lock")
+            model_lock = _exclusive_download_lock(lock_path)
+            model_lock.__enter__()
+            self._model_lock = model_lock
             return self._start_with_model_lock(
                 executable=executable, executable_sha256=executable_sha256,
                 model_path=model_file, timeout=timeout, threads=threads,
                 context=context, memory_limit_bytes=memory_limit_bytes)
         except BaseException:
             # Preflight failures happen before _start_with_model_lock's
-            # process-start cleanup block. Release the interprocess model lock
-            # on every failed start, but retain it if stop cannot reap a child.
+            # process-start cleanup block. Release both admission locks on
+            # every failed start, but retain them if stop cannot reap a child.
             try:
                 self.stop()
             except Exception:
@@ -978,8 +1003,9 @@ class ManagedLlamaServer:
         finally:
             # Native Windows process handles must close even when poll(),
             # wait(), termination, or Job Object cleanup raises. If the child
-            # may still be alive, retain its handles and model lock so another
-            # ForgeOS process cannot retire weights it may still have mapped.
+            # may still be alive, retain its handles and both admission locks
+            # so another process cannot launch a second heavy model or retire
+            # weights it may still have mapped.
             child_may_be_running = not child_stopped_confirmed
             if child_may_be_running:
                 self.process = process
@@ -991,9 +1017,10 @@ class ManagedLlamaServer:
                 finally:
                     self._clear_managed_session()
             if child_may_be_running:
-                self._clear_managed_session(release_model_lock=False)
+                self._clear_managed_session(release_lifecycle_locks=False)
 
-    def _clear_managed_session(self, *, release_model_lock: bool = True) -> None:
+    def _clear_managed_session(self, *,
+                               release_lifecycle_locks: bool = True) -> None:
         """Release ephemeral credentials and reset lifecycle state on all paths."""
         temporary = self._secrets
         self._secrets = None
@@ -1013,8 +1040,12 @@ class ManagedLlamaServer:
             self.thread_count = None
             self.memory_ceiling_bytes = None
             self.startup_elapsed_seconds = None
-            if release_model_lock:
-                model_lock = self._model_lock
-                self._model_lock = None
-                if model_lock is not None:
-                    model_lock.__exit__(None, None, None)
+            if release_lifecycle_locks:
+                model_lock, self._model_lock = self._model_lock, None
+                runtime_lock, self._runtime_lock = self._runtime_lock, None
+                try:
+                    if model_lock is not None:
+                        model_lock.__exit__(None, None, None)
+                finally:
+                    if runtime_lock is not None:
+                        runtime_lock.__exit__(None, None, None)

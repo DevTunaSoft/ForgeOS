@@ -43,6 +43,12 @@ class ManagedLlamaTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="forgeos-managed-tests-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        self.runtime_lock_path = self.root / ".managed-runtime.lock"
+        runtime_lock_path = patch(
+            "forgeos.managed_llama._managed_runtime_lock_path",
+            return_value=self.runtime_lock_path)
+        runtime_lock_path.start()
+        self.addCleanup(runtime_lock_path.stop)
         self.model = self.root / "test.gguf"
         data = b"GGUF" + b"\x00" * 28
         self.model.write_bytes(data)
@@ -189,6 +195,9 @@ class ManagedLlamaTests(unittest.TestCase):
             self.model.with_name(self.model.name + ".lock"))
         model_lock.__enter__()
         controller._model_lock = model_lock
+        runtime_lock = _exclusive_download_lock(self.runtime_lock_path)
+        runtime_lock.__enter__()
+        controller._runtime_lock = runtime_lock
         temporary = Mock()
         controller._secrets = temporary
         with patch("forgeos.managed_llama._terminate_posix_group"):
@@ -205,8 +214,13 @@ class ManagedLlamaTests(unittest.TestCase):
             with _exclusive_download_lock(
                     self.model.with_name(self.model.name + ".lock")):
                 pass
+        self.assertEqual(
+            self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+            "busy")
         controller._model_lock.__exit__(None, None, None)
         controller._model_lock = None
+        controller._runtime_lock.__exit__(None, None, None)
+        controller._runtime_lock = None
 
     def test_secret_cleanup_failure_still_clears_session_identity(self):
         controller = ManagedLlamaServer()
@@ -758,7 +772,8 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             client._verify_listener_owner()
             return [{"name": ALIAS}]
         with (patch("forgeos.managed_llama._verified_model",
-                    return_value=(self.model, {"sha256": self.model_sha})),
+                    return_value=(self.model, {"sha256": self.model_sha}))
+                    as verified_model,
               patch("forgeos.managed_llama._verified_runtime",
                     return_value=self.exe),
               patch("forgeos.managed_llama._unused_loopback_port",
@@ -793,6 +808,17 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             self.assertTrue(server.running())
             lock_path = self.model.with_name(self.model.name + ".lock")
             self.assertEqual(self.child_model_lock(lock_path).stdout.strip(), "busy")
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "busy")
+            another_model = self.root / "another-model.gguf"
+            another_model.write_bytes(b"GGUF" + b"Y" * 28)
+            other_server = ManagedLlamaServer()
+            with self.assertRaisesRegex(RuntimeError, "Another ForgeOS process"):
+                other_server.start(
+                    executable=self.exe, executable_sha256=self.exe_sha,
+                    model_path=another_model)
+            verified_model.assert_called_once()
             command = (native_launch.call_args.args[0]
                        if os.name == "nt" else launch.call_args.args[0])
             self.assertEqual(command[0], str(self.exe))
@@ -818,6 +844,9 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             server.stop()
             self.assertEqual(self.child_model_lock(lock_path).stdout.strip(),
                              "acquired")
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "acquired")
             self.assertFalse(key_file.exists())
             self.assertIsNone(server.api_key)
             self.assertIsNone(server.process)

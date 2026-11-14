@@ -158,6 +158,10 @@ partial lines without a summary; never treat such output as success.
 - `managed_llama.py` is one GUI-session-owned CPU-only subprocess
   lifecycle controller; user-provided trusted executable SHA-256 and
   previously downloaded GGUF SHA-256 are checked before process launch.
+  A kernel-held per-user runtime lock under the existing model storage root
+  prevents other ForgeOS processes from starting a second managed GGUF, even
+  when they select different files; it remains held until child exit is
+  confirmed. This does not coordinate external inference servers or builds.
   Startup/large hashing run on a background worker, with readiness
   and authenticated catalog responses crossing through the GUI event queue.
 - `model_inventory.py` reads `gguf_download.py`'s existing
