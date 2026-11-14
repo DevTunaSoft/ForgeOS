@@ -187,10 +187,11 @@ class ModelRetirementTests(unittest.TestCase):
         ticket = self.retire()
         manifest = (self.root / ".forgeos-retired" /
                     ticket["id"] / "manifest.json")
+        canonical_manifest = manifest.resolve(strict=True)
         unlink = Path.unlink
 
         def fail_manifest_once(path, *args, **kwargs):
-            if path == manifest:
+            if path == canonical_manifest:
                 raise OSError("injected manifest deletion failure")
             return unlink(path, *args, **kwargs)
 

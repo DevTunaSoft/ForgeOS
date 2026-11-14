@@ -26,6 +26,7 @@ class LocalModelImportTests(unittest.TestCase):
         self.model = self.root / "existing.gguf"
         self.data = b"GGUF" + b"x" * 64
         self.model.write_bytes(self.data)
+        self.canonical_model = self.model.resolve(strict=True)
 
     def test_import_records_sha_without_copying_and_runtime_reverifies(self):
         original_inode = self.model.stat().st_ino
@@ -333,7 +334,7 @@ class LocalModelImportTests(unittest.TestCase):
         unlink = Path.unlink
 
         def fail_model_once(path, *args, **kwargs):
-            if path == self.model:
+            if path == self.canonical_model:
                 raise OSError("injected model unlink failure")
             return unlink(path, *args, **kwargs)
 
@@ -355,11 +356,12 @@ class LocalModelImportTests(unittest.TestCase):
         import_local_gguf(self.model, directory=self.models)
         sidecar = self.model.with_name(self.model.name + ".forgeos.json")
         index = self.models / ".forgeos-imports.json"
+        canonical_index = index.resolve(strict=True)
         from forgeos import model_import
         replace = model_import.os.replace
 
         def fail_registry_once(source, destination):
-            if Path(destination) == index:
+            if Path(destination) == canonical_index:
                 raise OSError("injected registry publication failure")
             return replace(source, destination)
 
@@ -411,7 +413,7 @@ class LocalModelImportTests(unittest.TestCase):
 
         def report_link_after_hash(path, *args, **kwargs):
             metadata = original_stat(path, *args, **kwargs)
-            if path == self.model and state["hash_started"]:
+            if path == self.canonical_model and state["hash_started"]:
                 return SimpleNamespace(st_mode=metadata.st_mode,
                                        st_size=metadata.st_size,
                                        st_nlink=2,
@@ -434,7 +436,7 @@ class LocalModelImportTests(unittest.TestCase):
 
         def report_hardlink(path, *args, **kwargs):
             metadata = original_stat(path, *args, **kwargs)
-            if path == self.model:
+            if path == self.canonical_model:
                 return SimpleNamespace(st_mode=metadata.st_mode,
                                        st_size=metadata.st_size,
                                        st_nlink=2)

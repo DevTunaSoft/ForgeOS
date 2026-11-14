@@ -28,6 +28,8 @@ class GGUFInventoryTests(unittest.TestCase):
         self.sha = hashlib.sha256(self.content).hexdigest()
         self.manifest = self.path.with_name(self.path.name + ".forgeos.json")
         self.write_manifest()
+        self.canonical_path = self.path.resolve(strict=True)
+        self.canonical_manifest = self.manifest.resolve(strict=True)
 
     def test_catalog_status_matches_exact_revision_hash_and_imported_bytes(self):
         file_info = {"path": self.path.name, "sha256": self.sha}
@@ -131,7 +133,7 @@ class GGUFInventoryTests(unittest.TestCase):
 
         def report_hardlink(path, *args, **kwargs):
             metadata = original_stat(path, *args, **kwargs)
-            if path == self.path:
+            if path == self.canonical_path:
                 return SimpleNamespace(st_mode=metadata.st_mode,
                                        st_size=metadata.st_size,
                                        st_nlink=2)
@@ -169,8 +171,9 @@ class GGUFInventoryTests(unittest.TestCase):
     def test_storage_usage_fails_closed_on_reparse_point_entries(self):
         redirected = self.root / "redirected"
         redirected.mkdir()
+        canonical_redirected = redirected.resolve(strict=True)
         with patch("forgeos.model_inventory._is_reparse_point",
-                   side_effect=lambda path: path == redirected):
+                   side_effect=lambda path: path == canonical_redirected):
             with self.assertRaisesRegex(RuntimeError, "reparse-point entry"):
                 storage_usage(self.root)
 
@@ -189,7 +192,7 @@ class GGUFInventoryTests(unittest.TestCase):
 
         def report_hardlink(path, *args, **kwargs):
             metadata = original_stat(path, *args, **kwargs)
-            if path == self.path:
+            if path == self.canonical_path:
                 return SimpleNamespace(st_mode=metadata.st_mode,
                                        st_size=metadata.st_size,
                                        st_nlink=2)
@@ -206,7 +209,7 @@ class GGUFInventoryTests(unittest.TestCase):
 
         def report_hardlink(path, *args, **kwargs):
             metadata = original_stat(path, *args, **kwargs)
-            if path == self.manifest:
+            if path == self.canonical_manifest:
                 return SimpleNamespace(st_mode=metadata.st_mode,
                                        st_size=metadata.st_size,
                                        st_nlink=2)
@@ -222,7 +225,7 @@ class GGUFInventoryTests(unittest.TestCase):
 
         def report_link_after_hash(path, *args, **kwargs):
             metadata = original_stat(path, *args, **kwargs)
-            if path == self.path and state["hash_started"]:
+            if path == self.canonical_path and state["hash_started"]:
                 return SimpleNamespace(st_mode=metadata.st_mode,
                                        st_size=metadata.st_size,
                                        st_nlink=2,
