@@ -1071,6 +1071,102 @@ ThreadingHTTPServer((options.host, int(options.port)), Handler).serve_forever()
             if proc is not None:
                 proc.close()
 
+    @unittest.skipUnless(__import__("os").name == "nt",
+                         "Windows owner-crash Job Object integration")
+    def test_windows_owner_crash_kills_model_child_and_releases_runtime_lock(self):
+        import ctypes
+        import subprocess
+        import sys
+        import textwrap
+        import time
+        from ctypes import wintypes
+
+        pid_file = self.root / "managed-child.pid"
+        script = textwrap.dedent("""\
+            import sys, time
+            from pathlib import Path
+            from forgeos.gguf_download import _exclusive_download_lock
+            from forgeos.managed_llama import _launch_windows_suspended_job
+            lock = _exclusive_download_lock(Path(sys.argv[1]))
+            lock.__enter__()
+            child, job = _launch_windows_suspended_job(
+                [sys.executable, "-c", "import time; time.sleep(60)"],
+                Path.cwd(), {}, 1024 ** 3)
+            Path(sys.argv[2]).write_text(str(child.pid), encoding="ascii")
+            time.sleep(60)
+            """)
+        repo_src = Path(__file__).resolve().parents[1] / "src"
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(repo_src)
+        worker = subprocess.Popen(
+            [sys.executable, "-c", script, str(self.runtime_lock_path),
+             str(pid_file)], env=environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        child_pid = None
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [
+            wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = [
+            wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.TerminateProcess.restype = wintypes.BOOL
+
+        def child_running(pid):
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                error = ctypes.get_last_error()
+                if error == 87:  # ERROR_INVALID_PARAMETER: process has exited
+                    return False
+                raise OSError(error, "OpenProcess(managed model child)")
+            try:
+                exit_code = wintypes.DWORD()
+                if not kernel32.GetExitCodeProcess(
+                        handle, ctypes.byref(exit_code)):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                return exit_code.value == 259  # STILL_ACTIVE
+            finally:
+                kernel32.CloseHandle(handle)
+
+        try:
+            deadline = time.monotonic() + 10
+            while not pid_file.is_file() and time.monotonic() < deadline:
+                if worker.poll() is not None:
+                    error = worker.stderr.read().decode("utf-8", "replace")
+                    self.fail(f"managed owner exited before launch: {error}")
+                time.sleep(0.05)
+            self.assertTrue(pid_file.is_file(), "managed child did not start")
+            child_pid = int(pid_file.read_text(encoding="ascii"))
+            self.assertTrue(child_running(child_pid))
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "busy")
+
+            worker.kill()
+            worker.wait(timeout=5)
+            deadline = time.monotonic() + 10
+            while child_running(child_pid) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertFalse(child_running(child_pid),
+                             "owner crash did not close its kill-on-close job")
+            self.assertEqual(
+                self.child_model_lock(self.runtime_lock_path).stdout.strip(),
+                "acquired")
+        finally:
+            if worker.poll() is None:
+                worker.kill()
+                worker.wait(timeout=5)
+            if child_pid is not None and child_running(child_pid):
+                handle = kernel32.OpenProcess(0x1001, False, child_pid)
+                if handle:
+                    kernel32.TerminateProcess(handle, 125)
+                    kernel32.CloseHandle(handle)
+            if worker.stderr is not None:
+                worker.stderr.close()
+
     @unittest.skipIf(os.name == "nt", "POSIX process-group integration")
     def test_real_posix_controller_stop_reaps_process(self):
         import subprocess
