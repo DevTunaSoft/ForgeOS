@@ -36,8 +36,11 @@ MODEL_INVENTORY_STATUS_LABELS = {
 }
 
 
-def _model_inventory_status_label(status: str) -> str:
+def _model_inventory_status_label(status: str, *, loaded: bool = False) -> str:
     """Show readable local-model status without weakening its selection gate."""
+    if loaded and status in {
+            "present_not_reverified", "imported_not_reverified", "verified"}:
+        return "Loaded in active runtime"
     return MODEL_INVENTORY_STATUS_LABELS.get(status, "Needs inspection")
 
 
@@ -947,16 +950,23 @@ def launch(db_path, *, acceptance: bool = False):
                 listing.heading(key, text=key.title())
                 listing.column(key, width=width, stretch=key == "model")
             listing.pack(fill="both", expand=True)
+            active_controller = managed["controller"]
+            loaded_sha256 = (
+                active_controller.model_sha256
+                if active_controller is not None and active_controller.running()
+                else None)
             for index, entry in enumerate(records):
                 size = entry.get("bytes")
                 size_text = (f"{size/(1024**3):.2f} GiB"
                              if type(size) is int else "unknown")
+                loaded = (isinstance(loaded_sha256, str)
+                          and entry.get("sha256") == loaded_sha256)
                 listing.insert("", "end", iid=str(index),
                                values=(entry["file"],
                                        size_text,
                                        entry["repo"],
                                        _model_inventory_status_label(
-                                           entry["status"])))
+                                           entry["status"], loaded=loaded)))
             selectable_statuses = {
                 "present_not_reverified", "imported_not_reverified", "verified"}
             verification_events = Queue(maxsize=1)

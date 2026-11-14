@@ -16,6 +16,13 @@ class DashboardContractTests(unittest.TestCase):
             _model_inventory_status_label("present_not_reverified"),
             "Present; not verified")
         self.assertEqual(
+            _model_inventory_status_label(
+                "present_not_reverified", loaded=True),
+            "Loaded in active runtime")
+        self.assertEqual(
+            _model_inventory_status_label("unsafe_path", loaded=True),
+            "Unsafe link/file type")
+        self.assertEqual(
             _model_inventory_status_label("unexpected_new_status"),
             "Needs inspection")
 
@@ -69,6 +76,13 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('entry["status"] not in selectable_statuses', source)
         self.assertIn('listing.bind("<<TreeviewSelect>>", update_selection_controls)', source)
         self.assertIn('retire_btn.configure(state="disabled")', source)
+
+    def test_picker_marks_only_matching_safe_sha_as_loaded(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "src" / "forgeos" / "gui.py").read_text(encoding="utf-8")
+        self.assertIn('loaded_sha256 = (', source)
+        self.assertIn('entry.get("sha256") == loaded_sha256', source)
+        self.assertIn('loaded=loaded)', source)
 
     def test_local_model_sha_reverification_is_background_progress_and_cancelable(self):
         source = (Path(__file__).resolve().parents[1] /
