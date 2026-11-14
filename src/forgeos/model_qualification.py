@@ -157,6 +157,51 @@ def load_qualification_records(directory: str | Path | None = None) -> list[dict
     return records
 
 
+def qualification_summary(records: list[dict]) -> dict:
+    """Return a bounded, sanitized role-by-role qualification history report.
+
+    Raw model responses are never loaded here. Invalid or incomplete evidence
+    is counted but cannot make a role appear routeable.
+    """
+    if not isinstance(records, list):
+        raise TypeError("Qualification records required")
+    roles = {
+        role: {"records": 0, "qualified": 0, "candidates": []}
+        for role in MODEL_ROLES
+    }
+    invalid = 0
+    for raw in records[:MAX_QUALIFICATION_RECORDS]:
+        try:
+            item = qualify_role_evidence(raw)
+        except (TypeError, ValueError):
+            invalid += 1
+            continue
+        bucket = roles[item["role"]]
+        bucket["records"] += 1
+        if item["qualified"]:
+            bucket["qualified"] += 1
+            bucket["candidates"].append({
+                "model_name": item["model_name"],
+                "model_sha256": item["model_sha256"],
+                "runtime_sha256": item["runtime_sha256"],
+                "evidence_sha256": item["evidence_sha256"],
+                "model_bytes": item["model_bytes"],
+                "peak_memory_bytes": item["peak_memory_bytes"],
+                "median_latency_seconds": item["median_latency_seconds"],
+            })
+    for bucket in roles.values():
+        bucket["candidates"].sort(key=lambda item: (
+            item["model_bytes"], item["peak_memory_bytes"],
+            item["median_latency_seconds"], item["model_sha256"]))
+        bucket["routeable"] = bool(bucket["candidates"])
+    return {
+        "schema": QUALIFICATION_SCHEMA,
+        "kind": "qualification-summary",
+        "roles": roles,
+        "invalid_records": invalid,
+    }
+
+
 def route_qualified_role(role: str, records: list[dict], *,
                          memory_budget_bytes: int,
                          backend: str | None = None,

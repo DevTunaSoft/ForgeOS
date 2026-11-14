@@ -33,6 +33,11 @@ def main(argv=None):
     restore_copy.add_argument('destination', help='New database path; never overwrites')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
+    qualification = sub.add_parser(
+        'model-qualification',
+        help='Inspect bounded local role-qualification history')
+    qualification.add_argument('operation', choices=('report',))
+    qualification.add_argument('--directory', default='')
     models=sub.add_parser('models',help='List models reported by one local runtime')
     models.add_argument('--backend',choices=BACKENDS,default='ollama')
     models.add_argument('--endpoint',default='')
@@ -169,6 +174,13 @@ def main(argv=None):
     if args.action == 'models-storage':
         from .model_inventory import storage_usage
         print(json.dumps(storage_usage(directory=args.directory or None), indent=2))
+        return 0
+    if args.action == 'model-qualification':
+        from .model_qualification import (
+            load_qualification_records, qualification_summary,
+        )
+        print(json.dumps(qualification_summary(load_qualification_records(
+            args.directory or None)), indent=2))
         return 0
     if args.action == 'model-verify-local':
         from .model_inventory import verify_download

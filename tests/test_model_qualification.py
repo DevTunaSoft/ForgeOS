@@ -2,7 +2,7 @@ import copy
 import unittest
 
 from forgeos.model_qualification import (
-    qualify_role_evidence, route_qualified_role,
+    qualify_role_evidence, qualification_summary, route_qualified_role,
 )
 
 
@@ -136,6 +136,25 @@ class ModelQualificationTests(unittest.TestCase):
             values = load_qualification_records(root)
         self.assertEqual(len(values), 1)
         self.assertEqual(values[0]["model_name"], "forgeos-managed")
+
+    def test_summary_is_sanitized_and_marks_only_qualified_roles_routeable(self):
+        summary = qualification_summary([
+            evidence(role="implementation"),
+            evidence(role="context_summarization", objective_ok=1),
+            {"not": "qualification"},
+        ])
+        implementation = summary["roles"]["implementation"]
+        context = summary["roles"]["context_summarization"]
+        self.assertTrue(implementation["routeable"])
+        self.assertEqual(implementation["qualified"], 1)
+        self.assertFalse(context["routeable"])
+        self.assertEqual(context["qualified"], 0)
+        self.assertEqual(summary["invalid_records"], 1)
+        self.assertNotIn("results", implementation["candidates"][0])
+
+    def test_summary_rejects_non_list_input(self):
+        with self.assertRaises(TypeError):
+            qualification_summary(None)
 
     def test_router_can_pin_exact_evidence_digest_for_resume(self):
         from forgeos.model_qualification import qualify_role_evidence
