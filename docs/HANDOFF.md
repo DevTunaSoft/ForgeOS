@@ -3248,3 +3248,48 @@ and restore under constrained filesystems.
 - **Prior head:** all six hosted jobs passed at `81f6874`, including the
   Windows package job, before this picker change. Do not treat that earlier
   result as exact-head verification of `3318042`.
+
+### 2026-11-14 — native Windows llama.cpp and Qwen acceptance
+
+- **Live Hub fix:** commit pending in this increment changes repository
+  inspection to the current Hugging Face API form with repeated `expand`
+  parameters. The previous comma-separated query returned HTTP 400. The
+  official Qwen repository then inspected successfully at revision
+  `f86cb2c1fa58255f8052cc32aeede1b7482d4361`; its Q4_K_M file reported
+  1,117,320,768 bytes and SHA-256
+  `cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046`.
+- **Live transfer:** the verified downloader followed the documented
+  Hugging Face CDN redirect `us.aws.cdn.hf.co` after the allowlist was
+  expanded to the current official CDN/Xet host set. The complete 1.12 GiB
+  Q4_K_M weight was atomically published and SHA-256 verified at the pinned
+  revision. A first attempt stopped before writing because that CDN host was
+  not previously allowlisted; no untrusted host was accepted.
+- **Native runtime:** the pinned official llama.cpp b12199 Windows x64 CPU
+  bundle downloaded, was SHA-256 verified, and installed after one transient
+  Windows directory-rename denial. Runtime executable SHA-256 was
+  `26f942409862276c2a19e784af4892ce0c9cdfec68d740ad2d9f9b2b753b903c`.
+  ForgeOS started it in a Windows Job Object with the verified Qwen weights,
+  authenticated `/models`, passed the empty-edit self-test, captured a peak
+  committed process-tree memory of about 972 MiB under a 5.70 GiB ceiling, and
+  stopped the process tree cleanly.
+- **Compatibility fix:** the real model returned a single JSON Markdown fence
+  for the empty self-test, so `ManagedLlamaServer.inference_self_test` now
+  accepts exactly one optional ` ```json ... ``` ` wrapper and no surrounding
+  prose. `LocalChatModel` now sends llama.cpp's documented schema-constrained
+  `response_format` for edit manifests. The same native run produced a valid
+  one-file `{"files":[...]}` manifest for `acceptance.txt` without applying
+  it. Focused local, managed-runtime, catalog and downloader tests passed;
+  one broader local HTTP trickle test remains environment-limited by loopback
+  binding in this managed session.
+- **Frozen artifact:** the exact-head GitHub Windows EXE artifact at
+  `b7829ca` passed its GUI acceptance report (`gui_started`, `closed_cleanly`,
+  520 tasks over four pages, offline guide available, 49 KiB RSS growth while
+  paging) and its acceptance snapshot. The snapshot embedded source commit
+  `b7829cad8446897eea3abe03d42b9e52459be900` and EXE SHA-256
+  `87d22f9464f7b48903bb4315b83c76452b5c421b4ede81fd31e165d3a50c9935`,
+  matching the independently computed file hash. The snapshot had no managed
+  model because it ran before the source-mode native trial.
+- **Remaining release gates:** Ollama/LM Studio compatibility, interactive
+  task/edit/restart/reboot acceptance, AppContainer in a normal user session,
+  power-loss and physical disk-full behavior, broader model-quality corpus,
+  and full roadmap verification remain open. Do not mark ForgeOS finished.
