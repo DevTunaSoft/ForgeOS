@@ -657,7 +657,7 @@ class TransactionRecoveryTests(unittest.TestCase):
 
         def hash_then_swap(path, *args, **kwargs):
             value = real_hash(path, *args, **kwargs)
-            if Path(path) == target and not swapped["value"]:
+            if not swapped["value"]:
                 target.unlink()
                 target.symlink_to(outside)
                 swapped["value"] = True
@@ -701,7 +701,7 @@ class TransactionRecoveryTests(unittest.TestCase):
 
         def hash_then_swap(path, *args, **kwargs):
             value = real_hash(path, *args, **kwargs)
-            if Path(path) == target and not swapped["value"]:
+            if not swapped["value"]:
                 nested.rename(real_parent)
                 nested.symlink_to(outside, target_is_directory=True)
                 swapped["value"] = True
