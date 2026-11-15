@@ -25,6 +25,7 @@ from .recovery_bundle import (
     _artifact_digest,
     _filename,
     _new_destination,
+    _read_bounded_file,
     _record_filename,
     check_recovery_bundle_index,
     export_recovery_bundle_index,
@@ -69,12 +70,9 @@ def _bundle_header() -> bytes:
 
 
 def _index_rows(path: Path) -> list[dict]:
-    if path.stat().st_size > MAX_RECOVERY_BUNDLE_INDEX_BYTES:
-        raise ValueError("Recovery bundle index is oversized")
-    try:
-        payload = path.read_bytes()
-    except OSError as exc:
-        raise ValueError("Recovery bundle index could not be read") from exc
+    payload = _read_bounded_file(
+        path, max_bytes=MAX_RECOVERY_BUNDLE_INDEX_BYTES,
+        description="Recovery bundle index")
     rows = []
     for raw in payload.splitlines():
         try:
