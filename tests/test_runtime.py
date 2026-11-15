@@ -4,9 +4,11 @@ import json
 import tempfile
 import os
 import unittest
+from unittest.mock import patch
 
+from forgeos import test_runtime
 from forgeos.test_runtime import (
-    MARKER, create_test_snapshot, remove_test_snapshot,
+    MARKER, MAX_MARKER_BYTES, create_test_snapshot, remove_test_snapshot,
 )
 
 
@@ -88,3 +90,54 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertTrue(runtime.path.exists())
         self.assertTrue(
             runtime.path.with_name(runtime.path.name + MARKER).exists())
+
+    def test_snapshot_cleanup_preserves_substituted_runtime(self):
+        runtime = create_test_snapshot(self.workspace)
+        marker = runtime.path.with_name(runtime.path.name + MARKER)
+        retained = runtime.path.with_name(runtime.path.name + "-retained")
+        real_validate = test_runtime._validate_marker
+
+        def validate_then_substitute(runtime_path, workspace, *args, **kwargs):
+            result = real_validate(runtime_path, workspace, *args, **kwargs)
+            runtime_path.rename(retained)
+            runtime_path.mkdir()
+            (runtime_path / "operator-owned.txt").write_text("keep")
+            return result
+
+        with patch.object(
+                test_runtime, "_validate_marker",
+                side_effect=validate_then_substitute):
+            with self.assertRaisesRegex(ValueError, "runtime directory changed"):
+                remove_test_snapshot(self.workspace)
+        self.assertEqual((retained / "app.py").read_text(), "print('source')\n")
+        self.assertEqual(
+            (runtime.path / "operator-owned.txt").read_text(), "keep")
+        self.assertTrue(marker.exists())
+
+    def test_snapshot_cleanup_preserves_substituted_marker(self):
+        runtime = create_test_snapshot(self.workspace)
+        marker = runtime.path.with_name(runtime.path.name + MARKER)
+        real_validate = test_runtime._validate_marker
+
+        def validate_then_substitute(runtime_path, workspace, *args, **kwargs):
+            result = real_validate(runtime_path, workspace, *args, **kwargs)
+            marker.unlink()
+            marker.write_text("operator-owned-marker")
+            return result
+
+        with patch.object(
+                test_runtime, "_validate_marker",
+                side_effect=validate_then_substitute):
+            with self.assertRaisesRegex(ValueError, "ownership marker changed"):
+                remove_test_snapshot(self.workspace)
+        self.assertTrue(runtime.path.exists())
+        self.assertEqual(marker.read_text(), "operator-owned-marker")
+
+    def test_snapshot_cleanup_bounds_ownership_marker_read(self):
+        runtime = create_test_snapshot(self.workspace)
+        marker = runtime.path.with_name(runtime.path.name + MARKER)
+        marker.write_bytes(b"x" * (MAX_MARKER_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "oversized"):
+            remove_test_snapshot(self.workspace)
+        self.assertTrue(runtime.path.exists())
+        self.assertTrue(marker.exists())

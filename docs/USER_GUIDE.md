@@ -331,6 +331,15 @@ rechecks that parent before planning or restoring. Before the final
 verifies that the path is gone; a replacement journal directory is preserved
 for inspection instead of being deleted.
 
+**Execution snapshot cleanup:** disposable test snapshots keep their ownership
+marker beside, rather than inside, the runtime directory. Cleanup validates the
+real parent, runtime directory and marker identities again immediately before
+removal; POSIX pins the original directory/file objects, while Windows uses
+identity checks without keeping handles open that could block cleanup. Marker
+input is capped at 4 KiB. If a runtime, marker or parent is substituted, ForgeOS
+fails closed and leaves the replacement available for inspection. These checks
+are a cleanup guard, not a full concurrent-writer sandbox.
+
 **Expired or replaced worker:** ForgeOS now rejects a stale worker's attempt to publish a test result, checkpoint or failure after its task lease expires or is reclaimed. The workspace may still contain edits from the interrupted run. Inspect it and any journal before using guarded recovery; do not delete or automatically overwrite files just because the status says Blocked.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.

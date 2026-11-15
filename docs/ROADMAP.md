@@ -1033,3 +1033,24 @@ while still exiting successfully. Compileall, documentation/link coverage and
 passed with a 1,982,176-byte Python tracemalloc peak and a 30,060,544-byte
 process peak RSS. Exact-head hosted checks remain required; Windows ACL review
 and physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — execution snapshot cleanup identity
+
+Disposable test snapshot cleanup now validates the real parent, runtime
+directory and ownership-marker identities through the cleanup decision. POSIX
+holds directory/file descriptors while Windows compares identity without
+holding handles that could block recursive removal or marker unlinking.
+Reparse points and hard-linked markers fail closed, the marker read is capped
+at 4 KiB, and substituted runtime, marker or parent paths remain available for
+inspection instead of being deleted.
+
+Regression coverage adds runtime and marker substitution preservation plus the
+bounded-marker guard. The focused runtime/security suite passed 28 tests. The
+full isolated suite passed 768 tests with 10 expected skips; the known
+local-model test may emit its existing `WinError 10053` server trace while
+still exiting successfully. Compileall, documentation/link coverage,
+`git diff --check` and the bounded 12 MiB x 3-cycle memory benchmark passed;
+the benchmark measured a 1,982,228-byte Python tracemalloc peak and a
+30,011,392-byte process peak RSS. Exact-head hosted checks remain required
+before merge; Windows ACL review and physical NTFS power-loss acceptance
+remain open.
