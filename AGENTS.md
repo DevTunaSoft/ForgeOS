@@ -26,7 +26,19 @@ These repository-wide instructions apply to every coding agent. Keep provider- o
 
 - Work on a dedicated topic branch and submit code changes as a **draft pull request** for review. Check issues and PRs first; identify dependencies and avoid duplicate or conflicting work.
 - Never merge, force-push, rewrite history, or discard/reset existing changes without explicit authorization. Do not silently overwrite user work. Respect Git permission prompts.
+- Do not use OpenCode's `--auto` permission-bypass flag for engineering work; it can auto-approve actions that are not explicitly denied.
 - Preserve the user's GitHub Copilot authentication, selected model/reasoning settings, and existing OpenCode configuration. Never request, print, commit, or place credentials or tokens in repository files.
+
+## Parallel fragments
+
+- Start with at most **two active coding fragments**. Parallelize only independent work; assign exclusive file ownership and serialize any shared-file or schema changes.
+- Every fragment brief must name its GitHub issue/task ID, objective and acceptance criteria, dependencies, owned files, unique branch/worktree, focused/regression tests, memory/CPU considerations, completion evidence, and draft-PR expectation.
+- Check for duplicate issue assignments and active PRs before launch. Do not start work covered by an open PR.
+- Coding sessions must use a distinct OpenCode Git worktree (for example `opencode run --worktree=<unique-name> --agent=coding-agent ...`). Verify the worktree root, branch, and status before edits. Do not launch a coding agent in the shared canonical checkout. Run QA from the same fragment worktree/commit with the read-only QA agent.
+- The lead must not launch more than two coding fragments at once. OpenCode's agent config has no hard sibling-concurrency cap; use permission prompts and the lead's fragment ledger as the control, and report this limitation rather than claiming enforcement.
+- Limit repair attempts to three per failure. Stop earlier when attempts repeat without measurable progress; record root cause, evidence, and the next safe action.
+- QA must inspect the exact fragment worktree/commit with its read-only agent and independently report tests, regressions, resource impact, and documentation status. QA must not edit files.
+- Do not merge fragment branches into `main`. Pushes, PR creation, merges, history rewrites, and destructive Git operations remain subject to the configured OpenCode permission prompts.
 
 ## Token-efficient work
 
