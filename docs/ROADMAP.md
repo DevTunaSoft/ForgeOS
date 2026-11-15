@@ -599,3 +599,13 @@ retained active database. Corrupt, linked, sidecar-bearing or unreadable
 staging fails closed without moving the rollback copy. This is bounded
 process-crash recovery evidence, not physical reboot or NTFS power-loss
 acceptance.
+
+### 2026-11-15 — published activation marker finalization
+
+An activation crash after the replacement is published can now be reconciled
+with `db-activation-finalize ACTIVE --confirm`. The command accepts only the
+`published` marker phase, validates both the new active and retained rollback
+databases through bounded read-only inspection, refuses sidecars and unexpected
+staging, and removes only the completed-operation marker. `prepared` and
+`old_moved` remain separate, explicit recovery states; physical reboot and
+NTFS power-loss acceptance remain open.

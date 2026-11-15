@@ -297,6 +297,14 @@ checks use immutable SQLite URI mode when no sidecars exist, avoiding
 inspection-created `-shm` files; an existing WAL or rollback journal remains
 on the normal read-only path.
 
+`Store.finalize_activation()` and `db-activation-finalize` accept only the
+`published` phase. They require explicit confirmation, validate the active and
+retained rollback databases through the bounded read-only preflight, refuse
+sidecars or any unexpected staged artifact, and remove only the completed
+marker. The rollback copy remains available for deliberate retention or a
+separate operator decision; `prepared` and `old_moved` phases cannot be
+finalized through this path.
+
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository. The optional GUI/CLI **Plan** and **Run tests only** actions now share `task_actions.py` instead of using independent, unguarded SQLite state writes. Direct tests require explicit host-test permission and use the engine's platform-specific test containment (frozen Windows supported presets only).

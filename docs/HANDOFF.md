@@ -2912,3 +2912,23 @@ the active Store.
 on Windows. Full isolated tests, documentation/link coverage, compileall,
 bounded memory and exact-head hosted Linux/Windows checks remain required for
 this branch; physical reboot and NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — published activation marker finalization
+
+**Change:** added `Store.finalize_activation()` and
+`db-activation-finalize`. After a process crash leaves a durable `published`
+marker, the command requires explicit confirmation, verifies that the active
+and retained rollback files are regular, sidecar-free, valid ForgeOS SQLite
+databases, refuses any unexpected staged artifact, and removes only the
+completed-operation marker. The rollback copy is retained. `prepared` and
+`old_moved` markers are refused by this path and continue to require their
+separate recovery decisions.
+
+**Regression coverage:** activation tests cover confirmation, successful
+published-marker reconciliation and refusal when staged ambiguity remains.
+The CLI regression confirms finalization does not initialize the active Store.
+
+**Local verification:** focused activation and database CLI tests passed 32/32
+on Windows. Full isolated tests, documentation/link coverage, compileall,
+bounded memory and exact-head hosted Linux/Windows checks remain required for
+this branch; physical reboot and NTFS power-loss acceptance remain open.

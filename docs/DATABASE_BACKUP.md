@@ -184,10 +184,14 @@ rollback refuses to delete it. After inspecting that file, verifying it is
 not needed and confirming the old database is the desired result, use
 `py -m forgeos db-activation-rollback ACTIVE --confirm --discard-staged`.
 ForgeOS validates the staged SQLite file before deleting only that staged path;
-it never replaces an occupied destination or rollback path. A `prepared` or
-`published` marker is inspection-only until its paths are understood. The
-marker is evidence of an interrupted operation, not a guarantee of physical
-power-loss recovery.
+it never replaces an occupied destination or rollback path. If the marker says
+`published`, the new active database and retained rollback both exist and the
+staged path is absent, use `py -m forgeos db-activation-finalize ACTIVE
+--confirm` after stopping ForgeOS. Finalization validates both databases and
+removes only the completed-operation marker; it retains the rollback copy.
+A `prepared` marker remains inspection-only until its paths are understood.
+The marker is evidence of an interrupted operation, not a guarantee of
+physical power-loss recovery.
 
 ## Security and recovery limitations
 
