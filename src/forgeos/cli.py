@@ -126,6 +126,19 @@ def main(argv=None):
         'source', help='Existing recovery bundle ZIP path')
     recovery_extract_resume.add_argument(
         'destination', help='Existing incomplete recovery directory')
+    recovery_auth = sub.add_parser(
+        'recovery-bundle-auth',
+        help='Create a detached HMAC authentication record for a recovery ZIP')
+    recovery_auth.add_argument('source', help='Existing recovery bundle ZIP path')
+    recovery_auth.add_argument('key', help='Existing shared-secret key file')
+    recovery_auth.add_argument('destination', help='New authentication record path')
+    recovery_auth_check = sub.add_parser(
+        'recovery-bundle-auth-check',
+        help='Verify a recovery ZIP with a detached HMAC record')
+    recovery_auth_check.add_argument('source', help='Existing recovery bundle ZIP path')
+    recovery_auth_check.add_argument(
+        'authentication', help='Existing detached authentication record')
+    recovery_auth_check.add_argument('key', help='Existing shared-secret key file')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -419,6 +432,18 @@ def main(argv=None):
             args.source, args.destination)
         print(f'Resumed recovery bundle extraction: {resumed}')
         return 0
+    if args.action == 'recovery-bundle-auth':
+        from .recovery_auth import export_recovery_bundle_auth
+        exported = export_recovery_bundle_auth(
+            args.source, args.key, args.destination)
+        print(f'Exported recovery bundle authentication: {exported}')
+        return 0
+    if args.action == 'recovery-bundle-auth-check':
+        from .recovery_auth import check_recovery_bundle_auth
+        report = check_recovery_bundle_auth(
+            args.source, args.authentication, args.key)
+        print(json.dumps(report, indent=2))
+        return 0 if report['valid'] else 1
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))

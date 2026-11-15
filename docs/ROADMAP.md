@@ -425,3 +425,14 @@ links, stages only missing entries and promotes the marker to `complete` after
 the same final index and package checks. This is an explicit single-writer
 operator path with no background retry, task execution, journal replay or
 physical power-loss acceptance.
+
+### 2026-11-15 — detached recovery package authentication
+
+`recovery-bundle-auth` and `recovery-bundle-auth-check` now provide a detached
+shared-secret HMAC-SHA-256 record for a validated recovery ZIP. The package is
+streamed with the existing 64 KiB safety boundary; key and record sizes are
+bounded, the secret is never copied into the artifact, and wrong keys or
+package/record tampering fail closed. This adds operator-controlled
+authenticity, not encryption, public-key signer identity, database restore or
+physical power-loss durability; protected key storage and rotation remain
+future work.

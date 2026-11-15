@@ -321,3 +321,18 @@ entry and evidence bounds remain active.
 Resume is explicit and single-writer: it does not install a daemon, polling
 loop or retry worker. If an existing file is changed, linked or otherwise
 unsafe, the operation fails closed and leaves the marker incomplete.
+
+## Detached recovery authentication allocation boundary
+
+`recovery-bundle-auth` validates the package and streams its bytes once through
+the existing 64 KiB artifact digest boundary while updating HMAC-SHA-256. The
+shared-secret key is bounded to 32 bytes through 4 KiB and the published JSON
+record to 4 KiB; no package or secret-sized copy is accumulated beyond those
+limits. Verification repeats the same bounded package stream and compares the
+recorded size, SHA-256 and HMAC with constant-time HMAC comparison.
+
+The authentication record is a detached authenticity control only. It does
+not encrypt the ZIP, provide public-key signer identity or protect the key
+file; operators must store and rotate the shared secret separately. ZIP/zlib
+buffers, filesystem cache and process RSS remain outside these application-
+level allocation limits.
