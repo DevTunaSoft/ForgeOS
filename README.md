@@ -386,6 +386,10 @@ power-loss recovery. If an interrupted operation has a `published` marker,
 both databases are present and the staged path is absent, use
 `db-activation-finalize ACTIVE --confirm` to validate them and clear only that
 completed-operation marker.
+If the marker is still `prepared`, the active database remains in place; after
+inspecting the paths, use `db-activation-abandon ACTIVE --confirm
+--discard-staged` to validate and remove the unwanted staged replacement and
+clear only that marker.
 See [database backup and recovery limits](docs/DATABASE_BACKUP.md).
 This is not an encrypted, scheduled or physically accepted disaster-recovery
 solution. A previously created `db-backup` can be included in a passive

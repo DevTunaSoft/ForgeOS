@@ -305,6 +305,13 @@ marker. The rollback copy remains available for deliberate retention or a
 separate operator decision; `prepared` and `old_moved` phases cannot be
 finalized through this path.
 
+`Store.abandon_activation()` and `db-activation-abandon` accept only the
+`prepared` phase. They require explicit confirmation, verify that the active
+database is still present and no rollback path appeared, and preserve the
+staged replacement unless `--discard-staged` is explicitly supplied. With
+that option, the staged file is validated and removed before the prepared
+marker is cleared; the active database is never moved.
+
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository. The optional GUI/CLI **Plan** and **Run tests only** actions now share `task_actions.py` instead of using independent, unguarded SQLite state writes. Direct tests require explicit host-test permission and use the engine's platform-specific test containment (frozen Windows supported presets only).
