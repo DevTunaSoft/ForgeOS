@@ -81,8 +81,9 @@ class OnlineBackupTests(unittest.TestCase):
         staging = self.root / "staging.sqlite3"
         target = self.root / "published.sqlite3"
         staging.write_bytes(b"snapshot")
+        real_rename = os.rename
         with patch("forgeos.core.os.name", "nt"), \
-                patch("forgeos.core.os.rename") as rename, \
+                patch("forgeos.core.os.rename", wraps=real_rename) as rename, \
                 patch("forgeos.core.os.link") as link, \
                 patch("forgeos.core._sync_publication_directory") as sync:
             from forgeos.core import _publish_database_copy
@@ -95,8 +96,9 @@ class OnlineBackupTests(unittest.TestCase):
         staging = self.root / "staging.sqlite3"
         target = self.root / "published.sqlite3"
         staging.write_bytes(b"snapshot")
+        real_link = os.link
         with patch("forgeos.core.os.name", "posix"), \
-                patch("forgeos.core.os.link") as link, \
+                patch("forgeos.core.os.link", wraps=real_link) as link, \
                 patch("forgeos.core.os.rename") as rename, \
                 patch("forgeos.core._sync_publication_directory") as sync:
             from forgeos.core import _publish_database_copy
@@ -104,6 +106,71 @@ class OnlineBackupTests(unittest.TestCase):
         link.assert_called_once_with(staging, target)
         rename.assert_not_called()
         sync.assert_called_once_with(target.parent)
+
+    def test_publication_refuses_redirected_staging(self):
+        staging = self.root / "staging.sqlite3"
+        outside = self.root / "outside.sqlite3"
+        outside.write_bytes(b"outside")
+        try:
+            staging.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("File symlinks unavailable")
+        target = self.root / "published.sqlite3"
+        from forgeos.core import _publish_database_copy
+        with self.assertRaisesRegex(ValueError, "staging|regular"):
+            _publish_database_copy(staging, target)
+        self.assertFalse(target.exists())
+        self.assertEqual(outside.read_bytes(), b"outside")
+
+    def test_publication_refuses_redirected_parent(self):
+        staging = self.root / "staging.sqlite3"
+        staging.write_bytes(b"snapshot")
+        outside = self.root / "outside"
+        outside.mkdir()
+        redirected = self.root / "redirected"
+        try:
+            redirected.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Directory symlinks unavailable")
+        target = redirected / "published.sqlite3"
+        from forgeos.core import _publish_database_copy
+        with self.assertRaisesRegex(ValueError, "Publication directory"):
+            _publish_database_copy(staging, target)
+        self.assertFalse((outside / "published.sqlite3").exists())
+        self.assertTrue(staging.exists())
+
+    def test_publication_rechecks_staging_identity(self):
+        from forgeos import core
+        staging = self.root / "staging.sqlite3"
+        staging.write_bytes(b"snapshot")
+        outside = self.root / "outside.sqlite3"
+        outside.write_bytes(b"outside")
+        try:
+            probe = self.root / "symlink-probe.sqlite3"
+            probe.symlink_to(outside)
+            probe.unlink()
+        except (OSError, NotImplementedError):
+            self.skipTest("File symlinks unavailable")
+        target = self.root / "published.sqlite3"
+        real_info = core._publication_file_info
+        swapped = {"value": False}
+
+        def info_then_swap(path, description, *args, **kwargs):
+            value = real_info(path, description, *args, **kwargs)
+            if not swapped["value"]:
+                staging.unlink()
+                staging.symlink_to(outside)
+                swapped["value"] = True
+            return value
+
+        with patch.object(
+                core, "_publication_file_info", side_effect=info_then_swap):
+            with self.assertRaisesRegex(ValueError, "staging|regular"):
+                core._publish_database_copy(staging, target)
+        self.assertTrue(swapped["value"])
+        self.assertTrue(staging.is_symlink())
+        self.assertFalse(target.exists())
+        self.assertEqual(outside.read_bytes(), b"outside")
 
     def test_posix_directory_sync_flushes_and_closes_descriptor(self):
         from forgeos.core import _sync_publication_directory

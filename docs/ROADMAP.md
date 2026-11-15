@@ -742,6 +742,26 @@ reported a 1,982,228-byte Python tracemalloc peak and a 30,060,544-byte
 process peak RSS. Exact-head hosted checks remain required; Windows ACL review
 and physical NTFS power-loss acceptance remain open.
 
+### 2026-11-15 — shared database publication identity checks
+
+The shared SQLite artifact publisher now rejects linked or Windows-reparse
+staging files, publication directories and occupied destinations. It rechecks
+the staging file identity and parent-directory identity before the exclusive
+rename or hard-link operation, then verifies the published artifact and parent
+again. The same boundary covers database backups, restore copies, manifests,
+handoff manifests and activation markers. This narrows path substitution but
+does not provide a non-cooperating-writer lock or physical NTFS power-loss
+acceptance.
+
+Focused core/database/CLI recovery tests passed 89 tests. The full isolated
+suite passed 732 tests with 9 expected skips; the known local-model test may
+emit its existing `WinError 10053` server trace while still exiting
+successfully. Compileall, documentation/link coverage and `git diff --check`
+passed. The bounded 12 MiB x 3-cycle memory benchmark reported a
+1,982,228-byte Python tracemalloc peak and a 30,056,448-byte process peak RSS.
+Exact-head hosted checks remain required; Windows ACL review and physical NTFS
+power-loss acceptance remain open.
+
 ### 2026-11-15 — staged edit publication identity checks
 
 Before replacing an edit target, transaction publication now validates every

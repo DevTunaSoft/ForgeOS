@@ -694,6 +694,10 @@ py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup.sqlite3" --manifest "
 Always supply a **new filename**. An existing backup is never overwritten.
 ForgeOS includes committed SQLite WAL changes and checks the completed
 snapshot before making it visible. No background backup process is started.
+The shared publication check rejects linked or Windows-reparse staging files
+and parent directories, and rechecks their identities before and after the
+no-overwrite operation. This narrows path-substitution risk but is not a lock
+against a non-cooperating writer or a physical power-loss guarantee.
 The optional manifest is a bounded JSON record of the backup size and streamed
 SHA-256; require it during offline inspection with
 `db-restore-copy SOURCE DESTINATION --manifest MANIFEST`. It detects accidental
