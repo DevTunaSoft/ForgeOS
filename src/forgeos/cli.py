@@ -139,6 +139,19 @@ def main(argv=None):
     recovery_bundle_db_restore.add_argument(
         'destination', help='New SQLite database path; never overwrites')
     _add_recovery_auth_gate(recovery_bundle_db_restore)
+    recovery_bundle_db_activate = sub.add_parser(
+        'recovery-bundle-db-restore-activate',
+        help='Activate a bundled database offline with rollback')
+    recovery_bundle_db_activate.add_argument(
+        'source', help='Existing recovery bundle ZIP path')
+    recovery_bundle_db_activate.add_argument(
+        'destination', help='Active database path; ForgeOS must be stopped')
+    recovery_bundle_db_activate.add_argument(
+        'rollback', help='New path that retains the old active database')
+    recovery_bundle_db_activate.add_argument(
+        '--confirm', action='store_true',
+        help='Confirm ForgeOS is stopped and activation is intended')
+    _add_recovery_auth_gate(recovery_bundle_db_activate)
     recovery_bundle_check = sub.add_parser(
         'recovery-bundle-check',
         help='Verify one bounded recovery bundle ZIP')
@@ -470,6 +483,14 @@ def main(argv=None):
             args.source, args.destination,
             authentication=authentication, key=key)
         print(f'Restored recovery bundle database copy: {restored}')
+        return 0
+    if args.action == 'recovery-bundle-db-restore-activate':
+        from .recovery_database import activate_recovery_bundle_database_to
+        authentication, key = _recovery_auth_gate(parser, args)
+        activated = activate_recovery_bundle_database_to(
+            args.source, args.destination, args.rollback,
+            authentication=authentication, key=key, confirm=args.confirm)
+        print(f'Activated recovery bundle database: {activated}')
         return 0
     if args.action == 'recovery-bundle-check':
         authentication, key = _recovery_auth_gate(parser, args)

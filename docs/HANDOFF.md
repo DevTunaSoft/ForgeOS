@@ -2797,3 +2797,29 @@ SQLite connection so it does not create or hold sidecars.
 existing package and extraction suites remained green. Full test,
 documentation, memory, exact-head hosted Linux/Windows, packaging and physical
 interruption evidence remain required for this branch.
+
+## 2026-11-15 — explicit activation from passive recovery bundles
+
+**Change:** added `recovery-bundle-db-restore-activate`. The command requires
+explicit `--confirm`, validates the complete recovery ZIP and optional detached
+HMAC, stages only the bundled database and manifest in a private temporary
+directory, and delegates to `Store.activate_backup_to()`. The existing active
+database is moved to a new rollback path before the replacement is published;
+the core flushed marker and fail-closed rollback behavior remain authoritative.
+The command never initializes the active `Store`, replays the handoff, merges
+histories or performs automatic failover. Active and rollback paths remain
+subject to the core same-directory, sidecar and occupied-path checks.
+
+**Regression coverage:** direct tests cover successful bundled activation with
+rollback retention, missing confirmation without side effects, and wrong-key
+refusal before publication. The CLI regression proves the new dispatch enforces
+confirmation before opening the package or initializing the active database.
+
+**Local verification:** focused recovery database and CLI suites passed 10/10;
+the full isolated suite passed 696 tests with 8 expected skips. Documentation
+link coverage, compileall and `git diff --check` passed. The bounded memory
+benchmark passed for three 12 MiB cycles with a 1,982,228-byte Python
+tracemalloc peak and a 29,941,760-byte process peak RSS. These are local
+synthetic/process measurements, not physical Windows or model-memory
+acceptance. Exact-head hosted Linux/Windows, packaging and physical
+interruption evidence remain required for this branch.

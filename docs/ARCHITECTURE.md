@@ -229,6 +229,15 @@ delegates to `Store.restore_backup_to()` for read-only SQLite verification and
 no-overwrite publication. It rejects bundles without a database and never
 activates the running database or initializes a `Store` instance.
 
+`activate_recovery_bundle_database_to()` is the separate explicit activation
+bridge. It applies the same package, optional HMAC and streamed-digest checks,
+stages the bundled database under the active database's directory, and then
+delegates to `Store.activate_backup_to()` with explicit confirmation. The core
+activation boundary retains the old active file at a new rollback path, uses a
+flushed phase marker, refuses sidecars and occupied recovery paths, and attempts
+fail-closed rollback after publication failure. This bridge never initializes
+the running `Store` or performs automatic failover.
+
 `export_recovery_bundle_auth()` adds a detached operator-held authenticity
 record without changing the passive ZIP format. It validates the package,
 streams the complete ZIP through the existing 64 KiB artifact digest boundary

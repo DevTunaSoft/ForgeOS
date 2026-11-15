@@ -1,4 +1,4 @@
-"""Copy-only database restoration from validated recovery bundles."""
+"""Database restoration and explicit activation from validated bundles."""
 from contextlib import closing
 import json
 import os
@@ -10,7 +10,10 @@ import zipfile
 
 from forgeos.core import Store
 from forgeos.recovery_auth import export_recovery_bundle_auth
-from forgeos.recovery_database import restore_recovery_bundle_database_to
+from forgeos.recovery_database import (
+    activate_recovery_bundle_database_to,
+    restore_recovery_bundle_database_to,
+)
 from forgeos.recovery_package import (
     RECOVERY_BUNDLE_DATABASE_PREFIX,
     export_recovery_bundle,
@@ -82,6 +85,58 @@ class RecoveryBundleDatabaseTests(unittest.TestCase):
         self.assertEqual(descriptions, ["restored database task"])
         self.assertFalse(Path(str(destination) + "-wal").exists())
         self.assertFalse(Path(str(destination) + "-shm").exists())
+
+    def _descriptions(self, path):
+        with closing(sqlite3.connect(
+                path.as_uri() + "?mode=ro&immutable=1", uri=True)) as database:
+            return [row[0] for row in database.execute(
+                "SELECT description FROM tasks ORDER BY id")]
+
+    def _create_active_database(self):
+        source = self.root / "active-source.sqlite3"
+        active = self.root / "active.sqlite3"
+        store = Store(source)
+        try:
+            store.add(str(self.worktree), "old active task")
+            store.backup_to(active)
+        finally:
+            store.close()
+        return active
+
+    def test_activates_bundled_database_with_explicit_rollback(self):
+        active = self._create_active_database()
+        rollback = self.root / "rollback.sqlite3"
+        self.assertEqual(
+            activate_recovery_bundle_database_to(
+                self.bundle, active, rollback,
+                authentication=self.authentication, key=self.key, confirm=True),
+            active)
+        self.assertEqual(self._descriptions(active), ["restored database task"])
+        self.assertEqual(self._descriptions(rollback), ["old active task"])
+        self.assertFalse(Path(str(active) + ".forgeos-activation.json").exists())
+
+    def test_activation_requires_confirmation_without_side_effects(self):
+        active = self.root / "active.sqlite3"
+        rollback = self.root / "rollback.sqlite3"
+        with self.assertRaisesRegex(ValueError, "confirmation"):
+            activate_recovery_bundle_database_to(
+                self.bundle, active, rollback, confirm=False)
+        self.assertFalse(active.exists())
+        self.assertFalse(rollback.exists())
+
+    def test_activation_authentication_rejects_before_publication(self):
+        wrong_key = self.root / "wrong.key"
+        wrong_key.write_bytes(b"w" * 64)
+        if os.name != "nt":
+            wrong_key.chmod(0o600)
+        active = self.root / "active.sqlite3"
+        rollback = self.root / "rollback.sqlite3"
+        with self.assertRaisesRegex(ValueError, "authentication failed"):
+            activate_recovery_bundle_database_to(
+                self.bundle, active, rollback,
+                authentication=self.authentication, key=wrong_key, confirm=True)
+        self.assertFalse(active.exists())
+        self.assertFalse(rollback.exists())
 
     def test_authentication_gate_rejects_wrong_key_before_copy(self):
         wrong_key = self.root / "wrong.key"

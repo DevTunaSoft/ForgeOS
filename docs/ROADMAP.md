@@ -512,4 +512,24 @@ its detached HMAC, stages only the bundled database and manifest, and delegates
 to the existing read-only SQLite restore-copy boundary. The destination must
 be new; the active database is never opened or replaced, and bundles without
 database artifacts are refused. Explicit offline activation, journal replay,
-encryption and physical power-loss acceptance remain separate future work.
+encryption and physical power-loss acceptance remain separate concerns; the
+bundle activation bridge is tracked in the next entry.
+
+### 2026-11-15 — explicit activation from passive recovery bundles
+
+`recovery-bundle-db-restore-activate` now validates an optional detached HMAC,
+stages only the bundled database and manifest, and delegates to the existing
+guarded offline activation boundary. It requires `--confirm`, retains the old
+active database at a new rollback path, and preserves the core marker and
+fail-closed recovery behavior. The command never initializes the active Store,
+replays the handoff, merges histories or performs automatic failover. Regression
+coverage includes successful rollback retention, confirmation refusal,
+authentication refusal and database-free CLI dispatch. Encryption, journal
+replay and physical power-loss acceptance remain open.
+
+Focused recovery database and CLI tests passed 10/10; the full isolated suite
+passed 696 tests with 8 expected skips. Documentation/link coverage, compileall
+and `git diff --check` passed. The bounded memory benchmark passed for three
+12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
+29,941,760-byte process peak RSS; this remains a synthetic process benchmark,
+not physical Windows or model-memory acceptance.

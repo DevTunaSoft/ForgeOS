@@ -122,6 +122,30 @@ stop ForgeOS, switch the GUI's active database, merge task histories, or
 replace an existing database. The new copy is for inspection or a deliberately
 separate ForgeOS launch.
 
+## Explicit activation from a recovery bundle
+
+To deliberately replace the active database with the bundled verified copy,
+first stop ForgeOS and every process that can open the database. Then provide
+a new rollback path and explicit confirmation:
+
+```powershell
+py -m forgeos recovery-bundle-db-restore-activate `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  "$env:USERPROFILE\.forgeos\tasks.sqlite3" `
+  "$env:USERPROFILE\.forgeos\tasks-before-bundle-activation.sqlite3" `
+  --confirm
+```
+
+The active and rollback paths must be in the same existing, non-symlinked
+directory. ForgeOS validates the complete package, optionally verifies its
+detached HMAC, stages the database privately, and then delegates to the
+existing guarded activation boundary. That boundary retains the old active
+file before publishing the replacement, refuses SQLite sidecars and occupied
+marker/rollback paths, and leaves bounded marker evidence if recovery cannot
+finish. Add `--authentication AUTH_RECORD --key KEY` to require the detached
+HMAC before staging. This is an explicit offline operator action, not journal
+replay, history merging or automatic failover.
+
 ## Explicit offline activation with rollback
 
 When a deliberate replacement of the active database is required, first exit
