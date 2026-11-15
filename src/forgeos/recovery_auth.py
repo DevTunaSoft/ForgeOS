@@ -10,7 +10,12 @@ import secrets
 import stat
 import tempfile
 
-from .core import _publish_database_copy
+from .core import (
+    _cleanup_private_staging,
+    _hold_private_staging,
+    _publication_directory_info,
+    _publish_database_copy,
+)
 from .recovery_bundle import (
     _artifact_digest,
     _filename,
@@ -41,11 +46,15 @@ def generate_recovery_bundle_auth_key(destination: str | Path, *,
     key = secrets.token_bytes(size)
     if len(key) != size:
         raise RuntimeError("Recovery authentication key generation was incomplete")
+    parent_info = _publication_directory_info(target.parent)
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-recovery-auth-key-", suffix=".tmp", dir=target.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Recovery authentication key staging")
         os.chmod(staging, 0o600)
         with staging.open("wb") as output:
             output.write(key)
@@ -54,7 +63,9 @@ def generate_recovery_bundle_auth_key(destination: str | Path, *,
         _publish_database_copy(staging, target)
         return target
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info,
+            "Recovery authentication key staging")
 
 
 def _read_bounded_file(source: Path, *, max_bytes: int,
@@ -147,11 +158,15 @@ def export_recovery_bundle_auth(package: str | Path, key: str | Path,
                + "\n").encode("utf-8")
     if len(payload) > MAX_RECOVERY_AUTH_BYTES:
         raise RuntimeError("Recovery authentication record is oversized")
+    parent_info = _publication_directory_info(target.parent)
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-recovery-auth-", suffix=".tmp", dir=target.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Recovery authentication record staging")
         with staging.open("wb") as output:
             output.write(payload)
             output.flush()
@@ -159,7 +174,9 @@ def export_recovery_bundle_auth(package: str | Path, key: str | Path,
         _publish_database_copy(staging, target)
         return target
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info,
+            "Recovery authentication record staging")
 
 
 def _read_authentication_record(source: Path) -> dict:

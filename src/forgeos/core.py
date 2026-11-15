@@ -706,18 +706,23 @@ def _publish_backup_manifest(database: Path, manifest: Path) -> None:
     }, sort_keys=True, separators=(",", ":")) + "\n"
     if len(payload.encode("utf-8")) > MAX_BACKUP_MANIFEST_BYTES:
         raise RuntimeError("Backup manifest unexpectedly exceeds its bound")
+    parent_info = _publication_directory_info(manifest.parent)
     import tempfile
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-manifest-", suffix=".tmp", dir=manifest.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Backup manifest staging")
         staging.write_text(payload, encoding="utf-8", newline="\n")
         with staging.open("rb+") as stream:
             os.fsync(stream.fileno())
         _publish_database_copy(staging, manifest)
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info, "Backup manifest staging")
 
 
 def _read_handoff_manifest(path: str | Path) -> dict[str, object]:
@@ -768,18 +773,23 @@ def _publish_handoff_manifest(handoff: Path, manifest: Path) -> None:
     }, sort_keys=True, separators=(",", ":")) + "\n"
     if len(payload.encode("utf-8")) > MAX_JOURNAL_HANDOFF_MANIFEST_BYTES:
         raise RuntimeError("Journal handoff manifest unexpectedly exceeds its bound")
+    parent_info = _publication_directory_info(manifest.parent)
     import tempfile
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-handoff-manifest-", suffix=".tmp", dir=manifest.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Handoff manifest staging")
         staging.write_text(payload, encoding="utf-8", newline="\n")
         with staging.open("rb+") as stream:
             os.fsync(stream.fileno())
         _publish_database_copy(staging, manifest)
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info, "Handoff manifest staging")
 
 
 def validate_task_description(description: str) -> str:
@@ -1004,12 +1014,16 @@ class Store:
         if (not target.parent.is_dir() or target.parent.is_symlink()
                 or target.is_symlink() or target.exists()):
             raise ValueError('Journal export must be a new file in an existing directory')
+        parent_info = _publication_directory_info(target.parent)
         import tempfile
         fd, name = tempfile.mkstemp(
             prefix='.forgeos-journal-', suffix='.tmp', dir=target.parent)
         os.close(fd)
         staging = Path(name)
+        staging_identity = None
         try:
+            staging_identity = _hold_private_staging(
+                staging, 'Journal export staging')
             with staging.open('w', encoding='utf-8', newline='\n') as output:
                 if task_id is None:
                     cursor = self.db.execute(
@@ -1035,7 +1049,8 @@ class Store:
             _publish_database_copy(staging, target)
             return target
         finally:
-            staging.unlink(missing_ok=True)
+            _cleanup_private_staging(
+                staging, staging_identity, parent_info, 'Journal export staging')
 
     def export_handoff(self, destination: str | Path, *, task_id: int,
                        manifest: str | Path | None = None) -> Path:
@@ -1057,6 +1072,7 @@ class Store:
         if manifest is not None:
             manifest_target = Path(manifest).expanduser().absolute()
             _validate_handoff_manifest_destination(target, manifest_target)
+        parent_info = _publication_directory_info(target.parent)
         task = self.db.execute(
             'SELECT id,status,attempts,created,updated FROM tasks WHERE id=?',
             (task_id,)).fetchone()
@@ -1073,6 +1089,7 @@ class Store:
             prefix='.forgeos-handoff-', suffix='.tmp', dir=target.parent)
         os.close(fd)
         staging = Path(name)
+        staging_identity = None
         event_count = 0
         last_event_id = None
 
@@ -1082,6 +1099,8 @@ class Store:
             output.write('\n')
 
         try:
+            staging_identity = _hold_private_staging(
+                staging, 'Journal handoff staging')
             with staging.open('w', encoding='utf-8', newline='\n') as output:
                 write_record(output, {
                     'record': 'header', 'format': JOURNAL_HANDOFF_FORMAT,
@@ -1132,7 +1151,8 @@ class Store:
                 _publish_handoff_manifest(target, manifest_target)
             return target
         finally:
-            staging.unlink(missing_ok=True)
+            _cleanup_private_staging(
+                staging, staging_identity, parent_info, 'Journal handoff staging')
 
     @staticmethod
     def _is_finite_handoff_number(value) -> bool:
@@ -1438,11 +1458,15 @@ class Store:
         if self.db.in_transaction:
             raise RuntimeError("Finish the active task transaction before backup")
         self.check_integrity()
+        parent_info = _publication_directory_info(target.parent)
         fd, name = tempfile.mkstemp(
             prefix=".forgeos-backup-", suffix=".tmp", dir=target.parent)
         os.close(fd)
         staging = Path(name)
+        staging_identity = None
         try:
+            staging_identity = _hold_private_staging(
+                staging, "Database backup staging")
             with closing(sqlite3.connect(staging)) as snapshot:
                 self.db.backup(snapshot, pages=64, sleep=0.05)
                 checked = snapshot.execute("PRAGMA integrity_check(1)").fetchone()
@@ -1456,7 +1480,8 @@ class Store:
                 _publish_backup_manifest(target, manifest_target)
             return target
         finally:
-            staging.unlink(missing_ok=True)
+            _cleanup_private_staging(
+                staging, staging_identity, parent_info, "Database backup staging")
 
     @staticmethod
     def restore_backup_to(source: str | Path, destination: str | Path,
@@ -1484,11 +1509,15 @@ class Store:
                 or target.exists()):
             raise ValueError(
                 "Restore destination must be a new file in an existing directory")
+        parent_info = _publication_directory_info(target.parent)
         fd, name = tempfile.mkstemp(
             prefix=".forgeos-restore-", suffix=".tmp", dir=target.parent)
         os.close(fd)
         staged = Path(name)
+        staged_identity = None
         try:
+            staged_identity = _hold_private_staging(
+                staged, "Restore staging")
             # mode=ro protects the input from SQLite writes. The online
             # backup API reads a consistent snapshot, including live WAL.
             with closing(sqlite3.connect(src.as_uri() + "?mode=ro", uri=True)) as original:
@@ -1508,7 +1537,8 @@ class Store:
             _publish_database_copy(staged, target)
             return target
         finally:
-            staged.unlink(missing_ok=True)
+            _cleanup_private_staging(
+                staged, staged_identity, parent_info, "Restore staging")
 
     @staticmethod
     def activate_backup_to(source: str | Path, destination: str | Path,

@@ -3367,3 +3367,23 @@ full isolated suite passed 753 tests with 10 expected skips. The known
 local-model test may emit its existing `WinError 10053` server trace while
 still exiting successfully. Exact-head hosted checks remain required before
 merge. Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — recovery artifact cleanup identity
+
+**Change:** all shared-publication callers now use descriptor-backed private
+staging cleanup: database backups/restores, journal exports, recovery
+indexes/packages, detached authentication records, and worktree
+manifests/archives. The real parent is captured before staging; POSIX keeps
+the original descriptor through cleanup so inode reuse cannot authorize
+deletion of a replacement, while Windows retains file-identity checks without
+blocking exclusive rename.
+
+**Verification:** substituted-temporary preservation regressions cover each
+recovery publisher family plus representative backup and journal handoff
+paths. Focused tests passed 105 tests with one platform skip. The full
+isolated suite passed 760 tests with 10 expected skips; the known local-model
+test may emit its existing `WinError 10053` server trace while still exiting
+successfully. The 12 MiB x 3-cycle memory benchmark passed with a
+1,982,228-byte Python tracemalloc peak and a 29,954,048-byte process peak RSS.
+Exact-head hosted checks remain required before merge. Windows ACL review and
+physical NTFS power-loss acceptance remain open.

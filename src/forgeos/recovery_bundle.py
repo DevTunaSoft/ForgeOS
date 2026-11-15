@@ -16,7 +16,10 @@ from .core import (
     MAX_JOURNAL_HANDOFF_LINE_BYTES,
     MAX_JOURNAL_HANDOFF_MANIFEST_BYTES,
     Store,
+    _cleanup_private_staging,
     _database_sidecars,
+    _hold_private_staging,
+    _publication_directory_info,
     _verify_backup_manifest,
     _publish_database_copy,
 )
@@ -294,12 +297,16 @@ def export_recovery_bundle_index(
                 "compressed_sha256": compressed_digest,
             })
 
+    parent_info = _publication_directory_info(target.parent)
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-recovery-index-", suffix=".tmp", dir=target.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     written = 0
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Recovery bundle index staging")
         with staging.open("w", encoding="utf-8", newline="\n") as output:
             written = _write_record(output, {
                 "record": "header", "format": RECOVERY_BUNDLE_INDEX_FORMAT},
@@ -346,7 +353,9 @@ def export_recovery_bundle_index(
         _publish_database_copy(staging, target)
         return target
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info,
+            "Recovery bundle index staging")
 
 
 def _index_issue(issues: list, message: str, line: int, path: str,

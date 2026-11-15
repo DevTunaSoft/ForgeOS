@@ -32,6 +32,13 @@ shared publication boundary also rejects linked/reparse staging files and
 parent directories, then rechecks their identities before and after making
 the new artifact visible.
 
+All backup, restore, journal-handoff and recovery-artifact publishers now
+capture their real staging parent and use identity-bound cleanup. POSIX keeps
+the original staging descriptor open through cleanup so immediate inode reuse
+cannot authorize deletion of a replacement; Windows uses file identity
+checks without holding a handle that could block exclusive rename. A
+substituted private temporary remains for inspection.
+
 Read-only inspection, streamed manifest hashing and restore-copy capture the
 source regular-file identity before use and recheck its device/inode, size and
 modification time afterward. A link, Windows reparse point or source

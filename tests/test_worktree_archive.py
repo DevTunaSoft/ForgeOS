@@ -91,6 +91,21 @@ class WorktreeArchiveTests(unittest.TestCase):
         self.assertFalse(self.archive.exists())
         self.assertEqual(list(self.root.glob(".forgeos-worktree-archive-*")), [])
 
+    def test_publication_failure_preserves_substituted_staging(self):
+        def substitute(staging, target):
+            staging.unlink()
+            staging.write_bytes(b"operator-owned archive staging")
+            raise OSError("disk unavailable")
+
+        with patch("forgeos.worktree_archive._publish_database_copy",
+                   side_effect=substitute):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                export_worktree_archive(self.worktree, self.archive)
+        self.assertFalse(self.archive.exists())
+        staging = list(self.root.glob(".forgeos-worktree-archive-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"operator-owned archive staging")
+
     def test_reserved_manifest_name_and_archive_size_are_refused(self):
         (self.worktree / WORKTREE_ARCHIVE_MANIFEST).write_text("source")
         with self.assertRaisesRegex(ValueError, "reserved archive name"):

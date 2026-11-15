@@ -11,6 +11,9 @@ import zipfile
 from .core import (
     MAX_BACKUP_MANIFEST_BYTES,
     MAX_JOURNAL_HANDOFF_MANIFEST_BYTES,
+    _cleanup_private_staging,
+    _hold_private_staging,
+    _publication_directory_info,
     _publish_database_copy,
 )
 from .recovery_bundle import (
@@ -124,6 +127,7 @@ def export_recovery_bundle(
     evidence_root = (Path(evidence_directory).expanduser().absolute()
                      if evidence_directory is not None else None)
 
+    parent_info = _publication_directory_info(target.parent)
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-bundle-index-", suffix=".jsonl", dir=target.parent)
     os.close(fd)
@@ -133,11 +137,17 @@ def export_recovery_bundle(
         prefix=".forgeos-recovery-bundle-", suffix=".tmp", dir=target.parent)
     os.close(staging_fd)
     staging = Path(staging_name)
+    staging_identity = None
+    index_identity = None
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Recovery bundle staging")
         export_recovery_bundle_index(
             handoff_path, archive_path, index_path,
             manifest=manifest_path, evidence_directory=evidence_root,
             database=database_path, database_manifest=database_manifest_path)
+        index_identity = _hold_private_staging(
+            index_path, "Recovery bundle index")
         index_report = check_recovery_bundle_index(
             index_path, handoff_path, archive_path,
             manifest=manifest_path, evidence_directory=evidence_root,
@@ -239,9 +249,10 @@ def export_recovery_bundle(
         _publish_database_copy(staging, target)
         return target
     finally:
-        index_path.unlink(missing_ok=True)
-        if staging is not None:
-            staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            index_path, index_identity, parent_info, "Recovery bundle index")
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info, "Recovery bundle staging")
 
 
 def _zip_bounds(source: Path) -> tuple[int, int]:

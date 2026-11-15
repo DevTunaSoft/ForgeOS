@@ -88,6 +88,21 @@ class WorktreeManifestTests(unittest.TestCase):
         self.assertFalse(failed.exists())
         self.assertEqual(list(self.root.glob(".forgeos-worktree-*")), [])
 
+    def test_publication_failure_preserves_substituted_staging(self):
+        def substitute(staging, target):
+            staging.unlink()
+            staging.write_bytes(b"operator-owned manifest staging")
+            raise OSError("disk unavailable")
+
+        with patch("forgeos.worktree_manifest._publish_database_copy",
+                   side_effect=substitute):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                export_worktree_manifest(self.worktree, self.manifest)
+        self.assertFalse(self.manifest.exists())
+        staging = list(self.root.glob(".forgeos-worktree-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"operator-owned manifest staging")
+
     def test_destination_inside_worktree_is_refused(self):
         with self.assertRaisesRegex(ValueError, "outside the worktree"):
             export_worktree_manifest(

@@ -104,6 +104,23 @@ class RecoveryBundleAuthTests(unittest.TestCase):
         self.assertFalse(destination.exists())
         self.assertEqual(list(self.root.glob(".forgeos-recovery-auth-key-*")), [])
 
+    def test_key_generation_preserves_substituted_staging(self):
+        destination = self.root / "generated.key"
+
+        def substitute(staging, target):
+            staging.unlink()
+            staging.write_bytes(b"operator-owned key staging")
+            raise OSError("disk unavailable")
+
+        with patch("forgeos.recovery_auth._publish_database_copy",
+                   side_effect=substitute):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                generate_recovery_bundle_auth_key(destination)
+        self.assertFalse(destination.exists())
+        staging = list(self.root.glob(".forgeos-recovery-auth-key-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"operator-owned key staging")
+
     def test_wrong_key_and_tampered_record_fail_closed(self):
         export_recovery_bundle_auth(self.bundle, self.key, self.authentication)
         wrong_key = self.root / "wrong.key"
