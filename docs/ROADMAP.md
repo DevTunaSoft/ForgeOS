@@ -1054,3 +1054,21 @@ the benchmark measured a 1,982,228-byte Python tracemalloc peak and a
 30,011,392-byte process peak RSS. Exact-head hosted checks remain required
 before merge; Windows ACL review and physical NTFS power-loss acceptance
 remain open.
+
+### 2026-11-15 — execution snapshot marker publication
+
+Snapshot creation now serializes the compact ownership marker through an
+exclusive `O_CREAT|O_EXCL` publication and enforces the existing 4 KiB marker
+bound. A marker that appears after the initial cleanup check is never
+truncated; creation fails closed and leaves the appearing marker and partial
+runtime for inspection.
+
+Regression coverage adds the appearing-marker race. The focused runtime/security
+suite passed 29 tests. The full isolated suite passed 769 tests with 10
+expected skips; the known local-model test may emit its existing `WinError
+10053` server trace while still exiting successfully. Compileall passed. The
+12 MiB x 3-cycle memory benchmark passed with a 1,982,228-byte Python
+tracemalloc peak and a 30,167,040-byte process peak RSS. Documentation/link
+coverage, `git diff --check` and exact-head hosted checks remain required
+before merge; Windows ACL review and physical NTFS power-loss acceptance
+remain open.

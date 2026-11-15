@@ -122,6 +122,40 @@ class _SnapshotIdentity:
             pass
 
 
+def _write_snapshot_marker(marker: Path, payload: dict) -> None:
+    """Create one small ownership marker without overwriting a new path."""
+    encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"))
+               + "\n").encode("utf-8")
+    if len(encoded) > MAX_MARKER_BYTES:
+        raise ValueError("Execution ownership marker is oversized")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = None
+    try:
+        descriptor = os.open(marker, flags, 0o600)
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(encoded)
+            stream.flush()
+        current = marker.lstat()
+        opened = os.fstat(descriptor)
+        if not _same_file(opened, current):
+            raise ValueError("Execution ownership marker changed during creation")
+    except FileExistsError as exc:
+        raise ValueError(
+            "Execution ownership marker appeared during snapshot creation") from exc
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError(
+            "Execution ownership marker could not be created") from exc
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 def _hold_snapshot_identity(path: Path, description: str, *, directory: bool,
                             expected=None):
     info = (_directory_info(path, description)
@@ -402,11 +436,11 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     if runtime.exists() or marker.exists():
         remove_test_snapshot(source)
     runtime.mkdir(parents=False)
-    marker.write_text(json.dumps({
+    _write_snapshot_marker(marker, {
         "version": VERSION,
         "workspace": str(source),
         "runtime": str(runtime),
-    }, sort_keys=True), encoding="utf-8")
+    })
     try:
         shutil.copytree(
             source, runtime, dirs_exist_ok=True, symlinks=True,

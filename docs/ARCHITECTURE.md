@@ -480,6 +480,11 @@ fails closed while preserving the replacement for inspection. These checks
 reduce same-user path substitution risk but are not a complete concurrent
 writer lock on Windows.
 
+Snapshot creation serializes the compact marker through an exclusive
+`O_CREAT|O_EXCL` publication with the same 4 KiB bound; it never truncates a
+marker that appeared after the initial cleanup check. A creation race fails
+closed and preserves the appearing marker for inspection.
+
 Docker is **not required**. Git worktrees are version-control isolation, not operating-system security isolation. No test runner is allowed to claim full untrusted-code containment without real runtime proof.
 
 ## Sensitive data and storage
