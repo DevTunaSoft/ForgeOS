@@ -170,6 +170,18 @@ source-only: task state, evidence archives, Git objects, ignored metadata and
 empty directories are not included, and the artifact is not authenticated,
 encrypted or an action-replay/import mechanism.
 
+`export_recovery_bundle_index()` and `check_recovery_bundle_index()` are the
+next explicit recovery boundary. They require a validated handoff and source
+archive, optionally validate the handoff digest manifest, discover only the
+validated evidence references in the handoff, and stream hashes for each
+separately stored diagnostic gzip. The JSONL index is capped at 2 MiB with at
+most 4,096 evidence records; the checker revalidates the handoff and nested
+source archive without opening SQLite or extracting content. It intentionally
+does not copy, encrypt, sign, restore or replay any artifact. A valid index
+proves that the named files matched at check time, not that the files are
+available after transfer or that a future bundle has disaster-recovery
+durability.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback

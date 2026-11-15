@@ -69,6 +69,29 @@ def main(argv=None):
         help='Verify a source-only worktree ZIP archive')
     worktree_archive_check.add_argument('source', help='Existing ZIP archive path')
     worktree_archive_check.add_argument('--max-issues', type=int, default=32)
+    bundle_index = sub.add_parser(
+        'recovery-bundle-index',
+        help='Bind a handoff, source archive and evidence by streamed hashes')
+    bundle_index.add_argument('handoff', help='Existing JSONL handoff path')
+    bundle_index.add_argument('worktree_archive', help='Existing source ZIP archive')
+    bundle_index.add_argument('destination', help='New JSONL index path')
+    bundle_index.add_argument('--manifest', default='',
+                              help='Optional existing handoff digest manifest')
+    bundle_index.add_argument('--evidence-directory', default='',
+                              help='Optional existing evidence directory')
+    bundle_index_check = sub.add_parser(
+        'recovery-bundle-index-check',
+        help='Verify a recovery bundle index and its referenced artifacts')
+    bundle_index_check.add_argument('source', help='Existing JSONL index path')
+    bundle_index_check.add_argument('--handoff', required=True,
+                                    help='Existing JSONL handoff path')
+    bundle_index_check.add_argument('--worktree-archive', required=True,
+                                    help='Existing source ZIP archive')
+    bundle_index_check.add_argument('--manifest', default='',
+                                    help='Optional existing handoff digest manifest')
+    bundle_index_check.add_argument('--evidence-directory', default='',
+                                    help='Optional existing evidence directory')
+    bundle_index_check.add_argument('--max-issues', type=int, default=32)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -312,6 +335,23 @@ def main(argv=None):
         from .worktree_archive import check_worktree_archive
         report = check_worktree_archive(
             args.source, max_issues=args.max_issues)
+        print(json.dumps(report, indent=2))
+        return 0 if report['valid'] else 1
+    if args.action == 'recovery-bundle-index':
+        from .recovery_bundle import export_recovery_bundle_index
+        exported = export_recovery_bundle_index(
+            args.handoff, args.worktree_archive, args.destination,
+            manifest=args.manifest or None,
+            evidence_directory=args.evidence_directory or None)
+        print(f'Exported recovery bundle index: {exported}')
+        return 0
+    if args.action == 'recovery-bundle-index-check':
+        from .recovery_bundle import check_recovery_bundle_index
+        report = check_recovery_bundle_index(
+            args.source, args.handoff, args.worktree_archive,
+            manifest=args.manifest or None,
+            evidence_directory=args.evidence_directory or None,
+            max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
     if args.action == 'memory':

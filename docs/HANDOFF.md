@@ -2514,3 +2514,37 @@ passed with a Python tracemalloc peak of about 1.86 MiB, stable post-GC RSS of
 about 22.4 MiB, and process peak RSS of about 24.6 MiB. Exact-head hosted
 Linux/Windows checks, packaging and physical interruption acceptance remain
 required.
+
+## 2026-11-15 — bounded recovery bundle coherence index
+
+**Change:** added `recovery-bundle-index` and
+`recovery-bundle-index-check`. The database-free indexer validates a handoff,
+source-only worktree archive and all evidence references in that handoff,
+then publishes only bounded filenames, sizes and streamed SHA-256 metadata.
+The checker revalidates the same paths and the nested worktree archive without
+opening SQLite or extracting raw content.
+
+**Safety boundary:** a referenced evidence directory is required when the
+handoff contains evidence IDs; each gzip is verified through the existing
+32 MiB decompressed bound and its compressed file digest is indexed. Handoff
+and source/archive inputs reject links and oversized files, while the index
+is capped at 2 MiB and 4,096 evidence records. Publication is staged, flushed
+and no-overwrite. The index does not copy, encrypt, sign, restore or replay
+artifacts, and it does not provide database or physical power-loss durability.
+
+**Regression coverage:** tests cover valid handoff/archive/evidence binding,
+handoff and evidence tampering, missing evidence-directory refusal, failed
+publication cleanup and database-free CLI export/check dispatch. Exact-head
+Linux/Windows checks, packaging, memory validation and physical interruption
+acceptance remain required.
+
+**Local verification:** the focused recovery/archive/manifest/CLI suite passed
+23 tests. With an isolated temporary `USERPROFILE`, the full current checkout
+`pytest -q -p no:cacheprovider` run passed 650 tests, skipped 7 and reported
+406 subtests; the only failure was the known repository-virtualenv Windows
+AppContainer probe because `icacls` returned access denied for the active
+`.venv` Python executable. Compileall, documentation links/change coverage and
+diff checks passed. The 12 MiB x3 memory benchmark passed with a Python
+tracemalloc peak of about 1.86 MiB, stable post-GC RSS of about 22.6 MiB, and
+process peak RSS of about 25.0 MiB. Exact-head hosted Linux/Windows checks,
+packaging and physical interruption acceptance remain required.
