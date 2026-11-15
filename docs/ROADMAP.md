@@ -656,3 +656,10 @@ being followed or cleaned outside the worktree. Existing 64 KiB streaming and
 flushed after cleanup. Regression coverage exercises redirected metadata,
 redirected recovery and a hard-linked manifest. Check-and-use races, Windows
 DACLs and physical NTFS power-loss acceptance remain open.
+
+Focused engine/transaction tests passed 77/77; the full isolated suite passed
+718 tests with 8 expected skips. Compileall, documentation/link coverage,
+`git diff --check` and the bounded 12 MiB x 3-cycle memory benchmark passed;
+the memory run reported a 1,982,228-byte Python tracemalloc peak and a
+30,322,688-byte process peak RSS. These are local process/filesystem checks,
+not physical Windows reparse, DACL or NTFS power-loss acceptance.
