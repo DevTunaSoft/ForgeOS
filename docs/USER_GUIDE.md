@@ -702,6 +702,10 @@ Read-only database checks, streamed manifest hashing and restore-copy also
 recheck the source regular-file identity after use; a link, reparse point or
 substituted source fails closed before a destination is published. This is a
 bounded check-and-use guard, not a concurrent-writer lock.
+SQLite `-wal`, `-shm` and rollback-journal sidecars are checked without
+following links or Windows reparse points, and pre-existing sidecar identities
+are rechecked after read-only inspection or restore. An unsafe sidecar stops
+the operation before a new copy is published.
 The optional manifest is a bounded JSON record of the backup size and streamed
 SHA-256; require it during offline inspection with
 `db-restore-copy SOURCE DESTINATION --manifest MANIFEST`. It detects accidental

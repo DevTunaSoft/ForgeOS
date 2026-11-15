@@ -267,6 +267,10 @@ When no SQLite sidecar exists, the read-only preflight uses SQLite's immutable
 URI mode so inspection itself does not create a `-shm` file. A present WAL or
 rollback journal uses the normal read-only URI so committed journal state is
 included and the sidecar remains visible to the safety checks.
+All existing `-wal`, `-shm` and rollback-journal paths are inspected without
+following links or Windows reparse points; an unsafe sidecar is rejected, and
+pre-existing sidecar identities are rechecked after SQLite use. A newly
+created regular `-shm` sidecar is allowed on the normal read-only URI path.
 
 ## Cross-platform test fixture hardening
 

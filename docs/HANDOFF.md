@@ -3228,3 +3228,23 @@ bounded 12 MiB x 3-cycle memory benchmark reported a 1,982,228-byte Python
 tracemalloc peak and a 30,015,488-byte process peak RSS. Exact-head hosted
 checks remain required before merge. Windows ACL review and physical NTFS
 power-loss acceptance remain open.
+
+## 2026-11-15 — SQLite sidecar link and identity checks
+
+**Change:** read-only inspection and restore-copy now lstat-validate existing
+`-wal`, `-shm` and rollback-journal paths as real regular files before SQLite
+use. Links, Windows reparse points and other nonregular sidecars fail closed,
+and pre-existing sidecar device/inode identities are rechecked after SQLite
+closes; a newly created regular `-shm` on the normal read-only URI path
+remains allowed.
+
+**Regression coverage:** added redirected-sidecar refusal for inspection and
+restore, plus sidecar replacement fault injection during restore. Focused
+core/database/activation/recovery/CLI tests passed 141 tests with 1 expected
+platform skip. The full isolated suite passed 740 tests with 10 expected
+skips; the known local-model test may emit its existing `WinError 10053`
+server trace but exits successfully. Compileall, documentation/link coverage
+and `git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+reported a 1,982,228-byte Python tracemalloc peak and a 29,913,088-byte
+process peak RSS. Exact-head hosted checks remain required before merge.
+Windows ACL review and physical NTFS power-loss acceptance remain open.

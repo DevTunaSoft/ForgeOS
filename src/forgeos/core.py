@@ -295,6 +295,35 @@ def _database_sidecars(database: Path) -> tuple[Path, ...]:
                  for suffix in DATABASE_SIDECAR_SUFFIXES)
 
 
+def _database_sidecar_info(database: Path) -> dict[Path, object]:
+    """Return existing real SQLite sidecars without following redirects."""
+    values = {}
+    for sidecar in _database_sidecars(database):
+        try:
+            info = sidecar.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot inspect SQLite sidecar: {sidecar}") from exc
+        if not stat.S_ISREG(info.st_mode) or _is_link_or_reparse(
+                sidecar, info):
+            raise ValueError(
+                f"SQLite sidecar must be a real regular file: {sidecar}")
+        values[sidecar] = info
+    return values
+
+
+def _assert_database_sidecars_unchanged(
+        before: dict[Path, object], database: Path) -> None:
+    """Reject replacement or removal of sidecars during SQLite use."""
+    after = _database_sidecar_info(database)
+    for sidecar, info in before.items():
+        current = after.get(sidecar)
+        if current is None or not _same_publication_identity(info, current):
+            raise ValueError(f"SQLite sidecar changed during use: {sidecar}")
+
+
 def _read_activation_marker(marker: Path) -> dict:
     """Read one bounded activation marker without trusting its contents."""
     if marker.is_symlink() or not marker.is_file():
@@ -1192,12 +1221,16 @@ class Store:
         # WAL-mode database read-only. Immutable mode prevents that mutation
         # when no journal sidecar exists; a present WAL/rollback journal must
         # remain visible through the normal read-only connection instead.
-        has_sidecar = any(sidecar.exists() or sidecar.is_symlink()
-                          for sidecar in _database_sidecars(source))
+        try:
+            sidecar_info = _database_sidecar_info(source)
+        except ValueError as exc:
+            raise ValueError("Task database has unsafe SQLite sidecars") from exc
+        has_sidecar = bool(sidecar_info)
         query = "?mode=ro" if has_sidecar else "?mode=ro&immutable=1"
         with closing(sqlite3.connect(source.as_uri() + query, uri=True)) as db:
             db.execute("PRAGMA query_only=ON")
             _verify_task_database_connection(db)
+        _assert_database_sidecars_unchanged(sidecar_info, source)
         _assert_database_source_unchanged(
             source_info, source, "Task database")
 
@@ -1261,6 +1294,7 @@ class Store:
         except ValueError as exc:
             raise ValueError(
                 "Restore source must be a regular SQLite database file") from exc
+        sidecar_info = _database_sidecar_info(src)
         if manifest is not None:
             _verify_backup_manifest(src, manifest)
         if (src == target or not target.parent.is_dir()
@@ -1283,6 +1317,7 @@ class Store:
                     # Protect against concurrent source-schema changes while
                     # copying, and reject a corrupt or incompatible result.
                     _verify_task_database_connection(restored)
+            _assert_database_sidecars_unchanged(sidecar_info, src)
             _assert_database_source_unchanged(
                 source_info, src, "Restore source")
             with staged.open("rb+") as stream:
