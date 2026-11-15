@@ -43,6 +43,9 @@ def main(argv=None):
     journal_handoff_check.add_argument('source', help='Existing JSONL file path')
     journal_handoff_check.add_argument('--manifest', default='',
                                        help='Optional manifest required to match the source')
+    journal_handoff_check.add_argument(
+        '--evidence-directory', default='',
+        help='Optional existing evidence directory to verify referenced archives')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -262,7 +265,8 @@ def main(argv=None):
         return 0
     if args.action == 'journal-handoff-check':
         report = Store.check_handoff(
-            args.source, manifest=args.manifest or None)
+            args.source, manifest=args.manifest or None,
+            evidence_directory=args.evidence_directory or None)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
     if args.action == 'memory':

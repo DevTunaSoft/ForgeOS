@@ -22,6 +22,19 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(self.store.put(raw), ref)
         self.assertEqual(len(list(self.store.root.glob("*.gz"))), 1)
 
+    def test_verify_at_streams_archive_without_creating_directory(self):
+        raw = "streamed evidence\n" * 100
+        ref = self.store.put(raw)
+        self.assertEqual(
+            EvidenceStore.verify_at(self.store.root, ref),
+            len(raw.encode("utf-8")))
+        missing = Path(self.temp.name) / "missing-evidence"
+        with self.assertRaisesRegex(ValueError, "directory"):
+            EvidenceStore.verify_at(missing, ref)
+        self.store._path(ref).write_bytes(gzip.compress(b"tampered"))
+        with self.assertRaisesRegex(ValueError, "integrity"):
+            EvidenceStore.verify_at(self.store.root, ref)
+
     def test_invalid_reference_rejected(self):
         for ref in ["../secret", "A" * 64, "x" * 64, "a" * 63, "", "f" * 64 + "/"]:
             with self.subTest(ref=ref), self.assertRaises(ValueError):

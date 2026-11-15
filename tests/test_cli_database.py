@@ -265,10 +265,13 @@ class DatabaseCommandsTests(unittest.TestCase):
                 self.assertEqual(main([
                     '--db', str(root / 'missing.sqlite3'),
                     'journal-handoff-check', str(handoff),
-                    '--manifest', str(manifest)]), 0)
+                    '--manifest', str(manifest),
+                    '--evidence-directory', str(root)]), 0)
             report = __import__('json').loads(output.getvalue())
             self.assertTrue(report['valid'])
             self.assertTrue(report['manifest_valid'])
+            self.assertTrue(report['evidence_checked'])
+            self.assertTrue(report['evidence_valid'])
             lines = handoff.read_text().splitlines()
             summary = __import__('json').loads(lines[-1])
             summary['event_count'] = 0

@@ -331,3 +331,12 @@ verifies that digest without buffering the JSONL artifact, detecting transfer
 or storage corruption before a future import/replay step. The manifest is not
 a signature, encryption, complete evidence/worktree bundle or physical
 power-loss guarantee.
+
+### 2026-11-15 — optional streamed evidence-reference verification
+
+`journal-handoff-check --evidence-directory` now verifies each referenced
+SHA-256 diagnostic gzip archive through a bounded decompression/hash stream.
+It fails closed on missing, symlinked, corrupt or oversized evidence without
+creating directories or loading raw output into memory. The check is opt-in;
+complete evidence/worktree bundles, encrypted retention, action replay and
+physical power-loss acceptance remain open.

@@ -749,7 +749,7 @@ py -m forgeos journal --task-id 1 --limit 20
 py -m forgeos journal-check
 py -m forgeos journal-export "C:\\ForgeOS-backups\\journal.jsonl"
 py -m forgeos journal-handoff "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --task-id 1 --manifest "C:\\ForgeOS-backups\\task-1-handoff.json"
-py -m forgeos journal-handoff-check "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --manifest "C:\\ForgeOS-backups\\task-1-handoff.json"
+py -m forgeos journal-handoff-check "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --manifest "C:\\ForgeOS-backups\\task-1-handoff.json" --evidence-directory "$env:USERPROFILE\\.forgeos\\diagnostics"
 ```
 
 Journal rows record task, lease and recovery transitions—not full prompts,
@@ -780,3 +780,8 @@ manifest containing the handoff byte size and streamed SHA-256, then pass the
 same manifest to `journal-handoff-check` to detect transfer or storage
 corruption. This digest is not a signature or encryption and must be retained
 under a trusted policy if it is used as an integrity reference.
+When `--evidence-directory` is supplied, the checker verifies each referenced
+SHA-256 gzip archive by streaming and hashing its decompressed bytes under the
+existing 32 MiB bound. It never creates the directory or returns the archived
+text. Missing, symlinked, corrupt or oversized evidence makes the report
+invalid; omit this option when the evidence store is intentionally unavailable.

@@ -737,6 +737,7 @@ class Store:
 
     @classmethod
     def check_handoff(cls, source: str | Path, *, manifest: str | Path | None = None,
+                      evidence_directory: str | Path | None = None,
                       max_issues: int = MAX_JOURNAL_ISSUES) -> dict:
         """Stream-check one exported handoff without opening the task database."""
         if (type(max_issues) is not int or isinstance(max_issues, bool)
@@ -764,6 +765,22 @@ class Store:
             nonlocal truncated
             truncated = cls._handoff_issue(
                 issues, message, line, max_issues) or truncated
+
+        evidence_root = None
+        evidence_valid = None
+        evidence_store = None
+        if evidence_directory is not None:
+            evidence_valid = True
+            try:
+                evidence_root = Path(evidence_directory).expanduser().absolute()
+            except TypeError as exc:
+                raise ValueError('Evidence directory is invalid') from exc
+            if evidence_root.is_symlink() or not evidence_root.is_dir():
+                evidence_valid = False
+                issue('Evidence directory is unavailable or unsafe', 0)
+            else:
+                from .diagnostics import EvidenceStore
+                evidence_store = EvidenceStore
 
         try:
             stream = path.open('rb')
@@ -826,6 +843,13 @@ class Store:
                         except (TypeError, ValueError) as exc:
                             issue(str(exc), checked)
                             continue
+                        if evidence_store is not None and event['evidence_ref']:
+                            try:
+                                evidence_store.verify_at(
+                                    evidence_root, event['evidence_ref'])
+                            except (OSError, ValueError) as exc:
+                                evidence_valid = False
+                                issue(str(exc), checked)
                         if (last_event_id is not None
                                 and event['id'] <= last_event_id):
                             issue('event IDs are not strictly increasing', checked)
@@ -875,6 +899,8 @@ class Store:
             'events': event_count,
             'manifest_checked': manifest is not None,
             'manifest_valid': manifest_valid,
+            'evidence_checked': evidence_directory is not None,
+            'evidence_valid': evidence_valid,
             'issues': issues,
             'truncated': truncated,
         }

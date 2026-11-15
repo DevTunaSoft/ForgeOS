@@ -133,6 +133,11 @@ authenticity or artifact availability.
 `check_handoff(..., manifest=...)` verifies it by streaming the handoff bytes.
 The manifest detects accidental transfer/storage changes but is not a
 signature, encryption layer or proof of who produced the artifact.
+With an explicit evidence directory, `check_handoff()` also verifies each
+referenced `<sha256>.txt.gz` archive through a bounded gzip stream, without
+creating directories or decoding raw output. Missing, symlinked, corrupt or
+oversized archives make the report invalid; no evidence directory is consulted
+by default.
 
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
