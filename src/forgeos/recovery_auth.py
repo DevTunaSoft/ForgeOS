@@ -98,6 +98,10 @@ def _read_bounded_file(source: Path, *, max_bytes: int,
 
 def _read_key(source: str | Path) -> bytes:
     key_path = Path(source).expanduser().absolute()
+    info = _plain_info(key_path, directory=False)
+    if os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077:
+        raise ValueError(
+            "Recovery authentication key permissions must be private")
     key = _read_bounded_file(
         key_path, max_bytes=MAX_RECOVERY_AUTH_KEY_BYTES,
         description="Recovery authentication key")

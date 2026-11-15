@@ -2,6 +2,7 @@
 import io
 import json
 from contextlib import redirect_stdout
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -60,6 +61,8 @@ class RecoveryBundleAuthCliTests(unittest.TestCase):
             export_recovery_bundle(handoff, archive, bundle)
             key = root / "auth.key"
             key.write_bytes(b"k" * 64)
+            if os.name != "nt":
+                key.chmod(0o600)
             authentication = root / "recovery.auth.json"
 
             output = io.StringIO()

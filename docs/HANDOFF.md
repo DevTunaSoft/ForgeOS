@@ -2728,3 +2728,26 @@ Python tracemalloc peak of about 1.89 MiB, stable post-GC RSS of about 26.5
 MiB and process peak RSS of about 29.0 MiB on this host. Documentation
 coverage, exact-head hosted Linux/Windows checks, packaging and physical
 interruption acceptance remain required for this branch.
+
+## 2026-11-15 — private POSIX recovery authentication keys
+
+**Change:** HMAC key reads now reject POSIX regular files with any group/other
+permission bits before reading secret bytes. Windows keeps the explicit
+operator ACL-review boundary because portable standard-library metadata does
+not provide a complete NTFS DACL policy. Generated keys already publish with
+mode `0600` on POSIX; no key bytes are logged or included in artifacts.
+
+**Regression coverage:** added POSIX permission rejection and updated all
+cross-platform key fixtures to use private mode where applicable. Windows
+focused authentication, keygen and extraction/CLI regressions remain green;
+the POSIX-only assertion is skipped on Windows by design.
+
+**Local verification:** focused authentication, keygen, extraction and CLI
+suites passed 19 tests with 1 expected Windows-only skip. Compileall passed.
+With an isolated temporary `USERPROFILE`, the full current checkout
+`python -m unittest discover -s tests -q` run passed 682 tests and skipped 8.
+The standard 12 MiB x3 memory benchmark passed with a Python tracemalloc peak
+of about 1.89 MiB, stable post-GC RSS of about 26.3 MiB and process peak RSS
+of about 28.6 MiB on this host. Documentation coverage, exact-head hosted
+Linux/Windows checks, packaging and physical interruption acceptance remain
+required for this branch.

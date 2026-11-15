@@ -485,3 +485,10 @@ and publishes it without overwriting an existing path or printing key bytes.
 The command is database-free and uses the existing Windows rename/POSIX
 hard-link publication split. Operators still own key storage, ACL review,
 rotation and backup; this does not add encryption or public-key identity.
+
+### 2026-11-15 — private POSIX recovery authentication keys
+
+Recovery HMAC verification now rejects POSIX key files with group/other
+permission bits, while preserving Windows compatibility and the documented
+operator ACL-review boundary. Regression coverage proves the rejection on
+POSIX without pretending that mode bits are a Windows NTFS security model.

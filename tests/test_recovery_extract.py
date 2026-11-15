@@ -1,6 +1,7 @@
 """Recovery bundle materialization regressions."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -64,6 +65,8 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
             manifest=manifest, evidence_directory=evidence_root)
         self.key = self.root / "recovery.key"
         self.key.write_bytes(b"k" * 64)
+        if os.name != "nt":
+            self.key.chmod(0o600)
         self.authentication = self.root / "recovery.auth.json"
         export_recovery_bundle_auth(
             self.bundle, self.key, self.authentication)
@@ -92,6 +95,8 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
     def test_authentication_gate_rejects_wrong_key_before_new_directory(self):
         wrong_key = self.root / "wrong.key"
         wrong_key.write_bytes(b"w" * 64)
+        if os.name != "nt":
+            wrong_key.chmod(0o600)
         destination = self.root / "restored"
         with self.assertRaisesRegex(ValueError, "authentication failed"):
             extract_recovery_bundle(
@@ -168,6 +173,8 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
                 extract_recovery_bundle(self.bundle, destination)
         wrong_key = self.root / "wrong.key"
         wrong_key.write_bytes(b"w" * 64)
+        if os.name != "nt":
+            wrong_key.chmod(0o600)
         with self.assertRaisesRegex(ValueError, "authentication failed"):
             resume_recovery_bundle_extraction(
                 self.bundle, destination,

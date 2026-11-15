@@ -17,6 +17,12 @@ from forgeos.recovery_package import export_recovery_bundle
 from forgeos.worktree_archive import export_worktree_archive
 
 
+def _write_key(path: Path, content: bytes) -> None:
+    path.write_bytes(content)
+    if os.name != "nt":
+        path.chmod(0o600)
+
+
 class RecoveryBundleAuthTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -48,7 +54,7 @@ class RecoveryBundleAuthTests(unittest.TestCase):
         export_recovery_bundle(handoff, archive, self.bundle)
         self.key = self.root / "auth.key"
         self.key_bytes = bytes(range(64))
-        self.key.write_bytes(self.key_bytes)
+        _write_key(self.key, self.key_bytes)
         self.authentication = self.root / "recovery.auth.json"
 
     def test_auth_record_verifies_without_copying_the_key(self):
@@ -80,6 +86,15 @@ class RecoveryBundleAuthTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "between 32 and 4096"):
             generate_recovery_bundle_auth_key(self.root / "large.key", size=4097)
 
+    def test_posix_world_readable_key_is_rejected(self):
+        if os.name == "nt":
+            self.skipTest("POSIX permission bits are not Windows ACLs")
+        broad = self.root / "broad.key"
+        broad.write_bytes(b"b" * 64)
+        broad.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "permissions"):
+            export_recovery_bundle_auth(self.bundle, broad, self.authentication)
+
     def test_key_generation_publication_failure_cleans_staging(self):
         destination = self.root / "generated.key"
         with patch("forgeos.recovery_auth._publish_database_copy",
@@ -92,7 +107,7 @@ class RecoveryBundleAuthTests(unittest.TestCase):
     def test_wrong_key_and_tampered_record_fail_closed(self):
         export_recovery_bundle_auth(self.bundle, self.key, self.authentication)
         wrong_key = self.root / "wrong.key"
-        wrong_key.write_bytes(b"wrong secret" * 4)
+        _write_key(wrong_key, b"wrong secret" * 4)
         report = check_recovery_bundle_auth(
             self.bundle, self.authentication, wrong_key)
         self.assertFalse(report["valid"])
@@ -123,7 +138,7 @@ class RecoveryBundleAuthTests(unittest.TestCase):
 
     def test_short_key_and_publication_failure_leave_no_auth_record(self):
         short_key = self.root / "short.key"
-        short_key.write_bytes(b"short")
+        _write_key(short_key, b"short")
         with self.assertRaisesRegex(ValueError, "too short"):
             export_recovery_bundle_auth(self.bundle, short_key, self.authentication)
         with patch("forgeos.recovery_auth._publish_database_copy",
