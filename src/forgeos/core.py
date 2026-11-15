@@ -217,10 +217,17 @@ def _write_activation_marker(marker: Path, payload: dict,
             raise ValueError("Activation marker cannot be a symlink")
         if replace:
             os.replace(staging, marker)
+            _sync_publication_directory(marker.parent)
         else:
             _publish_database_copy(staging, marker)
     finally:
         staging.unlink(missing_ok=True)
+
+
+def _remove_activation_marker(marker: Path, *, missing_ok: bool = False) -> None:
+    """Remove an activation marker and flush its POSIX directory entry."""
+    marker.unlink(missing_ok=missing_ok)
+    _sync_publication_directory(marker.parent)
 
 
 def _utf8_size(value: str) -> int:
@@ -1137,7 +1144,7 @@ class Store:
             published = True
             marker_payload["phase"] = "published"
             _write_activation_marker(marker, marker_payload, replace=True)
-            marker.unlink()
+            _remove_activation_marker(marker)
             return target
         except Exception:
             restored = False
@@ -1151,7 +1158,7 @@ class Store:
             if restored or (not old_moved and not published and target.exists()):
                 # No replacement was left in place, so our marker is no longer
                 # needed and should not block a later operator retry.
-                marker.unlink(missing_ok=True)
+                _remove_activation_marker(marker, missing_ok=True)
             raise
         finally:
             staged.unlink(missing_ok=True)
@@ -1213,7 +1220,7 @@ class Store:
         _move_database_copy(old, target)
         if marker.is_symlink():
             raise RuntimeError("Activation marker changed during rollback")
-        marker.unlink()
+        _remove_activation_marker(marker)
         return target
 
     def add(self, project: str, description: str) -> int:

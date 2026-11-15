@@ -2843,3 +2843,33 @@ tracemalloc peak and a 30,404,608-byte process peak RSS. These remain local
 synthetic/process measurements, not physical Windows or model-memory
 acceptance. Exact-head hosted Linux/Windows, packaging and physical
 interruption evidence remain required for this branch.
+
+## 2026-11-15 — activation marker directory durability
+
+**Change:** `_write_activation_marker(..., replace=True)` and activation-marker
+removal now flush the containing POSIX directory through the existing bounded
+directory-sync helper. The activation path already flushes initial marker
+publication; this closes the phase-replacement and cleanup gap that could leave
+a stale `prepared`/`published` marker after a crash around an atomic rename or
+unlink. Windows retains the no-op sync path and exclusive same-directory rename.
+
+**Regression coverage:** direct core tests verify POSIX marker replacement and
+removal call the directory flush without changing the Windows branch. This is
+metadata durability evidence only; physical NTFS power-loss and restart
+acceptance remain required.
+
+**Local verification:** focused activation tests passed 14/14; the full
+isolated suite passed 699 tests with 8 expected skips. Documentation/link
+coverage, compileall and `git diff --check` passed. The bounded memory benchmark
+passed for three 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak
+and a 30,031,872-byte process peak RSS. These remain local synthetic/process
+measurements, not physical Windows or model-memory acceptance. Exact-head
+hosted Linux/Windows, packaging and physical interruption evidence remain
+required for this branch.
+
+The first hosted Foundation run caught a Python 3.10 Windows-only test error:
+the regression temporarily patched global `os.name` before `Path(name)` was
+constructed, causing `pathlib` to select `PosixPath` on Windows. Follow-up
+commit `98c33fb` removes that global platform patch and asserts the existing
+directory-sync helper call directly; the focused and full local suites then
+passed again.

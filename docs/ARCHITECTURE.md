@@ -234,9 +234,11 @@ bridge. It applies the same package, optional HMAC and streamed-digest checks,
 stages the bundled database under the active database's directory, and then
 delegates to `Store.activate_backup_to()` with explicit confirmation. The core
 activation boundary retains the old active file at a new rollback path, uses a
-flushed phase marker, refuses sidecars and occupied recovery paths, and attempts
-fail-closed rollback after publication failure. This bridge never initializes
-the running `Store` or performs automatic failover.
+flushed phase marker, flushes POSIX marker replacement/removal directory entries,
+refuses sidecars and occupied recovery paths, and attempts fail-closed rollback
+after publication failure. Windows keeps the directory-sync helper as a no-op;
+physical NTFS interruption acceptance remains separate. This bridge never
+initializes the running `Store` or performs automatic failover.
 
 `export_recovery_bundle_auth()` adds a detached operator-held authenticity
 record without changing the passive ZIP format. It validates the package,
