@@ -107,6 +107,18 @@ def main(argv=None):
         help='Verify one bounded recovery bundle ZIP')
     recovery_bundle_check.add_argument('source', help='Existing recovery bundle ZIP path')
     recovery_bundle_check.add_argument('--max-issues', type=int, default=32)
+    recovery_extract = sub.add_parser(
+        'recovery-bundle-extract',
+        help='Materialize a verified recovery bundle into a new directory')
+    recovery_extract.add_argument('source', help='Existing recovery bundle ZIP path')
+    recovery_extract.add_argument(
+        'destination', help='New recovery directory path; never overwrites')
+    recovery_extract_check = sub.add_parser(
+        'recovery-bundle-extract-check',
+        help='Verify a completed materialized recovery bundle')
+    recovery_extract_check.add_argument(
+        'source', help='Existing materialized recovery directory')
+    recovery_extract_check.add_argument('--max-issues', type=int, default=32)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -380,6 +392,17 @@ def main(argv=None):
     if args.action == 'recovery-bundle-check':
         from .recovery_package import check_recovery_bundle
         report = check_recovery_bundle(
+            args.source, max_issues=args.max_issues)
+        print(json.dumps(report, indent=2))
+        return 0 if report['valid'] else 1
+    if args.action == 'recovery-bundle-extract':
+        from .recovery_extract import extract_recovery_bundle
+        extracted = extract_recovery_bundle(args.source, args.destination)
+        print(f'Extracted recovery bundle: {extracted}')
+        return 0
+    if args.action == 'recovery-bundle-extract-check':
+        from .recovery_extract import check_recovery_bundle_extraction
+        report = check_recovery_bundle_extraction(
             args.source, max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1

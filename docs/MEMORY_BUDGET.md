@@ -293,3 +293,18 @@ Python collection.
 These are application-level allocation and input limits, not a complete
 process-RSS, decompressor CPU, disk-space or filesystem-cache quota. ZIP/zlib
 buffers and the operating system remain outside the ForgeOS memory budget.
+
+## Recovery bundle materialization allocation boundary
+
+`recovery-bundle-extract` validates the source package first, then streams
+bounded entries into a private staging directory and moves files one at a
+time into a new destination directory. It retains ZIP metadata and one 64 KiB
+copy block at a time; the package, per-entry, aggregate package and aggregate
+evidence limits remain active during extraction. The destination marker is
+capped at 2 KiB and stores only phase, package size and SHA-256 metadata.
+
+`recovery-bundle-extract-check` rechecks the copied index, source archive,
+handoff, manifest and evidence without opening SQLite. A failed move leaves a
+bounded failed marker rather than claiming completion. Staging directories,
+filesystem cache, ZIP/zlib buffers and process RSS remain outside these
+application-level allocation limits.

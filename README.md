@@ -316,6 +316,14 @@ no-overwrite publication. The checker validates the ZIP and its nested index
 through private bounded temporary files. This is still not encrypted, signed,
 authenticated, a database backup, an import/replay mechanism or physical
 power-loss durability.
+To materialize a verified transfer on the receiving machine, run
+`py -m forgeos recovery-bundle-extract PACKAGE NEW_DIRECTORY` followed by
+`py -m forgeos recovery-bundle-extract-check NEW_DIRECTORY`. Extraction always
+requires a new directory, writes a bounded phase marker before moving files,
+and marks the directory complete only after rechecking the copied handoff,
+source archive, manifest and evidence. An interrupted or failed materializer
+is left marked incomplete for inspection; it never starts a task, opens SQLite
+or replays actions.
 
 ### Verified task database backups (experimental)
 
