@@ -1189,7 +1189,9 @@ class TransactionRecoveryTests(unittest.TestCase):
 
         def hold_then_substitute(path, *args, **kwargs):
             identity = real_hold(path, *args, **kwargs)
-            if path == target and not swapped["value"]:
+            if (os.path.normcase(str(path))
+                    == os.path.normcase(str(target))
+                    and not swapped["value"]):
                 target.unlink()
                 target.write_text("operator-owned target")
                 swapped["value"] = True
@@ -1225,7 +1227,9 @@ class TransactionRecoveryTests(unittest.TestCase):
 
         def hold_then_substitute(path, *args, **kwargs):
             identity = real_hold(path, *args, **kwargs)
-            if path == child and not swapped["value"]:
+            if (os.path.normcase(str(path))
+                    == os.path.normcase(str(child))
+                    and not swapped["value"]):
                 child.unlink()
                 child.write_bytes(b"operator-owned journal evidence")
                 swapped["value"] = True
