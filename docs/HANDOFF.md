@@ -2498,6 +2498,11 @@ coverage verifies both commands remain database-free. Exact-head Linux and
 Windows checks, packaging, memory validation and physical interruption
 acceptance remain required.
 
+**Compatibility correction:** the archive checker now distinguishes explicit
+Unix non-regular file types from permission-only ZIP metadata, so archives
+created by Linux `zipfile.writestr()` remain valid while symlink-like entries
+still fail closed. The tamper regression pins that Unix metadata shape.
+
 **Local verification:** the focused archive, CLI and existing worktree suite
 passed (12 tests). With an isolated temporary `USERPROFILE`, the full current
 checkout `pytest -q -p no:cacheprovider` run passed 644 tests, skipped 7 and
