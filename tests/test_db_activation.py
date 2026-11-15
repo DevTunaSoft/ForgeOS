@@ -371,8 +371,7 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         sync.assert_called_once_with(self.root)
 
-    @unittest.skipUnless(os.name == "nt", "Windows share-mode contract")
-    def test_windows_open_handle_refuses_activation_before_moving_active(self):
+    def _open_exclusive_windows_handle(self, path):
         import ctypes
         from ctypes import wintypes
 
@@ -384,10 +383,15 @@ class ActivateBackupTests(unittest.TestCase):
         kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         kernel32.CloseHandle.restype = wintypes.BOOL
         handle = kernel32.CreateFileW(
-            str(self.active), 0x80000000, 0, None, 3, 0x80, None)
+            str(path), 0x80000000, 0, None, 3, 0x80, None)
         invalid = ctypes.c_void_p(-1).value
         if handle == invalid or handle == -1:
             raise ctypes.WinError(ctypes.get_last_error())
+        return kernel32, handle
+
+    @unittest.skipUnless(os.name == "nt", "Windows share-mode contract")
+    def test_windows_open_handle_refuses_activation_before_moving_active(self):
+        kernel32, handle = self._open_exclusive_windows_handle(self.active)
         marker = Path(str(self.active) + ".forgeos-activation.json")
         try:
             with self.assertRaises((OSError, sqlite3.DatabaseError)):
@@ -395,6 +399,26 @@ class ActivateBackupTests(unittest.TestCase):
                     self.backup, self.active, self.rollback, confirm=True)
         finally:
             self.assertTrue(kernel32.CloseHandle(handle))
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertFalse(marker.exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows share-mode contract")
+    def test_windows_open_handle_refuses_rollback_before_moving_it(self):
+        self._leave_interrupted_activation()
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        kernel32, handle = self._open_exclusive_windows_handle(self.rollback)
+        try:
+            with self.assertRaises((OSError, sqlite3.DatabaseError)):
+                Store.rollback_activation(self.active, confirm=True)
+        finally:
+            self.assertTrue(kernel32.CloseHandle(handle))
+        self.assertFalse(self.active.exists())
+        self.assertTrue(self.rollback.exists())
+        self.assertTrue(marker.exists())
+
+        result = Store.rollback_activation(self.active, confirm=True)
+        self.assertEqual(result, self.active)
         self.assertEqual(self._descriptions(self.active), ["old active task"])
         self.assertFalse(self.rollback.exists())
         self.assertFalse(marker.exists())

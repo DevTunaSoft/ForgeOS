@@ -618,3 +618,11 @@ The final activation marker state now has an explicit recovery path:
 and no rollback path appeared, validates the staged replacement, removes only
 that staged file and clears the marker. It never moves the active database;
 physical reboot and NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — Windows rollback open-handle refusal
+
+The Windows activation coverage now also holds the retained rollback database
+with a real no-share `CreateFileW` handle while explicit rollback runs. The
+operation fails closed before moving the rollback or clearing its marker; after
+the handle closes, the same rollback succeeds. This strengthens Windows
+compatibility evidence without claiming physical NTFS power-loss acceptance.

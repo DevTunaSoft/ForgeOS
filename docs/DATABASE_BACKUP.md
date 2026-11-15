@@ -196,7 +196,9 @@ the staged replacement is no longer wanted, use
 Abandonment validates the unchanged active database and staged SQLite file,
 deletes only the staged path and removes the prepared marker; it never moves
 the active database. The marker is evidence of an interrupted operation, not a
-guarantee of physical power-loss recovery.
+guarantee of physical power-loss recovery. On Windows, a process holding
+either the active or retained rollback database can make the corresponding
+move fail closed; release the handle and inspect the marker before retrying.
 
 ## Security and recovery limitations
 

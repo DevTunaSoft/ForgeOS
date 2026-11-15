@@ -390,6 +390,9 @@ If the marker is still `prepared`, the active database remains in place; after
 inspecting the paths, use `db-activation-abandon ACTIVE --confirm
 --discard-staged` to validate and remove the unwanted staged replacement and
 clear only that marker.
+On Windows, a process holding either the active or retained rollback database
+can make the corresponding move fail closed; release the handle and inspect
+the marker before retrying.
 See [database backup and recovery limits](docs/DATABASE_BACKUP.md).
 This is not an encrypted, scheduled or physically accepted disaster-recovery
 solution. A previously created `db-backup` can be included in a passive

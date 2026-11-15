@@ -717,7 +717,8 @@ py -m forgeos db-restore-activate `
 The command verifies the backup before moving the old active file to the
 rollback path. It refuses existing rollback or activation-marker files,
 symlinks, SQLite `-wal`/`-shm`/`-journal` sidecars and a missing destination
-folder. On Windows an open database handle causes the move to fail. If a later
+folder. On Windows an open database handle on the active or retained rollback
+database causes the corresponding move or inspection to fail closed. If a later
 step cannot finish, ForgeOS attempts to restore the old file; preserve the
 rollback and `tasks.sqlite3.forgeos-activation.json` marker if that recovery
 also fails. This is an operator-guided replacement, not automatic failover or
