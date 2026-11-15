@@ -103,6 +103,9 @@ raw prompts, errors and test output remain outside the journal.
 Transition callers may also attach bounded action, attempt, artifact and
 evidence references; these are identifiers only, never raw output or paths.
 The event schema migrates these columns in place for existing task databases.
+The autonomous engine labels edit, test and recovery publications and records
+the bounded repair attempt when it is known; test evidence is carried only as
+an existing validated digest reference.
 
 ## Workflow and state
 

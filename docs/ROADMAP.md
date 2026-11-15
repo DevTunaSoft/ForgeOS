@@ -248,3 +248,12 @@ and manual-test transitions populate action metadata, while evidence remains a
 validated identifier rather than raw test output. Existing journal databases
 migrate in place; regression coverage verifies migration, bounds and linkage.
 Full replayable action/artifact export and power-loss acceptance remain open.
+
+### 2026-11-15 — autonomous engine journal linkage
+
+The autonomous edit/test/repair engine now labels its lifecycle publications
+and records bounded repair-attempt numbers in the same append-only journal.
+When a test runner supplies an existing validated evidence digest, the engine
+links that identifier without copying output. Regression coverage verifies
+repair-loop attempt ordering. Replayable artifact export and interruption
+acceptance remain open.

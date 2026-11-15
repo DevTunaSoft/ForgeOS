@@ -213,7 +213,8 @@ def _execute_task(
             raise LeaseLostError("Task lease lost or status changed before publication")
 
     try:
-        publish(eligible_statuses, "editing", increment=not resume)
+        publish(eligible_statuses, "editing", increment=not resume,
+                event_action="edit")
         heartbeat()
         if resume:
             from .workspace import _git, _repository_root
@@ -355,7 +356,7 @@ def _execute_task(
                 "contract": contract,
                 "sha256": {name: _checkpoint_file_hash(_validate_path(ws.path, name))
                            for name in paths},
-            }))
+            }), event_action="test", event_attempt=attempt + 1)
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
             heartbeat()
@@ -400,7 +401,9 @@ def _execute_task(
                           "branch": ws.branch, "edited": paths,
                           "iterations": attempt + 1, "test": outcome,
                           "learning": learned, "model": model_name}
-                publish({"testing"}, "passed", result=json.dumps(result))
+                publish({"testing"}, "passed", result=json.dumps(result),
+                        event_action="test", event_attempt=attempt + 1,
+                        event_evidence=outcome.get("evidence_reference") or "")
                 return result
             if attempt > 0 and previous_failure:
                 try:
@@ -434,12 +437,15 @@ def _execute_task(
                                      name: _checkpoint_file_hash(_validate_path(ws.path, name))
                                      for name in paths
                                  },
-                             }))
+                             }), event_action="edit",
+                        event_attempt=attempt + 2)
         result = {"passed": False, "workspace": str(ws.path),
                   "branch": ws.branch, "model": model_name,
                   "iterations": max_repairs + 1,
                   "error": last_output[-4000:]}
-        publish({"testing"}, "failed", error=result["error"], result=json.dumps(result))
+        publish({"testing"}, "failed", error=result["error"], result=json.dumps(result),
+                event_action="test", event_attempt=max_repairs + 1,
+                event_evidence=outcome.get("evidence_reference") or "")
         return result
     except Exception as exc:
         # Untrusted runner/model exceptions can embed very large diagnostic
@@ -467,7 +473,8 @@ def _execute_task(
                 details["capture_error"] = capture_failure
         try:
             publish({"editing", "testing"}, "blocked",
-                    error=failure, result=json.dumps(details))
+                    error=failure, result=json.dumps(details),
+                    event_action="recovery")
         except LeaseLostError:
             # The old worker no longer owns this task. Preserve whatever the
             # replacement worker wrote; never mask the triggering exception.
