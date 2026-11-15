@@ -3387,3 +3387,20 @@ successfully. The 12 MiB x 3-cycle memory benchmark passed with a
 1,982,228-byte Python tracemalloc peak and a 29,954,048-byte process peak RSS.
 Exact-head hosted checks remain required before merge. Windows ACL review and
 physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — transaction rollback staging cleanup identity
+
+**Change:** transaction recovery now captures the real target parent and
+guards its private rollback temporary with identity-bound cleanup. POSIX keeps
+the original descriptor through a failed `os.replace` decision; Windows
+compares file identity without holding a handle that could block rename. A
+substituted rollback temporary remains beside the journal for inspection.
+
+**Verification:** rollback-temp substitution coverage passed in the focused
+engine/transaction suite: 89 tests with one platform skip. The full isolated
+suite passed 761 tests with 10 expected skips; the known local-model test may
+emit its existing `WinError 10053` server trace while still exiting
+successfully. The 12 MiB x 3-cycle memory benchmark passed with a
+1,982,228-byte Python tracemalloc peak and a 30,019,584-byte process peak RSS.
+Exact-head hosted checks remain required before merge. Windows ACL review and
+physical NTFS power-loss acceptance remain open.

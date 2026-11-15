@@ -82,6 +82,13 @@ concurrent-writer lock. This is not a Windows DACL boundary or physical NTFS
 power-loss acceptance. Operators should preserve an unsafe journal for
 inspection and resolve the filesystem problem before retrying recovery.
 
+Rollback recovery copies use the same private-temporary boundary: the real
+target parent is captured before copying, the POSIX temporary descriptor stays
+open through a failed replacement decision, and Windows compares the file
+identity without holding a handle that could block `os.replace`. A substituted
+rollback temporary is preserved for inspection rather than removed by the
+recovery `finally` path.
+
 If a crash leaves a `committed` journal behind, recovery also re-hashes every
 published target against its recorded post-edit digest before removing that
 journal. A missing, substituted, symlinked, reparse-point or nonregular target
