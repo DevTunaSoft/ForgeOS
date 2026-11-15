@@ -213,6 +213,23 @@ def recover_edits(root: Path) -> bool:
         if not valid_hash(after):
             raise TransactionError("Invalid staged hash")
         if data["state"] == "committed":
+            try:
+                target_info = target.lstat()
+            except FileNotFoundError:
+                target_info = None
+            except OSError as exc:
+                raise TransactionError(
+                    f"Cannot inspect committed edit target: {target}") from exc
+            if (target_info is not None and
+                    (not stat.S_ISREG(target_info.st_mode)
+                     or _is_reparse_point(target_info))):
+                raise TransactionError(
+                    f"Committed edit target is not a regular file: {target}")
+            current_hash = (_hash_file(target)
+                            if target_info is not None else None)
+            if current_hash != after:
+                raise TransactionError(
+                    f"Committed edit target changed or is missing: {target}")
             continue
         backup = txn / f"{i}.bak"
         if before is not None:
