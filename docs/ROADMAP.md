@@ -644,3 +644,15 @@ valid-looking substituted database files when those bindings are present;
 legacy markers remain readable without overstating their integrity. The
 bounded streaming digest path is tamper-detection evidence, not encryption,
 signing or physical power-loss acceptance.
+
+### 2026-11-15 — transaction journal reparse/link boundary
+
+The canonical edit transaction now validates `workspace/.forgeos` and
+`pending-edit` as real directories before creating, reading or removing a
+journal. POSIX symlinks, Windows filesystem reparse points and hard-linked
+manifest/backup files fail closed, preventing redirected recovery metadata from
+being followed or cleaned outside the worktree. Existing 64 KiB streaming and
+8 MiB backup bounds remain unchanged; POSIX journal-directory removal is also
+flushed after cleanup. Regression coverage exercises redirected metadata,
+redirected recovery and a hard-linked manifest. Check-and-use races, Windows
+DACLs and physical NTFS power-loss acceptance remain open.
