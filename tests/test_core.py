@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -189,6 +190,25 @@ class ForgeOSTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'oversized event details'):
             self.store.export_handoff(target, task_id=task)
         self.assertFalse(target.exists())
+
+    def test_handoff_manifest_rejects_replacement_during_open(self):
+        task = self.store.add(str(self.repo), 'Handoff manifest identity')
+        handoff = self.root / 'handoff-identity.jsonl'
+        manifest = self.root / 'handoff-identity.json'
+        self.store.export_handoff(handoff, task_id=task, manifest=manifest)
+
+        def replace_before_open(path, flags):
+            path.unlink()
+            path.write_bytes(b'operator-owned handoff manifest\n')
+            return os.open(path, flags)
+
+        with patch('forgeos.core._open_bounded_publication_file',
+                   side_effect=replace_before_open):
+            with self.assertRaisesRegex(ValueError, 'changed or became a link'):
+                from forgeos.core import _read_handoff_manifest
+                _read_handoff_manifest(manifest)
+        self.assertEqual(
+            manifest.read_bytes(), b'operator-owned handoff manifest\n')
 
     def test_journal_handoff_publication_failure_cleans_all_staging(self):
         task = self.store.add(str(self.repo), 'Handoff publication failure')
