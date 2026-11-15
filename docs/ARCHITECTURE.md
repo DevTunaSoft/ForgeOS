@@ -59,8 +59,13 @@ be real directories. POSIX symlinks and hard-linked journal files are rejected;
 on Windows, the same metadata check also rejects filesystem reparse points such
 as junctions. The manifest and streamed backup files must be unlinked regular
 files, so a redirected or shared journal fails closed without reading or
-deleting outside the worktree. Recovery continues to hash and copy in bounded
-64 KiB chunks, and POSIX journal-directory removal is flushed after cleanup.
+deleting outside the worktree. On POSIX, the internal directories are forced to
+mode `0700`, while manifests, backups and restore temporaries are created with
+mode `0600`; staged replacement files retain the historical umask-derived mode
+because they become published workspace files. Windows leaves ACL behavior
+unchanged and retains the operator ACL-review boundary. Recovery continues to
+hash and copy in bounded 64 KiB chunks, and POSIX journal-directory removal is
+flushed after cleanup.
 
 This narrows same-user journal redirection and substitution risk; it is not a
 complete check-and-use race defense, a Windows DACL boundary or physical NTFS

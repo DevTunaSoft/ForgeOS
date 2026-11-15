@@ -646,6 +646,43 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertEqual(huge.stat().st_size, MAX_BACKUP_BYTES + 1)
         self.assertFalse((self.root / ".forgeos" / "pending-edit").exists())
 
+    def test_internal_journal_metadata_is_private_on_posix(self):
+        if os.name == "nt":
+            self.skipTest("POSIX permission semantics unavailable")
+        import stat
+        from forgeos.transactions import (
+            _copy_bounded,
+            _durable_write,
+            _journal_parent,
+            _require_journal_directory,
+            _require_journal_file,
+        )
+
+        metadata = self.root / ".forgeos"
+        metadata.mkdir(mode=0o777)
+        metadata.chmod(0o777)
+        parent = _journal_parent(self.root, create=True)
+        self.assertEqual(stat.S_IMODE(parent.stat().st_mode), 0o700)
+
+        txn = parent / "pending-edit"
+        txn.mkdir(mode=0o777)
+        _require_journal_directory(txn, "Pending edit journal")
+        self.assertEqual(stat.S_IMODE(txn.stat().st_mode), 0o700)
+
+        source = self.root / "source.py"
+        source.write_bytes(b"secret source")
+        backup = txn / "0.bak"
+        manifest = txn / "manifest.json"
+        _copy_bounded(source, backup)
+        _durable_write(manifest, b"{}")
+        legacy = txn / "legacy.json"
+        legacy.write_bytes(b"legacy")
+        legacy.chmod(0o666)
+        _require_journal_file(legacy, "Legacy journal file")
+        for path in (backup, manifest, legacy):
+            with self.subTest(path=path.name):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
     def test_transaction_refuses_symlinked_metadata_directory(self):
         from forgeos.transactions import TransactionError
         outside = self.root / "outside"

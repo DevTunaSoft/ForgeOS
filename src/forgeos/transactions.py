@@ -39,11 +39,18 @@ def _sync_dir(path: Path) -> None:
             os.close(fd)
 
 
-def _durable_write(path: Path, data: bytes) -> None:
-    with path.open("xb") as stream:
-        stream.write(data)
-        stream.flush()
-        os.fsync(stream.fileno())
+def _durable_write(path: Path, data: bytes, *, mode: int = 0o600) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags, mode)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            fd = None
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def _hash_file(path: Path) -> str:
@@ -62,22 +69,30 @@ def _hash_file(path: Path) -> str:
     return value.hexdigest()
 
 
-def _copy_bounded(source: Path, destination: Path) -> str:
+def _copy_bounded(source: Path, destination: Path, *, mode: int = 0o600) -> str:
     """Create a durable, streamed copy, rejecting oversized source data."""
     value = hashlib.sha256()
     size = 0
-    with source.open("rb") as read, destination.open("xb") as write:
-        while True:
-            chunk = read.read(COPY_CHUNK_BYTES)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > MAX_BACKUP_BYTES:
-                raise TransactionError(f"File exceeds transaction backup limit: {source}")
-            write.write(chunk)
-            value.update(chunk)
-        write.flush()
-        os.fsync(write.fileno())
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(destination, flags, mode)
+    try:
+        with source.open("rb") as read, os.fdopen(fd, "wb") as write:
+            fd = None
+            while True:
+                chunk = read.read(COPY_CHUNK_BYTES)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_BACKUP_BYTES:
+                    raise TransactionError(
+                        f"File exceeds transaction backup limit: {source}")
+                write.write(chunk)
+                value.update(chunk)
+            write.flush()
+            os.fsync(write.fileno())
+    finally:
+        if fd is not None:
+            os.close(fd)
     return value.hexdigest()
 
 
@@ -97,11 +112,26 @@ def _is_reparse_point(info) -> bool:
         getattr(info, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT)
 
 
+def _restrict_permissions(path: Path, mode: int, description: str) -> None:
+    """Make internal POSIX metadata private without changing Windows ACLs."""
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, mode, follow_symlinks=False)
+    except (NotImplementedError, TypeError) as exc:
+        raise TransactionError(
+            f"Cannot secure {description} permissions: {path}") from exc
+    except OSError as exc:
+        raise TransactionError(
+            f"Cannot secure {description} permissions: {path}") from exc
+
+
 def _require_journal_directory(path: Path, description: str) -> None:
     info = _lstat(path, description)
     if not stat.S_ISDIR(info.st_mode) or _is_reparse_point(info):
         raise TransactionError(
             f"{description} must be a real directory: {path}")
+    _restrict_permissions(path, 0o700, description)
 
 
 def _require_journal_file(path: Path, description: str) -> None:
@@ -110,6 +140,7 @@ def _require_journal_file(path: Path, description: str) -> None:
             or getattr(info, "st_nlink", 1) != 1):
         raise TransactionError(
             f"{description} must be an unlinked regular file: {path}")
+    _restrict_permissions(path, 0o600, description)
 
 
 def _journal_parent(root: Path, *, create: bool) -> Path | None:
@@ -316,7 +347,7 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
     else:
         _require_journal_directory(txn, "Pending edit journal")
         raise TransactionError(f"Pending transaction requires recovery: {txn}")
-    txn.mkdir()
+    txn.mkdir(mode=0o700)
     _require_journal_directory(txn, "Pending edit journal")
     entries = []
     prepared = False
@@ -325,7 +356,9 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
             target = _safe_target(root, name)
             before = (_copy_bounded(target, txn / f"{i}.bak")
                       if target.exists() else None)
-            _durable_write(txn / f"{i}.new", after)
+            # The private journal directory protects staged source text; the
+            # published replacement keeps the historical umask-derived mode.
+            _durable_write(txn / f"{i}.new", after, mode=0o666)
             entries.append({"path": name, "before": before, "after": _digest(after)})
         manifest = {"version": 1, "state": "pending", "entries": entries}
         serialized = json.dumps(manifest).encode("utf-8")

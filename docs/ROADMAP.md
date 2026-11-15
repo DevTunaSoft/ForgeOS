@@ -681,3 +681,23 @@ Focused engine/transaction tests passed 81/81; the full isolated suite passed
 reported a 1,982,228-byte Python tracemalloc peak and a 29,806,592-byte
 process peak RSS. Hosted exact-head checks and physical Windows restart,
 filesystem-race and NTFS power-loss acceptance remain required.
+
+### 2026-11-15 — private POSIX edit-journal metadata
+
+Edit transaction directories are now enforced as mode `0700` on POSIX, while
+manifests, streamed backups and restore temporaries are created as mode `0600`.
+Staged replacement files retain their umask-derived mode because they are
+published into the workspace; Windows ACL behavior is unchanged. The existing
+64 KiB streaming and 8 MiB backup bounds remain unchanged, and journal access
+still fails closed on redirected or shared metadata.
+
+Regression coverage adds a POSIX-only mode assertion for the journal directory,
+pending journal, backup, manifest and legacy permissive journal files. Focused
+engine/transaction tests ran 82 tests with 1 expected POSIX-only skip (81
+passed); the full isolated suite passed 723 tests with 9 expected skips. The
+known local-model test may emit its existing `WinError 10053` server trace, but
+the suite exits successfully. Compileall, documentation/link coverage and
+`git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+reported a 1,982,228-byte Python tracemalloc peak and a 30,011,392-byte process
+peak RSS. Hosted exact-head checks, Windows ACL review and physical NTFS
+power-loss acceptance remain open.
