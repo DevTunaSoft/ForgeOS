@@ -709,6 +709,7 @@ database. Inspect the newest entries without loading task result blobs:
 py -m forgeos journal --limit 50
 py -m forgeos journal --task-id 1 --limit 20
 py -m forgeos journal-check
+py -m forgeos journal-export "C:\\ForgeOS-backups\\journal.jsonl"
 ```
 
 Journal rows record task, lease and recovery transitions—not full prompts,
@@ -718,3 +719,6 @@ semantic checks and returns a failure status with capped diagnostics if rows
 refer to missing tasks or contain malformed metadata. It never repairs or
 deletes records. The command is for recovery diagnosis; it does not
 activate a backup or replace the running database.
+`journal-export` writes one bounded event object per line in ascending event
+order and refuses an existing destination. It excludes task prompts, raw
+errors and test output; it is not a complete database or evidence backup.

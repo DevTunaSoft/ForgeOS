@@ -2204,6 +2204,16 @@ corruption and never rewrites or deletes journal rows. Tests cover clean CLI
 output and capped malformed-row diagnostics. This is not replay, repair,
 encryption or physical power-loss acceptance.
 
+## 2026-11-15 — streamed journal handoff export
+
+`Store.export_events()` and `forgeos journal-export` now stream the bounded
+event projection to a new newline-delimited JSON artifact, optionally filtered
+by task. The staged file is flushed and published with the existing
+same-directory no-overwrite helper, so an existing export is preserved.
+Regression coverage verifies ascending order, task filtering and CLI routing.
+This artifact excludes prompts, raw errors and test output and is not a full
+database/evidence bundle or import/replay mechanism.
+
 ## 2026-11-14 — streamed backup digest manifests
 
 `Store.backup_to()` now optionally publishes a new bounded JSON manifest with

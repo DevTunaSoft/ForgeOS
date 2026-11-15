@@ -28,6 +28,10 @@ def main(argv=None):
     journal.add_argument('--limit', type=int, default=100)
     sub.add_parser(
         'journal-check', help='Stream-check lifecycle journal integrity')
+    journal_export = sub.add_parser(
+        'journal-export', help='Export bounded lifecycle rows as JSONL')
+    journal_export.add_argument('destination', help='New JSONL file path')
+    journal_export.add_argument('--task-id', type=int, default=None)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -186,6 +190,14 @@ def main(argv=None):
             return 1 if report['issues'] else 0
         finally:
             store.close()
+    if args.action == 'journal-export':
+        store = Store(args.db)
+        try:
+            exported = store.export_events(args.destination, task_id=args.task_id)
+        finally:
+            store.close()
+        print(f'Exported journal: {exported}')
+        return 0
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))
