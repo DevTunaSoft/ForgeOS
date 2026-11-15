@@ -355,6 +355,38 @@ class DatabaseCommandsTests(unittest.TestCase):
             self.assertEqual(report['issues'], [])
             self.assertEqual(report['checked'], 1)
 
+    def test_journal_check_reports_invalid_sqlite_text_as_corruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.git').mkdir()
+            db_path = root / 'state.sqlite3'
+            store = Store(db_path)
+            try:
+                task = store.add(str(root), 'invalid journal text')
+                store.db.execute(
+                    "INSERT INTO forgeos_events("
+                    "task_id,event_type,status,actor,created,details) "
+                    "VALUES(?,CAST(X'80' AS TEXT),'','',1.0,'')", (task,))
+                store.db.commit()
+            finally:
+                store.close()
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    '--db', str(db_path), 'journal-check']), 1)
+            report = __import__('json').loads(output.getvalue())
+            self.assertEqual(report['checked'], 1)
+            self.assertEqual(len(report['issues']), 1)
+            self.assertIsNone(report['issues'][0]['id'])
+            self.assertIn('SQLite journal scan failed',
+                          report['issues'][0]['problems'][0])
+            with closing(sqlite3.connect(db_path)) as db:
+                self.assertEqual(db.execute(
+                    "SELECT hex(CAST(event_type AS BLOB)) FROM forgeos_events "
+                    "WHERE event_type IS NOT NULL AND "
+                    "hex(CAST(event_type AS BLOB))='80'").fetchone(), ('80',))
+
     def test_journal_export_command_writes_jsonl(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -268,6 +268,11 @@ move fail closed; release the handle and inspect the marker before retrying.
   must be backed up separately if needed for complete disaster recovery.
 - The integrity check reports SQLite structural integrity, not correctness
   of every task's semantics, archived evidence or external file.
+- Use `journal-check` separately for lifecycle-row semantics. If SQLite cannot
+  decode a damaged journal value during that scan, it returns a bounded failure
+  diagnostic and nonzero status without modifying the database. A backup may
+  preserve unreadable logical journal content if SQLite's structural integrity
+  check succeeds; it is not a journal-repair operation.
 - No background schedule, automatic retention or destructive cleanup exists.
 - Native SQLite/page-cache disk and memory behavior, failures on removable
   media, power-loss cases, marker replay and physical Windows restart

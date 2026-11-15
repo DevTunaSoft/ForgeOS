@@ -1191,3 +1191,21 @@ Python tracemalloc peak and a 30,306,304-byte process peak RSS. The work is
 on `feat/security-desktop-settings-read-identity-20261115` for takeover.
 Exact-head hosted checks, Windows ACL review and physical NTFS power-loss
 acceptance remain open.
+
+### 2026-11-15 — SQLite journal scan decode failure
+
+The existing `journal-check` reader now catches SQLite scan errors, including
+invalid UTF-8 in a stored TEXT field, and returns a bounded diagnostic instead
+of terminating without its JSON report. The CLI exits nonzero; already-read
+rows are counted and no journal row or database file is repaired or removed.
+The regression inserts invalid UTF-8 through SQLite's `CAST(X'80' AS TEXT)`
+and exercises the actual CLI. The original code raised
+`sqlite3.OperationalError` while fetching that row. Focused post-fix tests
+passed: 2 CLI cases and 1 existing journal-semantic case. The isolated full
+suite completed successfully: 779 tests run, 756 passed and 23 skipped
+(22 Windows-only runtime/integration tests and one symlink test unavailable
+on this host). Documentation link and change-coverage checks, the handoff
+checker, `compileall` and
+`git diff --check` passed. Exact-head hosted checks, Windows restart/NTFS and
+physical power-loss acceptance remain unverified; this does not repair
+damaged data.
