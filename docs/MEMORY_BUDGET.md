@@ -353,3 +353,13 @@ key plus one bounded publication buffer; it uses the OS CSPRNG and never
 retains a key-generation collection or prints the secret. The key file is
 flushed before no-overwrite publication. File-system cache, CSPRNG internals
 and process RSS remain outside these application-level allocation limits.
+
+## Bounded Git diff summary prototype
+
+The opt-in `workspace_diff_summary()` helper retains at most 64 KiB of Git
+numstat output, 16 KiB of patch output, a 4 KiB stderr tail, and a 4,000-
+character summary (with a 20-file default). Smaller caller limits are honored;
+truncation is explicit. The original full `workspace_diff()` remains
+unbounded for compatibility, and the new summary helper is not yet wired to
+GUI/CLI callers. These are Python-side capture limits, not a cap on Git's own
+process memory or a measured system-RAM improvement.

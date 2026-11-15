@@ -3632,3 +3632,82 @@ run 832 and Documentation run 407. The repository-only audit remains
 `INCOMPLETE` by design because clean-room takeover, physical Windows/model
 acceptance and external artifact receipt are manual gates. The package is not
 a source backup, credential archive or production-certification claim.
+
+## 2026-11-15 - RTK-3 bounded workspace Git diff summary
+
+**Change:** added `WorkspaceDiffSummary`, `_git_bounded`, and
+`workspace_diff_summary` to `src/forgeos/workspace.py` (related to issue #3;
+does not close issue #3). The existing `workspace_diff` full-diff contract is
+unchanged. `workspace_diff_summary` runs `git diff --no-ext-diff --numstat --`
+and `--unified=1 --` via `shell=False` `subprocess.Popen` with bounded stdout
+reads (`DEFAULT_DIFF_NUMSTAT_BYTES=65536`, `DEFAULT_DIFF_PATCH_BYTES=16384`),
+a `threading.Timer` timeout guard, `DEFAULT_DIFF_SUMMARY_FILES=20`, and
+`DEFAULT_DIFF_SUMMARY_CHARS=4000`. Any truncation (by `max_chars`, `max_files`,
+or Git byte cap) sets `truncated=True` and includes a visible truncation/limit
+marker in `text` so partial diffs are never presented as complete. GUI, CLI,
+and shared task files were not modified.
+
+**Verification:** on `win32` from base SHA
+`a3902a639c66138f1b054a2018165a92ea71e6cf` in isolated worktree branch
+`fragment/rtk3-bounded-git-output`:
+- `PYTHONPATH=src python -m unittest tests/test_workspace.py tests/test_documentation.py -v`:
+  PASS (24 tests, 8.889s; includes 4 new tests for empty/concise summary,
+  unchanged `workspace_diff`, source-checkout non-modification, hard `max_chars`
+  and `max_files` truncation markers, and invalid-limit rejection).
+- `PYTHONPATH=src python -m compileall -q src tests`: PASS (exit 0).
+- `python tools/check_documentation.py --links`: PASS (exit 0).
+- `python scripts/check_handoff.py --json`: PASS (exit 0).
+- `git diff --check`: PASS (exit 0).
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: TIMED OUT at 120s
+  (exit 143) with unresolved/unattributed failures in
+  `tests.test_core.ForgeOSTests.test_unittest_preset_passes` (`original
+  diagnostic not archived`) and `tests.test_engine` repair tests. Hosted CI,
+  GUI/CLI wiring, and physical Windows acceptance remain open.
+
+**Correction (2026-11-15, targeted repair attempt 1):** on baseline
+`a3902a639c66138f1b054a2018165a92ea71e6cf`, independent runs of the isolated
+core preset test (1 passed) and `tests/test_engine.py` (93 tests, 1 skip, all
+passed) succeeded; therefore the earlier 120s full-suite timeout and failures
+are not confirmed as pre-existing and remain labeled as
+unresolved/unattributed.
+
+**Repair (2026-11-15, targeted repair attempt 1):**
+- `src/forgeos/workspace.py`: `_git_bounded` now drains `proc.stderr`
+  concurrently in a daemon thread preserving only a bounded 4096-byte tail,
+  uses a lock-guarded timeout callback checking `finished` and `proc.poll()` so
+  already-exited commands are not reported as timed out, and joins/cleans up
+  timer and stderr reader threads; `workspace_diff_summary` distinguishes
+  `patch_bytes=<budget>` from `max_chars=<limit>` in the truncation marker.
+- `tests/test_workspace.py`: added deterministic regressions for stderr flooding
+  and bounded tail, timeout/nonzero/race-safe exit handling, numstat byte-cap
+  truncation, and distinct `patch_bytes` marker.
+- `PYTHONPATH=src python -m unittest tests/test_workspace.py tests/test_documentation.py -v`:
+  PASS (28 tests, 36.994s).
+
+## 2026-11-15 — RTK-3 independent QA and full regression follow-up
+
+The first QA review identified two robustness gaps and missing edge tests in
+the new bounded Git summary helper. Targeted repair attempt 1 addressed them:
+stderr is drained concurrently into a 4 KiB tail; timeout handling checks
+completion under a lock and joins its timer/reader; and truncation markers now
+distinguish `patch_bytes` from `max_chars`. New tests cover stderr flooding,
+timeout/nonzero/race-safe exit handling, numstat byte-cap truncation, and the
+distinct patch-byte marker. A second independent QA review found no blocking
+defects and passed the focused workspace and documentation tests. QA's edit
+permission remained denied; its noninteractive compileall attempt was blocked,
+so the Lead ran compilation separately.
+
+The earlier full-suite timeout was not confirmed as pre-existing: isolated
+baseline runs on `a3902a639c66138f1b054a2018165a92ea71e6cf` passed
+`test_unittest_preset_passes` (1 test) and `tests/test_engine.py` (93 tests,
+1 expected skip). On the fragment worktree, the full isolated suite later ran
+**786 tests, 10 skipped, all passed** in 213.181 seconds. A test HTTP server
+printed a `WinError 10053` broken-connection traceback while the suite still
+exited 0; this is recorded as test-harness noise, not a claimed application
+failure or a verified clean log.
+
+**Remaining scope:** `workspace_diff_summary()` is a bounded API prototype;
+no GUI/CLI caller uses it yet. RTK outcome #3 remains incomplete until caller
+wiring and workflow acceptance. No hosted CI or physical Windows user
+acceptance has run for this fragment; the output summary is not a full diff or
+a measured process-RAM improvement.
