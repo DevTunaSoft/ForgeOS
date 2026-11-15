@@ -564,6 +564,14 @@ partial lines without a summary; never treat such output as success.
   cross-reboot model identities. Pinned binary/model contract plus
   authenticated process recreation are required for unattended resume.
 
+Final model-qualification evidence is an autonomy security boundary. The
+loader accepts only unlinked real regular files, opens each record through a
+bounded descriptor, checks the opened file against its pre-open identity, reads
+at most the 64 KiB record bound plus one byte, and rechecks the path after the
+read. Hard links, Windows reparse points, replacements and oversized records
+are ignored rather than parsed, so a concurrent swap cannot silently change
+which evidence authorizes qualified model routing.
+
 **Unaccepted safety boundaries:** A Windows kill-on-close Job Object and
 POSIX process-group cleanup are now implemented for the managed model's
 best-effort owned process tree; they remain unaccepted until hosted and
