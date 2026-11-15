@@ -58,7 +58,10 @@ class WorktreeArchiveTests(unittest.TestCase):
                 content = source.read(info)
                 if info.filename == "src/app.py":
                     content = b"tampered\n"
-                target.writestr(info.filename, content)
+                target_info = zipfile.ZipInfo(info.filename)
+                target_info.create_system = 3
+                target_info.external_attr = 0o600 << 16
+                target.writestr(target_info, content)
         report = check_worktree_archive(tampered)
         self.assertFalse(report["valid"])
         problems = " ".join(issue["problem"] for issue in report["issues"])

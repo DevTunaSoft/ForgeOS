@@ -214,7 +214,8 @@ def _is_unsafe_zip_entry(info: zipfile.ZipInfo) -> bool:
         return True
     if info.create_system == 3:
         mode = (info.external_attr >> 16) & 0xFFFF
-        if mode and not stat.S_ISREG(mode):
+        file_type = stat.S_IFMT(mode)
+        if file_type not in {0, stat.S_IFREG}:
             return True
     return False
 
