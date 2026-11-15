@@ -3090,3 +3090,32 @@ documentation/link coverage and `git diff --check` passed. The bounded 12 MiB
 x 3-cycle memory benchmark reported a 1,982,228-byte Python tracemalloc peak
 and a 30,011,392-byte process peak RSS. Exact-head hosted checks, Windows ACL
 review and physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — descriptor-bound transaction reads
+
+**Change:** transaction manifests, backups and edit targets are now opened
+through bounded descriptors after regular-file identity validation. Opened
+handles are compared with the initial metadata and paths are checked again
+after streaming, so substitution during a read or backup fails closed. POSIX
+uses `O_NOFOLLOW` when available; Windows retains reparse-point and
+opened-handle identity checks. Atomic target publication and recursive journal
+cleanup remain explicit check-and-use race boundaries.
+
+**Regression coverage:** added a recovery regression that swaps a committed
+target to a symlink during the hash open and verifies recovery preserves the
+journal and outside file. Existing streamed backup, committed-target and
+Windows reparse/link coverage remains in place.
+
+**Local verification:** focused engine/transaction tests ran 83 tests with 1
+expected Windows skip (82 passed); the full isolated suite passed 724 tests
+with 9 expected skips. The known local-model test may emit its existing
+`WinError 10053` server trace, but the suite exits successfully. Compileall
+and `git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+reported a 1,982,228-byte Python tracemalloc peak and a 29,937,664-byte process
+peak RSS. The first hosted Windows 3.12 run exposed that a reparse-backed
+symlink could evade the path check after open; the implementation now re-lstats
+the current path and rejects link presentation before hashing. The corrected
+local 12 MiB x 3-cycle memory benchmark reported a 1,982,228-byte Python
+tracemalloc peak and a 30,060,544-byte process peak RSS. Documentation/link
+coverage passes locally; exact-head hosted checks remain required. Windows DACL
+and physical NTFS power-loss acceptance remain open.

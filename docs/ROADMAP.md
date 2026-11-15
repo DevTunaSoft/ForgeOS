@@ -701,3 +701,25 @@ the suite exits successfully. Compileall, documentation/link coverage and
 reported a 1,982,228-byte Python tracemalloc peak and a 30,011,392-byte process
 peak RSS. Hosted exact-head checks, Windows ACL review and physical NTFS
 power-loss acceptance remain open.
+
+### 2026-11-15 — descriptor-bound transaction reads
+
+Transaction manifests, backups and edit targets are now opened through bounded
+descriptors after a regular-file identity check. The opened handle is compared
+with the original metadata, and the path is checked again after streaming, so a
+file substituted during a read or backup fails closed. POSIX uses `O_NOFOLLOW`
+when available; Windows retains reparse-point and opened-handle identity checks.
+Atomic target publication and recursive journal cleanup remain explicit
+check-and-use race boundaries.
+
+Regression coverage adds a target-swap-during-hash test while preserving the
+existing streamed-copy and recovery cases. Focused engine/transaction tests
+ran 83 tests with 1 expected Windows skip (82 passed); the full isolated suite
+passed 724 tests with 9 expected skips. Compileall and `git diff --check`
+passed. The bounded 12 MiB x 3-cycle memory benchmark reported a
+1,982,228-byte Python tracemalloc peak and a 30,060,544-byte process peak RSS.
+The first hosted Windows 3.12 run exposed that a reparse-backed symlink could
+evade the path check after open; the implementation now re-lstats the current
+path and rejects link presentation before hashing. Documentation/link coverage
+passes locally; exact-head hosted checks remain required. Windows DACL and
+physical NTFS power-loss acceptance remain open.
