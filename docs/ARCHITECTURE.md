@@ -137,7 +137,12 @@ With an explicit evidence directory, `check_handoff()` also verifies each
 referenced `<sha256>.txt.gz` archive through a bounded gzip stream, without
 creating directories or decoding raw output. Missing, symlinked, corrupt or
 oversized archives make the report invalid; no evidence directory is consulted
-by default.
+by default. Handoff and optional manifest files are staged and flushed before
+same-directory no-overwrite publication. If handoff publication fails, neither
+artifact is published and temporary files are removed. If the handoff is
+published but a later optional manifest publication fails, the valid handoff is
+retained without a manifest so it can still be checked directly; callers must
+not treat the missing manifest as an integrity assertion.
 
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing

@@ -2369,6 +2369,33 @@ denied; the same system-Python probe passed. Compileall, the diff check and the
 12 MiB x3 memory benchmark also passed. Exact-head GitHub checks remain the
 acceptance gate.
 
+## 2026-11-15 — handoff publication fault-injection coverage
+
+**Change:** regression tests now inject failure into both handoff publication
+phases. A primary publication failure leaves neither JSONL nor manifest and
+cleans temporary files. A later optional-manifest failure retains the already
+published, independently checkable handoff while leaving no partial manifest
+or staging file.
+
+**Safety boundary:** output remains same-directory, staged, flushed and
+no-overwrite. Retaining an unmanifested handoff after a manifest write failure
+does not claim transfer integrity; the operator must diagnose storage and
+publish a new manifest before using digest-backed verification. This does not
+provide physical power-loss acceptance or a complete evidence/worktree bundle.
+
+**Regression coverage:** core tests cover both injected publication failures,
+temporary-file cleanup and direct offline validation of the retained handoff.
+Exact-head Linux/Windows matrix, packaging, memory validation and physical
+interruption acceptance remain required.
+
+**Local verification:** the isolated Python 3.12 recovery/database focus passed
+82 tests and 33 subtests. The full pytest run passed 631 tests, 7 skips and 406
+subtests; one pre-existing Windows AppContainer probe still fails because the
+repository virtualenv executable returns `icacls` access denied. Compileall,
+documentation links/change coverage and the 12 MiB x3 memory benchmark passed;
+post-GC RSS remained about 22.8 MiB across the three benchmark cycles. Exact-
+head GitHub checks remain the acceptance gate.
+
 ## 2026-11-15 — task-scoped bounded journal replay plan
 
 **Change:** added `Store.export_handoff()` and `forgeos journal-handoff`.
