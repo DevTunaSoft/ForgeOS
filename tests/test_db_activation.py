@@ -71,6 +71,22 @@ class ActivateBackupTests(unittest.TestCase):
         })
         return staged, marker
 
+    def _leave_published_activation_with_marker(self):
+        staged = self.root / ".forgeos-activate-published.sqlite3"
+        Store.restore_backup_to(self.backup, staged)
+        core._move_database_copy(self.active, self.rollback)
+        core._move_database_copy(staged, self.active)
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        core._write_activation_marker(marker, {
+            "format": core.ACTIVATION_MARKER_FORMAT,
+            "source": str(self.backup),
+            "destination": str(self.active),
+            "rollback": str(self.rollback),
+            "staged": str(staged),
+            "phase": "published",
+        })
+        return marker, staged
+
     def test_activation_publishes_backup_and_retains_old_database(self):
         result = Store.activate_backup_to(
             self.backup, self.active, self.rollback, confirm=True)
@@ -261,6 +277,31 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertTrue(self.rollback.exists())
         self.assertTrue(staged.exists())
         self.assertTrue(marker.exists())
+
+    def test_published_marker_finalization_validates_both_databases(self):
+        marker, staged = self._leave_published_activation_with_marker()
+
+        with self.assertRaisesRegex(ValueError, "confirmation"):
+            Store.finalize_activation(self.active)
+        self.assertTrue(marker.exists())
+
+        result = Store.finalize_activation(self.active, confirm=True)
+        self.assertEqual(result, self.active)
+        self.assertEqual(self._descriptions(self.active), ["restored task"])
+        self.assertEqual(self._descriptions(self.rollback), ["old active task"])
+        self.assertFalse(marker.exists())
+        self.assertFalse(staged.exists())
+
+    def test_published_finalization_refuses_a_staged_artifact(self):
+        marker, staged = self._leave_published_activation_with_marker()
+        staged.write_bytes(b"operator-owned ambiguity")
+
+        with self.assertRaisesRegex(RuntimeError, "staged"):
+            Store.finalize_activation(self.active, confirm=True)
+        self.assertTrue(marker.exists())
+        self.assertTrue(staged.exists())
+        self.assertEqual(self._descriptions(self.active), ["restored task"])
+        self.assertEqual(self._descriptions(self.rollback), ["old active task"])
 
     def test_oversized_marker_is_rejected_without_unbounded_read(self):
         marker = Path(str(self.active) + ".forgeos-activation.json")

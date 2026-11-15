@@ -1243,6 +1243,42 @@ class Store:
         _remove_activation_marker(marker)
         return target
 
+    @staticmethod
+    def finalize_activation(destination: str | Path, *, confirm: bool = False) -> Path:
+        """Clear a durable published marker after validating both databases."""
+        if confirm is not True:
+            raise ValueError("Explicit activation finalization confirmation is required")
+        target = Path(destination).expanduser().absolute()
+        marker = _activation_marker_path(target)
+        if marker.is_symlink() or not marker.is_file():
+            raise ValueError("No activation marker is available for finalization")
+        payload = _read_activation_marker(marker)
+        paths = _validate_activation_marker(marker, payload)
+        if payload["phase"] != "published":
+            raise ValueError(
+                "Activation marker is not ready for published finalization")
+        target = paths["destination"]
+        old = paths["rollback"]
+        staged = paths["staged"]
+        for database in (target, old):
+            if database.is_symlink() or not database.is_file():
+                raise ValueError("Published activation database is unavailable")
+            if any(sidecar.exists() or sidecar.is_symlink()
+                   for sidecar in _database_sidecars(database)):
+                raise RuntimeError(
+                    "Clear SQLite sidecars before activation finalization")
+        if staged.exists() or staged.is_symlink():
+            raise RuntimeError(
+                "Published activation still has a staged file")
+        if any(sidecar.exists() or sidecar.is_symlink()
+               for sidecar in _database_sidecars(staged)):
+            raise RuntimeError(
+                "Clear SQLite sidecars beside the staged activation file")
+        Store.inspect_existing_database(target)
+        Store.inspect_existing_database(old)
+        _remove_activation_marker(marker)
+        return target
+
     def add(self, project: str, description: str) -> int:
         project_path = Path(project).expanduser().resolve(strict=True)
         if not project_path.is_dir() or not (project_path / '.git').exists():

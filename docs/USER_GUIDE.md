@@ -748,7 +748,19 @@ py -m forgeos db-activation-rollback `
 
 ForgeOS checks the staged file as a ForgeOS SQLite database before deleting
 only that private path. `prepared` and `published` markers are diagnostic
-states; do not force them into a rollback without inspecting the paths.
+states; do not force them into a rollback without inspecting the paths. If a
+crash occurred after the replacement was published, the marker phase is
+`published`, the active and retained rollback databases both exist, and the
+staged path is absent, finalize the completed operation explicitly:
+
+```powershell
+py -m forgeos db-activation-finalize `
+  "$env:USERPROFILE\\.forgeos\\tasks.sqlite3" --confirm
+```
+
+Finalization validates both databases, refuses sidecars or unexpected staging,
+removes only the marker, and keeps the rollback copy. It does not finalize a
+`prepared` or `old_moved` marker.
 
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:

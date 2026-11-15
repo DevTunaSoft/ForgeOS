@@ -382,7 +382,10 @@ paths; inspect a pending marker with `db-activation-status ACTIVE` and use
 phase. If a crashed process left the private staged replacement, inspect it
 first; then add `--discard-staged` to that explicit rollback command to validate
 and remove only the staged file. It is not automatic failover or physical
-power-loss recovery.
+power-loss recovery. If an interrupted operation has a `published` marker,
+both databases are present and the staged path is absent, use
+`db-activation-finalize ACTIVE --confirm` to validate them and clear only that
+completed-operation marker.
 See [database backup and recovery limits](docs/DATABASE_BACKUP.md).
 This is not an encrypted, scheduled or physically accepted disaster-recovery
 solution. A previously created `db-backup` can be included in a passive
