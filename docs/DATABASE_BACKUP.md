@@ -167,8 +167,8 @@ and refuses existing `-wal`, `-shm` or rollback-journal sidecars. The active
 database and rollback path must be in the same existing, non-symlinked folder.
 The old active file is moved to the new rollback path before the verified
 backup is published. A flushed marker named
-`tasks.sqlite3.forgeos-activation.json` records the `prepared`, `old_moved`
-or `published` phase while the operation is in progress.
+`tasks.sqlite3.forgeos-activation.json` records the `prepared`, `old_moved`,
+`publishing` or `published` phase while the operation is in progress.
 
 If a Windows open handle or another publication error prevents replacement,
 ForgeOS fails closed. After the old file has moved, it attempts to put that
@@ -189,7 +189,11 @@ it never replaces an occupied destination or rollback path. If the marker says
 staged path is absent, use `py -m forgeos db-activation-finalize ACTIVE
 --confirm` after stopping ForgeOS. Finalization validates both databases and
 removes only the completed-operation marker; it retains the rollback copy.
-A `prepared` marker remains inspection-only until its paths are understood.
+A `publishing` marker is the durable boundary around the final database move:
+if the destination is absent, use the rollback command; if the destination is
+present, the rollback is present and staging is absent, use finalization. A
+`prepared` marker remains the pre-move state and can be abandoned after its
+paths are understood.
 When the active database is still present, the rollback path is absent and
 the staged replacement is no longer wanted, use
 `py -m forgeos db-activation-abandon ACTIVE --confirm --discard-staged`.

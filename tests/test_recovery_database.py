@@ -163,7 +163,7 @@ class RecoveryBundleDatabaseTests(unittest.TestCase):
         self.assertEqual(self._descriptions(rollback), ["old active task"])
         self.assertTrue(marker.is_file())
         status = Store.activation_status(active)
-        self.assertEqual(status["phase"], "old_moved")
+        self.assertEqual(status["phase"], "publishing")
         self.assertFalse(status["staged_exists"])
         self.assertFalse(list(self.root.glob(".forgeos-recovery-activate-*")))
 

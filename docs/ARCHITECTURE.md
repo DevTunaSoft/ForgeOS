@@ -277,15 +277,17 @@ requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback
 or marker paths, then moves the old active file to a new rollback path before
 publishing the staged database. A small flushed marker records `prepared`,
-`old_moved` or `published` progress. If publication fails after the old file
-moves, the method attempts a fail-closed rollback; when that rollback cannot
-complete, the marker and rollback file remain for manual recovery. It does not
+`old_moved`, `publishing` or `published` progress. If publication fails after
+the old file moves, the method attempts a fail-closed rollback; when that
+rollback cannot complete, the marker and rollback file remain for manual
+recovery. It does not
 coordinate a running process, replay journal actions, merge task histories or
 claim physical power-loss recovery.
 
 `Store.activation_status()` reads at most 4 KiB of the marker and returns only
 bounded path/phase/existence metadata. `Store.rollback_activation()` accepts
-only the durable `old_moved` phase, validates the retained database through a
+the durable `old_moved` or `publishing` phase when the destination is absent,
+validates the retained database through a
 bounded read-only preflight (using immutable mode when no sidecar exists), and
 publishes it with the same no-overwrite move boundary. A staged replacement
 left by a process crash is preserved by default; the explicit
@@ -297,13 +299,14 @@ checks use immutable SQLite URI mode when no sidecars exist, avoiding
 inspection-created `-shm` files; an existing WAL or rollback journal remains
 on the normal read-only path.
 
-`Store.finalize_activation()` and `db-activation-finalize` accept only the
-`published` phase. They require explicit confirmation, validate the active and
+`Store.finalize_activation()` and `db-activation-finalize` accept the
+`publishing` or `published` phase when the new active database is present and
+staging is absent. They require explicit confirmation, validate the active and
 retained rollback databases through the bounded read-only preflight, refuse
 sidecars or any unexpected staged artifact, and remove only the completed
 marker. The rollback copy remains available for deliberate retention or a
-separate operator decision; `prepared` and `old_moved` phases cannot be
-finalized through this path.
+separate operator decision; `prepared` and an absent-destination `old_moved`
+phase cannot be finalized through this path.
 
 `Store.abandon_activation()` and `db-activation-abandon` accept only the
 `prepared` phase. They require explicit confirmation, verify that the active

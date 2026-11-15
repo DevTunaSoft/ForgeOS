@@ -47,7 +47,8 @@ EVENT_NO_UPDATE = """CREATE TRIGGER IF NOT EXISTS forgeos_events_no_update
 
 ACTIVATION_MARKER_FORMAT = "forgeos-db-activation-v1"
 ACTIVATION_MARKER_LIMIT = 4096
-ACTIVATION_PHASES = frozenset(("prepared", "old_moved", "published"))
+ACTIVATION_PHASES = frozenset(
+    ("prepared", "old_moved", "publishing", "published"))
 ACTIVATION_PATH_FIELDS = ("source", "destination", "rollback", "staged")
 DATABASE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
 EVENT_NO_DELETE = """CREATE TRIGGER IF NOT EXISTS forgeos_events_no_delete
@@ -1153,6 +1154,8 @@ class Store:
                 old_moved = True
                 marker_payload["phase"] = "old_moved"
                 _write_activation_marker(marker, marker_payload, replace=True)
+            marker_payload["phase"] = "publishing"
+            _write_activation_marker(marker, marker_payload, replace=True)
             _move_database_copy(staged, target)
             published = True
             marker_payload["phase"] = "published"
@@ -1219,9 +1222,10 @@ class Store:
             raise ValueError("No activation marker is available for rollback")
         payload = _read_activation_marker(marker)
         paths = _validate_activation_marker(marker, payload)
-        if payload["phase"] != "old_moved":
+        if payload["phase"] not in ("old_moved", "publishing"):
             raise ValueError(
-                "Activation marker is not awaiting rollback from old_moved phase")
+                "Activation marker is not awaiting rollback from old_moved "
+                "or publishing phase")
         target = paths["destination"]
         old = paths["rollback"]
         staged = paths["staged"]
@@ -1254,7 +1258,7 @@ class Store:
 
     @staticmethod
     def finalize_activation(destination: str | Path, *, confirm: bool = False) -> Path:
-        """Clear a durable published marker after validating both databases."""
+        """Clear a durable publishing marker after validating both databases."""
         if confirm is not True:
             raise ValueError("Explicit activation finalization confirmation is required")
         target = Path(destination).expanduser().absolute()
@@ -1263,9 +1267,9 @@ class Store:
             raise ValueError("No activation marker is available for finalization")
         payload = _read_activation_marker(marker)
         paths = _validate_activation_marker(marker, payload)
-        if payload["phase"] != "published":
+        if payload["phase"] not in ("publishing", "published"):
             raise ValueError(
-                "Activation marker is not ready for published finalization")
+                "Activation marker is not ready for publishing finalization")
         target = paths["destination"]
         old = paths["rollback"]
         staged = paths["staged"]
