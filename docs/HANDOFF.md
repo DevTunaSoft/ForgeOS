@@ -2678,3 +2678,29 @@ passed with a Python tracemalloc peak of about 1.89 MiB, stable post-GC RSS of
 about 26.3 MiB and process peak RSS of about 28.0 MiB on this host. Exact-head
 hosted Linux/Windows checks, packaging and physical interruption acceptance
 remain required.
+
+## 2026-11-15 — authenticated recovery materialization gate
+
+**Change:** the detached HMAC record is now an optional gate for
+`recovery-bundle-check`, `recovery-bundle-extract` and
+`recovery-bundle-extract-resume`. The combined package checker report includes
+the authentication result. Receiving-side extraction and resume require both
+the record and key when the gate is requested, and fail before staging or
+no-overwrite moves when the pair is missing or invalid. Existing unsigned
+integrity-only calls remain compatible; the durable extraction marker stores no
+secret, so authenticated resume requires the pair again.
+
+**Regression coverage:** extraction tests cover valid authenticated
+materialization, wrong-key refusal before creating a destination, wrong-key
+resume refusal before copying a missing entry, and the database-free CLI gate
+for both successful and failing package checks.
+
+**Local verification:** the focused authentication, extraction/resume and CLI
+suites passed 15 tests after the gate change. With an isolated temporary
+`USERPROFILE`, the full current checkout `python -m unittest discover -s tests -q`
+run passed 678 tests and skipped 7. Compileall passed. The standard 12 MiB
+x3 memory benchmark passed with a Python tracemalloc peak of about 1.89 MiB,
+stable post-GC RSS of about 26.3 MiB and process peak RSS of about 28.6 MiB on
+this host. Documentation coverage, exact-head hosted Linux/Windows checks,
+packaging and physical interruption acceptance remain required for this
+branch.

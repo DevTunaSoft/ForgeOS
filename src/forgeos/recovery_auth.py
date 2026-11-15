@@ -195,3 +195,35 @@ def check_recovery_bundle_auth(package: str | Path, authentication: str | Path,
         "issues": issues,
         "truncated": False,
     }
+
+
+def check_recovery_bundle_authenticated(package: str | Path,
+                                        authentication: str | Path,
+                                        key: str | Path, *,
+                                        max_issues: int = 32) -> dict:
+    """Combine package coherence and detached-authentication reports."""
+    report = check_recovery_bundle(package, max_issues=max_issues)
+    authentication_report = check_recovery_bundle_auth(
+        package, authentication, key)
+    if authentication_report["valid"]:
+        return {**report, "authentication": authentication_report}
+    issues = list(report.get("issues", []))
+    for issue in authentication_report["issues"]:
+        if len(issues) >= max_issues:
+            break
+        issues.append({
+            "path": issue.get("path", ""),
+            "problem": "authentication: " + issue.get(
+                "problem", "authentication failed"),
+        })
+    return {
+        **report,
+        "valid": False,
+        "complete": False,
+        "format": "",
+        "issues": issues,
+        "truncated": report.get("truncated", False)
+        or len(issues) < len(report.get("issues", []))
+        + len(authentication_report["issues"]),
+        "authentication": authentication_report,
+    }

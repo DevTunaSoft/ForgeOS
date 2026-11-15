@@ -436,3 +436,14 @@ package/record tampering fail closed. This adds operator-controlled
 authenticity, not encryption, public-key signer identity, database restore or
 physical power-loss durability; protected key storage and rotation remain
 future work.
+
+### 2026-11-15 — authenticated recovery materialization gate
+
+The detached recovery HMAC is now an optional gate for
+`recovery-bundle-check`, `recovery-bundle-extract` and
+`recovery-bundle-extract-resume`. Operators can require the package and
+shared-secret record to agree before any receiving-side staging or file move;
+wrong or incomplete credentials fail closed while existing unsigned integrity
+flows remain compatible. The extraction marker stores no secret, so the
+operator must supply the pair again for a resumed operation. Encryption,
+public-key identity and physical power-loss acceptance remain future work.
