@@ -53,49 +53,6 @@ def _durable_write(path: Path, data: bytes, *, mode: int = 0o600) -> None:
             os.close(fd)
 
 
-def _hash_file(path: Path) -> str:
-    """Hash bounded file contents without materializing them in memory."""
-    value = hashlib.sha256()
-    size = 0
-    with path.open("rb") as stream:
-        while True:
-            chunk = stream.read(COPY_CHUNK_BYTES)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > MAX_BACKUP_BYTES:
-                raise TransactionError(f"File exceeds transaction backup limit: {path}")
-            value.update(chunk)
-    return value.hexdigest()
-
-
-def _copy_bounded(source: Path, destination: Path, *, mode: int = 0o600) -> str:
-    """Create a durable, streamed copy, rejecting oversized source data."""
-    value = hashlib.sha256()
-    size = 0
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    fd = os.open(destination, flags, mode)
-    try:
-        with source.open("rb") as read, os.fdopen(fd, "wb") as write:
-            fd = None
-            while True:
-                chunk = read.read(COPY_CHUNK_BYTES)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > MAX_BACKUP_BYTES:
-                    raise TransactionError(
-                        f"File exceeds transaction backup limit: {source}")
-                write.write(chunk)
-                value.update(chunk)
-            write.flush()
-            os.fsync(write.fileno())
-    finally:
-        if fd is not None:
-            os.close(fd)
-    return value.hexdigest()
-
-
 def _lstat(path: Path, description: str):
     """Read one internal journal path without following links."""
     try:
@@ -110,6 +67,196 @@ def _is_reparse_point(info) -> bool:
     """Detect POSIX links and Windows reparse points from one lstat result."""
     return stat.S_ISLNK(info.st_mode) or bool(
         getattr(info, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT)
+
+
+def _same_file(before, after, *, require_unlinked: bool = False) -> bool:
+    same = all(getattr(before, field, None) == getattr(after, field, None)
+               for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
+    return same and (not require_unlinked
+                     or getattr(after, "st_nlink", 1) == 1)
+
+
+def _regular_file_info(path: Path, description: str, *,
+                       allow_missing: bool = False,
+                       require_unlinked: bool = False):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        if allow_missing:
+            return None
+        raise TransactionError(f"{description} is missing: {path}")
+    except OSError as exc:
+        raise TransactionError(f"Cannot inspect {description}: {path}") from exc
+    if not stat.S_ISREG(info.st_mode) or _is_reparse_point(info):
+        raise TransactionError(f"{description} must be a regular file: {path}")
+    if require_unlinked and getattr(info, "st_nlink", 1) != 1:
+        raise TransactionError(
+            f"{description} must be an unlinked regular file: {path}")
+    return info
+
+
+def _open_bound_file(path: Path, before, description: str, *,
+                     require_unlinked: bool = False) -> int:
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise TransactionError(
+            f"{description} could not be opened safely: {path}") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode)
+                or _is_reparse_point(opened)
+                or not _same_file(before, opened,
+                                  require_unlinked=require_unlinked)):
+            raise TransactionError(
+                f"{description} changed or became a link: {path}")
+    except TransactionError:
+        os.close(descriptor)
+        raise
+    except OSError as exc:
+        os.close(descriptor)
+        raise TransactionError(
+            f"Cannot inspect opened {description}: {path}") from exc
+    return descriptor
+
+
+def _hash_file(path: Path, *, expected=None,
+               require_unlinked: bool = False,
+               description: str = "Transaction file") -> str:
+    """Hash bounded file contents through an identity-checked descriptor."""
+    before = (expected if expected is not None else
+              _regular_file_info(path, description,
+                                 require_unlinked=require_unlinked))
+    if before.st_size > MAX_BACKUP_BYTES:
+        raise TransactionError(f"File exceeds transaction backup limit: {path}")
+    descriptor = _open_bound_file(
+        path, before, description, require_unlinked=require_unlinked)
+    value = hashlib.sha256()
+    size = 0
+    try:
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = None
+            while True:
+                chunk = stream.read(COPY_CHUNK_BYTES)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_BACKUP_BYTES:
+                    raise TransactionError(
+                        f"File exceeds transaction backup limit: {path}")
+                value.update(chunk)
+    except TransactionError:
+        raise
+    except OSError as exc:
+        raise TransactionError(
+            f"{description} could not be hashed safely: {path}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = path.lstat()
+    except OSError as exc:
+        raise TransactionError(
+            f"{description} changed during hashing: {path}") from exc
+    if (_is_reparse_point(after) or not stat.S_ISREG(after.st_mode)
+            or not _same_file(before, after,
+                              require_unlinked=require_unlinked)):
+        raise TransactionError(f"{description} changed during hashing: {path}")
+    return value.hexdigest()
+
+
+def _copy_bounded(source: Path, destination: Path, *, mode: int = 0o600,
+                  expected=None, require_unlinked: bool = False,
+                  description: str = "Transaction source") -> str:
+    """Create a durable, streamed identity-checked copy."""
+    before = (expected if expected is not None else
+              _regular_file_info(source, description,
+                                 require_unlinked=require_unlinked))
+    if before.st_size > MAX_BACKUP_BYTES:
+        raise TransactionError(
+            f"File exceeds transaction backup limit: {source}")
+    source_fd = _open_bound_file(
+        source, before, description, require_unlinked=require_unlinked)
+    destination_fd = None
+    try:
+        flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | getattr(os, "O_BINARY", 0))
+        destination_fd = os.open(destination, flags, mode)
+        value = hashlib.sha256()
+        size = 0
+        with os.fdopen(source_fd, "rb") as read:
+            source_fd = None
+            with os.fdopen(destination_fd, "wb") as write:
+                destination_fd = None
+                while True:
+                    chunk = read.read(COPY_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > MAX_BACKUP_BYTES:
+                        raise TransactionError(
+                            f"File exceeds transaction backup limit: {source}")
+                    write.write(chunk)
+                    value.update(chunk)
+                write.flush()
+                os.fsync(write.fileno())
+    except TransactionError:
+        raise
+    except OSError as exc:
+        raise TransactionError(
+            f"{description} could not be copied safely: {source}") from exc
+    finally:
+        if source_fd is not None:
+            os.close(source_fd)
+        if destination_fd is not None:
+            os.close(destination_fd)
+    try:
+        after = source.lstat()
+    except OSError as exc:
+        raise TransactionError(
+            f"{description} changed during copying: {source}") from exc
+    if (_is_reparse_point(after) or not stat.S_ISREG(after.st_mode)
+            or not _same_file(before, after,
+                              require_unlinked=require_unlinked)):
+        raise TransactionError(f"{description} changed during copying: {source}")
+    return value.hexdigest()
+
+
+def _read_bounded(path: Path, *, max_bytes: int, description: str,
+                  expected=None, require_unlinked: bool = False) -> bytes:
+    """Read a small file through the same identity-checked descriptor path."""
+    before = (expected if expected is not None else
+              _regular_file_info(path, description,
+                                 require_unlinked=require_unlinked))
+    if before.st_size > max_bytes:
+        raise TransactionError(f"{description} exceeds safety limit")
+    descriptor = _open_bound_file(
+        path, before, description, require_unlinked=require_unlinked)
+    try:
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = None
+            content = stream.read(max_bytes + 1)
+    except OSError as exc:
+        raise TransactionError(
+            f"{description} could not be read safely: {path}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = path.lstat()
+    except OSError as exc:
+        raise TransactionError(
+            f"{description} changed during reading: {path}") from exc
+    if (len(content) > max_bytes or _is_reparse_point(after)
+            or not stat.S_ISREG(after.st_mode)
+            or not _same_file(before, after,
+                              require_unlinked=require_unlinked)):
+        if len(content) > max_bytes:
+            raise TransactionError(f"{description} exceeds safety limit")
+        raise TransactionError(f"{description} changed during reading: {path}")
+    return content
 
 
 def _restrict_permissions(path: Path, mode: int, description: str) -> None:
@@ -134,13 +281,14 @@ def _require_journal_directory(path: Path, description: str) -> None:
     _restrict_permissions(path, 0o700, description)
 
 
-def _require_journal_file(path: Path, description: str) -> None:
+def _require_journal_file(path: Path, description: str):
     info = _lstat(path, description)
     if (not stat.S_ISREG(info.st_mode) or _is_reparse_point(info)
             or getattr(info, "st_nlink", 1) != 1):
         raise TransactionError(
             f"{description} must be an unlinked regular file: {path}")
     _restrict_permissions(path, 0o600, description)
+    return info
 
 
 def _journal_parent(root: Path, *, create: bool) -> Path | None:
@@ -201,17 +349,18 @@ def recover_edits(root: Path) -> bool:
     _require_journal_directory(txn, "Pending edit journal")
     manifest_path = txn / "manifest.json"
     try:
-        _require_journal_file(manifest_path, "Transaction manifest")
+        manifest_info = _require_journal_file(
+            manifest_path, "Transaction manifest")
     except TransactionError as exc:
         if "is missing" in str(exc):
             raise TransactionError(f"Transaction manifest missing: {txn}") from exc
         raise
-    if manifest_path.stat().st_size > MAX_MANIFEST_BYTES:
-        raise TransactionError("Transaction manifest exceeds safety limit")
-    with manifest_path.open("rb") as stream:
-        raw = stream.read(MAX_MANIFEST_BYTES + 1)
-    if len(raw) > MAX_MANIFEST_BYTES:
-        raise TransactionError("Transaction manifest exceeds safety limit")
+    raw = _read_bounded(
+        manifest_path,
+        max_bytes=MAX_MANIFEST_BYTES,
+        description="Transaction manifest",
+        expected=manifest_info,
+        require_unlinked=True)
     try:
         data = json.loads(raw)
     except (UnicodeError, ValueError) as exc:
@@ -244,50 +393,68 @@ def recover_edits(root: Path) -> bool:
         if not valid_hash(after):
             raise TransactionError("Invalid staged hash")
         if data["state"] == "committed":
-            try:
-                target_info = target.lstat()
-            except FileNotFoundError:
-                target_info = None
-            except OSError as exc:
-                raise TransactionError(
-                    f"Cannot inspect committed edit target: {target}") from exc
-            if (target_info is not None and
-                    (not stat.S_ISREG(target_info.st_mode)
-                     or _is_reparse_point(target_info))):
-                raise TransactionError(
-                    f"Committed edit target is not a regular file: {target}")
-            current_hash = (_hash_file(target)
+            target_info = _regular_file_info(
+                target, "Committed edit target", allow_missing=True)
+            current_hash = (_hash_file(
+                target,
+                expected=target_info,
+                description="Committed edit target")
                             if target_info is not None else None)
             if current_hash != after:
                 raise TransactionError(
                     f"Committed edit target changed or is missing: {target}")
             continue
         backup = txn / f"{i}.bak"
+        backup_info = None
         if before is not None:
             try:
-                _require_journal_file(backup, "Transaction backup")
+                backup_info = _require_journal_file(
+                    backup, "Transaction backup")
             except TransactionError as exc:
                 raise TransactionError("Backup missing or damaged") from exc
-            if _hash_file(backup) != before:
+            if (_hash_file(
+                    backup,
+                    expected=backup_info,
+                    require_unlinked=True,
+                    description="Transaction backup") != before):
                 raise TransactionError("Backup missing or damaged")
-        current_hash = _hash_file(target) if target.exists() else None
+        target_info = _regular_file_info(
+            target, "Edit target", allow_missing=True)
+        current_hash = (_hash_file(
+            target, expected=target_info, description="Edit target")
+                        if target_info is not None else None)
         if current_hash is not None and current_hash not in {before, after}:
             raise TransactionError(f"Conflicting external edit: {target}")
         if current_hash is None and before is not None:
             raise TransactionError(f"Original file unexpectedly removed: {target}")
-        planned.append((target, backup if before is not None else None, current_hash, before))
+        planned.append((target, target_info,
+                        backup if before is not None else None,
+                        current_hash, before))
     if data["state"] == "committed":
         _remove_journal(txn)
         return True
 
-    for target, backup, current_hash, before in planned:
+    for target, target_info, backup, current_hash, before in planned:
         if backup is None:
-            if target.exists():
+            current_info = _regular_file_info(
+                target, "Edit target", allow_missing=True)
+            if target_info is None and current_info is not None:
+                raise TransactionError(f"Edit target changed during recovery: {target}")
+            if (target_info is not None and
+                    (current_info is None
+                     or not _same_file(target_info, current_info))):
+                raise TransactionError(f"Edit target changed during recovery: {target}")
+            if current_info is not None:
                 target.unlink()
         elif current_hash != before:
+            current_info = _regular_file_info(
+                target, "Edit target", allow_missing=True)
+            if (current_info is None
+                    or not _same_file(target_info, current_info)):
+                raise TransactionError(f"Edit target changed during recovery: {target}")
             temp = target.parent / (".forgeos-restore-" + next(tempfile._get_candidate_names()))
             try:
-                _copy_bounded(backup, temp)
+                _copy_bounded(backup, temp, require_unlinked=True)
                 os.replace(temp, target)
                 _sync_dir(target.parent)
             finally:
@@ -334,7 +501,9 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
         after = content.encode("utf-8")
         if len(after) > MAX_FILE_BYTES:
             raise TransactionError("Replacement exceeds edit size limit")
-        if target.exists() and target.stat().st_size > MAX_BACKUP_BYTES:
+        target_info = _regular_file_info(
+            target, "Edit target", allow_missing=True)
+        if target_info is not None and target_info.st_size > MAX_BACKUP_BYTES:
             raise TransactionError(f"File exceeds transaction backup limit: {target}")
         staged.append((name, after))
 
@@ -354,8 +523,12 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
     try:
         for i, (name, after) in enumerate(staged):
             target = _safe_target(root, name)
-            before = (_copy_bounded(target, txn / f"{i}.bak")
-                      if target.exists() else None)
+            target_info = _regular_file_info(
+                target, "Edit target", allow_missing=True)
+            before = (_copy_bounded(
+                target, txn / f"{i}.bak", expected=target_info,
+                description="Edit target")
+                      if target_info is not None else None)
             # The private journal directory protects staged source text; the
             # published replacement keeps the historical umask-derived mode.
             _durable_write(txn / f"{i}.new", after, mode=0o666)
@@ -371,7 +544,11 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
         for i, (name, _) in enumerate(staged):
             # Detect external changes since staging, and reject symlink swaps.
             target = _safe_target(root, name)
-            current = _hash_file(target) if target.exists() else None
+            target_info = _regular_file_info(
+                target, "Edit target", allow_missing=True)
+            current = (_hash_file(
+                target, expected=target_info, description="Edit target")
+                      if target_info is not None else None)
             if current != entries[i]["before"]:
                 raise TransactionError(f"Edit target changed during staging: {target}")
             target.parent.mkdir(parents=True, exist_ok=True)

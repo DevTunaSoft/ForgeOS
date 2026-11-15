@@ -64,13 +64,18 @@ mode `0700`, while manifests, backups and restore temporaries are created with
 mode `0600`; staged replacement files retain the historical umask-derived mode
 because they become published workspace files. Windows leaves ACL behavior
 unchanged and retains the operator ACL-review boundary. Recovery continues to
-hash and copy in bounded 64 KiB chunks, and POSIX journal-directory removal is
-flushed after cleanup.
+open regular journal files and edit targets through bounded descriptors with
+initial `lstat`, opened-handle identity and post-read/copy checks. POSIX uses
+`O_NOFOLLOW` when available; Windows also compares opened-handle metadata and
+rejects reparse identities. Hashing and copying remain bounded to 64 KiB
+chunks, and POSIX journal-directory removal is flushed after cleanup.
 
-This narrows same-user journal redirection and substitution risk; it is not a
-complete check-and-use race defense, a Windows DACL boundary or physical NTFS
-power-loss acceptance. Operators should preserve an unsafe journal for
-inspection and resolve the filesystem problem before retrying recovery.
+This closes the path-substitution window while a regular file is being opened,
+hashed or copied, but atomic target publication and recursive journal cleanup
+still have a check-and-use race boundary. It is not a Windows DACL boundary or
+physical NTFS power-loss acceptance. Operators should preserve an unsafe
+journal for inspection and resolve the filesystem problem before retrying
+recovery.
 
 If a crash leaves a `committed` journal behind, recovery also re-hashes every
 published target against its recorded post-edit digest before removing that

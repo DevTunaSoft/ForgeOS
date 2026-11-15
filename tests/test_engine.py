@@ -879,6 +879,41 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertEqual(outside.read_text(), "published")
         self.assertTrue(txn.exists())
 
+    def test_committed_journal_rejects_target_swap_during_hash(self):
+        from unittest.mock import patch
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        outside = self.root / "outside.py"
+        outside.write_text("published")
+        target = self.root / "first.py"
+        target.write_text("published")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"published")}] }))
+        real_open = os.open
+        swapped = {"value": False}
+
+        def swap_before_open(path, flags, *args):
+            if Path(path) == target and not swapped["value"]:
+                swapped["value"] = True
+                target.unlink()
+                try:
+                    target.symlink_to(outside)
+                except (OSError, NotImplementedError):
+                    self.skipTest("File symlinks unavailable")
+            return real_open(path, flags, *args)
+
+        with patch("forgeos.transactions.os.open", side_effect=swap_before_open):
+            with self.assertRaisesRegex(
+                    TransactionError, "safely|became a link|during hashing"):
+                recover_edits(self.root)
+        self.assertTrue(swapped["value"])
+        self.assertTrue(target.is_symlink())
+        self.assertEqual(outside.read_text(), "published")
+        self.assertTrue(txn.exists())
+
     def test_conflicting_external_change_preserved(self):
         from forgeos.transactions import recover_edits, _digest, TransactionError
         (self.root / "first.py").write_text("external change")
