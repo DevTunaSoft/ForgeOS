@@ -2932,3 +2932,24 @@ The CLI regression confirms finalization does not initialize the active Store.
 on Windows. Full isolated tests, documentation/link coverage, compileall,
 bounded memory and exact-head hosted Linux/Windows checks remain required for
 this branch; physical reboot and NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — prepared activation abandonment
+
+**Change:** added `Store.abandon_activation()` and
+`db-activation-abandon` for the crash window after the activation marker is
+published but before the old active file moves. The command requires explicit
+confirmation, accepts only `prepared`, verifies that the active database is
+still present and no rollback path appeared, and preserves staged content by
+default. With `--discard-staged`, it validates the staged SQLite file, removes
+only that private artifact, and then clears the marker without moving the
+active database. Other marker phases remain on their dedicated paths.
+
+**Regression coverage:** activation tests cover confirmation, preserved
+prepared staging, explicit discard, corrupt staging refusal and active-file
+retention. The CLI regression confirms abandonment does not initialize the
+active Store.
+
+**Local verification:** focused activation and database CLI tests passed 35/35
+on Windows. Full isolated tests, documentation/link coverage, compileall,
+bounded memory and exact-head hosted Linux/Windows checks remain required for
+this branch; physical reboot and NTFS power-loss acceptance remain open.

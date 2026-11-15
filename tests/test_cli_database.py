@@ -193,6 +193,58 @@ class DatabaseCommandsTests(unittest.TestCase):
                     "SELECT description FROM tasks").fetchone()[0],
                     "new CLI task")
 
+    def test_activation_abandon_cli_discards_prepared_staging_without_store_init(self):
+        import forgeos.core as core
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            active = root / "tasks.sqlite3"
+            source = root / "source.sqlite3"
+            backup = root / "backup.sqlite3"
+            rollback = root / "before-activation.sqlite3"
+            staged = root / ".forgeos-activate-prepared.sqlite3"
+
+            active_store = Store(active)
+            try:
+                active_store.add(str(repo), "old CLI task")
+            finally:
+                active_store.close()
+            source_store = Store(source)
+            try:
+                source_store.add(str(repo), "new CLI task")
+                source_store.backup_to(backup)
+            finally:
+                source_store.close()
+            Store.restore_backup_to(backup, staged)
+            marker = Path(str(active) + ".forgeos-activation.json")
+            core._write_activation_marker(marker, {
+                "format": core.ACTIVATION_MARKER_FORMAT,
+                "source": str(backup),
+                "destination": str(active),
+                "rollback": str(rollback),
+                "staged": str(staged),
+                "phase": "prepared",
+            })
+
+            output = io.StringIO()
+            with patch.object(Store, "__init__", side_effect=AssertionError(
+                    "Abandonment must not open the active task database")), \
+                    redirect_stdout(output):
+                self.assertEqual(main([
+                    "db-activation-abandon", str(active), "--confirm",
+                    "--discard-staged"]), 0)
+            self.assertIn("Abandoned database activation:", output.getvalue())
+            self.assertFalse(marker.exists())
+            self.assertFalse(staged.exists())
+            self.assertFalse(rollback.exists())
+            with closing(sqlite3.connect(active)) as db:
+                self.assertEqual(db.execute(
+                    "SELECT description FROM tasks").fetchone()[0],
+                    "old CLI task")
+
     def test_database_commands_never_initialize_a_missing_database(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

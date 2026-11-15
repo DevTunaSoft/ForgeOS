@@ -762,6 +762,18 @@ Finalization validates both databases, refuses sidecars or unexpected staging,
 removes only the marker, and keeps the rollback copy. It does not finalize a
 `prepared` or `old_moved` marker.
 
+If the marker phase is `prepared`, the active database was not moved. When the
+staged replacement is not wanted, abandon that interrupted attempt explicitly:
+
+```powershell
+py -m forgeos db-activation-abandon `
+  "$env:USERPROFILE\\.forgeos\\tasks.sqlite3" --confirm --discard-staged
+```
+
+Abandonment validates the active and staged databases, deletes only the staged
+path and removes the prepared marker. It never moves the active database and
+does not accept `old_moved` or `published` markers.
+
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:
 

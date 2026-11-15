@@ -230,6 +230,19 @@ def _remove_activation_marker(marker: Path, *, missing_ok: bool = False) -> None
     _sync_publication_directory(marker.parent)
 
 
+def _discard_activation_staged(staged: Path) -> None:
+    """Validate and remove one private staged activation database."""
+    if staged.is_symlink() or not staged.is_file():
+        raise ValueError("Staged activation file must be a regular file")
+    if any(sidecar.exists() or sidecar.is_symlink()
+           for sidecar in _database_sidecars(staged)):
+        raise RuntimeError(
+            "Clear SQLite sidecars beside the staged activation file")
+    Store.inspect_existing_database(staged)
+    staged.unlink()
+    _sync_publication_directory(staged.parent)
+
+
 def _utf8_size(value: str) -> int:
     try:
         return len(value.encode("utf-8"))
@@ -1232,11 +1245,7 @@ class Store:
             raise RuntimeError(
                 "Clear SQLite sidecars beside the staged activation file")
         if staged_present:
-            if staged.is_symlink() or not staged.is_file():
-                raise ValueError("Staged activation file must be a regular file")
-            Store.inspect_existing_database(staged)
-            staged.unlink()
-            _sync_publication_directory(staged.parent)
+            _discard_activation_staged(staged)
         _move_database_copy(old, target)
         if marker.is_symlink():
             raise RuntimeError("Activation marker changed during rollback")
@@ -1276,6 +1285,47 @@ class Store:
                 "Clear SQLite sidecars beside the staged activation file")
         Store.inspect_existing_database(target)
         Store.inspect_existing_database(old)
+        _remove_activation_marker(marker)
+        return target
+
+    @staticmethod
+    def abandon_activation(destination: str | Path, *, confirm: bool = False,
+                           discard_staged: bool = False) -> Path:
+        """Cancel a prepared activation without moving the active database."""
+        if confirm is not True:
+            raise ValueError("Explicit activation abandonment confirmation is required")
+        if type(discard_staged) is not bool:
+            raise ValueError("Staged activation discard must be boolean")
+        target = Path(destination).expanduser().absolute()
+        marker = _activation_marker_path(target)
+        if marker.is_symlink() or not marker.is_file():
+            raise ValueError("No activation marker is available for abandonment")
+        payload = _read_activation_marker(marker)
+        paths = _validate_activation_marker(marker, payload)
+        if payload["phase"] != "prepared":
+            raise ValueError(
+                "Activation marker is not awaiting prepared abandonment")
+        target = paths["destination"]
+        old = paths["rollback"]
+        staged = paths["staged"]
+        if old.exists() or old.is_symlink():
+            raise ValueError(
+                "Prepared activation has an unexpected rollback database")
+        if target.is_symlink() or not target.is_file():
+            raise ValueError("Prepared activation destination is unavailable")
+        for database in (target, staged):
+            if any(sidecar.exists() or sidecar.is_symlink()
+                   for sidecar in _database_sidecars(database)):
+                raise RuntimeError(
+                    "Clear SQLite sidecars before prepared abandonment")
+        Store.inspect_existing_database(target)
+        staged_present = staged.exists() or staged.is_symlink()
+        if staged_present and not discard_staged:
+            raise RuntimeError(
+                "Preserve the staged activation file for manual inspection, "
+                "or explicitly pass discard_staged=True")
+        if staged_present:
+            _discard_activation_staged(staged)
         _remove_activation_marker(marker)
         return target
 

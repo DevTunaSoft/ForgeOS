@@ -609,3 +609,12 @@ databases through bounded read-only inspection, refuses sidecars and unexpected
 staging, and removes only the completed-operation marker. `prepared` and
 `old_moved` remain separate, explicit recovery states; physical reboot and
 NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — prepared activation abandonment
+
+The final activation marker state now has an explicit recovery path:
+`db-activation-abandon ACTIVE --confirm --discard-staged` accepts only a
+`prepared` marker, verifies that the original active database remains present
+and no rollback path appeared, validates the staged replacement, removes only
+that staged file and clears the marker. It never moves the active database;
+physical reboot and NTFS power-loss acceptance remain open.

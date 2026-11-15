@@ -87,6 +87,20 @@ class ActivateBackupTests(unittest.TestCase):
         })
         return marker, staged
 
+    def _leave_prepared_activation_with_staged_file(self):
+        staged = self.root / ".forgeos-activate-prepared.sqlite3"
+        Store.restore_backup_to(self.backup, staged)
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        core._write_activation_marker(marker, {
+            "format": core.ACTIVATION_MARKER_FORMAT,
+            "source": str(self.backup),
+            "destination": str(self.active),
+            "rollback": str(self.rollback),
+            "staged": str(staged),
+            "phase": "prepared",
+        })
+        return marker, staged
+
     def test_activation_publishes_backup_and_retains_old_database(self):
         result = Store.activate_backup_to(
             self.backup, self.active, self.rollback, confirm=True)
@@ -302,6 +316,37 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertTrue(staged.exists())
         self.assertEqual(self._descriptions(self.active), ["restored task"])
         self.assertEqual(self._descriptions(self.rollback), ["old active task"])
+
+    def test_prepared_abandonment_preserves_active_until_explicit_discard(self):
+        marker, staged = self._leave_prepared_activation_with_staged_file()
+
+        with self.assertRaisesRegex(ValueError, "confirmation"):
+            Store.abandon_activation(self.active)
+        with self.assertRaisesRegex(RuntimeError, "staged activation file"):
+            Store.abandon_activation(self.active, confirm=True)
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertTrue(staged.exists())
+        self.assertTrue(marker.exists())
+
+        result = Store.abandon_activation(
+            self.active, confirm=True, discard_staged=True)
+        self.assertEqual(result, self.active)
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertFalse(staged.exists())
+        self.assertFalse(marker.exists())
+
+    def test_prepared_abandonment_refuses_corrupt_staging(self):
+        marker, staged = self._leave_prepared_activation_with_staged_file()
+        staged.write_bytes(b"not a ForgeOS database")
+
+        with self.assertRaises((ValueError, sqlite3.DatabaseError)):
+            Store.abandon_activation(
+                self.active, confirm=True, discard_staged=True)
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertTrue(staged.exists())
+        self.assertTrue(marker.exists())
 
     def test_oversized_marker_is_rejected_without_unbounded_read(self):
         marker = Path(str(self.active) + ".forgeos-activation.json")

@@ -190,8 +190,13 @@ staged path is absent, use `py -m forgeos db-activation-finalize ACTIVE
 --confirm` after stopping ForgeOS. Finalization validates both databases and
 removes only the completed-operation marker; it retains the rollback copy.
 A `prepared` marker remains inspection-only until its paths are understood.
-The marker is evidence of an interrupted operation, not a guarantee of
-physical power-loss recovery.
+When the active database is still present, the rollback path is absent and
+the staged replacement is no longer wanted, use
+`py -m forgeos db-activation-abandon ACTIVE --confirm --discard-staged`.
+Abandonment validates the unchanged active database and staged SQLite file,
+deletes only the staged path and removes the prepared marker; it never moves
+the active database. The marker is evidence of an interrupted operation, not a
+guarantee of physical power-loss recovery.
 
 ## Security and recovery limitations
 
