@@ -148,6 +148,12 @@ sidecar that existed before the operation must retain its device/inode after
 SQLite closes, while a newly created regular `-shm` sidecar is tolerated for
 the read-only URI path.
 
+Activation markers are read through the same bounded identity boundary: the
+marker must be an unlinked real regular file, its content is capped at 4 KiB,
+and its device/inode/size/modification-time identity is rechecked after the
+read. A replaced, hard-linked or Windows-reparse marker therefore remains
+diagnostic evidence instead of steering rollback through a substituted path.
+
 An optional backup manifest is generated with a streamed 64 KiB SHA-256 and
 byte count, capped to a 1 KiB JSON file. Restore-copy can verify that manifest
 before opening the source. It detects accidental transfer or storage
