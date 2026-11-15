@@ -138,6 +138,57 @@ class RestoreBackupTests(unittest.TestCase):
             Store.restore_backup_to(alias, output)
         self.assertFalse(output.exists())
 
+    def test_symlinked_restore_sidecar_is_rejected(self):
+        sidecar = Path(str(self.backup) + "-wal")
+        outside = self.root / "outside-wal"
+        outside.write_bytes(b"redirected sidecar")
+        try:
+            sidecar.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlinks unavailable")
+        try:
+            with self.assertRaisesRegex(ValueError, "sidecar"):
+                Store.restore_backup_to(
+                    self.backup, self.root / "sidecar-rejected.sqlite3")
+        finally:
+            sidecar.unlink()
+        self.assertFalse((self.root / "sidecar-rejected.sqlite3").exists())
+
+    def test_inspection_rejects_symlinked_sidecar(self):
+        sidecar = Path(str(self.database) + "-wal")
+        outside = self.root / "outside-inspection-wal"
+        outside.write_bytes(b"redirected sidecar")
+        try:
+            sidecar.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlinks unavailable")
+        try:
+            with self.assertRaisesRegex(ValueError, "unsafe SQLite sidecars"):
+                Store.inspect_existing_database(self.database)
+        finally:
+            sidecar.unlink()
+
+    def test_restore_refuses_sidecar_identity_change(self):
+        from forgeos import core
+        sidecar = self.root / "synthetic-wal"
+        replacement = self.database
+        calls = {"count": 0}
+
+        def sidecar_info(path):
+            calls["count"] += 1
+            info = self.backup.lstat()
+            if calls["count"] == 2:
+                info = replacement.lstat()
+            return {sidecar: info}
+
+        with patch.object(
+                core, "_database_sidecar_info", side_effect=sidecar_info):
+            with self.assertRaisesRegex(ValueError, "sidecar changed"):
+                Store.restore_backup_to(
+                    self.backup, self.root / "sidecar-changed.sqlite3")
+        self.assertEqual(calls["count"], 2)
+        self.assertFalse((self.root / "sidecar-changed.sqlite3").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

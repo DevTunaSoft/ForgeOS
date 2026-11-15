@@ -141,6 +141,13 @@ source substitution therefore fails closed before a new artifact is published.
 This remains a bounded check-and-use boundary rather than a descriptor-bound
 SQLite read or a lock against a writer that deliberately preserves metadata.
 
+SQLite `-wal`, `-shm` and rollback-journal paths used during read-only
+inspection or restore are also lstat-validated as real regular files; links,
+reparse points and other nonregular sidecars fail before SQLite use. Any
+sidecar that existed before the operation must retain its device/inode after
+SQLite closes, while a newly created regular `-shm` sidecar is tolerated for
+the read-only URI path.
+
 An optional backup manifest is generated with a streamed 64 KiB SHA-256 and
 byte count, capped to a 1 KiB JSON file. Restore-copy can verify that manifest
 before opening the source. It detects accidental transfer or storage
