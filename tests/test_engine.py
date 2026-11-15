@@ -881,6 +881,7 @@ class TransactionRecoveryTests(unittest.TestCase):
 
     def test_committed_journal_rejects_target_swap_during_hash(self):
         from unittest.mock import patch
+        from forgeos import transactions
         from forgeos.transactions import TransactionError, recover_edits, _digest
         outside = self.root / "outside.py"
         outside.write_text("published")
@@ -892,10 +893,10 @@ class TransactionRecoveryTests(unittest.TestCase):
             "version": 1, "state": "committed", "entries": [{
                 "path": "first.py", "before": _digest(b"original"),
                 "after": _digest(b"published")}] }))
-        real_open = os.open
+        real_open_bound = transactions._open_bound_file
         swapped = {"value": False}
 
-        def swap_before_open(path, flags, *args):
+        def swap_before_open(path, before, description, **kwargs):
             if Path(path) == target and not swapped["value"]:
                 swapped["value"] = True
                 target.unlink()
@@ -903,9 +904,10 @@ class TransactionRecoveryTests(unittest.TestCase):
                     target.symlink_to(outside)
                 except (OSError, NotImplementedError):
                     self.skipTest("File symlinks unavailable")
-            return real_open(path, flags, *args)
+            return real_open_bound(path, before, description, **kwargs)
 
-        with patch("forgeos.transactions.os.open", side_effect=swap_before_open):
+        with patch.object(
+                transactions, "_open_bound_file", side_effect=swap_before_open):
             with self.assertRaisesRegex(
                     TransactionError, "safely|became a link|during hashing"):
                 recover_edits(self.root)
