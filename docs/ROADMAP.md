@@ -404,3 +404,14 @@ handoff and evidence without opening SQLite. The 1 GiB package and 256 MiB
 aggregate compressed-evidence limits keep this a low-memory transfer artifact;
 encryption, signing, database restore, replay and physical power-loss
 acceptance remain future work.
+
+### 2026-11-15 — marked recovery bundle materialization
+
+`recovery-bundle-extract` now provides the receiving-side recovery boundary for
+the complete passive transfer artifact. It validates the package before
+copying, streams entries through private staging, reserves a new destination,
+and writes a bounded phase marker before no-overwrite file moves. The marker is
+promoted to `complete` only after the package digest and copied coherence index
+are revalidated; `recovery-bundle-extract-check` rejects publishing, failed or
+tampered directories. This does not initialize SQLite, execute a task or replay
+actions, and physical power-loss acceptance remains open.

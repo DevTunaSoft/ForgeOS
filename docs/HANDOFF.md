@@ -2515,6 +2515,41 @@ about 22.4 MiB, and process peak RSS of about 24.6 MiB. Exact-head hosted
 Linux/Windows checks, packaging and physical interruption acceptance remain
 required.
 
+## 2026-11-15 — marked recovery bundle materialization
+
+**Change:** added `recovery-bundle-extract` and
+`recovery-bundle-extract-check`. The receiving-side materializer validates the
+complete ZIP, streams bounded entries into a private staging directory,
+reserves a new destination, and moves the passive handoff, source archive,
+manifest, evidence and index through the no-overwrite file helper. A bounded
+`recovery-bundle-extraction-state.json` marker records `publishing`, `failed`
+or `complete`; completion is written only after package-digest and copied-index
+verification. The workflow remains database-free and never starts a task or
+replays actions.
+
+**Safety boundary:** an existing destination is refused. An interrupted or
+failed publication remains visibly incomplete for inspection rather than being
+reported as a usable recovery directory. Staging, entry, package and evidence
+limits remain active; the marker is capped at 2 KiB. This is passive
+materialization, not database restoration, action replay, encryption, signing
+or physical power-loss acceptance.
+
+**Regression coverage:** extraction tests cover valid completion, destination
+no-overwrite, tampered materialized handoffs, failed-publication markers and
+database-free CLI dispatch. Exact-head Linux/Windows checks, packaging, memory
+validation and physical interruption acceptance remain required.
+
+**Local verification:** the focused extraction/CLI suite passed 5 tests. With
+an isolated temporary `USERPROFILE`, the full current checkout
+`python -m unittest discover -s tests -q` run executed 668 tests, skipped 7
+and had only the known repository-virtualenv Windows AppContainer failure:
+`icacls` returned access denied for the active `.venv` Python executable.
+Compileall and documentation link/change checks passed. The standard 12 MiB
+x3 memory benchmark passed with a Python tracemalloc peak of about 1.86 MiB,
+stable post-GC RSS of about 22.6 MiB and process peak RSS of about 24.4 MiB.
+Exact-head hosted Linux/Windows checks, packaging and physical interruption
+acceptance remain required.
+
 ## 2026-11-15 — bounded recovery bundle coherence index
 
 **Change:** added `recovery-bundle-index` and

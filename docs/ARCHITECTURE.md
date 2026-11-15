@@ -194,6 +194,18 @@ The package has a 1 GiB archive bound and a 256 MiB aggregate compressed
 evidence bound; it is a transport artifact, not encryption, authentication,
 database restoration or action replay.
 
+`extract_recovery_bundle()` is the receiving-side recovery boundary. It first
+checks the complete ZIP and streams its entries into a private staging
+directory, then verifies the staged index before reserving a new destination
+directory. Files move through the existing no-overwrite file publication
+helper; a bounded `recovery-bundle-extraction-state.json` marker records
+`publishing`, `failed` or `complete`. The marker is written before publication
+and only becomes complete after the package digest and materialized index are
+rechecked, so interrupted or failed copies remain visibly non-complete rather
+than being mistaken for a usable handoff. The extracted artifacts remain
+passive files: no SQLite initialization, task execution or action replay is
+performed.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback

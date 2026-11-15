@@ -826,6 +826,11 @@ py -m forgeos recovery-bundle `
   --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
 py -m forgeos recovery-bundle-check `
   "C:\ForgeOS-backups\task-1-recovery.zip"
+py -m forgeos recovery-bundle-extract `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  "C:\ForgeOS-received\task-1"
+py -m forgeos recovery-bundle-extract-check `
+  "C:\ForgeOS-received\task-1"
 ```
 
 The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
@@ -875,3 +880,14 @@ directory; it also rechecks every nested artifact and rejects unsafe or ZIP64
 layouts. The package is capped at 1 GiB with 256 MiB of compressed evidence.
 It is not encrypted, signed, a database backup, a restore/import/replay
 mechanism or a physical power-loss guarantee.
+
+`recovery-bundle-extract` is the receiving-side materialization step. It
+requires a new destination directory, verifies the package before copying,
+uses private staging and bounded 64 KiB streaming writes, and writes
+`recovery-bundle-extraction-state.json` before publication. The marker becomes
+`complete` only after the copied handoff, source archive, manifest and evidence
+pass the nested integrity checks. A failed or interrupted move remains marked
+`failed` or otherwise incomplete; rerun against a new destination after
+inspection. `recovery-bundle-extract-check` reports the durable completion
+state. This step never opens SQLite, starts ForgeOS, executes a task or replays
+the handoff.
