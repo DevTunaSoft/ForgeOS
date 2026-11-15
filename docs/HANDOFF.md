@@ -2173,3 +2173,16 @@ GitHub Linux/Windows
 Python 3.10/3.12, documentation and Windows packaging checks passed for
 `a173bc1`. Physical power-loss and active-database restoration remain
 unverified.
+
+## 2026-11-14 — streamed backup digest manifests
+
+`Store.backup_to()` now optionally publishes a new bounded JSON manifest with
+the backup byte size and streamed SHA-256. `Store.restore_backup_to()` and the
+CLI can require that manifest before opening the source, so an accidental
+transfer or storage mismatch fails closed without creating a restored file.
+Manifest publication is preflighted for no-overwrite behavior and uses the
+existing same-directory publication helper. Regression coverage exercises
+manifest contents, no-overwrite behavior and mismatch refusal. The manifest
+is not encryption, authentication, a full backup bundle, or active-database
+activation; physical Windows media and power-loss acceptance remain
+unverified.

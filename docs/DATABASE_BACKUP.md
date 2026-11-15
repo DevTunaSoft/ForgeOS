@@ -21,6 +21,8 @@ PowerShell run:
 ```powershell
 py -m forgeos db-check
 py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup-2026-11-11.sqlite3"
+# Optional: publish a separate bounded SHA-256/size manifest
+py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup-2026-11-11.sqlite3" --manifest "C:\\ForgeOS-backups\\tasks-backup-2026-11-11.json"
 ```
 
 The backup destination must not exist. Repeated backups need a *new name*.
@@ -59,6 +61,15 @@ and publishes it only if its destination is new and no other process already
 created the file. Wrong-schema and corrupt sources fail closed without a
 partial output. File paths containing spaces or special URI characters are
 supported.
+
+For transfer or storage workflows, `db-backup --manifest PATH` also publishes
+a new small JSON manifest containing the backup byte size and streamed
+SHA-256. A restore can require that exact digest with
+`db-restore-copy SOURCE DESTINATION --manifest PATH`. The manifest is checked
+before SQLite opens the source, and mismatches fail without creating the
+destination. It detects accidental corruption, but is not a signature or
+encryption and does not protect against an attacker who can replace both
+files.
 
 **This is a verified offline copy, not automatic activation.** It does not
 stop ForgeOS, switch the GUI's active database, merge task histories, or

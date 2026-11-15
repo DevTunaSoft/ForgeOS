@@ -87,17 +87,28 @@ class DatabaseCommandsTests(unittest.TestCase):
                 self.assertEqual(main(["--db", str(db_path), "db-check"]), 0)
             self.assertIn("SQLite integrity: ok", output.getvalue())
             target = root / "saved.sqlite3"
+            manifest = root / "saved.json"
             output = io.StringIO()
             with redirect_stdout(output):
                 self.assertEqual(main([
-                    "--db", str(db_path), "db-backup", str(target)]), 0)
+                    "--db", str(db_path), "db-backup", str(target),
+                    "--manifest", str(manifest)]), 0)
             self.assertIn("Verified backup:", output.getvalue())
+            self.assertTrue(manifest.is_file())
             with closing(sqlite3.connect(target)) as copied:
                 self.assertEqual(
                     copied.execute("SELECT description FROM tasks").fetchone()[0],
                     "backup cli test")
             with self.assertRaisesRegex(ValueError, "new file"):
                 main(["--db", str(db_path), "db-backup", str(target)])
+
+            restored = root / "saved-restored.sqlite3"
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    "db-restore-copy", str(target), str(restored),
+                    "--manifest", str(manifest)]), 0)
+            self.assertIn("Verified restore copy:", output.getvalue())
 
     def test_journal_command_returns_bounded_task_events(self):
         with tempfile.TemporaryDirectory() as directory:

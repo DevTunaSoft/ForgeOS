@@ -84,6 +84,12 @@ staging file after publication or failure. This is a filesystem compatibility
 and no-overwrite boundary, not a guarantee against non-cooperating external
 writers or power loss.
 
+An optional backup manifest is generated with a streamed 64 KiB SHA-256 and
+byte count, capped to a 1 KiB JSON file. Restore-copy can verify that manifest
+before opening the source. It detects accidental transfer or storage
+corruption, but is intentionally not an authentication, encryption or active
+database replacement mechanism.
+
 The persistent `Store.get()` API remains available for explicit detailed history and evidence inspection, but **regular development, planning and manual test actions** use the narrower `Store.get_task_inputs()` projection. Its normal path selects only the project, status and bounded UTF-8 task description, without fetching historical result/error data. Direct resumption uses the same bounded projection but requests an existing checkpoint only when at most 64 KiB. Oversized legacy description/checkpoint values are rejected within the SQLite projection before Python materializes them; the original stored rows are not modified.
 
 The Tkinter Live Activity Monitor uses `Store.get_status()` to select one scalar status value at its existing once-per-second cadence. It never fetches model output, error logs or checkpoints merely to update a stage label. These are **read-path optimizations**, not a guarantee that SQLite's internal page cache, the external model process or the complete application has a fixed RAM ceiling. Full process-tree Windows acceptance remains open.
