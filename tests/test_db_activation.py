@@ -498,6 +498,49 @@ class ActivateBackupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "oversized"):
             Store.activation_status(self.active)
 
+    def test_marker_read_refuses_hard_linked_marker(self):
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        outside = self.root / "marker-copy.json"
+        outside.write_text(
+            json.dumps({"format": core.ACTIVATION_MARKER_FORMAT,
+                        "phase": "prepared"}),
+            encoding="utf-8")
+        try:
+            marker.hardlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unavailable")
+        with self.assertRaisesRegex(ValueError, "unlinked"):
+            Store.activation_status(self.active)
+        self.assertEqual(
+            json.loads(outside.read_text(encoding="utf-8"))["phase"],
+            "prepared")
+
+    def test_marker_read_refuses_identity_change(self):
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        marker.write_text(
+            json.dumps({"format": core.ACTIVATION_MARKER_FORMAT,
+                        "phase": "prepared"}),
+            encoding="utf-8")
+        replacement = self.root / "replacement-marker.json"
+        replacement.write_text("replacement", encoding="utf-8")
+        real_info = core._publication_file_info
+        calls = {"count": 0}
+
+        def publication_info(path, description, *args, **kwargs):
+            value = real_info(path, description, *args, **kwargs)
+            if path == marker:
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_publication_file_info", side_effect=publication_info):
+            with self.assertRaisesRegex(
+                    ValueError, "Activation marker changed during read"):
+                core._read_activation_marker(marker)
+        self.assertEqual(calls["count"], 2)
+
     def test_replacing_activation_marker_flushes_posix_directory(self):
         marker = self.root / "activation-marker.json"
         payload = {"format": "forgeos-db-activation-v1", "phase": "prepared"}

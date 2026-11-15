@@ -3248,3 +3248,21 @@ and `git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
 reported a 1,982,228-byte Python tracemalloc peak and a 29,913,088-byte
 process peak RSS. Exact-head hosted checks remain required before merge.
 Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — activation-marker read identity
+
+**Change:** activation-marker reads now require an unlinked real regular file,
+retain the existing 4 KiB bound, and recheck device/inode/size/
+modification-time identity after reading. A hard-linked, Windows-reparse or
+substituted marker therefore fails closed before rollback or finalization
+trusts its path projection.
+
+**Regression coverage:** added hard-linked-marker refusal and marker
+substitution during read. Focused activation/core/CLI tests passed 102 tests.
+The full isolated suite passed 742 tests with 10 expected skips; the known
+local-model test may emit its existing `WinError 10053` server trace but exits
+successfully. Compileall, documentation/link coverage and `git diff --check`
+passed. The bounded 12 MiB x 3-cycle memory benchmark reported a
+1,982,228-byte Python tracemalloc peak and a 29,417,472-byte process peak RSS.
+Exact-head hosted checks remain required before merge. Windows ACL review and
+physical NTFS power-loss acceptance remain open.

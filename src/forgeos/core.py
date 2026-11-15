@@ -326,13 +326,20 @@ def _assert_database_sidecars_unchanged(
 
 def _read_activation_marker(marker: Path) -> dict:
     """Read one bounded activation marker without trusting its contents."""
-    if marker.is_symlink() or not marker.is_file():
-        raise ValueError("Activation marker must be a regular file")
+    before = _publication_file_info(
+        marker, "Activation marker", require_unlinked=True)
     try:
         with marker.open("rb") as stream:
             encoded = stream.read(ACTIVATION_MARKER_LIMIT + 1)
     except OSError as exc:
         raise ValueError("Activation marker could not be read") from exc
+    try:
+        after = _publication_file_info(
+            marker, "Activation marker", require_unlinked=True)
+    except ValueError as exc:
+        raise ValueError("Activation marker changed during read") from exc
+    if not _same_publication_file(before, after):
+        raise ValueError("Activation marker changed during read")
     if len(encoded) > ACTIVATION_MARKER_LIMIT:
         raise ValueError("Activation marker is oversized")
     try:

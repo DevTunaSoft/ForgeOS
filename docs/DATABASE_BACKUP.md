@@ -215,6 +215,10 @@ rollback with streamed size/SHA-256 values; recovery refuses a substituted
 regular database when those fields are present. This is integrity evidence,
 not encryption or a public-key signature, and older markers may not contain
 bindings.
+Marker reads are bounded to 4 KiB and require an unlinked real regular file;
+ForgeOS rechecks the marker identity after reading it, so a hard-linked,
+reparse-point or substituted marker fails closed before rollback or
+finalization uses its paths.
 When the active database is still present, the rollback path is absent and
 the staged replacement is no longer wanted, use
 `py -m forgeos db-activation-abandon ACTIVE --confirm --discard-staged`.

@@ -796,6 +796,10 @@ Current activation markers also bind the staged replacement and retained
 rollback with streamed size/SHA-256 values. A valid-looking substituted file
 is rejected when that binding is present. This detects accidental or
 same-user replacement; it is not encryption or a public-key signature.
+Marker reads are capped at 4 KiB and verify an unlinked regular-file identity
+before and after reading. If a marker is hard-linked, reparse-backed or
+substituted during a recovery command, ForgeOS stops and preserves the
+interrupted state for inspection.
 
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:
