@@ -2704,3 +2704,27 @@ stable post-GC RSS of about 26.3 MiB and process peak RSS of about 28.6 MiB on
 this host. Documentation coverage, exact-head hosted Linux/Windows checks,
 packaging and physical interruption acceptance remain required for this
 branch.
+
+## 2026-11-15 — bounded recovery authentication key provisioning
+
+**Change:** added `recovery-bundle-auth-keygen`, which creates a new shared
+secret using the operating system CSPRNG, accepts only 32 through 4,096 bytes,
+flushes a private staging file and publishes it through the existing
+no-overwrite Windows/POSIX boundary. The key is never returned by the API or
+printed by the CLI. Existing destinations and out-of-range sizes are refused;
+POSIX generated files use mode `0600`. Windows ACL review, protected storage,
+rotation and backup remain operator responsibilities.
+
+**Regression coverage:** key-generation tests cover bounded sizes, POSIX mode,
+no-overwrite behavior, failed-publication cleanup and database-free CLI
+dispatch without secret output. Existing authentication and materialization
+tests continue to use the generated-key contract.
+
+**Local verification:** the focused authentication/CLI suite passed 8 tests.
+With an isolated temporary `USERPROFILE`, the full current checkout
+`python -m unittest discover -s tests -q` run passed 681 tests and skipped 7.
+Compileall passed. The standard 12 MiB x3 memory benchmark passed with a
+Python tracemalloc peak of about 1.89 MiB, stable post-GC RSS of about 26.5
+MiB and process peak RSS of about 29.0 MiB on this host. Documentation
+coverage, exact-head hosted Linux/Windows checks, packaging and physical
+interruption acceptance remain required for this branch.

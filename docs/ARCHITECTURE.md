@@ -235,6 +235,14 @@ marker deliberately stores only the package digest and phase, so an operator
 who chooses authentication must provide the record and key again for every
 resume operation.
 
+`generate_recovery_bundle_auth_key()` provisions a new 32-byte-to-4 KiB key
+from the operating system CSPRNG, writes it through a flushed private staging
+file and publishes it with the same no-overwrite helper. The key bytes never
+enter CLI output or a recovery artifact. POSIX staging and final files use
+mode `0600`; Windows ACLs and backup/rotation storage remain operator
+responsibilities because this standard-library path does not claim a complete
+Windows account-permission policy.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback
