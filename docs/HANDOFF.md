@@ -3142,3 +3142,26 @@ x 3-cycle memory benchmark reported a 1,982,228-byte Python tracemalloc peak
 and a 30,060,544-byte process peak RSS. Exact-head hosted checks remain
 required before merge. Atomic target publication, Windows ACL review and
 physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — staged edit publication identity checks
+
+**Change:** transaction publication now validates the real directory chain from
+the workspace root through the target parent, rechecks the target identity
+captured during staging immediately before `os.replace`, verifies the staged
+digest, and re-hashes the published target before directory synchronization.
+A target or parent substitution therefore fails closed before a replacement is
+published, while a post-publication mismatch preserves the journal for guarded
+recovery. This remains a bounded path check, not an OS-wide concurrent-writer
+lock or physical Windows power-loss guarantee.
+
+**Regression coverage:** engine tests swap an existing target to a symlink and
+swap a target's parent directory to a directory symlink after staging; both
+prove the outside path remains unchanged and the journal is retained. The
+focused engine/transaction suite passed 88 tests with 1 expected platform
+skip. The full isolated suite passed 729 tests with 9 expected skips; the known
+local-model test may emit its existing `WinError 10053` server trace but exits
+successfully. Compileall, documentation/link coverage and `git diff --check`
+passed. The bounded 12 MiB x 3-cycle memory benchmark reported a
+1,982,228-byte Python tracemalloc peak and a 30,052,352-byte process peak RSS.
+Exact-head hosted checks remain required before merge. Windows ACL review and
+physical NTFS power-loss acceptance remain open.

@@ -635,6 +635,96 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertFalse((self.root / "second.py").exists())
         self.assertFalse((self.root / ".forgeos" / "pending-edit").exists())
 
+    def test_publication_rechecks_target_before_replace(self):
+        from unittest.mock import patch
+        from forgeos import transactions
+        from forgeos.transactions import TransactionError
+        outside = self.root / "outside.py"
+        outside.write_text("outside")
+        target = self.root / "first.py"
+        target.write_text("original")
+        try:
+            target.unlink()
+            target.symlink_to(outside)
+            target.unlink()
+        except (OSError, NotImplementedError):
+            target.write_text("original")
+            self.skipTest("File symlinks unavailable")
+        target.write_text("original")
+
+        real_hash = transactions._hash_file
+        swapped = {"value": False}
+
+        def hash_then_swap(path, *args, **kwargs):
+            value = real_hash(path, *args, **kwargs)
+            if not swapped["value"]:
+                target.unlink()
+                target.symlink_to(outside)
+                swapped["value"] = True
+            return value
+
+        with patch.object(
+                transactions, "_hash_file", side_effect=hash_then_swap):
+            with self.assertRaisesRegex(
+                    (TransactionError, EditError),
+                    "links|regular file|changed|publication"):
+                apply_edits(self.root, self.manifest([{
+                    "path": "first.py", "content": "changed"}]))
+        self.assertTrue(swapped["value"])
+        self.assertTrue(target.is_symlink())
+        self.assertEqual(outside.read_text(), "outside")
+        self.assertTrue((self.root / ".forgeos" / "pending-edit").exists())
+
+    def test_publication_rechecks_parent_chain_before_replace(self):
+        from unittest.mock import patch
+        from forgeos import transactions
+        from forgeos.transactions import TransactionError
+        nested = self.root / "nested"
+        nested.mkdir()
+        target = nested / "first.py"
+        target.write_text("original")
+        outside = self.root.parent / ("forgeos-publication-" + self.root.name)
+        outside.mkdir()
+        self.addCleanup(lambda: shutil.rmtree(outside, ignore_errors=True))
+        outside_target = outside / "first.py"
+        outside_target.write_text("outside")
+        probe = self.root / "publication-probe"
+        try:
+            probe.symlink_to(outside, target_is_directory=True)
+            probe.unlink()
+        except (OSError, NotImplementedError):
+            self.skipTest("Directory symlinks unavailable")
+
+        real_parent = self.root / "nested-real"
+        real_hash = transactions._hash_file
+        swapped = {"value": False}
+
+        def hash_then_swap(path, *args, **kwargs):
+            value = real_hash(path, *args, **kwargs)
+            if not swapped["value"]:
+                nested.rename(real_parent)
+                nested.symlink_to(outside, target_is_directory=True)
+                swapped["value"] = True
+            return value
+
+        try:
+            with patch.object(
+                    transactions, "_hash_file", side_effect=hash_then_swap):
+                with self.assertRaisesRegex(
+                        (TransactionError, EditError),
+                        "outside|escapes|directory|publication"):
+                    apply_edits(self.root, self.manifest([{
+                        "path": "nested/first.py", "content": "changed"}]))
+        finally:
+            if nested.is_symlink():
+                nested.unlink()
+            if real_parent.exists():
+                real_parent.rename(nested)
+        self.assertTrue(swapped["value"])
+        self.assertEqual(outside_target.read_text(), "outside")
+        self.assertEqual(target.read_text(), "original")
+        self.assertTrue((self.root / ".forgeos" / "pending-edit").exists())
+
     def test_large_existing_file_refused_without_journal_or_allocation(self):
         from forgeos.transactions import MAX_BACKUP_BYTES, TransactionError
         huge = self.root / "existing.py"

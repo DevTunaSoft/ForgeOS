@@ -110,6 +110,88 @@ def _regular_file_info(path: Path, description: str, *,
     return info
 
 
+def _directory_info(path: Path, description: str, *, allow_missing: bool = False):
+    try:
+        info = path.lstat()
+    except FileNotFoundError as exc:
+        if allow_missing:
+            return None
+        raise TransactionError(f"{description} is missing: {path}") from exc
+    except OSError as exc:
+        raise TransactionError(f"Cannot inspect {description}: {path}") from exc
+    if not stat.S_ISDIR(info.st_mode) or _is_link_or_reparse(path, info):
+        raise TransactionError(f"{description} must be a real directory: {path}")
+    return info
+
+
+def _publication_directories(root: Path, target: Path):
+    """Create and snapshot the real directory chain used for publication."""
+    try:
+        relative_parent = target.parent.relative_to(root)
+    except ValueError as exc:
+        raise TransactionError(
+            f"Edit target is outside the workspace: {target}") from exc
+    current = root
+    directories = [(current, _directory_info(current, "Workspace root"))]
+    for part in relative_parent.parts:
+        current = current / part
+        info = _directory_info(
+            current, "Edit target directory", allow_missing=True)
+        if info is None:
+            try:
+                current.mkdir(mode=0o777)
+            except FileExistsError:
+                pass
+            info = _directory_info(current, "Edit target directory")
+            _sync_dir(current.parent)
+        directories.append((current, info))
+    return directories
+
+
+def _verify_publication_directories(directories) -> None:
+    for path, before in directories:
+        after = _directory_info(path, "Edit target directory")
+        if not _same_identity(before, after):
+            raise TransactionError(
+                f"Edit target directory changed during publication: {path}")
+
+
+def _publish_staged(root: Path, target: Path, staged: Path, *,
+                    expected_before, expected_after: str) -> None:
+    """Publish one staged file only across a validated directory boundary."""
+    directories = _publication_directories(root, target)
+    _verify_publication_directories(directories)
+    current_target = _regular_file_info(
+        target, "Edit target", allow_missing=True)
+    if expected_before is None:
+        if current_target is not None:
+            raise TransactionError(
+                f"Edit target appeared during publication: {target}")
+    elif (current_target is None
+          or not _same_file(expected_before, current_target)):
+        raise TransactionError(
+            f"Edit target changed during publication: {target}")
+    staged_info = _regular_file_info(
+        staged, "Staged replacement", require_unlinked=True)
+    if (_hash_file(
+            staged, expected=staged_info,
+            require_unlinked=True,
+            description="Staged replacement") != expected_after):
+        raise TransactionError(f"Staged replacement changed: {staged}")
+    _verify_publication_directories(directories)
+    os.replace(staged, target)
+    _verify_publication_directories(directories)
+    published_info = _regular_file_info(
+        target, "Published edit target", require_unlinked=True)
+    if (_hash_file(
+            target, expected=published_info,
+            require_unlinked=True,
+            description="Published edit target") != expected_after):
+        raise TransactionError(f"Published edit target changed: {target}")
+    _verify_publication_directories(directories)
+    _sync_dir(target.parent)
+
+
 def _open_bound_file(path: Path, before, description: str, *,
                      require_unlinked: bool = False) -> int:
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
@@ -642,9 +724,10 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
                       if target_info is not None else None)
             if current != entries[i]["before"]:
                 raise TransactionError(f"Edit target changed during staging: {target}")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(txn / f"{i}.new", target)
-            _sync_dir(target.parent)
+            _publish_staged(
+                root, target, txn / f"{i}.new",
+                expected_before=target_info,
+                expected_after=entries[i]["after"])
         committed = txn / "committed.json"
         _durable_write(committed, json.dumps({**manifest, "state": "committed"}).encode())
         os.replace(committed, txn / "manifest.json")

@@ -75,10 +75,12 @@ hashed or copied. Journal cleanup is bounded to the allowlisted flat files a
 transaction can create; unexpected, linked or directory children are rejected
 and preserved rather than recursively traversed, with file and directory
 identity rechecks before removal. Atomic target publication still has a
-check-and-use race boundary, and cleanup is not a complete concurrent-writer
-lock. This is not a Windows DACL boundary or physical NTFS power-loss
-acceptance. Operators should preserve an unsafe journal for inspection and
-resolve the filesystem problem before retrying recovery.
+check-and-use race boundary, but publication now revalidates every real parent
+directory, the target identity, and the staged and published digests before
+and after replacement. Cleanup and publication are not a complete
+concurrent-writer lock. This is not a Windows DACL boundary or physical NTFS
+power-loss acceptance. Operators should preserve an unsafe journal for
+inspection and resolve the filesystem problem before retrying recovery.
 
 If a crash leaves a `committed` journal behind, recovery also re-hashes every
 published target against its recorded post-edit digest before removing that
