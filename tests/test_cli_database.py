@@ -256,16 +256,19 @@ class DatabaseCommandsTests(unittest.TestCase):
             try:
                 task = store.add(str(root), 'journal handoff check cli test')
                 handoff = root / 'handoff.jsonl'
-                store.export_handoff(handoff, task_id=task)
+                manifest = root / 'handoff.json'
+                store.export_handoff(handoff, task_id=task, manifest=manifest)
             finally:
                 store.close()
             output = io.StringIO()
             with redirect_stdout(output):
                 self.assertEqual(main([
                     '--db', str(root / 'missing.sqlite3'),
-                    'journal-handoff-check', str(handoff)]), 0)
+                    'journal-handoff-check', str(handoff),
+                    '--manifest', str(manifest)]), 0)
             report = __import__('json').loads(output.getvalue())
             self.assertTrue(report['valid'])
+            self.assertTrue(report['manifest_valid'])
             lines = handoff.read_text().splitlines()
             summary = __import__('json').loads(lines[-1])
             summary['event_count'] = 0
@@ -274,8 +277,11 @@ class DatabaseCommandsTests(unittest.TestCase):
             output = io.StringIO()
             with redirect_stdout(output):
                 self.assertEqual(main([
-                    'journal-handoff-check', str(handoff)]), 1)
-            self.assertFalse(__import__('json').loads(output.getvalue())['valid'])
+                    'journal-handoff-check', str(handoff),
+                    '--manifest', str(manifest)]), 1)
+            report = __import__('json').loads(output.getvalue())
+            self.assertFalse(report['valid'])
+            self.assertFalse(report['manifest_valid'])
 
 
 if __name__ == "__main__":

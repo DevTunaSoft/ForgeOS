@@ -748,8 +748,8 @@ py -m forgeos journal --limit 50
 py -m forgeos journal --task-id 1 --limit 20
 py -m forgeos journal-check
 py -m forgeos journal-export "C:\\ForgeOS-backups\\journal.jsonl"
-py -m forgeos journal-handoff "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --task-id 1
-py -m forgeos journal-handoff-check "C:\\ForgeOS-backups\\task-1-handoff.jsonl"
+py -m forgeos journal-handoff "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --task-id 1 --manifest "C:\\ForgeOS-backups\\task-1-handoff.json"
+py -m forgeos journal-handoff-check "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --manifest "C:\\ForgeOS-backups\\task-1-handoff.json"
 ```
 
 Journal rows record task, lease and recovery transitions—not full prompts,
@@ -775,3 +775,8 @@ non-increasing event IDs, invalid references, and summary mismatches while
 retaining at most 32 diagnostics. A successful check proves only internal
 format consistency; it does not authenticate the file, recover missing
 evidence, import journal rows, or execute any action.
+Pass `--manifest` to `journal-handoff` to publish a separate bounded JSON
+manifest containing the handoff byte size and streamed SHA-256, then pass the
+same manifest to `journal-handoff-check` to detect transfer or storage
+corruption. This digest is not a signature or encryption and must be retained
+under a trusted policy if it is used as an integrity reference.

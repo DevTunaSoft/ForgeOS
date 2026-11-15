@@ -36,9 +36,13 @@ def main(argv=None):
         'journal-handoff', help='Export one task as a bounded replay plan')
     journal_handoff.add_argument('destination', help='New JSONL file path')
     journal_handoff.add_argument('--task-id', type=int, required=True)
+    journal_handoff.add_argument('--manifest', default='',
+                                help='Optional new JSON digest manifest path')
     journal_handoff_check = sub.add_parser(
         'journal-handoff-check', help='Verify a bounded journal handoff plan')
     journal_handoff_check.add_argument('source', help='Existing JSONL file path')
+    journal_handoff_check.add_argument('--manifest', default='',
+                                       help='Optional manifest required to match the source')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -250,13 +254,15 @@ def main(argv=None):
         store = Store(args.db)
         try:
             exported = store.export_handoff(
-                args.destination, task_id=args.task_id)
+                args.destination, task_id=args.task_id,
+                manifest=args.manifest or None)
         finally:
             store.close()
         print(f'Exported journal handoff: {exported}')
         return 0
     if args.action == 'journal-handoff-check':
-        report = Store.check_handoff(args.source)
+        report = Store.check_handoff(
+            args.source, manifest=args.manifest or None)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
     if args.action == 'memory':
