@@ -45,6 +45,37 @@ class EvidenceStore:
             raise ValueError("Invalid diagnostic reference")
         return self.root / (reference + ".txt.gz")
 
+    @staticmethod
+    def verify_at(root: str | Path, reference: str) -> int:
+        """Verify one archive by digest without creating or decoding it."""
+        directory = Path(root).expanduser().absolute()
+        if directory.is_symlink() or not directory.is_dir():
+            raise ValueError("Diagnostic directory is unavailable or unsafe")
+        if not isinstance(reference, str) or not _REF.fullmatch(reference):
+            raise ValueError("Invalid diagnostic reference")
+        location = directory / (reference + ".txt.gz")
+        if location.is_symlink() or not location.is_file():
+            raise ValueError("Diagnostic evidence unavailable or unsafe")
+        digest = hashlib.sha256()
+        byte_count = 0
+        try:
+            with gzip.open(location, "rb") as source:
+                while True:
+                    block = source.read(64 * 1024)
+                    if not block:
+                        break
+                    byte_count += len(block)
+                    if byte_count > MAX_ARCHIVE_BYTES:
+                        raise ValueError("Diagnostic archive exceeds size limit")
+                    digest.update(block)
+        except ValueError:
+            raise
+        except (OSError, EOFError, gzip.BadGzipFile) as exc:
+            raise ValueError("Diagnostic evidence is corrupt or unavailable") from exc
+        if digest.hexdigest() != reference:
+            raise ValueError("Diagnostic integrity check failed")
+        return byte_count
+
     def put(self, text: str) -> str:
         if not isinstance(text, str):
             raise TypeError("Output must be text")

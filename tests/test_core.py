@@ -220,6 +220,29 @@ class ForgeOSTests(unittest.TestCase):
         self.assertFalse(report['manifest_valid'])
         self.assertTrue(any('does not match its manifest' in issue['problem']
                             for issue in report['issues']))
+
+    def test_journal_handoff_checker_verifies_referenced_evidence_streaming(self):
+        from forgeos.diagnostics import EvidenceStore
+        evidence = EvidenceStore(self.root / 'evidence')
+        reference = evidence.put('private evidence\n' * 100)
+        task = self.store.add(str(self.repo), 'Handoff evidence')
+        self.assertTrue(self.store.transition(
+            task, ('queued',), 'testing', event_action='test',
+            event_evidence=reference))
+        target = self.root / 'evidence-handoff.jsonl'
+        self.store.export_handoff(target, task_id=task)
+        report = self.store.check_handoff(
+            target, evidence_directory=evidence.root)
+        self.assertTrue(report['valid'])
+        self.assertTrue(report['evidence_checked'])
+        self.assertTrue(report['evidence_valid'])
+        evidence._path(reference).write_bytes(b'corrupt archive')
+        report = self.store.check_handoff(
+            target, evidence_directory=evidence.root)
+        self.assertFalse(report['valid'])
+        self.assertFalse(report['evidence_valid'])
+        self.assertTrue(any('corrupt or unavailable' in issue['problem']
+                            for issue in report['issues']))
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES

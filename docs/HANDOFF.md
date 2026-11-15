@@ -2341,6 +2341,34 @@ local suites, compileall and the 12 MiB x3 benchmark pass except the known
 host-only virtualenv AppContainer ACL probe; exact-head Linux/Windows checks,
 packaging and physical interruption acceptance remain required.
 
+## 2026-11-15 — optional streamed evidence-reference verification
+
+**Change:** `EvidenceStore.verify_at()` now verifies one content-addressed
+diagnostic gzip archive by streaming decompressed bytes through SHA-256 under
+the existing 32 MiB archive bound. `journal-handoff-check` accepts an optional
+`--evidence-directory` and verifies every evidence digest referenced by the
+handoff without creating directories or returning raw output.
+
+**Safety boundary:** evidence verification is opt-in and read-only. Missing,
+symlinked, corrupt or oversized archives invalidate the report; the default
+checker does not assume the evidence directory exists. This is availability
+and integrity checking, not an encrypted evidence/worktree bundle, provenance
+signature or action replay mechanism.
+
+**Regression coverage:** diagnostics tests cover streamed archive verification
+and corruption; core handoff tests cover valid and corrupt referenced evidence;
+CLI coverage verifies the optional directory is used while remaining database
+free. Exact-head Linux/Windows matrix, packaging and physical interruption
+acceptance remain required.
+
+**Local verification:** Python 3.12 focused recovery, CLI and diagnostics tests
+passed (87 tests and 39 subtests); the full pytest run passed 629 tests, 7
+skips and 406 subtests. One pre-existing Windows AppContainer probe failed
+only because the repository virtualenv executable returned `icacls` access
+denied; the same system-Python probe passed. Compileall, the diff check and the
+12 MiB x3 memory benchmark also passed. Exact-head GitHub checks remain the
+acceptance gate.
+
 ## 2026-11-15 — task-scoped bounded journal replay plan
 
 **Change:** added `Store.export_handoff()` and `forgeos journal-handoff`.
