@@ -800,6 +800,11 @@ Marker reads are capped at 4 KiB and verify an unlinked regular-file identity
 before and after reading. If a marker is hard-linked, reparse-backed or
 substituted during a recovery command, ForgeOS stops and preserves the
 interrupted state for inspection.
+When ForgeOS advances a marker phase, it also rechecks the real marker,
+temporary marker and parent directory before atomic replacement and verifies
+the new marker afterward. Redirected parents, hard-linked markers and
+unexpected staging substitutions fail closed; this is a bounded race guard,
+not a complete concurrent-writer lock or physical power-loss guarantee.
 
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:
