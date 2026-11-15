@@ -26,13 +26,18 @@ TAIL_BYTES = 512 * 1024
 CHUNK_BYTES = 64 * 1024
 
 
-def _is_plain_path(path: Path, *, directory: bool) -> bool:
-    """Reject reparse points, junctions and symlinks, without following them."""
-    info = path.lstat()
+def _is_plain_info(info, *, directory: bool) -> bool:
     attrs = getattr(info, "st_file_attributes", 0)
     if attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
         return False
-    return stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
+    if directory:
+        return stat.S_ISDIR(info.st_mode)
+    return stat.S_ISREG(info.st_mode) and getattr(info, "st_nlink", 1) == 1
+
+
+def _is_plain_path(path: Path, *, directory: bool) -> bool:
+    """Reject links and special files, without following them."""
+    return _is_plain_info(path.lstat(), directory=directory)
 
 
 def validate_secure_output_path(root: Path, candidate: Path) -> Path:
@@ -67,6 +72,52 @@ def validate_secure_output_path(root: Path, candidate: Path) -> Path:
     return candidate
 
 
+def _same_file_identity(before, after) -> bool:
+    return all(getattr(before, field, None) == getattr(after, field, None)
+               for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
+
+
+def _open_output_descriptor(path: Path, flags: int) -> int:
+    return os.open(path, flags)
+
+
+def open_verified_output(root: Path, candidate: Path):
+    """Open one unchanged, ForgeOS-owned output file for bounded reading."""
+    candidate = validate_secure_output_path(root, candidate)
+    try:
+        before = candidate.lstat()
+    except FileNotFoundError as exc:
+        raise OSError("Secure test output file was not produced") from exc
+    if not _is_plain_info(before, directory=False):
+        raise OSError("Secure test output is not a plain unlinked file")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = None
+    try:
+        descriptor = _open_output_descriptor(candidate, flags)
+        opened = os.fstat(descriptor)
+        current = candidate.lstat()
+        if (not _is_plain_info(opened, directory=False)
+                or not _is_plain_info(current, directory=False)
+                or not _same_file_identity(before, opened)
+                or not _same_file_identity(before, current)):
+            raise OSError("Secure test output changed during open")
+        stream = os.fdopen(descriptor, "rb", closefd=True)
+        descriptor = None
+        return stream
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, OSError) and str(exc).startswith("Secure test output"):
+            raise
+        raise OSError(
+            "Secure test output could not be opened safely: " + str(exc)) from exc
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 def _watched_size(path: Path) -> int:
     """Reject link substitution, even if a child changes its output at runtime."""
     if not _is_plain_path(path.parent, directory=True):
@@ -75,9 +126,7 @@ def _watched_size(path: Path) -> int:
         metadata = path.lstat()
     except FileNotFoundError:
         return 0  # The legitimate child has not created its file yet.
-    attrs = getattr(metadata, "st_file_attributes", 0)
-    if (not stat.S_ISREG(metadata.st_mode)
-            or attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+    if not _is_plain_info(metadata, directory=False):
         raise OSError("Watched output changed into link or special file")
     return metadata.st_size
 

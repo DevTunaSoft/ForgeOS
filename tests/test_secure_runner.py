@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from forgeos import output_capture
 from forgeos.secure_runner import (
     _bootstrap_environment, run_secure_windows_test,
 )
@@ -45,6 +46,22 @@ class SecureRunnerContractTests(unittest.TestCase):
             output.symlink_to(source)
         except (OSError, NotImplementedError):
             self.skipTest("File symlinks unavailable")
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner.run_secure_appcontainer") as launch:
+            with self.assertRaisesRegex(ValueError, "link or special"):
+                run_secure_windows_test(self.runtime, "python-unittest")
+        launch.assert_not_called()
+        self.assertEqual(source.read_text(), "unchanged")
+
+    def test_hardlinked_output_is_rejected_before_appcontainer_launch(self):
+        source = self.root / "original.txt"
+        source.write_text("unchanged")
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        try:
+            output.hardlink_to(source)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unavailable")
         with patch("forgeos.secure_runner._is_windows", return_value=True), \
              patch.object(sys, "frozen", True, create=True), \
              patch("forgeos.secure_runner.run_secure_appcontainer") as launch:
@@ -186,7 +203,8 @@ class SecureRunnerContractTests(unittest.TestCase):
                    return_value=r"C:\Users\Example\AppData\Local"), \
              patch("forgeos.secure_runner.run_secure_appcontainer",
                    return_value=fake), \
-             patch.object(Path, "open", side_effect=PermissionError(
+             patch("forgeos.output_capture.open_verified_output",
+                   side_effect=PermissionError(
                  "simulated output read denial")):
             result = run_secure_windows_test(self.runtime, "python-unittest")
         self.assertFalse(result["passed"])
@@ -195,6 +213,38 @@ class SecureRunnerContractTests(unittest.TestCase):
             result["capture_error"], "secure-test-output-unavailable")
         self.assertIn("simulated output read denial", result["output"])
         self.assertIsNone(result["evidence_reference"])
+
+    def test_secure_output_replacement_during_open_fails_closed(self):
+        output = self.root / RUNTIME_DIR / "test-output.txt"
+        output.write_text("original result")
+        retained = output.with_name("retained-output.txt")
+        real_open = output_capture._open_output_descriptor
+
+        def replace_before_open(path, flags, *args):
+            if Path(path) == output:
+                output.rename(retained)
+                output.write_text("operator-owned result")
+            return real_open(path, flags)
+
+        fake = {"passed": True, "returncode": 0,
+                "output": "", "capture_complete": True}
+        with patch("forgeos.secure_runner._is_windows", return_value=True), \
+             patch.object(sys, "frozen", True, create=True), \
+             patch("forgeos.secure_runner._host_local_appdata",
+                   return_value=r"C:\Users\Example\AppData\Local"), \
+             patch("forgeos.secure_runner.run_secure_appcontainer",
+                   return_value=fake), \
+             patch("forgeos.output_capture._open_output_descriptor",
+                   side_effect=replace_before_open):
+            result = run_secure_windows_test(
+                self.runtime, "python-unittest")
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["capture_complete"])
+        self.assertEqual(
+            result["capture_error"], "secure-test-output-unavailable")
+        self.assertIn("changed during open", result["output"])
+        self.assertEqual(retained.read_text(), "original result")
+        self.assertEqual(output.read_text(), "operator-owned result")
 
     def test_secure_output_substitution_after_launch_fails_closed(self):
         outside = self.root / "private-original.txt"

@@ -60,7 +60,10 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
     output_file = runtime.path / RUNTIME_DIR / "test-output.txt"
     # Reject unsafe owned paths before reading bootstrap host environment or
     # creating any Windows child/AppContainer grants.
-    from .output_capture import validate_secure_output_path
+    from .output_capture import (
+        open_verified_output, summarize_output_file,
+        validate_secure_output_path,
+    )
     monitored = validate_secure_output_path(runtime.path, output_file)
     extra_outputs = ()
     if preset == "python-pytest":
@@ -91,13 +94,9 @@ def run_secure_windows_test(runtime: TestRuntime, preset: str,
         result.get("output", "")[-2000:] if native_incomplete
         and isinstance(result.get("output"), str) else "")
     try:
-        # Revalidate after the child exits: a successful exit without its
-        # ForgeOS-owned output file is not sufficient test evidence.
-        validate_secure_output_path(runtime.path, output_file)
-        if not output_file.is_file():
-            raise OSError("Secure test output file was not produced")
-        from .output_capture import summarize_output_file
-        with output_file.open("rb") as output_stream:
+        # Revalidate and bind the file after the child exits: a successful exit
+        # without unchanged ForgeOS-owned evidence is not sufficient.
+        with open_verified_output(runtime.path, output_file) as output_stream:
             result.update(summarize_output_file(
                 output_stream, encoding="utf-8"))
     except (OSError, ValueError) as exc:
