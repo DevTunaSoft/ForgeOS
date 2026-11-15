@@ -723,3 +723,21 @@ evade the path check after open; the implementation now re-lstats the current
 path and rejects link presentation before hashing. Documentation/link coverage
 passes locally; exact-head hosted checks remain required. Windows DACL and
 physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — bounded transaction journal cleanup
+
+Journal removal no longer delegates to recursive `rmtree`. Recovery derives
+the bounded filename allowlist from the validated manifest, rejects unexpected,
+linked or directory children, and rechecks journal file and directory identity
+before unlinking or removing the journal. Unsafe children remain available for
+inspection instead of being traversed or deleted. Atomic target publication,
+Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+Focused engine/transaction regressions passed 86 tests with 1 expected
+platform skip. The full isolated suite passed 727 tests with 9 expected skips;
+the known local-model test may emit its existing `WinError 10053` server trace
+while still exiting successfully. Compileall, documentation/link coverage and
+`git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+reported a 1,982,228-byte Python tracemalloc peak and a 30,060,544-byte
+process peak RSS. Exact-head hosted checks remain required; Windows ACL review
+and physical NTFS power-loss acceptance remain open.

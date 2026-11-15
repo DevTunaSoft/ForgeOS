@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import tempfile
 
@@ -84,6 +83,12 @@ def _same_file(before, after, *, require_unlinked: bool = False) -> bool:
                for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
     return same and (not require_unlinked
                      or getattr(after, "st_nlink", 1) == 1)
+
+
+def _same_identity(before, after) -> bool:
+    """Compare the stable identity of one filesystem object."""
+    return all(getattr(before, field, None) == getattr(after, field, None)
+               for field in ("st_dev", "st_ino"))
 
 
 def _regular_file_info(path: Path, description: str, *,
@@ -289,12 +294,13 @@ def _restrict_permissions(path: Path, mode: int, description: str) -> None:
             f"Cannot secure {description} permissions: {path}") from exc
 
 
-def _require_journal_directory(path: Path, description: str) -> None:
+def _require_journal_directory(path: Path, description: str):
     info = _lstat(path, description)
     if not stat.S_ISDIR(info.st_mode) or _is_link_or_reparse(path, info):
         raise TransactionError(
             f"{description} must be a real directory: {path}")
     _restrict_permissions(path, 0o700, description)
+    return info
 
 
 def _require_journal_file(path: Path, description: str):
@@ -331,11 +337,77 @@ def _journal_parent(root: Path, *, create: bool) -> Path | None:
     return parent
 
 
-def _remove_journal(txn: Path) -> None:
-    """Remove only a validated journal directory and persist its removal."""
-    _require_journal_directory(txn.parent, "Transaction metadata directory")
-    _require_journal_directory(txn, "Pending edit journal")
-    shutil.rmtree(txn)
+def _journal_cleanup_names(entry_count: int) -> set[str]:
+    """Return the bounded set of names a transaction can create."""
+    return ({"manifest.json", "committed.json"}
+            | {f"{i}.bak" for i in range(entry_count)}
+            | {f"{i}.new" for i in range(entry_count)})
+
+
+def _journal_snapshot(txn: Path, *, expected_names: set[str]):
+    """Validate the bounded flat journal layout without changing it."""
+    parent_info = _require_journal_directory(
+        txn.parent, "Transaction metadata directory")
+    txn_info = _require_journal_directory(txn, "Pending edit journal")
+    children = []
+    with os.scandir(txn) as entries:
+        for entry in entries:
+            child = txn / entry.name
+            if entry.name not in expected_names:
+                raise TransactionError(
+                    f"Unexpected transaction journal file: {child}")
+            info = _lstat(child, "Transaction journal file")
+            if (not stat.S_ISREG(info.st_mode)
+                    or _is_link_or_reparse(child, info)):
+                raise TransactionError(
+                    f"Transaction journal file must be an unlinked regular file: {child}")
+            children.append((child, info))
+
+    current_txn = _require_journal_directory(txn, "Pending edit journal")
+    if not _same_identity(txn_info, current_txn):
+        raise TransactionError(
+            f"Pending edit journal changed during cleanup: {txn}")
+    current_parent = _require_journal_directory(
+        txn.parent, "Transaction metadata directory")
+    if not _same_identity(parent_info, current_parent):
+        raise TransactionError(
+            f"Transaction metadata directory changed during cleanup: {txn.parent}")
+    return parent_info, txn_info, children
+
+
+def _remove_journal(txn: Path, *, expected_names: set[str]) -> None:
+    """Remove only known regular journal files and persist their removal.
+
+    Journal layout is flat and bounded. Refuse unexpected, linked or directory
+    children instead of recursively traversing them, preserving the journal
+    when its contents are not the files ForgeOS created for this transaction.
+    """
+    parent_info, txn_info, children = _journal_snapshot(
+        txn, expected_names=expected_names)
+    for child, before in children:
+        current_txn = _require_journal_directory(txn, "Pending edit journal")
+        if not _same_identity(txn_info, current_txn):
+            raise TransactionError(
+                f"Pending edit journal changed during cleanup: {txn}")
+        current_parent = _require_journal_directory(
+            txn.parent, "Transaction metadata directory")
+        if not _same_identity(parent_info, current_parent):
+            raise TransactionError(
+                f"Transaction metadata directory changed during cleanup: {txn.parent}")
+        current = _lstat(child, "Transaction journal file")
+        if (not stat.S_ISREG(current.st_mode)
+                or _is_link_or_reparse(child, current)
+                or not _same_file(before, current, require_unlinked=True)):
+            raise TransactionError(
+                f"Transaction journal file changed during cleanup: {child}")
+        child.unlink()
+
+    current_parent = _require_journal_directory(
+        txn.parent, "Transaction metadata directory")
+    if not _same_identity(parent_info, current_parent):
+        raise TransactionError(
+            f"Transaction metadata directory changed during cleanup: {txn.parent}")
+    txn.rmdir()
     _sync_dir(txn.parent)
 
 
@@ -387,6 +459,8 @@ def recover_edits(root: Path) -> bool:
     entries = data.get("entries")
     if not isinstance(entries, list) or not 1 <= len(entries) <= 8:
         raise TransactionError("Invalid journal entries")
+    cleanup_names = _journal_cleanup_names(len(entries))
+    _journal_snapshot(txn, expected_names=cleanup_names)
 
     # Inspect every entry before making any edit, including cleanup after
     # commit. A malformed or duplicate path must not delete the journal.
@@ -447,7 +521,7 @@ def recover_edits(root: Path) -> bool:
                         backup if before is not None else None,
                         current_hash, before))
     if data["state"] == "committed":
-        _remove_journal(txn)
+        _remove_journal(txn, expected_names=cleanup_names)
         return True
 
     for target, target_info, backup, current_hash, before in planned:
@@ -475,7 +549,7 @@ def recover_edits(root: Path) -> bool:
                 _sync_dir(target.parent)
             finally:
                 temp.unlink(missing_ok=True)
-    _remove_journal(txn)
+    _remove_journal(txn, expected_names=cleanup_names)
     return True
 
 
@@ -535,6 +609,7 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
     txn.mkdir(mode=0o700)
     _require_journal_directory(txn, "Pending edit journal")
     entries = []
+    cleanup_names = _journal_cleanup_names(len(staged))
     prepared = False
     try:
         for i, (name, after) in enumerate(staged):
@@ -574,11 +649,11 @@ def apply_transaction(root: Path, edits: list[tuple[Path, str]]) -> list[str]:
         _durable_write(committed, json.dumps({**manifest, "state": "committed"}).encode())
         os.replace(committed, txn / "manifest.json")
         _sync_dir(txn)
-        _remove_journal(txn)
+        _remove_journal(txn, expected_names=cleanup_names)
         return [item["path"] for item in entries]
     except Exception:
         if prepared:
             recover_edits(root)
         else:
-            _remove_journal(txn)
+            _remove_journal(txn, expected_names=cleanup_names)
         raise

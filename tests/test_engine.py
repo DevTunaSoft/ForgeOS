@@ -832,6 +832,68 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertTrue(recover_edits(self.root))
         self.assertFalse(txn.exists())
 
+    def test_journal_cleanup_refuses_unexpected_child(self):
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        target = self.root / "first.py"
+        target.write_text("published")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        unexpected = txn / "unexpected.bin"
+        unexpected.write_bytes(b"retain")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": None,
+                "after": _digest(b"published")}] }))
+        with self.assertRaisesRegex(
+                TransactionError, "Unexpected transaction journal file"):
+            recover_edits(self.root)
+        self.assertTrue(unexpected.exists())
+        self.assertTrue(txn.exists())
+
+    def test_journal_cleanup_refuses_directory_child_without_recursing(self):
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        target = self.root / "first.py"
+        target.write_text("published")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        child = txn / "0.bak"
+        child.mkdir()
+        retained = child / "retained.txt"
+        retained.write_text("keep")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": None,
+                "after": _digest(b"published")}] }))
+        with self.assertRaisesRegex(
+                TransactionError, "unlinked regular file"):
+            recover_edits(self.root)
+        self.assertTrue(retained.exists())
+        self.assertTrue(txn.exists())
+
+    def test_journal_cleanup_refuses_redirected_child(self):
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        target = self.root / "first.py"
+        target.write_text("published")
+        outside = self.root / "outside.txt"
+        outside.write_text("retain")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        redirected = txn / "0.bak"
+        try:
+            redirected.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("File symlinks unavailable")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": None,
+                "after": _digest(b"published")}] }))
+        with self.assertRaisesRegex(
+                TransactionError, "unlinked regular file"):
+            recover_edits(self.root)
+        self.assertEqual(outside.read_text(), "retain")
+        self.assertTrue(redirected.is_symlink())
+        self.assertTrue(txn.exists())
+
     def test_committed_journal_preserves_evidence_for_changed_target(self):
         from forgeos.transactions import TransactionError, recover_edits, _digest
         target = self.root / "first.py"
