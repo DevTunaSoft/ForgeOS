@@ -229,6 +229,22 @@ def check_recovery_bundle_auth(package: str | Path, authentication: str | Path,
     }
 
 
+def require_recovery_bundle_authentication(
+        package: str | Path, authentication: str | Path | None,
+        key: str | Path | None) -> None:
+    """Require a complete detached-authentication pair before staging."""
+    if authentication is None and key is None:
+        return
+    if (authentication is None) != (key is None):
+        raise ValueError(
+            "Recovery bundle authentication record and key are required together")
+    report = check_recovery_bundle_auth(package, authentication, key)
+    if not report["valid"]:
+        problem = (report["issues"][0]["problem"]
+                   if report["issues"] else "authentication failed")
+        raise ValueError("Recovery bundle authentication failed: " + problem)
+
+
 def check_recovery_bundle_authenticated(package: str | Path,
                                         authentication: str | Path,
                                         key: str | Path, *,

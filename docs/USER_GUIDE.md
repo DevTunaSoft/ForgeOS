@@ -925,6 +925,21 @@ index, evidence, source-archive and package checks pass. There is no automatic
 retry worker; use a new destination if the existing directory is tampered or
 its package identity no longer matches.
 
+When a package contains a database backup, you can restore only that database
+to a new copy without materializing the full receiving directory:
+
+```powershell
+py -m forgeos recovery-bundle-db-restore-copy `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  "C:\ForgeOS-received\tasks-restored.sqlite3"
+```
+
+This command validates the complete package, stages only the bounded database
+entry privately, and reuses `db-restore-copy`'s read-only SQLite verification
+and no-overwrite publication. It never replaces the active database or starts
+ForgeOS. Add `--authentication AUTH_RECORD --key KEY` to require a detached
+package HMAC before staging.
+
 `recovery-bundle-auth` creates a detached authenticity record for a valid ZIP
 using a local shared-secret key. The key file must be a regular, unlinked file
 between 32 bytes and 4 KiB. `recovery-bundle-auth-check` requires the same key

@@ -333,6 +333,13 @@ the marker's package digest, preserves matching files, copies only missing
 entries and refuses mismatched existing entries. It marks the directory
 complete only after the same final checks; the resume command also never
 executes or replays the handoff.
+To restore only the bundled task database to a new file without first
+materializing the full directory, run
+`py -m forgeos recovery-bundle-db-restore-copy PACKAGE NEW_DATABASE`. This
+reuses the verified SQLite restore-copy boundary, streams the database through
+temporary staging, refuses an existing destination, and never activates the
+running database. Add `--authentication AUTH_RECORD --key KEY` when the
+package has a detached HMAC record that must be required.
 For an operator-held shared-secret authenticity check, create and verify a
 detached record with `py -m forgeos recovery-bundle-auth PACKAGE KEY AUTH_RECORD`
 and `py -m forgeos recovery-bundle-auth-check PACKAGE AUTH_RECORD KEY`. The
