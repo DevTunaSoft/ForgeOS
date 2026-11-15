@@ -71,11 +71,14 @@ rejects reparse identities. Hashing and copying remain bounded to 64 KiB
 chunks, and POSIX journal-directory removal is flushed after cleanup.
 
 This closes the path-substitution window while a regular file is being opened,
-hashed or copied, but atomic target publication and recursive journal cleanup
-still have a check-and-use race boundary. It is not a Windows DACL boundary or
-physical NTFS power-loss acceptance. Operators should preserve an unsafe
-journal for inspection and resolve the filesystem problem before retrying
-recovery.
+hashed or copied. Journal cleanup is bounded to the allowlisted flat files a
+transaction can create; unexpected, linked or directory children are rejected
+and preserved rather than recursively traversed, with file and directory
+identity rechecks before removal. Atomic target publication still has a
+check-and-use race boundary, and cleanup is not a complete concurrent-writer
+lock. This is not a Windows DACL boundary or physical NTFS power-loss
+acceptance. Operators should preserve an unsafe journal for inspection and
+resolve the filesystem problem before retrying recovery.
 
 If a crash leaves a `committed` journal behind, recovery also re-hashes every
 published target against its recorded post-edit digest before removing that

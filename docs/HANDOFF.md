@@ -3119,3 +3119,26 @@ local 12 MiB x 3-cycle memory benchmark reported a 1,982,228-byte Python
 tracemalloc peak and a 30,060,544-byte process peak RSS. Documentation/link
 coverage passes locally; exact-head hosted checks remain required. Windows DACL
 and physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — bounded transaction journal cleanup
+
+**Change:** transaction cleanup no longer calls recursive `shutil.rmtree` on a
+crash-retained journal. Recovery derives the bounded set of manifest, backup,
+staged and committed names that the transaction can create, scans only that
+flat allowlist, rejects unexpected, linked or directory children, and rechecks
+the journal file/directory identities before unlinking or removing the journal.
+An unsafe child therefore remains in the journal for inspection instead of
+being recursively traversed. The implementation keeps the existing bounded
+streaming path and does not add a worker, service or dependency.
+
+**Regression coverage:** engine tests cover an unexpected child, a directory
+child that must not be recursively traversed, and a redirected child whose
+outside target must remain unchanged. The focused engine/transaction suite
+passed 86 tests with 1 expected platform skip. The full isolated suite passed
+727 tests with 9 expected skips; the known local-model test may emit its
+existing `WinError 10053` server trace but exits successfully. Compileall,
+documentation/link coverage and `git diff --check` passed. The bounded 12 MiB
+x 3-cycle memory benchmark reported a 1,982,228-byte Python tracemalloc peak
+and a 30,060,544-byte process peak RSS. Exact-head hosted checks remain
+required before merge. Atomic target publication, Windows ACL review and
+physical NTFS power-loss acceptance remain open.
