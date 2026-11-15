@@ -1202,9 +1202,10 @@ The regression inserts invalid UTF-8 through SQLite's `CAST(X'80' AS TEXT)`
 and exercises the actual CLI. The original code raised
 `sqlite3.OperationalError` while fetching that row. Focused post-fix tests
 passed: 2 CLI cases and 1 existing journal-semantic case. The isolated full
-suite passed 779 tests with 23 skips (22 Windows-only runtime/integration
-tests and one symlink test unavailable on this host). Documentation link and
-change-coverage checks, the handoff checker, `compileall` and
+suite completed successfully: 779 tests run, 756 passed and 23 skipped
+(22 Windows-only runtime/integration tests and one symlink test unavailable
+on this host). Documentation link and change-coverage checks, the handoff
+checker, `compileall` and
 `git diff --check` passed. Exact-head hosted checks, Windows restart/NTFS and
 physical power-loss acceptance remain unverified; this does not repair
 damaged data.

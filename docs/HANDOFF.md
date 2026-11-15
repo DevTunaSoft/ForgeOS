@@ -3661,10 +3661,11 @@ tests.test_cli_database.DatabaseCommandsTests.test_journal_check_command_reports
 -v`; and
 `PYTHONPATH=src python -m unittest
 tests.test_core.ForgeOSTests.test_event_journal_checker_streams_valid_rows_and_caps_corruption
--v`. Full isolated `unittest` discovery passed 779 tests with 23 skips.
-The skipped cases were 22 Windows-only runtime/integration tests and one
-symlink test unavailable on this host. Documentation link and change-coverage
-checks, the handoff checker, `compileall` and `git diff --check` passed.
+-v`. Full isolated `unittest` discovery completed successfully: 779 tests
+run, 756 passed and 23 skipped. The skipped cases were 22 Windows-only
+runtime/integration tests and one symlink test unavailable on this host.
+Documentation link and change-coverage checks, the handoff checker,
+`compileall` and `git diff --check` passed.
 Exact-head hosted CI, Windows restart/NTFS and physical power-loss acceptance
 remain unverified.
 
