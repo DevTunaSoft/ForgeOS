@@ -646,6 +646,83 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertEqual(huge.stat().st_size, MAX_BACKUP_BYTES + 1)
         self.assertFalse((self.root / ".forgeos" / "pending-edit").exists())
 
+    def test_transaction_refuses_symlinked_metadata_directory(self):
+        from forgeos.transactions import TransactionError
+        outside = self.root / "outside"
+        outside.mkdir()
+        metadata = self.root / ".forgeos"
+        try:
+            metadata.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Directory symlinks unavailable")
+        with self.assertRaisesRegex(TransactionError, "real directory"):
+            apply_edits(self.root, self.manifest([
+                {"path": "existing.py", "content": "replacement"}]))
+        self.assertTrue(metadata.is_symlink())
+        self.assertFalse((outside / "pending-edit").exists())
+
+    def test_recovery_refuses_symlinked_pending_journal(self):
+        from forgeos.transactions import TransactionError, recover_edits
+        metadata = self.root / ".forgeos"
+        metadata.mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        journal = metadata / "pending-edit"
+        try:
+            journal.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Directory symlinks unavailable")
+        target = self.root / "existing.py"
+        target.write_text("preserve")
+        with self.assertRaisesRegex(TransactionError, "real directory"):
+            recover_edits(self.root)
+        self.assertEqual(target.read_text(), "preserve")
+        self.assertTrue(journal.is_symlink())
+
+    def test_recovery_refuses_hardlinked_manifest(self):
+        from forgeos.transactions import TransactionError, _digest, recover_edits
+        metadata = self.root / ".forgeos"
+        txn = metadata / "pending-edit"
+        txn.mkdir(parents=True)
+        target = self.root / "existing.py"
+        target.write_text("changed")
+        manifest = json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "existing.py", "before": None,
+                "after": _digest(b"changed")}]})
+        external = self.root / "manifest-copy.json"
+        external.write_text(manifest)
+        try:
+            os.link(external, txn / "manifest.json")
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unavailable")
+        with self.assertRaisesRegex(TransactionError, "unlinked regular file"):
+            recover_edits(self.root)
+        self.assertEqual(target.read_text(), "changed")
+        self.assertTrue(txn.exists())
+
+    def test_recovery_refuses_hardlinked_backup(self):
+        from forgeos.transactions import TransactionError, _digest, recover_edits
+        metadata = self.root / ".forgeos"
+        txn = metadata / "pending-edit"
+        txn.mkdir(parents=True)
+        target = self.root / "existing.py"
+        target.write_text("changed")
+        external = self.root / "backup-copy.py"
+        external.write_text("old")
+        try:
+            os.link(external, txn / "0.bak")
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unavailable")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "existing.py", "before": _digest(b"old"),
+                "after": _digest(b"changed")}] }))
+        with self.assertRaisesRegex(TransactionError, "Backup missing or damaged"):
+            recover_edits(self.root)
+        self.assertEqual(target.read_text(), "changed")
+        self.assertTrue(txn.exists())
+
     def test_backup_and_restore_stream_without_path_read_bytes(self):
         from unittest.mock import patch
         from forgeos.transactions import recover_edits, _digest

@@ -3016,3 +3016,30 @@ passed 51/51 on Windows. Full isolated tests, documentation/link coverage,
 compileall, bounded memory and exact-head hosted Linux/Windows checks remain
 required for this branch; signature, encryption, reboot and NTFS power-loss
 acceptance remain open.
+
+## 2026-11-15 — transaction journal reparse/link boundary
+
+**Change:** the existing `transactions.py` boundary now validates the internal
+`.forgeos` and `pending-edit` paths with non-following metadata reads before
+journal creation, recovery or cleanup. POSIX symlinks, Windows reparse points,
+and hard-linked manifest/backup files are rejected as unsafe; successful POSIX
+journal removal flushes its containing directory. The edit and recovery paths
+still stream through the existing 64 KiB chunk and 8 MiB backup limits, with no
+new worker, service or dependency.
+
+**Regression coverage:** engine tests cover a symlinked metadata directory, a
+symlinked pending journal and a hard-linked manifest, preserving the target and
+unsafe journal for inspection. Focused engine/transaction tests passed 76/76
+with an isolated Windows user profile. Full repository tests, documentation
+coverage, compileall, memory benchmark and exact-head hosted checks remain
+required for this feature branch; check-and-use races, Windows DACLs and
+physical NTFS power-loss acceptance remain open.
+
+The follow-up hard-linked-backup regression passed as part of the final 77/77
+focused engine suite. On commit `88609e0`, the full isolated repository suite
+passed 718 tests with 8 expected skips. Compileall, documentation/link
+coverage, `git diff --check` and the bounded 12 MiB x 3-cycle memory benchmark
+also passed; the benchmark reported a 1,982,228-byte Python tracemalloc peak
+and a 29,880,320-byte process peak RSS. The hosted exact-head Linux/Windows
+matrix and physical Windows reparse/DACL/NTFS interruption acceptance remain
+required.

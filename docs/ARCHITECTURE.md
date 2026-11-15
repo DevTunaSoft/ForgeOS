@@ -51,6 +51,22 @@ flowchart TB
 
 **Do not fork duplicate implementations of these capabilities** without first checking existing ownership and the [deduplication audit](ENHANCEMENT_DEDUP_AUDIT.md).
 
+### Transaction journal filesystem boundary
+
+The edit journal lives under `workspace/.forgeos/pending-edit`. Before any
+journal read, write or cleanup, ForgeOS requires both internal directories to
+be real directories. POSIX symlinks and hard-linked journal files are rejected;
+on Windows, the same metadata check also rejects filesystem reparse points such
+as junctions. The manifest and streamed backup files must be unlinked regular
+files, so a redirected or shared journal fails closed without reading or
+deleting outside the worktree. Recovery continues to hash and copy in bounded
+64 KiB chunks, and POSIX journal-directory removal is flushed after cleanup.
+
+This narrows same-user journal redirection and substitution risk; it is not a
+complete check-and-use race defense, a Windows DACL boundary or physical NTFS
+power-loss acceptance. Operators should preserve an unsafe journal for
+inspection and resolve the filesystem problem before retrying recovery.
+
 ## Multi-backend inference boundary (feature branch)
 
 `Ollama` in `core.py` remains canonical for existing tasks. The new
