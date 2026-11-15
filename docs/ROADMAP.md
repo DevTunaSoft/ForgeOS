@@ -368,3 +368,15 @@ contents. Git/runtime/environment metadata is excluded and symlink, hard-link,
 reparse-point and special-file inputs fail closed. This is an integrity
 inventory toward a future complete source/evidence bundle, not an archive,
 signature, encryption layer or Git-object backup.
+
+### 2026-11-15 — bounded source-only worktree archive
+
+`worktree-archive` now streams the selected regular source files into a new
+bounded ZIP and embeds the existing JSONL SHA-256 manifest;
+`worktree-archive-check` validates the archive and hashes decompressed entries
+without extraction or SQLite access. The checker bounds classic ZIP central
+directory metadata, rejects ZIP64, traversal, noncanonical, encrypted and
+symlink-like entries, and preserves the no-overwrite publication boundary.
+This is a source-transfer artifact, not a task database/evidence bundle,
+Git-object backup, encrypted or signed retention format, restore/import/replay
+mechanism or physical power-loss acceptance.

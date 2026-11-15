@@ -157,6 +157,19 @@ Windows reparse points and special files. It is an integrity inventory, not a
 source archive, Git object backup, signature, encryption layer or proof that
 empty directories and ignored metadata are preserved.
 
+`export_worktree_archive()` and `check_worktree_archive()` provide the next
+database-free transfer boundary for the same source selection. The exporter
+streams each regular file into a standard-library DEFLATE ZIP while hashing
+the bytes, then embeds a bounded JSONL worktree manifest. The checker
+preflights the classic ZIP end record and central-directory size before using
+`zipfile`, rejects traversal/noncanonical paths, encrypted or symlink-like
+entries, ZIP64 and oversized archives, and hashes decompressed entries without
+extracting them. It retains only bounded metadata and at most the manifest in
+memory; it never opens SQLite or executes archive content. The archive is
+source-only: task state, evidence archives, Git objects, ignored metadata and
+empty directories are not included, and the artifact is not authenticated,
+encrypted or an action-replay/import mechanism.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback

@@ -2472,3 +2472,40 @@ five-test AppContainer module passed with the system Python interpreter. The
 documented compileall and 12 MiB x3 memory benchmark also passed. This host ACL
 condition is not evidence for weakening the AppContainer assertion; exact-head
 GitHub Windows checks remain the acceptance gate.
+
+## 2026-11-15 — bounded source-only worktree archive
+
+**Change:** added `worktree-archive` and `worktree-archive-check`. The
+database-free exporter streams each selected regular source file into a new
+DEFLATE ZIP while hashing it, then embeds the existing bounded JSONL worktree
+manifest. The checker validates the classic ZIP central-directory boundary and
+rehashes decompressed entries without extracting files or opening SQLite.
+
+**Safety boundary:** the archive uses the same `.git`, ForgeOS runtime,
+virtual-environment/dependency and `.env*` exclusions as the worktree
+manifest. The exporter rejects symlinks, hard links, reparse points, special
+files and a reserved manifest name; the checker rejects traversal or
+noncanonical paths, encrypted or symlink-like entries, ZIP64 and oversized
+central directories. Publication is staged, flushed and no-overwrite. This is
+source transfer only: it does not include task state, diagnostic evidence,
+Git objects, empty directories or ignored metadata, and it is not encrypted,
+signed, restorable, replayable or physical-power-loss accepted.
+
+**Regression coverage:** archive tests cover clean source-only export and
+verification, original-manifest content tampering, traversal and symlink-like
+ZIP entries, reserved-name/size limits and failed-publication cleanup. CLI
+coverage verifies both commands remain database-free. Exact-head Linux and
+Windows checks, packaging, memory validation and physical interruption
+acceptance remain required.
+
+**Local verification:** the focused archive, CLI and existing worktree suite
+passed (12 tests). With an isolated temporary `USERPROFILE`, the full current
+checkout `pytest -q -p no:cacheprovider` run passed 644 tests, skipped 7 and
+reported 406 subtests; the only failure was the known repository-virtualenv
+Windows AppContainer probe because `icacls` returned access denied for the
+active `.venv` Python executable. Compileall, documentation links/change
+coverage and diff checks passed. The documented 12 MiB x3 memory benchmark
+passed with a Python tracemalloc peak of about 1.86 MiB, stable post-GC RSS of
+about 22.4 MiB, and process peak RSS of about 24.6 MiB. Exact-head hosted
+Linux/Windows checks, packaging and physical interruption acceptance remain
+required.

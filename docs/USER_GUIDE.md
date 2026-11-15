@@ -801,6 +801,11 @@ py -m forgeos worktree-manifest `
 py -m forgeos worktree-manifest-check `
   "C:\ForgeOS-backups\task-1-worktree.jsonl" `
   "C:\ForgeOS-workspaces\task-1"
+py -m forgeos worktree-archive `
+  "C:\ForgeOS-workspaces\task-1" `
+  "C:\ForgeOS-backups\task-1-worktree.zip"
+py -m forgeos worktree-archive-check `
+  "C:\ForgeOS-backups\task-1-worktree.zip"
 ```
 
 The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
@@ -811,3 +816,20 @@ checker detects changed, missing or extra regular files and rejects symlinks,
 hard links, Windows reparse points and special files. Paths and hashes can
 still be sensitive; this is an integrity inventory, not a complete source
 archive or authenticated/encrypted bundle.
+
+`worktree-archive` is the source-transfer form. It streams those same regular
+files directly into a new ZIP and stores the JSONL integrity manifest inside
+the archive; it does not load the worktree into RAM or initialize the task
+database. The archive and its uncompressed source contents are each bounded
+at 512 MiB, with at most 4,096 source files plus the manifest and a 4 MiB ZIP
+central-directory bound. The checker validates every path and hash without
+extracting files, and rejects absolute/traversal paths, noncanonical names,
+encrypted entries, symlink-like metadata, oversized entries and malformed
+archives. Both commands require a new destination outside the worktree.
+
+The archive excludes `.git`, `.forgeos`, `.forgeos-runtime`, virtual-
+environment/dependency directories and `.env*` files, but other source files
+may contain secrets and should be reviewed before transfer. It is not a task
+database backup, diagnostic evidence bundle, Git-object backup, signature or
+encryption layer; it does not preserve empty directories or provide restore,
+action replay or physical power-loss acceptance.
