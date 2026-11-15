@@ -38,6 +38,45 @@ class DatabaseCommandsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "new file"):
                 main(["db-restore-copy", str(source), str(destination)])
 
+    def test_restore_activate_is_explicit_and_does_not_open_active_store(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            active = root / "tasks.sqlite3"
+            source = root / "source.sqlite3"
+            backup = root / "backup.sqlite3"
+            rollback = root / "before-activation.sqlite3"
+
+            active_store = Store(active)
+            try:
+                active_store.add(str(repo), "old CLI task")
+            finally:
+                active_store.close()
+            source_store = Store(source)
+            try:
+                source_store.add(str(repo), "new CLI task")
+                source_store.backup_to(backup)
+            finally:
+                source_store.close()
+
+            output = io.StringIO()
+            with patch.object(Store, "__init__", side_effect=AssertionError(
+                    "Activation must not open the active task database")), \
+                    redirect_stdout(output):
+                self.assertEqual(main([
+                    "db-restore-activate", str(backup), str(active),
+                    str(rollback), "--confirm"]), 0)
+            self.assertIn("Activated database:", output.getvalue())
+            with closing(sqlite3.connect(active)) as db:
+                self.assertEqual(db.execute(
+                    "SELECT description FROM tasks").fetchone()[0], "new CLI task")
+            with closing(sqlite3.connect(rollback)) as db:
+                self.assertEqual(db.execute(
+                    "SELECT description FROM tasks").fetchone()[0], "old CLI task")
+
     def test_database_commands_never_initialize_a_missing_database(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

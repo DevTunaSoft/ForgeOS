@@ -702,6 +702,27 @@ The backup is **not encrypted** and does not include external evidence archives,
 Git worktrees or model weights. Do not attempt a live database overwrite to
 restore. Read [database backup limitations](DATABASE_BACKUP.md) first.
 
+For a deliberate offline replacement, stop ForgeOS and every process using its
+database, then use a new rollback filename and explicit confirmation:
+
+```powershell
+py -m forgeos db-restore-activate `
+  "C:\\ForgeOS-backups\\tasks-backup.sqlite3" `
+  "$env:USERPROFILE\\.forgeos\\tasks.sqlite3" `
+  "C:\\ForgeOS-backups\\tasks-before-activation.sqlite3" `
+  --manifest "C:\\ForgeOS-backups\\tasks-backup.json" `
+  --confirm
+```
+
+The command verifies the backup before moving the old active file to the
+rollback path. It refuses existing rollback or activation-marker files,
+symlinks, SQLite `-wal`/`-shm`/`-journal` sidecars and a missing destination
+folder. On Windows an open database handle causes the move to fail. If a later
+step cannot finish, ForgeOS attempts to restore the old file; preserve the
+rollback and `tasks.sqlite3.forgeos-activation.json` marker if that recovery
+also fails. This is an operator-guided replacement, not automatic failover or
+full power-loss recovery.
+
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:
 

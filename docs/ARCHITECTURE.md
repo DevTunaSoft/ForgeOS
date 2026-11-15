@@ -116,6 +116,17 @@ newline-delimited JSON to a new same-directory artifact, then publishes it
 without overwriting an existing export. It is a journal handoff artifact, not
 a complete database, worktree or evidence backup.
 
+`Store.activate_backup_to()` is a separate, explicit offline boundary. It
+requires caller confirmation, verifies the backup through the existing
+read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback
+or marker paths, then moves the old active file to a new rollback path before
+publishing the staged database. A small flushed marker records `prepared`,
+`old_moved` or `published` progress. If publication fails after the old file
+moves, the method attempts a fail-closed rollback; when that rollback cannot
+complete, the marker and rollback file remain for manual recovery. It does not
+coordinate a running process, replay journal actions, merge task histories or
+claim physical power-loss recovery.
+
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository. The optional GUI/CLI **Plan** and **Run tests only** actions now share `task_actions.py` instead of using independent, unguarded SQLite state writes. Direct tests require explicit host-test permission and use the engine's platform-specific test containment (frozen Windows supported presets only).

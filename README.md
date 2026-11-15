@@ -279,5 +279,11 @@ ForgeOS can explicitly check its local SQLite task database and create a
 consistent, non-overwriting backup using SQLite's built-in online backup API:
 `py -m forgeos db-check` and
 `py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup.sqlite3"`.
+For a deliberate offline replacement, stop ForgeOS and use
+`py -m forgeos db-restore-activate BACKUP ACTIVE ROLLBACK --confirm`; the old
+active file is retained at the new rollback path and a phase marker remains if
+rollback cannot complete. This refuses SQLite sidecars and occupied recovery
+paths; it is not automatic failover or physical power-loss recovery.
 See [database backup and recovery limits](docs/DATABASE_BACKUP.md).
-This is not yet an encrypted, scheduled or fully tested restore solution.
+This is not an encrypted, scheduled, bundled or physically accepted disaster-
+recovery solution.
