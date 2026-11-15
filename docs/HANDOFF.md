@@ -2647,3 +2647,34 @@ x3 memory benchmark passed with a Python tracemalloc peak of about 1.86 MiB,
 stable post-GC RSS of about 22.7 MiB and process peak RSS of about 24.4 MiB.
 Exact-head hosted Linux/Windows checks, packaging and physical interruption
 acceptance remain required.
+
+## 2026-11-15 — detached recovery package authentication
+
+**Change:** added `recovery-bundle-auth` and
+`recovery-bundle-auth-check`. The exporter validates an existing recovery ZIP,
+streams its complete bytes through the existing 64 KiB artifact digest boundary
+and a shared-secret HMAC-SHA-256, then publishes a small detached JSON record
+containing only the package filename, size, SHA-256 and HMAC. Key files must be
+regular, unlinked files between 32 bytes and 4 KiB; the secret is never copied
+into the record or CLI output. Verification requires the same key and fails
+closed on wrong keys, package tampering or record tampering.
+
+**Safety boundary:** this is operator-controlled authenticity by possession of
+a shared secret, not ZIP encryption, public-key signer identity, database
+restoration, action replay or physical power-loss durability. Operators must
+protect and rotate the key separately. Publication is staged and no-overwrite;
+failed publication removes the temporary record staging file.
+
+**Regression coverage:** authentication tests cover valid verification without
+secret copying, wrong-key and record tampering refusal, original-record versus
+tampered-package refusal, short-key validation, failed-publication cleanup and
+database-free CLI dispatch.
+
+**Local verification:** the focused authentication/CLI suite passed 5 tests.
+With an isolated temporary `USERPROFILE`, the full current checkout
+`python -m unittest discover -s tests -q` run passed 676 tests and skipped 7.
+Compileall and diff checks passed. The standard 12 MiB x3 memory benchmark
+passed with a Python tracemalloc peak of about 1.89 MiB, stable post-GC RSS of
+about 26.3 MiB and process peak RSS of about 28.0 MiB on this host. Exact-head
+hosted Linux/Windows checks, packaging and physical interruption acceptance
+remain required.

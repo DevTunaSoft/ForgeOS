@@ -216,6 +216,16 @@ index and package digest pass again is the marker promoted to `complete`.
 There is no background retry or concurrent-worker coordination; the operator
 must ensure the previous writer has stopped.
 
+`export_recovery_bundle_auth()` adds a detached operator-held authenticity
+record without changing the passive ZIP format. It validates the package,
+streams the complete ZIP through the existing 64 KiB artifact digest boundary
+and a keyed HMAC-SHA-256, then publishes only bounded filename, size, SHA-256
+and HMAC metadata. Key files are regular, unlinked files between 32 bytes and
+4 KiB and are never serialized into the record. The checker requires the
+package, record and same shared secret to agree; this is authenticity by
+shared-secret possession, not encryption, a public-key signature or database
+restoration.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback

@@ -834,6 +834,14 @@ py -m forgeos recovery-bundle-extract-check `
 py -m forgeos recovery-bundle-extract-resume `
   "C:\ForgeOS-backups\task-1-recovery.zip" `
   "C:\ForgeOS-received\task-1"
+py -m forgeos recovery-bundle-auth `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  "C:\ForgeOS-backups\task-1-recovery.key" `
+  "C:\ForgeOS-backups\task-1-recovery.auth.json"
+py -m forgeos recovery-bundle-auth-check `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  "C:\ForgeOS-backups\task-1-recovery.auth.json" `
+  "C:\ForgeOS-backups\task-1-recovery.key"
 ```
 
 The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
@@ -904,3 +912,11 @@ no-overwrite boundary. It marks the directory complete only after the final
 index, evidence, source-archive and package checks pass. There is no automatic
 retry worker; use a new destination if the existing directory is tampered or
 its package identity no longer matches.
+
+`recovery-bundle-auth` creates a detached authenticity record for a valid ZIP
+using a local shared-secret key. The key file must be a regular, unlinked file
+between 32 bytes and 4 KiB. `recovery-bundle-auth-check` requires the same key
+and verifies the package filename, size, SHA-256 and HMAC-SHA-256. The key is
+never placed in the record or CLI output. This is not ZIP encryption or a
+public-key signature; protect and rotate the key outside ForgeOS, and treat
+the package contents as potentially sensitive.
