@@ -2751,3 +2751,26 @@ of about 1.89 MiB, stable post-GC RSS of about 26.3 MiB and process peak RSS
 of about 28.6 MiB on this host. Documentation coverage, exact-head hosted
 Linux/Windows checks, packaging and physical interruption acceptance remain
 required for this branch.
+
+## 2026-11-15 — optional database artifact in passive recovery bundles
+
+**Change:** `recovery-bundle-index` and `recovery-bundle` now accept an
+existing verified `db-backup` SQLite file through `--database`, plus its
+optional `--database-manifest`. The index records bounded size and SHA-256
+metadata, inspects the database read-only without initializing `Store`, and
+refuses any `-wal`, `-shm` or rollback-journal sidecar so a standalone backup
+cannot silently lose live SQLite state. The database artifact is capped at
+512 MiB. Package checking and marked extraction/resume treat it as a passive
+`database/` file and revalidate it; no active database is replaced and no
+task or journal action is executed.
+
+**Regression coverage:** index tests cover valid database/manifest binding,
+sidecar refusal and artifact counts; package tests cover ZIP entries and
+nested read-only validation; extraction tests cover materialization; the
+database-free CLI test now covers the optional flags while patching Store
+construction. Existing unsigned bundles remain compatible.
+
+**Local verification:** focused recovery index/package/extraction/CLI suites
+passed 21 tests. Compileall and the existing recovery regressions passed.
+Full test, documentation, memory, exact-head hosted Linux/Windows, packaging
+and physical interruption evidence remain required for this branch.

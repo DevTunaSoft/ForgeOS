@@ -88,7 +88,7 @@ def main(argv=None):
     worktree_archive_check.add_argument('--max-issues', type=int, default=32)
     bundle_index = sub.add_parser(
         'recovery-bundle-index',
-        help='Bind a handoff, source archive and evidence by streamed hashes')
+        help='Bind recovery artifacts and an optional database backup')
     bundle_index.add_argument('handoff', help='Existing JSONL handoff path')
     bundle_index.add_argument('worktree_archive', help='Existing source ZIP archive')
     bundle_index.add_argument('destination', help='New JSONL index path')
@@ -96,6 +96,10 @@ def main(argv=None):
                               help='Optional existing handoff digest manifest')
     bundle_index.add_argument('--evidence-directory', default='',
                               help='Optional existing evidence directory')
+    bundle_index.add_argument('--database', default='',
+                              help='Optional existing verified SQLite backup')
+    bundle_index.add_argument('--database-manifest', default='',
+                              help='Optional SQLite backup manifest')
     bundle_index_check = sub.add_parser(
         'recovery-bundle-index-check',
         help='Verify a recovery bundle index and its referenced artifacts')
@@ -108,6 +112,10 @@ def main(argv=None):
                                     help='Optional existing handoff digest manifest')
     bundle_index_check.add_argument('--evidence-directory', default='',
                                     help='Optional existing evidence directory')
+    bundle_index_check.add_argument('--database', default='',
+                                    help='Optional existing verified SQLite backup')
+    bundle_index_check.add_argument('--database-manifest', default='',
+                                    help='Optional SQLite backup manifest')
     bundle_index_check.add_argument('--max-issues', type=int, default=32)
     recovery_bundle = sub.add_parser(
         'recovery-bundle',
@@ -119,6 +127,10 @@ def main(argv=None):
                                  help='Optional existing handoff digest manifest')
     recovery_bundle.add_argument('--evidence-directory', default='',
                                  help='Optional existing evidence directory')
+    recovery_bundle.add_argument('--database', default='',
+                                 help='Optional existing verified SQLite backup')
+    recovery_bundle.add_argument('--database-manifest', default='',
+                                 help='Optional SQLite backup manifest')
     recovery_bundle_check = sub.add_parser(
         'recovery-bundle-check',
         help='Verify one bounded recovery bundle ZIP')
@@ -417,7 +429,9 @@ def main(argv=None):
         exported = export_recovery_bundle_index(
             args.handoff, args.worktree_archive, args.destination,
             manifest=args.manifest or None,
-            evidence_directory=args.evidence_directory or None)
+            evidence_directory=args.evidence_directory or None,
+            database=args.database or None,
+            database_manifest=args.database_manifest or None)
         print(f'Exported recovery bundle index: {exported}')
         return 0
     if args.action == 'recovery-bundle-index-check':
@@ -426,6 +440,8 @@ def main(argv=None):
             args.source, args.handoff, args.worktree_archive,
             manifest=args.manifest or None,
             evidence_directory=args.evidence_directory or None,
+            database=args.database or None,
+            database_manifest=args.database_manifest or None,
             max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
@@ -434,7 +450,9 @@ def main(argv=None):
         exported = export_recovery_bundle(
             args.handoff, args.worktree_archive, args.destination,
             manifest=args.manifest or None,
-            evidence_directory=args.evidence_directory or None)
+            evidence_directory=args.evidence_directory or None,
+            database=args.database or None,
+            database_manifest=args.database_manifest or None)
         print(f'Exported recovery bundle: {exported}')
         return 0
     if args.action == 'recovery-bundle-check':

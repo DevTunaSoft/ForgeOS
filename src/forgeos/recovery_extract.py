@@ -10,11 +10,13 @@ import tempfile
 import zipfile
 
 from .core import (
+    MAX_BACKUP_MANIFEST_BYTES,
     MAX_JOURNAL_HANDOFF_MANIFEST_BYTES,
     _move_database_copy,
     _sync_publication_directory,
 )
 from .recovery_bundle import (
+    MAX_RECOVERY_BUNDLE_DATABASE_BYTES,
     MAX_RECOVERY_BUNDLE_EVIDENCE_BYTES,
     MAX_RECOVERY_BUNDLE_EVIDENCE_FILE_BYTES,
     MAX_RECOVERY_BUNDLE_HANDOFF_BYTES,
@@ -147,8 +149,9 @@ def _read_state(root: Path) -> dict:
     return payload
 
 
-def _paths_from_index(root: Path) -> tuple[Path, Path, Path | None, Path | None,
-                                               set[str]]:
+def _paths_from_index(root: Path) -> tuple[
+        Path, Path, Path | None, Path | None, Path | None, Path | None,
+        set[str]]:
     rows = _index_rows(root / RECOVERY_BUNDLE_INDEX_NAME)
     handoff_record = _row(rows, "handoff")
     archive_record = _row(rows, "worktree-archive")
@@ -156,6 +159,14 @@ def _paths_from_index(root: Path) -> tuple[Path, Path, Path | None, Path | None,
         row for row in rows if row.get("record") == "handoff-manifest"]
     if len(manifest_records) > 1:
         raise ValueError("Recovery extraction index contains duplicate manifests")
+    database_records = [
+        row for row in rows if row.get("record") == "database"]
+    database_manifest_records = [
+        row for row in rows if row.get("record") == "database-manifest"]
+    if len(database_records) > 1 or len(database_manifest_records) > 1:
+        raise ValueError("Recovery extraction index contains duplicate database records")
+    if database_manifest_records and not database_records:
+        raise ValueError("Recovery extraction database manifest has no database")
     evidence_records = [
         row for row in rows if row.get("record") == "evidence"]
     _record_filename(handoff_record["filename"])
@@ -166,13 +177,22 @@ def _paths_from_index(root: Path) -> tuple[Path, Path, Path | None, Path | None,
     if manifest_records:
         _record_filename(manifest_records[0]["filename"])
         manifest = root / "manifest" / manifest_records[0]["filename"]
+    database = None
+    if database_records:
+        _record_filename(database_records[0]["filename"])
+        database = root / "database" / database_records[0]["filename"]
+    database_manifest = None
+    if database_manifest_records:
+        _record_filename(database_manifest_records[0]["filename"])
+        database_manifest = root / "database-manifest" / (
+            database_manifest_records[0]["filename"])
     evidence = {record["filename"] for record in evidence_records}
     for filename in evidence:
         _record_filename(filename)
     evidence_directory = root / "evidence"
     evidence_root = (evidence_directory
                      if evidence or evidence_directory.exists() else None)
-    return handoff, source, manifest, evidence_root, evidence
+    return handoff, source, manifest, database, database_manifest, evidence_root, evidence
 
 
 def _check_materialized(root: Path, *, max_issues: int = 32) -> dict:
@@ -186,11 +206,13 @@ def _check_materialized(root: Path, *, max_issues: int = 32) -> dict:
     if (len(header_bytes) > MAX_RECOVERY_BUNDLE_HEADER_BYTES
             or header_bytes != _bundle_header()):
         raise ValueError("Recovery bundle header is invalid")
-    handoff, source, manifest, evidence_root, indexed_evidence = (
+    (handoff, source, manifest, database, database_manifest, evidence_root,
+     indexed_evidence) = (
         _paths_from_index(root))
     report = check_recovery_bundle_index(
         root / RECOVERY_BUNDLE_INDEX_NAME, handoff, source,
         manifest=manifest, evidence_directory=evidence_root,
+        database=database, database_manifest=database_manifest,
         max_issues=max_issues)
     if not report["valid"]:
         return report
@@ -225,6 +247,10 @@ def _entry_limit(kind: str) -> int:
         return MAX_WORKTREE_ARCHIVE_BYTES
     if kind == "manifest":
         return MAX_JOURNAL_HANDOFF_MANIFEST_BYTES
+    if kind == "database":
+        return MAX_RECOVERY_BUNDLE_DATABASE_BYTES
+    if kind == "database-manifest":
+        return MAX_BACKUP_MANIFEST_BYTES
     return MAX_RECOVERY_BUNDLE_EVIDENCE_FILE_BYTES
 
 

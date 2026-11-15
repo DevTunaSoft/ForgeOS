@@ -6,13 +6,18 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import tempfile
 
 from .core import (
+    BACKUP_MANIFEST_FORMAT,
     JOURNAL_HANDOFF_MANIFEST_FORMAT,
+    MAX_BACKUP_MANIFEST_BYTES,
     MAX_JOURNAL_HANDOFF_LINE_BYTES,
     MAX_JOURNAL_HANDOFF_MANIFEST_BYTES,
     Store,
+    _database_sidecars,
+    _verify_backup_manifest,
     _publish_database_copy,
 )
 from .diagnostics import MAX_ARCHIVE_BYTES, EvidenceStore
@@ -36,7 +41,9 @@ MAX_RECOVERY_BUNDLE_EVIDENCE_FILES = 4096
 MAX_RECOVERY_BUNDLE_HANDOFF_BYTES = 64 * 1024 * 1024
 MAX_RECOVERY_BUNDLE_EVIDENCE_FILE_BYTES = 64 * 1024 * 1024
 MAX_RECOVERY_BUNDLE_EVIDENCE_BYTES = 256 * 1024 * 1024
+MAX_RECOVERY_BUNDLE_DATABASE_BYTES = 512 * 1024 * 1024
 MAX_RECOVERY_BUNDLE_ISSUES = MAX_WORKTREE_ISSUES
+RECOVERY_BUNDLE_DATABASE_FORMAT = "forgeos-sqlite-backup-v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FILENAME = re.compile(r"^[^\\/:*?\"<>|\x00]{1,255}$")
 
@@ -93,6 +100,21 @@ def _regular_file(path: str | Path, *, max_bytes: int) -> Path:
     except TypeError as exc:
         raise ValueError("Recovery artifact path is invalid") from exc
     _artifact_digest(value, max_bytes=max_bytes)
+    return value
+
+
+def _database_backup(path: str | Path) -> Path:
+    """Validate a standalone SQLite backup before adding it to a bundle."""
+    value = _regular_file(path, max_bytes=MAX_RECOVERY_BUNDLE_DATABASE_BYTES)
+    if any(sidecar.exists() or sidecar.is_symlink()
+           for sidecar in _database_sidecars(value)):
+        raise ValueError(
+            "Recovery database backup must not have SQLite sidecars")
+    try:
+        Store.inspect_existing_database(value)
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError) as exc:
+        raise ValueError(
+            "Recovery database backup is not a valid ForgeOS database") from exc
     return value
 
 
@@ -194,8 +216,10 @@ def export_recovery_bundle_index(
         handoff: str | Path, worktree_archive: str | Path,
         destination: str | Path, *,
         manifest: str | Path | None = None,
-        evidence_directory: str | Path | None = None) -> Path:
-    """Bind a handoff, source archive and evidence files by streamed hashes."""
+        evidence_directory: str | Path | None = None,
+        database: str | Path | None = None,
+        database_manifest: str | Path | None = None) -> Path:
+    """Bind recovery artifacts and an optional verified database backup."""
     handoff_path = _regular_file(
         handoff, max_bytes=MAX_RECOVERY_BUNDLE_HANDOFF_BYTES)
     archive_path = _regular_file(
@@ -204,6 +228,20 @@ def export_recovery_bundle_index(
     if manifest is not None:
         manifest_path = _regular_file(
             manifest, max_bytes=MAX_JOURNAL_HANDOFF_MANIFEST_BYTES)
+    database_path = None
+    database_manifest_path = None
+    if database_manifest is not None and database is None:
+        raise ValueError("Database manifest requires a database backup")
+    if database is not None:
+        database_path = _database_backup(database)
+        if database_manifest is not None:
+            database_manifest_path = _regular_file(
+                database_manifest, max_bytes=MAX_BACKUP_MANIFEST_BYTES)
+            try:
+                _verify_backup_manifest(database_path, database_manifest_path)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise ValueError(
+                    "Recovery database backup does not match its manifest") from exc
     evidence_root = None
     if evidence_directory is not None:
         evidence_root = Path(evidence_directory).expanduser().absolute()
@@ -211,7 +249,8 @@ def export_recovery_bundle_index(
             raise ValueError("Evidence directory is unavailable or unsafe")
 
     inputs = tuple(path for path in (
-        handoff_path, archive_path, manifest_path) if path is not None)
+        handoff_path, archive_path, manifest_path, database_path,
+        database_manifest_path) if path is not None)
     target = _new_destination(destination, inputs)
     handoff_report, references = _check_handoff(
         handoff_path, manifest_path, evidence_root)
@@ -230,6 +269,14 @@ def export_recovery_bundle_index(
     if manifest_path is not None:
         manifest_size, manifest_digest = _artifact_digest(
             manifest_path, max_bytes=MAX_JOURNAL_HANDOFF_MANIFEST_BYTES)
+    database_size = database_digest = None
+    if database_path is not None:
+        database_size, database_digest = _artifact_digest(
+            database_path, max_bytes=MAX_RECOVERY_BUNDLE_DATABASE_BYTES)
+    database_manifest_size = database_manifest_digest = None
+    if database_manifest_path is not None:
+        database_manifest_size, database_manifest_digest = _artifact_digest(
+            database_manifest_path, max_bytes=MAX_BACKUP_MANIFEST_BYTES)
 
     evidence_records = []
     if evidence_root is not None:
@@ -273,6 +320,21 @@ def export_recovery_bundle_index(
                 "format": archive_report["format"] or WORKTREE_ARCHIVE_FORMAT,
                 "size": archive_size, "sha256": archive_digest,
             }, written)
+            if database_path is not None:
+                written = _write_record(output, {
+                    "record": "database",
+                    "filename": _filename(database_path),
+                    "format": RECOVERY_BUNDLE_DATABASE_FORMAT,
+                    "size": database_size, "sha256": database_digest,
+                }, written)
+            if database_manifest_path is not None:
+                written = _write_record(output, {
+                    "record": "database-manifest",
+                    "filename": _filename(database_manifest_path),
+                    "format": BACKUP_MANIFEST_FORMAT,
+                    "size": database_manifest_size,
+                    "sha256": database_manifest_digest,
+                }, written)
             for record in evidence_records:
                 written = _write_record(output, record, written)
             written = _write_record(output, {
@@ -321,6 +383,8 @@ def check_recovery_bundle_index(
         worktree_archive: str | Path, *,
         manifest: str | Path | None = None,
         evidence_directory: str | Path | None = None,
+        database: str | Path | None = None,
+        database_manifest: str | Path | None = None,
         max_issues: int = MAX_RECOVERY_BUNDLE_ISSUES) -> dict:
     """Verify a recovery bundle index and every separately stored artifact."""
     if (type(max_issues) is not int or isinstance(max_issues, bool)
@@ -333,6 +397,10 @@ def check_recovery_bundle_index(
                      if manifest is not None else None)
     evidence_root = (Path(evidence_directory).expanduser().absolute()
                      if evidence_directory is not None else None)
+    database_path = (Path(database).expanduser().absolute()
+                     if database is not None else None)
+    database_manifest_path = (Path(database_manifest).expanduser().absolute()
+                              if database_manifest is not None else None)
     issues = []
     truncated = False
     records = 0
@@ -344,6 +412,8 @@ def check_recovery_bundle_index(
     handoff_record = None
     manifest_record = None
     archive_record = None
+    database_record = None
+    database_manifest_record = None
     evidence_records = {}
 
     def issue(message: str, line: int = 0, path: str = ""):
@@ -424,6 +494,36 @@ def check_recovery_bundle_index(
                     else:
                         issue("worktree archive record is invalid", records)
                     continue
+                if kind == "database":
+                    if database_record is not None:
+                        issue("duplicate database record", records)
+                    elif (record.get("format") == RECOVERY_BUNDLE_DATABASE_FORMAT
+                          and _validate_digest_record(
+                              record,
+                              {"record", "filename", "format", "size", "sha256"},
+                              line=records, issues=issues,
+                              max_issues=max_issues,
+                              max_size=MAX_RECOVERY_BUNDLE_DATABASE_BYTES,
+                              label="Database backup")):
+                        database_record = record
+                    else:
+                        issue("database record is invalid", records)
+                    continue
+                if kind == "database-manifest":
+                    if database_manifest_record is not None:
+                        issue("duplicate database manifest record", records)
+                    elif (record.get("format") == BACKUP_MANIFEST_FORMAT
+                          and _validate_digest_record(
+                              record,
+                              {"record", "filename", "format", "size", "sha256"},
+                              line=records, issues=issues,
+                              max_issues=max_issues,
+                              max_size=MAX_BACKUP_MANIFEST_BYTES,
+                              label="Database backup manifest")):
+                        database_manifest_record = record
+                    else:
+                        issue("database manifest record is invalid", records)
+                    continue
                 if kind == "evidence":
                     fields = {
                         "record", "filename", "reference", "bytes",
@@ -491,6 +591,8 @@ def check_recovery_bundle_index(
         issue("missing or invalid handoff record")
     if archive_record is None:
         issue("missing or invalid worktree archive record")
+    if database_manifest_record is not None and database_record is None:
+        issue("database manifest requires a database backup record")
     if not summary_valid:
         issue("missing or invalid recovery bundle index summary", records)
 
@@ -535,6 +637,55 @@ def check_recovery_bundle_index(
                     issue("worktree archive fails its integrity check")
                 else:
                     artifacts_checked += 1
+
+            if database_record is None:
+                if database_path is not None:
+                    issue("unexpected database backup path")
+                if database_manifest_path is not None:
+                    issue("unexpected database manifest path")
+            else:
+                if database_path is None:
+                    issue("indexed database backup path is required")
+                else:
+                    try:
+                        database_path = _database_backup(database_path)
+                        size, digest = _artifact_digest(
+                            database_path,
+                            max_bytes=MAX_RECOVERY_BUNDLE_DATABASE_BYTES)
+                        if (database_record["filename"] != _filename(database_path)
+                                or size != database_record["size"]
+                                or digest != database_record["sha256"]):
+                            issue("database backup does not match its index")
+                        else:
+                            artifacts_checked += 1
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        issue(str(exc), 0, database_record.get("filename", ""))
+
+                if database_manifest_record is None:
+                    if database_manifest_path is not None:
+                        issue("unexpected database manifest path")
+                elif database_manifest_path is None:
+                    issue("indexed database manifest path is required")
+                else:
+                    try:
+                        database_manifest_path = _regular_file(
+                            database_manifest_path,
+                            max_bytes=MAX_BACKUP_MANIFEST_BYTES)
+                        size, digest = _artifact_digest(
+                            database_manifest_path,
+                            max_bytes=MAX_BACKUP_MANIFEST_BYTES)
+                        if (database_manifest_record["filename"]
+                                != _filename(database_manifest_path)
+                                or size != database_manifest_record["size"]
+                                or digest != database_manifest_record["sha256"]):
+                            issue("database backup manifest does not match its index")
+                        elif database_path is not None:
+                            _verify_backup_manifest(
+                                database_path, database_manifest_path)
+                            artifacts_checked += 1
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        issue(str(exc), 0,
+                              database_manifest_record.get("filename", ""))
 
             if evidence_records and evidence_root is None:
                 issue("evidence directory is required by the index")
@@ -583,6 +734,8 @@ def check_recovery_bundle_index(
         "task_id": task_id,
         "records": records,
         "evidence_files": len(evidence_records),
+        "database_present": database_record is not None,
+        "database_manifest_present": database_manifest_record is not None,
         "artifacts_checked": artifacts_checked,
         "issues": issues,
         "truncated": truncated,

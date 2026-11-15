@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from forgeos.core import JOURNAL_HANDOFF_MANIFEST_FORMAT, _move_database_copy
+from forgeos.core import JOURNAL_HANDOFF_MANIFEST_FORMAT, Store, _move_database_copy
 from forgeos.diagnostics import EvidenceStore
 from forgeos.recovery_auth import export_recovery_bundle_auth
 from forgeos.recovery_extract import (
@@ -59,10 +59,20 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
             "size": len(raw),
             "sha256": hashlib.sha256(raw).hexdigest(),
         }, separators=(",", ":")) + "\n", encoding="utf-8")
+        source_database = self.root / "source.sqlite3"
+        database = self.root / "tasks-backup.sqlite3"
+        database_manifest = self.root / "tasks-backup.json"
+        store = Store(source_database)
+        try:
+            store.add(str(worktree), "recovery database task")
+            store.backup_to(database, manifest=database_manifest)
+        finally:
+            store.close()
         self.bundle = self.root / "recovery.zip"
         export_recovery_bundle(
             handoff, archive, self.bundle,
-            manifest=manifest, evidence_directory=evidence_root)
+            manifest=manifest, evidence_directory=evidence_root,
+            database=database, database_manifest=database_manifest)
         self.key = self.root / "recovery.key"
         self.key.write_bytes(b"k" * 64)
         if os.name != "nt":
@@ -77,6 +87,9 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
         self.assertTrue((destination / RECOVERY_EXTRACTION_STATE_NAME).is_file())
         self.assertTrue((destination / "handoff" / "task.jsonl").is_file())
         self.assertTrue((destination / "source" / "source.zip").is_file())
+        self.assertTrue((destination / "database" / "tasks-backup.sqlite3").is_file())
+        self.assertTrue(
+            (destination / "database-manifest" / "tasks-backup.json").is_file())
         report = check_recovery_bundle_extraction(destination)
         self.assertTrue(report["valid"])
         self.assertTrue(report["complete"])

@@ -74,6 +74,35 @@ destination. It detects accidental corruption, but is not a signature or
 encryption and does not protect against an attacker who can replace both
 files.
 
+## Include a verified backup in a passive recovery bundle
+
+After creating a new `db-backup`, it can be bound to the existing handoff,
+source archive and diagnostic evidence during transfer:
+
+```powershell
+py -m forgeos recovery-bundle-index `
+  "C:\\ForgeOS-backups\\task-1-handoff.jsonl" `
+  "C:\\ForgeOS-backups\\task-1-worktree.zip" `
+  "C:\\ForgeOS-backups\\task-1-index.jsonl" `
+  --database "C:\\ForgeOS-backups\\tasks-backup.sqlite3" `
+  --database-manifest "C:\\ForgeOS-backups\\tasks-backup.json"
+
+py -m forgeos recovery-bundle `
+  "C:\\ForgeOS-backups\\task-1-handoff.jsonl" `
+  "C:\\ForgeOS-backups\\task-1-worktree.zip" `
+  "C:\\ForgeOS-backups\\task-1-recovery.zip" `
+  --database "C:\\ForgeOS-backups\\tasks-backup.sqlite3" `
+  --database-manifest "C:\\ForgeOS-backups\\tasks-backup.json"
+```
+
+The index and package checker inspect the supplied database read-only, stream
+its digest without loading it into Python memory, reject `-wal`, `-shm` and
+rollback-journal sidecars, and cap the database entry at 512 MiB. Receiving
+with `recovery-bundle-extract` materializes the file under `database/` for
+inspection or a later explicit `db-restore-copy`/`db-restore-activate` step;
+it never activates the file or overwrites the running task database. The
+bundle remains unencrypted and does not provide physical power-loss recovery.
+
 **This is a verified offline copy, not automatic activation.** It does not
 stop ForgeOS, switch the GUI's active database, merge task histories, or
 replace an existing database. The new copy is for inspection or a deliberately

@@ -7,10 +7,12 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from forgeos.core import JOURNAL_HANDOFF_MANIFEST_FORMAT
+from forgeos.core import JOURNAL_HANDOFF_MANIFEST_FORMAT, Store
 from forgeos.diagnostics import EvidenceStore
 from forgeos.recovery_package import (
     RECOVERY_BUNDLE_EVIDENCE_PREFIX,
+    RECOVERY_BUNDLE_DATABASE_MANIFEST_PREFIX,
+    RECOVERY_BUNDLE_DATABASE_PREFIX,
     RECOVERY_BUNDLE_FORMAT,
     RECOVERY_BUNDLE_HEADER_NAME,
     RECOVERY_BUNDLE_INDEX_NAME,
@@ -40,6 +42,15 @@ class RecoveryBundlePackageTests(unittest.TestCase):
         self.manifest = self.root / "task.json"
         self._write_manifest()
         self.bundle = self.root / "recovery.zip"
+        source_database = self.root / "source.sqlite3"
+        self.database = self.root / "tasks-backup.sqlite3"
+        self.database_manifest = self.root / "tasks-backup.json"
+        store = Store(source_database)
+        try:
+            store.add(str(self.worktree), "recovery database task")
+            store.backup_to(self.database, manifest=self.database_manifest)
+        finally:
+            store.close()
 
     def _write_handoff(self):
         rows = [
@@ -71,6 +82,12 @@ class RecoveryBundlePackageTests(unittest.TestCase):
         return export_recovery_bundle(
             self.handoff, self.archive, self.bundle,
             manifest=self.manifest, evidence_directory=self.evidence_root)
+
+    def _export_with_database(self):
+        return export_recovery_bundle(
+            self.handoff, self.archive, self.bundle,
+            manifest=self.manifest, evidence_directory=self.evidence_root,
+            database=self.database, database_manifest=self.database_manifest)
 
     def test_package_contains_only_indexed_artifacts_and_verifies(self):
         self.assertEqual(self._export(), self.bundle)
@@ -106,6 +123,36 @@ class RecoveryBundlePackageTests(unittest.TestCase):
                 payload = source.read(info)
                 if info.filename == "handoff/task.jsonl":
                     payload += b"\n"
+                output.writestr(info, payload)
+        report = check_recovery_bundle(tampered)
+        self.assertFalse(report["valid"])
+
+    def test_package_carries_optional_database_backup_and_manifest(self):
+        self.assertEqual(self._export_with_database(), self.bundle)
+        with zipfile.ZipFile(self.bundle) as archive:
+            names = set(archive.namelist())
+            self.assertIn(
+                f"{RECOVERY_BUNDLE_DATABASE_PREFIX}{self.database.name}", names)
+            self.assertIn(
+                f"{RECOVERY_BUNDLE_DATABASE_MANIFEST_PREFIX}{self.database_manifest.name}",
+                names)
+        report = check_recovery_bundle(self.bundle)
+        self.assertTrue(report["valid"])
+        self.assertTrue(report["database_present"])
+        self.assertTrue(report["database_manifest_present"])
+        self.assertEqual(report["entries"], 8)
+
+    def test_checker_rejects_tampered_database_backup(self):
+        self._export_with_database()
+        tampered = self.root / "tampered-database.zip"
+        with zipfile.ZipFile(self.bundle) as source, zipfile.ZipFile(
+                tampered, "w", compression=zipfile.ZIP_DEFLATED,
+                compresslevel=6, allowZip64=False) as output:
+            for info in source.infolist():
+                payload = source.read(info)
+                if info.filename == (
+                        f"{RECOVERY_BUNDLE_DATABASE_PREFIX}{self.database.name}"):
+                    payload = b"not a ForgeOS database"
                 output.writestr(info, payload)
         report = check_recovery_bundle(tampered)
         self.assertFalse(report["valid"])

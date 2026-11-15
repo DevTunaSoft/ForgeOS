@@ -811,19 +811,25 @@ py -m forgeos recovery-bundle-index `
   "C:\ForgeOS-backups\task-1-worktree.zip" `
   "C:\ForgeOS-backups\task-1-bundle-index.jsonl" `
   --manifest "C:\ForgeOS-backups\task-1-handoff.json" `
-  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
+  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics" `
+  --database "C:\ForgeOS-backups\tasks-backup.sqlite3" `
+  --database-manifest "C:\ForgeOS-backups\tasks-backup.json"
 py -m forgeos recovery-bundle-index-check `
   "C:\ForgeOS-backups\task-1-bundle-index.jsonl" `
   --handoff "C:\ForgeOS-backups\task-1-handoff.jsonl" `
   --worktree-archive "C:\ForgeOS-backups\task-1-worktree.zip" `
   --manifest "C:\ForgeOS-backups\task-1-handoff.json" `
-  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
+  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics" `
+  --database "C:\ForgeOS-backups\tasks-backup.sqlite3" `
+  --database-manifest "C:\ForgeOS-backups\tasks-backup.json"
 py -m forgeos recovery-bundle `
   "C:\ForgeOS-backups\task-1-handoff.jsonl" `
   "C:\ForgeOS-backups\task-1-worktree.zip" `
   "C:\ForgeOS-backups\task-1-recovery.zip" `
   --manifest "C:\ForgeOS-backups\task-1-handoff.json" `
-  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
+  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics" `
+  --database "C:\ForgeOS-backups\tasks-backup.sqlite3" `
+  --database-manifest "C:\ForgeOS-backups\tasks-backup.json"
 py -m forgeos recovery-bundle-check `
   "C:\ForgeOS-backups\task-1-recovery.zip"
 py -m forgeos recovery-bundle-extract `
@@ -874,36 +880,40 @@ action replay or physical power-loss acceptance.
 
 `recovery-bundle-index` is the coherence step after those separate artifacts
 exist. It requires a valid handoff and source archive, optionally checks the
-handoff digest manifest, and records only bounded filenames, sizes and streamed
-SHA-256 values for the handoff, archive and each referenced diagnostic gzip.
+handoff digest manifest and a standalone `db-backup` SQLite file, and records
+only bounded filenames, sizes and streamed SHA-256 values for the handoff,
+archive, optional database backup and each referenced diagnostic gzip. The
+database is inspected read-only and SQLite sidecars are refused.
 When a handoff references evidence, `--evidence-directory` is required and
 each archive is verified through the existing 32 MiB decompressed-evidence
 bound. `recovery-bundle-index-check` rechecks the same paths and nested source
-archive without opening SQLite or extracting anything. The index does not copy
-the artifacts, authenticate them against a signer, encrypt them, preserve
-database state or execute a replay plan; it is an integrity/coherence record
-toward a future complete recovery bundle.
+archive without initializing ForgeOS or extracting anything; a supplied
+database backup is only inspected read-only. The index does not copy the
+artifacts, authenticate them against a signer, encrypt them, activate the
+database or execute a replay plan.
 
 `recovery-bundle` is the transfer form after that validation step. It creates a
-single new ZIP containing the handoff, source archive, optional manifest,
-referenced evidence, and the index. It streams inputs, refuses an existing
-destination, and self-checks the package before publication. The checker uses
-private bounded temporary validation copies rather than exposing an extraction
-directory; it also rechecks every nested artifact and rejects unsafe or ZIP64
-layouts. The package is capped at 1 GiB with 256 MiB of compressed evidence.
-It is not encrypted, signed, a database backup, a restore/import/replay
-mechanism or a physical power-loss guarantee.
+single new ZIP containing the handoff, source archive, optional manifests,
+optional verified database backup, referenced evidence, and the index. It
+streams inputs, refuses an existing destination, and self-checks the package
+before publication. The checker uses private bounded temporary validation
+copies rather than exposing an extraction directory; it also rechecks every
+nested artifact and rejects unsafe or ZIP64 layouts. The package is capped at
+1 GiB with 256 MiB of compressed evidence and a 512 MiB database artifact.
+It is not encrypted, signed, an active-database replacement, a
+restore/import/replay mechanism or a physical power-loss guarantee.
 
 `recovery-bundle-extract` is the receiving-side materialization step. It
 requires a new destination directory, verifies the package before copying,
 uses private staging and bounded 64 KiB streaming writes, and writes
 `recovery-bundle-extraction-state.json` before publication. The marker becomes
-`complete` only after the copied handoff, source archive, manifest and evidence
-pass the nested integrity checks. A failed or interrupted move remains marked
-`failed` or otherwise incomplete; rerun against a new destination after
-inspection. `recovery-bundle-extract-check` reports the durable completion
-state. This step never opens SQLite, starts ForgeOS, executes a task or replays
-the handoff.
+`complete` only after the copied handoff, source archive, optional database
+backup, manifest and evidence pass the nested integrity checks. A failed or
+interrupted move remains marked `failed` or otherwise incomplete; rerun against
+a new destination after inspection. `recovery-bundle-extract-check` reports the
+durable completion state. This step does not initialize the active Store,
+start ForgeOS, execute a task or replay the handoff; a bundled database is only
+checked read-only as a passive artifact.
 
 If extraction stops after its destination marker is written, first confirm the
 original extractor is no longer running. Then use

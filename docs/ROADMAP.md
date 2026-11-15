@@ -492,3 +492,15 @@ Recovery HMAC verification now rejects POSIX key files with group/other
 permission bits, while preserving Windows compatibility and the documented
 operator ACL-review boundary. Regression coverage proves the rejection on
 POSIX without pretending that mode bits are a Windows NTFS security model.
+
+### 2026-11-15 — optional database artifact in passive recovery bundles
+
+`recovery-bundle-index` and `recovery-bundle` can now include a previously
+created `db-backup` SQLite file and optional backup manifest. The index checks
+the database read-only, rejects SQLite sidecars and caps the database artifact
+at 512 MiB; package checking and receiving-side extraction revalidate and
+materialize it as a passive file. This connects verified task-state export to
+the existing handoff/source/evidence transfer without activating a database,
+initializing Store, replaying actions, encrypting the package or claiming
+physical power-loss durability. Database restore/activation remains an
+explicit operator step.

@@ -35,6 +35,15 @@ class RecoveryBundleIndexTests(unittest.TestCase):
         self.manifest = self.root / "task.json"
         self._write_manifest()
         self.index = self.root / "bundle-index.jsonl"
+        source_database = self.root / "source.sqlite3"
+        self.database = self.root / "tasks-backup.sqlite3"
+        self.database_manifest = self.root / "tasks-backup.json"
+        store = Store(source_database)
+        try:
+            store.add(str(self.worktree), "recovery database task")
+            store.backup_to(self.database, manifest=self.database_manifest)
+        finally:
+            store.close()
 
     def _write_handoff(self):
         rows = [
@@ -100,6 +109,41 @@ class RecoveryBundleIndexTests(unittest.TestCase):
             self.index, self.handoff, self.archive,
             manifest=self.manifest, evidence_directory=self.evidence_root)
         self.assertFalse(report["valid"])
+
+    def test_index_binds_optional_database_backup_and_manifest(self):
+        self.assertEqual(
+            export_recovery_bundle_index(
+                self.handoff, self.archive, self.index,
+                manifest=self.manifest,
+                evidence_directory=self.evidence_root,
+                database=self.database,
+                database_manifest=self.database_manifest),
+            self.index)
+        rows = [json.loads(line) for line in self.index.read_text().splitlines()]
+        self.assertEqual(
+            [row["record"] for row in rows if row["record"] == "database"],
+            ["database"])
+        report = check_recovery_bundle_index(
+            self.index, self.handoff, self.archive,
+            manifest=self.manifest, evidence_directory=self.evidence_root,
+            database=self.database,
+            database_manifest=self.database_manifest)
+        self.assertTrue(report["valid"])
+        self.assertTrue(report["database_present"])
+        self.assertTrue(report["database_manifest_present"])
+        self.assertEqual(report["artifacts_checked"], 6)
+
+    def test_database_sidecars_are_refused_before_publication(self):
+        sidecar = Path(str(self.database) + "-wal")
+        sidecar.write_bytes(b"operator-owned sidecar")
+        try:
+            with self.assertRaisesRegex(ValueError, "sidecars"):
+                export_recovery_bundle_index(
+                    self.handoff, self.archive, self.index,
+                    database=self.database)
+        finally:
+            sidecar.unlink()
+        self.assertFalse(self.index.exists())
 
     def test_checker_rejects_index_missing_handoff_evidence(self):
         export_recovery_bundle_index(

@@ -8,8 +8,13 @@ import struct
 import tempfile
 import zipfile
 
-from .core import MAX_JOURNAL_HANDOFF_MANIFEST_BYTES, _publish_database_copy
+from .core import (
+    MAX_BACKUP_MANIFEST_BYTES,
+    MAX_JOURNAL_HANDOFF_MANIFEST_BYTES,
+    _publish_database_copy,
+)
 from .recovery_bundle import (
+    MAX_RECOVERY_BUNDLE_DATABASE_BYTES,
     MAX_RECOVERY_BUNDLE_EVIDENCE_BYTES,
     MAX_RECOVERY_BUNDLE_EVIDENCE_FILE_BYTES,
     MAX_RECOVERY_BUNDLE_HANDOFF_BYTES,
@@ -35,9 +40,11 @@ RECOVERY_BUNDLE_INDEX_NAME = "recovery-bundle-index.jsonl"
 RECOVERY_BUNDLE_HANDOFF_PREFIX = "handoff/"
 RECOVERY_BUNDLE_SOURCE_PREFIX = "source/"
 RECOVERY_BUNDLE_MANIFEST_PREFIX = "manifest/"
+RECOVERY_BUNDLE_DATABASE_PREFIX = "database/"
+RECOVERY_BUNDLE_DATABASE_MANIFEST_PREFIX = "database-manifest/"
 RECOVERY_BUNDLE_EVIDENCE_PREFIX = "evidence/"
 MAX_RECOVERY_BUNDLE_BYTES = 1024 * 1024 * 1024
-MAX_RECOVERY_BUNDLE_ENTRIES = 4101
+MAX_RECOVERY_BUNDLE_ENTRIES = 4103
 MAX_RECOVERY_BUNDLE_CENTRAL_BYTES = 8 * 1024 * 1024
 MAX_RECOVERY_BUNDLE_HEADER_BYTES = 1024
 
@@ -98,14 +105,21 @@ def _copy_to_zip(archive: zipfile.ZipFile, source: Path, name: str,
 def export_recovery_bundle(
         handoff: str | Path, worktree_archive: str | Path,
         destination: str | Path, *, manifest: str | Path | None = None,
-        evidence_directory: str | Path | None = None) -> Path:
-    """Package validated recovery artifacts into one bounded ZIP."""
+        evidence_directory: str | Path | None = None,
+        database: str | Path | None = None,
+        database_manifest: str | Path | None = None) -> Path:
+    """Package validated recovery artifacts and an optional database backup."""
     handoff_path = Path(handoff).expanduser().absolute()
     archive_path = Path(worktree_archive).expanduser().absolute()
     manifest_path = (Path(manifest).expanduser().absolute()
                      if manifest is not None else None)
+    database_path = (Path(database).expanduser().absolute()
+                     if database is not None else None)
+    database_manifest_path = (Path(database_manifest).expanduser().absolute()
+                              if database_manifest is not None else None)
     inputs = tuple(path for path in (
-        handoff_path, archive_path, manifest_path) if path is not None)
+        handoff_path, archive_path, manifest_path, database_path,
+        database_manifest_path) if path is not None)
     target = _new_destination(destination, inputs)
     evidence_root = (Path(evidence_directory).expanduser().absolute()
                      if evidence_directory is not None else None)
@@ -122,10 +136,12 @@ def export_recovery_bundle(
     try:
         export_recovery_bundle_index(
             handoff_path, archive_path, index_path,
-            manifest=manifest_path, evidence_directory=evidence_root)
+            manifest=manifest_path, evidence_directory=evidence_root,
+            database=database_path, database_manifest=database_manifest_path)
         index_report = check_recovery_bundle_index(
             index_path, handoff_path, archive_path,
-            manifest=manifest_path, evidence_directory=evidence_root)
+            manifest=manifest_path, evidence_directory=evidence_root,
+            database=database_path, database_manifest=database_manifest_path)
         if not index_report["valid"]:
             raise ValueError("Recovery bundle index is invalid")
         rows = _index_rows(index_path)
@@ -137,13 +153,22 @@ def export_recovery_bundle(
             raise ValueError("Recovery bundle index contains duplicate manifests")
         evidence_records = [
             row for row in rows if row.get("record") == "evidence"]
+        database_records = [
+            row for row in rows if row.get("record") == "database"]
+        database_manifest_records = [
+            row for row in rows if row.get("record") == "database-manifest"]
+        if len(database_records) > 1 or len(database_manifest_records) > 1:
+            raise ValueError("Recovery bundle index contains duplicate database records")
         evidence_bytes = sum(row["compressed_size"] for row in evidence_records)
         if evidence_bytes > MAX_RECOVERY_BUNDLE_EVIDENCE_BYTES:
             raise ValueError("Recovery evidence exceeds bundle size limit")
         content_bytes = (
             handoff_record["size"] + archive_record["size"]
             + sum(row["compressed_size"] for row in evidence_records)
-            + (manifest_records[0]["size"] if manifest_records else 0))
+            + (manifest_records[0]["size"] if manifest_records else 0)
+            + (database_records[0]["size"] if database_records else 0)
+            + (database_manifest_records[0]["size"]
+               if database_manifest_records else 0))
         if content_bytes > MAX_RECOVERY_BUNDLE_BYTES:
             raise ValueError("Recovery bundle contents exceed size limit")
         header = _bundle_header()
@@ -177,6 +202,24 @@ def export_recovery_bundle(
                 RECOVERY_BUNDLE_SOURCE_PREFIX + archive_record["filename"],
                 archive_record["size"], archive_record["sha256"],
                 MAX_WORKTREE_ARCHIVE_BYTES)
+            if database_records:
+                if database_path is None:
+                    raise ValueError("Indexed database backup is unavailable")
+                record = database_records[0]
+                _copy_to_zip(
+                    bundle, database_path,
+                    RECOVERY_BUNDLE_DATABASE_PREFIX + record["filename"],
+                    record["size"], record["sha256"],
+                    MAX_RECOVERY_BUNDLE_DATABASE_BYTES)
+            if database_manifest_records:
+                if database_manifest_path is None:
+                    raise ValueError("Indexed database manifest is unavailable")
+                record = database_manifest_records[0]
+                _copy_to_zip(
+                    bundle, database_manifest_path,
+                    RECOVERY_BUNDLE_DATABASE_MANIFEST_PREFIX + record["filename"],
+                    record["size"], record["sha256"],
+                    MAX_BACKUP_MANIFEST_BYTES)
             for record in evidence_records:
                 if evidence_root is None:
                     raise ValueError("Indexed evidence directory is unavailable")
@@ -239,6 +282,8 @@ def _bundle_entry_kind(name: str) -> tuple[str, str | None]:
             (RECOVERY_BUNDLE_HANDOFF_PREFIX, "handoff"),
             (RECOVERY_BUNDLE_SOURCE_PREFIX, "source"),
             (RECOVERY_BUNDLE_MANIFEST_PREFIX, "manifest"),
+            (RECOVERY_BUNDLE_DATABASE_PREFIX, "database"),
+            (RECOVERY_BUNDLE_DATABASE_MANIFEST_PREFIX, "database-manifest"),
             (RECOVERY_BUNDLE_EVIDENCE_PREFIX, "evidence")):
         if name.startswith(prefix) and name.count("/") == 1:
             filename = name[len(prefix):]
@@ -328,6 +373,10 @@ def check_recovery_bundle(source: str | Path,
                     max_bytes = MAX_WORKTREE_ARCHIVE_BYTES
                 elif kind == "manifest":
                     max_bytes = MAX_JOURNAL_HANDOFF_MANIFEST_BYTES
+                elif kind == "database":
+                    max_bytes = MAX_RECOVERY_BUNDLE_DATABASE_BYTES
+                elif kind == "database-manifest":
+                    max_bytes = MAX_BACKUP_MANIFEST_BYTES
                 else:
                     max_bytes = MAX_RECOVERY_BUNDLE_EVIDENCE_FILE_BYTES
                     evidence_total += info.file_size
@@ -353,12 +402,22 @@ def check_recovery_bundle(source: str | Path,
                 RECOVERY_BUNDLE_SOURCE_PREFIX)]
             manifests = [name for name in entries if name.startswith(
                 RECOVERY_BUNDLE_MANIFEST_PREFIX)]
+            databases = [name for name in entries if name.startswith(
+                RECOVERY_BUNDLE_DATABASE_PREFIX)]
+            database_manifests = [name for name in entries if name.startswith(
+                RECOVERY_BUNDLE_DATABASE_MANIFEST_PREFIX)]
             if len(handoffs) != 1:
                 issue("bundle must contain exactly one handoff")
             if len(sources) != 1:
                 issue("bundle must contain exactly one source archive")
             if len(manifests) > 1:
                 issue("bundle contains duplicate handoff manifests")
+            if len(databases) > 1:
+                issue("bundle contains duplicate database backups")
+            if len(database_manifests) > 1:
+                issue("bundle contains duplicate database manifests")
+            if database_manifests and not databases:
+                issue("bundle database manifest requires a database backup")
 
             if RECOVERY_BUNDLE_HEADER_NAME in entries:
                 header = archive.read(entries[RECOVERY_BUNDLE_HEADER_NAME])
@@ -385,6 +444,8 @@ def check_recovery_bundle(source: str | Path,
                 handoff_path = root / handoffs[0].split("/", 1)[1]
                 source_path = root / sources[0].split("/", 1)[1]
                 manifest_path = None
+                database_path = None
+                database_manifest_path = None
                 evidence_root = root / "evidence"
                 _materialize_entry(
                     archive, entries[RECOVERY_BUNDLE_INDEX_NAME], index_path,
@@ -400,6 +461,16 @@ def check_recovery_bundle(source: str | Path,
                     _materialize_entry(
                         archive, entries[manifests[0]], manifest_path,
                         MAX_JOURNAL_HANDOFF_MANIFEST_BYTES)
+                if databases:
+                    database_path = root / databases[0].split("/", 1)[1]
+                    _materialize_entry(
+                        archive, entries[databases[0]], database_path,
+                        MAX_RECOVERY_BUNDLE_DATABASE_BYTES)
+                if database_manifests:
+                    database_manifest_path = root / database_manifests[0].split("/", 1)[1]
+                    _materialize_entry(
+                        archive, entries[database_manifests[0]],
+                        database_manifest_path, MAX_BACKUP_MANIFEST_BYTES)
                 for name in entries:
                     if name.startswith(RECOVERY_BUNDLE_EVIDENCE_PREFIX):
                         target = evidence_root / name.split("/", 1)[1]
@@ -411,7 +482,9 @@ def check_recovery_bundle(source: str | Path,
                     manifest=manifest_path, evidence_directory=(
                         evidence_root if any(name.startswith(
                             RECOVERY_BUNDLE_EVIDENCE_PREFIX) for name in entries)
-                        else None), max_issues=max_issues)
+                        else None), database=database_path,
+                    database_manifest=database_manifest_path,
+                    max_issues=max_issues)
                 if not index_report["valid"]:
                     return {
                         **index_report, "format": "", "entries": len(entries),
@@ -427,6 +500,44 @@ def check_recovery_bundle(source: str | Path,
                 }
                 if indexed_evidence != bundled_evidence:
                     issue("bundle evidence entries do not match its index")
+                    return {
+                        **index_report,
+                        "valid": False,
+                        "complete": False,
+                        "format": "",
+                        "entries": len(entries),
+                        "issues": issues,
+                        "truncated": truncated,
+                    }
+                indexed_database = {
+                    row["filename"] for row in rows
+                    if row.get("record") == "database"
+                }
+                bundled_database = {
+                    name.split("/", 1)[1] for name in entries
+                    if name.startswith(RECOVERY_BUNDLE_DATABASE_PREFIX)
+                }
+                if indexed_database != bundled_database:
+                    issue("bundle database entries do not match its index")
+                    return {
+                        **index_report,
+                        "valid": False,
+                        "complete": False,
+                        "format": "",
+                        "entries": len(entries),
+                        "issues": issues,
+                        "truncated": truncated,
+                    }
+                indexed_database_manifests = {
+                    row["filename"] for row in rows
+                    if row.get("record") == "database-manifest"
+                }
+                bundled_database_manifests = {
+                    name.split("/", 1)[1] for name in entries
+                    if name.startswith(RECOVERY_BUNDLE_DATABASE_MANIFEST_PREFIX)
+                }
+                if indexed_database_manifests != bundled_database_manifests:
+                    issue("bundle database manifests do not match its index")
                     return {
                         **index_report,
                         "valid": False,
