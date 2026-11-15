@@ -92,6 +92,45 @@ def _publish_database_copy(staging: Path, target: Path) -> None:
         os.link(staging, target)
 
 
+def _move_database_copy(source: Path, target: Path) -> None:
+    """Move one same-directory database path without replacing its target."""
+    if os.name == "nt":
+        # Windows rename fails when target exists, preserving the rollback
+        # destination under the same no-overwrite contract as publication.
+        os.rename(source, target)
+    else:
+        # POSIX rename would replace an unexpected target. A hard link followed
+        # by unlink is deliberately fail-closed if a concurrent target appears.
+        os.link(source, target)
+        os.unlink(source)
+
+
+def _write_activation_marker(marker: Path, payload: dict,
+                             *, replace: bool = False) -> None:
+    """Durably write a small activation phase marker owned by this process."""
+    import tempfile
+    encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"))
+               + "\n").encode("utf-8")
+    if len(encoded) > 4096:
+        raise ValueError("Database activation marker is oversized")
+    fd, name = tempfile.mkstemp(
+        prefix=".forgeos-activation-", suffix=".tmp", dir=marker.parent)
+    os.close(fd)
+    staging = Path(name)
+    try:
+        staging.write_bytes(encoded)
+        with staging.open("rb+") as stream:
+            os.fsync(stream.fileno())
+        if marker.is_symlink():
+            raise ValueError("Activation marker cannot be a symlink")
+        if replace:
+            os.replace(staging, marker)
+        else:
+            _publish_database_copy(staging, marker)
+    finally:
+        staging.unlink(missing_ok=True)
+
+
 def _utf8_size(value: str) -> int:
     try:
         return len(value.encode("utf-8"))
@@ -527,6 +566,89 @@ class Store:
             # No-overwrite publication also protects concurrent users.
             _publish_database_copy(staged, target)
             return target
+        finally:
+            staged.unlink(missing_ok=True)
+
+    @staticmethod
+    def activate_backup_to(source: str | Path, destination: str | Path,
+                           rollback: str | Path, *,
+                           manifest: str | Path | None = None,
+                           confirm: bool = False) -> Path:
+        """Activate a verified backup offline while retaining the old database.
+
+        The caller must stop ForgeOS first. Existing SQLite sidecars are
+        refused, Windows open-handle failures are preserved, and a phase
+        marker plus rollback copy remain if recovery cannot finish cleanly.
+        """
+        if confirm is not True:
+            raise ValueError("Explicit activation confirmation is required")
+        src = Path(source).expanduser().absolute()
+        target = Path(destination).expanduser().absolute()
+        old = Path(rollback).expanduser().absolute()
+        marker = target.with_name(target.name + ".forgeos-activation.json")
+        if src.is_symlink() or not src.is_file():
+            raise ValueError("Restore source must be a regular SQLite database file")
+        if (target.parent != old.parent or not target.parent.is_dir()
+                or target.parent.is_symlink() or src == target
+                or src == old or target == old):
+            raise ValueError("Activation paths must be distinct in one safe directory")
+        if (target.is_symlink() or old.is_symlink() or marker.is_symlink()
+                or old.exists() or marker.exists()):
+            raise ValueError("Activation rollback and marker paths must be new files")
+        if target.exists() and not target.is_file():
+            raise ValueError("Activation destination must be a regular database file")
+        for suffix in ("-wal", "-shm", "-journal"):
+            sidecar = Path(str(target) + suffix)
+            if sidecar.exists() or sidecar.is_symlink():
+                raise RuntimeError(
+                    "Stop ForgeOS and clear SQLite sidecars before activation")
+        if target.exists():
+            Store.inspect_existing_database(target)
+
+        import tempfile
+        fd, name = tempfile.mkstemp(
+            prefix=".forgeos-activate-", suffix=".sqlite3", dir=target.parent)
+        os.close(fd)
+        staged = Path(name)
+        staged.unlink()
+        old_moved = False
+        published = False
+        try:
+            Store.restore_backup_to(src, staged, manifest=manifest)
+            marker_payload = {
+                "format": "forgeos-db-activation-v1",
+                "source": str(src),
+                "destination": str(target),
+                "rollback": str(old),
+                "staged": str(staged),
+                "phase": "prepared",
+            }
+            _write_activation_marker(marker, marker_payload)
+            if target.exists():
+                _move_database_copy(target, old)
+                old_moved = True
+                marker_payload["phase"] = "old_moved"
+                _write_activation_marker(marker, marker_payload, replace=True)
+            _move_database_copy(staged, target)
+            published = True
+            marker_payload["phase"] = "published"
+            _write_activation_marker(marker, marker_payload, replace=True)
+            marker.unlink()
+            return target
+        except Exception:
+            restored = False
+            if old_moved and not published and not target.exists() and old.exists():
+                try:
+                    _move_database_copy(old, target)
+                    restored = True
+                except OSError:
+                    # Keep the marker and rollback copy for manual recovery.
+                    pass
+            if restored or (not old_moved and not published and target.exists()):
+                # No replacement was left in place, so our marker is no longer
+                # needed and should not block a later operator retry.
+                marker.unlink(missing_ok=True)
+            raise
         finally:
             staged.unlink(missing_ok=True)
 

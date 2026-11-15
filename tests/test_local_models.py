@@ -28,6 +28,9 @@ class LocalModelsTests(unittest.TestCase):
         import time
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from forgeos.local_models import _read_json
+        # Keep the background handler independent of later tests that patch
+        # the process-wide time module while this server is winding down.
+        drip_sleep = time.sleep
 
         class Drip(BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -42,7 +45,7 @@ class LocalModelsTests(unittest.TestCase):
                         self.wfile.flush()
                     except (BrokenPipeError, ConnectionResetError):
                         return
-                    time.sleep(0.15)
+                    drip_sleep(0.15)
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), Drip)
         server.daemon_threads = True

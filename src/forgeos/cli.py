@@ -43,6 +43,19 @@ def main(argv=None):
     restore_copy.add_argument('destination', help='New database path; never overwrites')
     restore_copy.add_argument('--manifest', default='',
                               help='Optional manifest required to match the source')
+    restore_activate = sub.add_parser(
+        'db-restore-activate',
+        help='Activate a verified backup offline and retain the current database')
+    restore_activate.add_argument('source', help='Existing SQLite task backup file')
+    restore_activate.add_argument(
+        'destination', help='Active database path; ForgeOS must be stopped')
+    restore_activate.add_argument(
+        'rollback', help='New path that will retain the old active database')
+    restore_activate.add_argument('--manifest', default='',
+                                  help='Optional manifest required to match the source')
+    restore_activate.add_argument(
+        '--confirm', action='store_true',
+        help='Confirm ForgeOS is stopped and activation is intended')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
     models=sub.add_parser('models',help='List models reported by one local runtime')
@@ -173,6 +186,14 @@ def main(argv=None):
         restored = Store.restore_backup_to(
             args.source, args.destination, manifest=args.manifest or None)
         print(f'Verified restore copy: {restored}')
+        return 0
+    if args.action == 'db-restore-activate':
+        # Activation is an explicit offline operation; do not initialize the
+        # active Store or create a missing --db path during this dispatch.
+        activated = Store.activate_backup_to(
+            args.source, args.destination, args.rollback,
+            manifest=args.manifest or None, confirm=args.confirm)
+        print(f'Activated database: {activated}')
         return 0
     if args.action == 'journal':
         store = Store(args.db)

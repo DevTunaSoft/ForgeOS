@@ -2,7 +2,7 @@
 
 **Read [What ForgeOS Will Do — and What It Will Not Do](PRODUCT_VISION.md) for the full product vision, shipped prototype capabilities, and explicit non-goals.** The [user manual](USER_GUIDE.md) remains the canonical click-by-click operating guide.
 
-**Status as of 2026-11-11: active prototype.** This document distinguishes **implemented on `main`**, **in development**, and **future goals**. It is not a claim that the entire product is production-ready. Each milestone needs source changes, regression evidence, Windows frozen build evidence where relevant, and real end-user testing before release claims.
+**Status as of 2026-11-15: active prototype.** This document distinguishes **implemented on `main`**, **in development**, and **future goals**. It is not a claim that the entire product is production-ready. Each milestone needs source changes, regression evidence, Windows frozen build evidence where relevant, and real end-user testing before release claims.
 
 ## Dedicated multi-LLM requirements and implementation plan
 
@@ -276,3 +276,16 @@ no-overwrite on Windows and POSIX, and the exporter does not materialize the
 full history in Python. Regression coverage verifies ordering, filtering and
 CLI routing. This is a diagnostic journal handoff, not a complete database,
 worktree/evidence bundle or import/replay implementation.
+
+### 2026-11-15 — guarded offline database activation
+
+The recovery path now provides an explicit `db-restore-activate` command that
+verifies a backup, stages it through the existing low-memory SQLite restore
+boundary, retains the old active database at a new rollback path, and records
+bounded activation phases in a flushed marker. It refuses symlinks, occupied
+rollback/marker paths and SQLite sidecars, and attempts to restore the old file
+if publication fails. Regression coverage includes confirmation, sidecar and
+occupied-path refusal, manifest mismatch, successful rollback retention and
+injected publication/rollback faults. This remains an operator-guided offline
+prototype: no running-process coordination, journal replay, encryption,
+complete evidence/worktree bundle or physical power-loss/Windows acceptance.

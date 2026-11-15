@@ -2226,3 +2226,42 @@ manifest contents, no-overwrite behavior and mismatch refusal. The manifest
 is not encryption, authentication, a full backup bundle, or active-database
 activation; physical Windows media and power-loss acceptance remain
 unverified.
+
+## 2026-11-15 — guarded offline database activation
+
+**Change:** the recovery boundary now includes
+`Store.activate_backup_to()` and `forgeos db-restore-activate`. The command
+requires explicit confirmation, verifies the source through the existing
+read-only/streamed restore path, refuses symlinks, occupied rollback or marker
+paths and `-wal`/`-shm`/`-journal` sidecars, then moves the old active database
+to a new rollback path before publishing the staged backup. A small flushed
+marker records `prepared`, `old_moved` or `published` progress. This keeps
+normal `Store` initialization out of the CLI activation dispatch.
+
+**Failure behavior:** if publication fails after the old file moves, the
+method attempts a same-directory rollback. A successful rollback removes the
+marker so an operator can retry; if rollback also fails, the marker and old
+database remain for manual recovery. Existing destinations are never replaced
+by the copy/restore publication helpers. The operation is intentionally
+offline and cooperative: it cannot prove that an external process is not
+holding a POSIX database open, and it does not replay or merge journal rows.
+
+**Regression coverage:** `tests/test_db_activation.py` covers confirmation,
+sidecar and occupied-path refusal, digest mismatch, successful activation,
+injected publication failure with rollback, and retained marker/rollback when
+rollback is injected to fail. `tests/test_cli_database.py` verifies CLI
+dispatch does not initialize the active Store. Focused and full exact-head
+Linux/Windows checks, frozen packaging and physical Windows open-handle,
+disk-full, interruption and power-loss acceptance remain required before
+calling this a disaster-recovery guarantee.
+
+## 2026-11-15 — isolate loopback test timing seams
+
+The protected Windows Python 3.12 run exposed a test-harness race: the
+loopback slow-response handler could still be sleeping while the managed
+llama lifecycle test patched the process-wide `time.sleep`, causing the latter
+test to observe the handler's `0.15`-second call. The handler now captures its
+own sleep callable before the server thread starts, so unrelated test seams do
+not alter its timing. No production behavior changed. The affected local
+`test_local_models` + `test_managed_llama` sequence passes; the updated
+exact-head Linux/Windows matrix remains required.

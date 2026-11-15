@@ -74,18 +74,48 @@ files.
 **This is a verified offline copy, not automatic activation.** It does not
 stop ForgeOS, switch the GUI's active database, merge task histories, or
 replace an existing database. The new copy is for inspection or a deliberately
-separate ForgeOS launch. If you need to replace your active database, do not
-overwrite files while ForgeOS is running; the safe guided replacement workflow
-is not yet implemented.
+separate ForgeOS launch.
+
+## Explicit offline activation with rollback
+
+When a deliberate replacement of the active database is required, first exit
+ForgeOS and stop every process that can open the task database. Then provide a
+new rollback filename and explicitly confirm the operation:
+
+```powershell
+py -m forgeos db-restore-activate `
+  "C:\\ForgeOS-backups\\tasks-backup-2026-11-11.sqlite3" `
+  "$env:USERPROFILE\\.forgeos\\tasks.sqlite3" `
+  "C:\\ForgeOS-backups\\tasks-before-activation.sqlite3" `
+  --manifest "C:\\ForgeOS-backups\\tasks-backup-2026-11-11.json" `
+  --confirm
+```
+
+This command is offline and does not merge histories. It verifies the source
+into a staged database, refuses symlinks, occupied rollback or marker paths,
+and refuses existing `-wal`, `-shm` or rollback-journal sidecars. The active
+database and rollback path must be in the same existing, non-symlinked folder.
+The old active file is moved to the new rollback path before the verified
+backup is published. A flushed marker named
+`tasks.sqlite3.forgeos-activation.json` records the `prepared`, `old_moved`
+or `published` phase while the operation is in progress.
+
+If a Windows open handle or another publication error prevents replacement,
+ForgeOS fails closed. After the old file has moved, it attempts to put that
+file back. If that recovery move also fails, preserve both the rollback file
+and the activation marker for diagnosis; do not delete or overwrite either
+file. A later rollback uses the same command with the retained rollback as
+the source and a different, new rollback filename. The marker is evidence of
+an interrupted operation, not a guarantee of physical power-loss recovery.
 
 ## Security and recovery limitations
 
 - Backups are **not encrypted**. Task text, diagnostics or project paths may
   be sensitive. Use access-controlled, encrypted storage and handle exports
   as confidential.
-- The restore-copy operation does **not** merge, activate, or overwrite a running database.
-  Never replace `tasks.sqlite3` while ForgeOS is open. A guided activation
-  and restoration workflow remains planned.
+- The restore-copy operation does **not** merge or overwrite a running database.
+  The activation command is an explicit offline replacement and still
+  requires the operator to stop ForgeOS; it is not a background failover.
 - This task database does **not** contain all external evidence archives,
   Git worktrees, model weights or your original project repository. Those
   must be backed up separately if needed for complete disaster recovery.
@@ -93,17 +123,17 @@ is not yet implemented.
   of every task's semantics, archived evidence or external file.
 - No background schedule, automatic retention or destructive cleanup exists.
 - Native SQLite/page-cache disk and memory behavior, failures on removable
-  media, power-loss cases and physical Windows restart recovery still require
-  additional acceptance testing.
+  media, power-loss cases, marker replay and physical Windows restart
+  recovery still require additional acceptance testing.
 
 ## Verification
 
-The isolated prototype ran locally on Python 3 with committed WAL data,
-exclusive publication, refused overwrite and active transaction refusal.
-The actual repository has automated regressions in
-`tests/test_db_backup.py`; only its exact-commit GitHub CI status can
-establish whether those tests pass across Linux and Windows. A CI green
-result does not replace full physical Windows/restore testing.
+The repository includes automated backup, restore-copy and activation
+regressions in `tests/test_db_backup.py`, `tests/test_db_restore.py`,
+`tests/test_db_activation.py` and `tests/test_cli_database.py`. Exact-head
+GitHub CI is required for Linux and Windows. A CI green result does not
+replace full physical Windows/restore, open-handle, disk-full, interruption
+or power-loss testing.
 
 ## Read-only preflight: missing or incompatible task databases
 
