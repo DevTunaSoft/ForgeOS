@@ -674,3 +674,10 @@ result. Focused engine/transaction coverage includes successful verified
 cleanup plus changed and missing target preservation. This remains bounded
 integrity evidence, not a complete cross-process race or physical Windows
 power-loss guarantee.
+
+Focused engine/transaction tests passed 81/81; the full isolated suite passed
+722 tests with 8 expected skips. Compileall, documentation/link coverage and
+`git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+reported a 1,982,228-byte Python tracemalloc peak and a 29,806,592-byte
+process peak RSS. Hosted exact-head checks and physical Windows restart,
+filesystem-race and NTFS power-loss acceptance remain required.
