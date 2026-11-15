@@ -3043,3 +3043,19 @@ also passed; the benchmark reported a 1,982,228-byte Python tracemalloc peak
 and a 29,880,320-byte process peak RSS. The hosted exact-head Linux/Windows
 matrix and physical Windows reparse/DACL/NTFS interruption acceptance remain
 required.
+
+## 2026-11-15 — committed edit-journal target verification
+
+**Change:** `recover_edits()` no longer deletes a crash-retained `committed`
+journal solely because its manifest is structurally valid. It now verifies each
+published target as a regular file and streams its bytes through the recorded
+post-edit SHA-256 before cleanup. A missing, substituted, symlinked,
+reparse-point or nonregular
+target preserves the journal and fails closed.
+
+**Regression coverage:** engine tests cover verified committed-journal cleanup
+and preservation of the journal for both changed and missing targets. Focused
+engine/transaction tests passed 81/81 with an isolated Windows user profile.
+Full repository tests, documentation/link coverage, compileall, bounded memory
+and exact-head hosted checks remain required for this feature branch; physical
+Windows race and NTFS power-loss acceptance remain open.

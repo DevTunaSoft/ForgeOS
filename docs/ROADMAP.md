@@ -663,3 +663,14 @@ Focused engine/transaction tests passed 77/77; the full isolated suite passed
 the memory run reported a 1,982,228-byte Python tracemalloc peak and a
 29,880,320-byte process peak RSS. These are local process/filesystem checks,
 not physical Windows reparse, DACL or NTFS power-loss acceptance.
+
+### 2026-11-15 — committed edit-journal target verification
+
+Recovery of a crash-retained `committed` edit journal now streams each
+published target through the recorded post-edit SHA-256 before deleting the
+journal. Missing, substituted, symlinked or nonregular targets preserve the
+journal and fail closed, so cleanup cannot erase evidence of an unverified
+result. Focused engine/transaction coverage includes successful verified
+cleanup plus changed and missing target preservation. This remains bounded
+integrity evidence, not a complete cross-process race or physical Windows
+power-loss guarantee.

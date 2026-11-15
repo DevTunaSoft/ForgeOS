@@ -782,6 +782,66 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertFalse(txn.exists())
         self.assertFalse(recover_edits(self.root))
 
+    def test_committed_journal_verifies_published_target_before_cleanup(self):
+        from forgeos.transactions import recover_edits, _digest
+        target = self.root / "first.py"
+        target.write_text("published")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"published")}] }))
+        self.assertTrue(recover_edits(self.root))
+        self.assertFalse(txn.exists())
+
+    def test_committed_journal_preserves_evidence_for_changed_target(self):
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        target = self.root / "first.py"
+        target.write_text("external change")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"published")}] }))
+        with self.assertRaisesRegex(TransactionError, "changed or is missing"):
+            recover_edits(self.root)
+        self.assertEqual(target.read_text(), "external change")
+        self.assertTrue(txn.exists())
+
+    def test_committed_journal_preserves_evidence_for_missing_target(self):
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"published")}] }))
+        with self.assertRaisesRegex(TransactionError, "changed or is missing"):
+            recover_edits(self.root)
+        self.assertTrue(txn.exists())
+
+    def test_committed_journal_refuses_symlinked_target(self):
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        outside = self.root / "outside.py"
+        outside.write_text("published")
+        target = self.root / "first.py"
+        try:
+            target.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("File symlinks unavailable")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "first.py", "before": _digest(b"original"),
+                "after": _digest(b"published")}] }))
+        with self.assertRaisesRegex(ValueError, "links"):
+            recover_edits(self.root)
+        self.assertEqual(outside.read_text(), "published")
+        self.assertTrue(txn.exists())
+
     def test_conflicting_external_change_preserved(self):
         from forgeos.transactions import recover_edits, _digest, TransactionError
         (self.root / "first.py").write_text("external change")

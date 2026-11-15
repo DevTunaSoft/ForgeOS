@@ -67,6 +67,12 @@ complete check-and-use race defense, a Windows DACL boundary or physical NTFS
 power-loss acceptance. Operators should preserve an unsafe journal for
 inspection and resolve the filesystem problem before retrying recovery.
 
+If a crash leaves a `committed` journal behind, recovery also re-hashes every
+published target against its recorded post-edit digest before removing that
+journal. A missing, substituted, symlinked, reparse-point or nonregular target
+preserves the journal for inspection instead of treating cleanup as proof of
+success.
+
 ## Multi-backend inference boundary (feature branch)
 
 `Ollama` in `core.py` remains canonical for existing tasks. The new
