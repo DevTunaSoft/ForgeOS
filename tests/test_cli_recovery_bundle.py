@@ -44,6 +44,15 @@ class RecoveryBundleIndexCliTests(unittest.TestCase):
                 "".join(json.dumps(row, separators=(",", ":")) + "\n"
                         for row in rows), encoding="utf-8")
             index = root / "index.jsonl"
+            source_database = root / "source.sqlite3"
+            database = root / "tasks-backup.sqlite3"
+            database_manifest = root / "tasks-backup.json"
+            store = Store(source_database)
+            try:
+                store.add(str(worktree), "recovery database task")
+                store.backup_to(database, manifest=database_manifest)
+            finally:
+                store.close()
 
             output = io.StringIO()
             with patch.object(Store, "__init__", side_effect=AssertionError(
@@ -52,7 +61,9 @@ class RecoveryBundleIndexCliTests(unittest.TestCase):
                 self.assertEqual(main([
                     "--db", str(root / "missing.sqlite3"),
                     "recovery-bundle-index", str(handoff), str(archive),
-                    str(index), "--evidence-directory", str(evidence_root)]), 0)
+                    str(index), "--evidence-directory", str(evidence_root),
+                    "--database", str(database),
+                    "--database-manifest", str(database_manifest)]), 0)
             self.assertIn("Exported recovery bundle index:", output.getvalue())
 
             output = io.StringIO()
@@ -63,10 +74,14 @@ class RecoveryBundleIndexCliTests(unittest.TestCase):
                     "recovery-bundle-index-check", str(index),
                     "--handoff", str(handoff),
                     "--worktree-archive", str(archive),
-                    "--evidence-directory", str(evidence_root)]), 0)
+                    "--evidence-directory", str(evidence_root),
+                    "--database", str(database),
+                    "--database-manifest", str(database_manifest)]), 0)
             report = json.loads(output.getvalue())
             self.assertTrue(report["valid"])
             self.assertEqual(report["evidence_files"], 1)
+            self.assertTrue(report["database_present"])
+            self.assertTrue(report["database_manifest_present"])
 
 
 if __name__ == "__main__":

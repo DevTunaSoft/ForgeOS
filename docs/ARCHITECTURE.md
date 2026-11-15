@@ -172,27 +172,30 @@ encrypted or an action-replay/import mechanism.
 
 `export_recovery_bundle_index()` and `check_recovery_bundle_index()` are the
 next explicit recovery boundary. They require a validated handoff and source
-archive, optionally validate the handoff digest manifest, discover only the
-validated evidence references in the handoff, and stream hashes for each
-separately stored diagnostic gzip. The JSONL index is capped at 2 MiB with at
-most 4,096 evidence records; the checker revalidates the handoff and nested
-source archive without opening SQLite or extracting content. It intentionally
-does not copy, encrypt, sign, restore or replay any artifact. A valid index
+archive, optionally validate the handoff digest manifest and a standalone
+SQLite backup, discover only the validated evidence references in the handoff,
+and stream hashes for each separately stored diagnostic gzip. The JSONL index
+is capped at 2 MiB with at most 4,096 evidence records; the checker
+revalidates the handoff, nested source archive and optional database through
+bounded read-only checks without initializing Store or extracting content.
+Database inputs have no-sidecar and 512 MiB limits. The index intentionally
+does not copy, encrypt, sign, activate or replay any artifact. A valid index
 proves that the named files matched at check time, not that the files are
 available after transfer or that a future bundle has disaster-recovery
 durability.
 
 `export_recovery_bundle()` is the bounded transfer boundary built on that
-index. It streams the validated handoff, source archive, optional manifest and
-referenced evidence into one classic DEFLATE ZIP, includes the index and a
-small format header, and performs a complete private self-check before
-no-overwrite publication. `check_recovery_bundle()` preflights ZIP central
-directory bounds, rejects traversal, encryption, ZIP64 and unsafe entry
-metadata, materializes only bounded validation copies in a private temporary
-directory, and reuses the index checker plus nested source-archive checker.
-The package has a 1 GiB archive bound and a 256 MiB aggregate compressed
-evidence bound; it is a transport artifact, not encryption, authentication,
-database restoration or action replay.
+index. It streams the validated handoff, source archive, optional manifests,
+optional verified SQLite backup and referenced evidence into one classic
+DEFLATE ZIP, includes the index and a small format header, and performs a
+complete private self-check before no-overwrite publication.
+`check_recovery_bundle()` preflights ZIP central-directory bounds, rejects
+traversal, encryption, ZIP64 and unsafe entry metadata, materializes only
+bounded validation copies in a private temporary directory, and reuses the
+index checker plus nested source-archive checker. Database artifacts are
+limited to 512 MiB, must have no SQLite sidecars, and are inspected read-only;
+the package remains a passive transport artifact, not encryption,
+authentication, active-database restoration or action replay.
 
 `extract_recovery_bundle()` is the receiving-side recovery boundary. It first
 checks the complete ZIP and streams its entries into a private staging
@@ -214,7 +217,9 @@ entry, and refuses to overwrite any mismatch. Missing entries are staged and
 moved through the same no-overwrite helper. Only after the full materialized
 index and package digest pass again is the marker promoted to `complete`.
 There is no background retry or concurrent-worker coordination; the operator
-must ensure the previous writer has stopped.
+must ensure the previous writer has stopped. A bundled database is materialized
+as a passive file and is never activated or used to initialize the running
+Store.
 
 `export_recovery_bundle_auth()` adds a detached operator-held authenticity
 record without changing the passive ZIP format. It validates the package,

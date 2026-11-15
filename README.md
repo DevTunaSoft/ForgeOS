@@ -302,28 +302,31 @@ authenticated signature.
 After publishing a handoff and source archive, bind them with
 `py -m forgeos recovery-bundle-index HANDOFF WORKTREE_ARCHIVE DESTINATION`
 and verify that index with `recovery-bundle-index-check` plus the original
-artifact paths. The index streams hashes for the handoff, source archive and
-referenced diagnostic archives; it does not copy or encrypt them, so it is a
-coherence record toward a future complete recovery bundle rather than the
-bundle itself.
+artifact paths. Add `--database BACKUP` and, optionally, `--database-manifest
+MANIFEST` to bind a standalone verified SQLite backup. The index streams
+hashes for every selected artifact, checks the database read-only without
+initializing a Store, and rejects SQLite sidecars; it does not copy or encrypt
+the inputs.
 To create the portable transfer artifact after those inputs are validated, run
 `py -m forgeos recovery-bundle HANDOFF WORKTREE_ARCHIVE DESTINATION` with the
-same optional `--manifest` and `--evidence-directory` arguments, then run
+same optional `--manifest`, `--evidence-directory`, `--database`, and
+`--database-manifest` arguments, then run
 `py -m forgeos recovery-bundle-check DESTINATION`. The ZIP contains the
-handoff, source archive, optional manifest, referenced evidence, and the
-coherence index; each is copied in bounded 64 KiB blocks and rechecked before
-no-overwrite publication. The checker validates the ZIP and its nested index
-through private bounded temporary files. This is still not encrypted, signed,
-authenticated, a database backup, an import/replay mechanism or physical
-power-loss durability.
+selected handoff, source archive, optional manifests, optional verified
+database backup, referenced evidence, and the coherence index; each is copied
+in bounded 64 KiB blocks and rechecked before no-overwrite publication. The
+checker validates the ZIP and its nested index through private bounded
+temporary files. This is still not encrypted, signed, an active-database
+replacement, an import/replay mechanism or physical power-loss durability.
 To materialize a verified transfer on the receiving machine, run
 `py -m forgeos recovery-bundle-extract PACKAGE NEW_DIRECTORY` followed by
 `py -m forgeos recovery-bundle-extract-check NEW_DIRECTORY`. Extraction always
 requires a new directory, writes a bounded phase marker before moving files,
 and marks the directory complete only after rechecking the copied handoff,
-source archive, manifest and evidence. An interrupted or failed materializer
-is left marked incomplete for inspection; it never starts a task, opens SQLite
-or replays actions.
+source archive, optional database backup and evidence. An interrupted or
+failed materializer is left marked incomplete for inspection; it never starts
+a task, opens the active ForgeOS Store or replays actions. A bundled database
+is only checked read-only as a passive artifact.
 When an operator confirms that the marked directory is no longer being written,
 `py -m forgeos recovery-bundle-extract-resume PACKAGE NEW_DIRECTORY` verifies
 the marker's package digest, preserves matching files, copies only missing
@@ -363,5 +366,7 @@ paths; inspect a pending marker with `db-activation-status ACTIVE` and use
 `db-activation-rollback ACTIVE --confirm` only for its validated `old_moved`
 phase. It is not automatic failover or physical power-loss recovery.
 See [database backup and recovery limits](docs/DATABASE_BACKUP.md).
-This is not an encrypted, scheduled, bundled or physically accepted disaster-
-recovery solution.
+This is not an encrypted, scheduled or physically accepted disaster-recovery
+solution. A previously created `db-backup` can be included in a passive
+transfer with `recovery-bundle --database BACKUP --database-manifest MANIFEST`;
+receiving it does not activate or overwrite the task database.
