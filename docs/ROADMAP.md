@@ -1110,3 +1110,21 @@ with one expected platform skip. The full isolated suite passed 772 tests with
 documentation/link coverage and `git diff --check` remain required, as does
 the bounded 12 MiB x 3-cycle memory benchmark. Exact-head hosted checks,
 Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — recovery manifest read identity
+
+The shared SQLite-backup and journal-handoff manifest readers now use bounded,
+identity-checked descriptors. Each manifest must remain an unlinked regular
+file with the same identity before and after opening and reading; the reader
+caps allocation at the existing 1 KiB limit plus one byte and rejects links,
+Windows reparse points, replacements and oversized inputs before parsing JSON.
+Substituted manifests remain available for inspection.
+
+Regression coverage adds backup and handoff replacement-during-open tests. The
+focused core/manifest/database/recovery suite passed 100 tests with one
+expected platform skip. The full isolated suite passed 774 tests with 10
+expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace while still exiting successfully. Compileall,
+documentation/link coverage, `git diff --check` and the bounded 12 MiB x
+3-cycle memory benchmark remain required. Exact-head hosted checks, Windows
+ACL review and physical NTFS power-loss acceptance remain open.

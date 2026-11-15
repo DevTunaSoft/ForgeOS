@@ -234,6 +234,51 @@ def _assert_database_source_unchanged(before, path: Path,
         raise ValueError(f"{description} changed during use: {path}")
 
 
+def _open_bounded_publication_file(path: Path, flags: int) -> int:
+    """Open one bounded publication file through a narrow test seam."""
+    return os.open(path, flags)
+
+
+def _read_bounded_publication_file(path: Path, *, max_bytes: int,
+                                   description: str) -> bytes:
+    """Read a small unlinked regular file without losing its identity."""
+    before = _publication_file_info(path, description, require_unlinked=True)
+    if before.st_size > max_bytes:
+        raise ValueError(f"{description} is oversized")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = _open_bounded_publication_file(path, flags)
+    except OSError as exc:
+        raise ValueError(f"{description} could not be opened safely") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if (_is_link_or_reparse(path, opened)
+                or not stat.S_ISREG(opened.st_mode)
+                or getattr(opened, "st_nlink", 1) != 1
+                or not _same_publication_file(before, opened)):
+            raise ValueError(f"{description} changed or became a link")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = None
+            content = stream.read(max_bytes + 1)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError(f"{description} could not be read safely") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = _publication_file_info(
+            path, description, require_unlinked=True)
+    except ValueError as exc:
+        raise ValueError(f"{description} changed during read") from exc
+    if (not _same_publication_file(before, after)
+            or len(content) > max_bytes):
+        raise ValueError(f"{description} changed during read")
+    return content
+
+
 def _publish_database_copy(staging: Path, target: Path) -> None:
     """Publish a staged SQLite copy without replacing a concurrent destination.
 
@@ -666,13 +711,15 @@ def _database_file_digest(path: Path) -> tuple[int, str]:
 
 def _read_backup_manifest(path: str | Path) -> dict[str, object]:
     manifest = Path(path).expanduser().absolute()
-    if manifest.is_symlink() or not manifest.is_file():
-        raise ValueError("Backup manifest must be an existing regular file")
-    if manifest.stat().st_size > MAX_BACKUP_MANIFEST_BYTES:
-        raise ValueError("Backup manifest is oversized")
     try:
-        value = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raw = _read_bounded_publication_file(
+            manifest, max_bytes=MAX_BACKUP_MANIFEST_BYTES,
+            description="Backup manifest")
+    except ValueError:
+        raise
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("Backup manifest is invalid") from exc
     if not isinstance(value, dict) or value.get("format") != BACKUP_MANIFEST_FORMAT:
         raise ValueError("Backup manifest format is unsupported")
@@ -727,13 +774,15 @@ def _publish_backup_manifest(database: Path, manifest: Path) -> None:
 
 def _read_handoff_manifest(path: str | Path) -> dict[str, object]:
     manifest = Path(path).expanduser().absolute()
-    if manifest.is_symlink() or not manifest.is_file():
-        raise ValueError("Journal handoff manifest must be an existing regular file")
-    if manifest.stat().st_size > MAX_JOURNAL_HANDOFF_MANIFEST_BYTES:
-        raise ValueError("Journal handoff manifest is oversized")
     try:
-        value = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raw = _read_bounded_publication_file(
+            manifest, max_bytes=MAX_JOURNAL_HANDOFF_MANIFEST_BYTES,
+            description="Journal handoff manifest")
+    except ValueError:
+        raise
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("Journal handoff manifest is invalid") from exc
     if (not isinstance(value, dict)
             or value.get("format") != JOURNAL_HANDOFF_MANIFEST_FORMAT):

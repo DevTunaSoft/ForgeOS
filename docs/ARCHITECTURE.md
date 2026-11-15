@@ -252,6 +252,13 @@ authenticity or artifact availability.
 `check_handoff(..., manifest=...)` verifies it by streaming the handoff bytes.
 The manifest detects accidental transfer/storage changes but is not a
 signature, encryption layer or proof of who produced the artifact.
+Backup and handoff manifest readers use the same bounded identity boundary:
+they require an unlinked regular file, open it through a descriptor with
+no-follow flags where available, compare the opened identity, read at most the
+1 KiB manifest limit plus one byte, and recheck the path after reading. A
+replacement, hard link, reparse point or oversized manifest fails closed and
+remains available for inspection instead of being parsed through a
+path-following read.
 With an explicit evidence directory, `check_handoff()` also verifies each
 referenced `<sha256>.txt.gz` archive through a bounded gzip stream, without
 creating directories or decoding raw output. Missing, symlinked, corrupt or

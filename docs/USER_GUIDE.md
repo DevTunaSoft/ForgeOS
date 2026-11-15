@@ -756,6 +756,10 @@ The optional manifest is a bounded JSON record of the backup size and streamed
 SHA-256; require it during offline inspection with
 `db-restore-copy SOURCE DESTINATION --manifest MANIFEST`. It detects accidental
 corruption, but is not encryption or an attacker-resistant signature.
+ForgeOS reads this manifest through a bounded identity-checked descriptor. A
+replacement, hard link, Windows reparse point or enlargement during the read
+fails closed and remains available for inspection; this is a race guard, not
+a system-wide concurrent-writer lock.
 The backup is **not encrypted** and does not include external evidence archives,
 Git worktrees or model weights. Do not attempt a live database overwrite to
 restore. Read [database backup limitations](DATABASE_BACKUP.md) first.
@@ -906,6 +910,9 @@ manifest containing the handoff byte size and streamed SHA-256, then pass the
 same manifest to `journal-handoff-check` to detect transfer or storage
 corruption. This digest is not a signature or encryption and must be retained
 under a trusted policy if it is used as an integrity reference.
+The handoff manifest is read through the same bounded identity-checked
+descriptor boundary as a database-backup manifest, so a substituted or linked
+file is rejected before its JSON is trusted.
 Both output paths are new-file destinations. If handoff publication fails,
 ForgeOS removes its temporary files and publishes neither artifact. If the
 handoff is already published and a later manifest write fails, the handoff is

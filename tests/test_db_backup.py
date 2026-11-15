@@ -49,6 +49,24 @@ class OnlineBackupTests(unittest.TestCase):
             value["sha256"], hashlib.sha256(target.read_bytes()).hexdigest())
         self.assertLessEqual(manifest.stat().st_size, 1024)
 
+    def test_backup_manifest_rejects_replacement_during_open(self):
+        target = self.root / "task-copy.sqlite3"
+        manifest = self.root / "task-copy.json"
+        self.store.backup_to(target, manifest=manifest)
+
+        def replace_before_open(path, flags):
+            path.unlink()
+            path.write_bytes(b"operator-owned manifest\n")
+            return os.open(path, flags)
+
+        from forgeos import core
+        with patch.object(
+                core, "_open_bounded_publication_file",
+                side_effect=replace_before_open):
+            with self.assertRaisesRegex(ValueError, "changed or became a link"):
+                core._read_backup_manifest(manifest)
+        self.assertEqual(manifest.read_bytes(), b"operator-owned manifest\n")
+
     def test_streamed_digest_refuses_source_identity_change(self):
         from forgeos import core
         replacement = self.root / "replacement.sqlite3"
