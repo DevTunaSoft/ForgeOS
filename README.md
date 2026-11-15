@@ -284,6 +284,12 @@ database, evidence/worktree bundle or automatic replay mechanism. Publication
 is staged, flushed and no-overwrite: a handoff publication failure leaves no
 artifact, while a later optional-manifest failure retains the handoff without
 claiming manifest-backed integrity.
+For a content-free worktree integrity inventory, run
+`py -m forgeos worktree-manifest WORKTREE DESTINATION` followed by
+`py -m forgeos worktree-manifest-check DESTINATION WORKTREE`. This streams
+bounded file hashes without opening the task database, excludes Git/runtime/
+environment metadata and rejects links or reparse points; it is not a source
+archive or authenticated bundle.
 
 ### Verified task database backups (experimental)
 

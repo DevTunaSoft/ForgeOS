@@ -46,6 +46,18 @@ def main(argv=None):
     journal_handoff_check.add_argument(
         '--evidence-directory', default='',
         help='Optional existing evidence directory to verify referenced archives')
+    worktree_manifest = sub.add_parser(
+        'worktree-manifest',
+        help='Export bounded SHA-256 metadata for one Git worktree')
+    worktree_manifest.add_argument('root', help='Existing Git worktree directory')
+    worktree_manifest.add_argument(
+        'destination', help='New JSONL manifest path outside the worktree')
+    worktree_manifest_check = sub.add_parser(
+        'worktree-manifest-check',
+        help='Verify a worktree against a bounded integrity manifest')
+    worktree_manifest_check.add_argument('source', help='Existing JSONL manifest path')
+    worktree_manifest_check.add_argument('root', help='Existing Git worktree directory')
+    worktree_manifest_check.add_argument('--max-issues', type=int, default=32)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -267,6 +279,17 @@ def main(argv=None):
         report = Store.check_handoff(
             args.source, manifest=args.manifest or None,
             evidence_directory=args.evidence_directory or None)
+        print(json.dumps(report, indent=2))
+        return 0 if report['valid'] else 1
+    if args.action == 'worktree-manifest':
+        from .worktree_manifest import export_worktree_manifest
+        exported = export_worktree_manifest(args.root, args.destination)
+        print(f'Exported worktree manifest: {exported}')
+        return 0
+    if args.action == 'worktree-manifest-check':
+        from .worktree_manifest import check_worktree_manifest
+        report = check_worktree_manifest(
+            args.source, args.root, max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
     if args.action == 'memory':

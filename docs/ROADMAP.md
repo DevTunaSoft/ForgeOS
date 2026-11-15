@@ -358,3 +358,13 @@ rename and staged-file flush. Regression coverage verifies the platform split.
 This improves crash-durability evidence on POSIX but does not establish
 physical Windows NTFS interruption recovery or complete source/evidence
 bundles.
+
+### 2026-11-15 — bounded worktree integrity manifest
+
+`worktree-manifest` now streams bounded SHA-256 metadata for regular files in
+one Git worktree, and `worktree-manifest-check` rehashes the referenced tree to
+detect changed, missing or extra files without opening SQLite or copying source
+contents. Git/runtime/environment metadata is excluded and symlink, hard-link,
+reparse-point and special-file inputs fail closed. This is an integrity
+inventory toward a future complete source/evidence bundle, not an archive,
+signature, encryption layer or Git-object backup.

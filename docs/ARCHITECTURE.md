@@ -38,6 +38,7 @@ flowchart TB
 | `src/forgeos/test_runtime.py` | Disposable runtime snapshots and cleanup |
 | `src/forgeos/secure_runner.py`, `appcontainer.py`, `windows_containment.py`, `sandbox_runner.py` | Frozen Windows execution containment |
 | `src/forgeos/diagnostics.py`, `output_capture.py`, `output_rules.py` | Evidence archive, bounded output, summaries, trusted filters; Windows evidence temp allocation fails fast rather than retrying indefinitely on denied storage |
+| `src/forgeos/worktree_manifest.py` | Database-free, bounded regular-file worktree hashing and exact manifest verification; excludes operational metadata and rejects links/reparse points |
 | `src/forgeos/error_learning.py`, `optimizer_metrics.py`, `insights.py` | Test-verified repair signatures, efficiency and advisory diagnostic views |
 | `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
@@ -145,6 +146,16 @@ artifact is published and temporary files are removed. If the handoff is
 published but a later optional manifest publication fails, the valid handoff is
 retained without a manifest so it can still be checked directly; callers must
 not treat the missing manifest as an integrity assertion.
+
+`export_worktree_manifest()` is a separate database-free handoff aid. It walks
+one Git worktree with bounded `os.scandir` pages, hashes regular files in 64 KiB
+blocks and writes only relative paths, sizes and SHA-256 values. Git metadata,
+ForgeOS journals/runtime files, virtual environments, dependencies and
+`.env*` files are excluded. The checker rehashes listed files and detects
+missing, changed or extra source files, while rejecting symlinks, hard links,
+Windows reparse points and special files. It is an integrity inventory, not a
+source archive, Git object backup, signature, encryption layer or proof that
+empty directories and ignored metadata are preserved.
 
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
