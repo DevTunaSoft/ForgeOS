@@ -247,6 +247,36 @@ class DatabaseCommandsTests(unittest.TestCase):
             self.assertEqual(rows[0]['task_id'], task)
             self.assertEqual(rows[-1]['complete'], True)
 
+    def test_journal_handoff_check_command_is_offline_and_reports_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.git').mkdir()
+            db_path = root / 'state.sqlite3'
+            store = Store(db_path)
+            try:
+                task = store.add(str(root), 'journal handoff check cli test')
+                handoff = root / 'handoff.jsonl'
+                store.export_handoff(handoff, task_id=task)
+            finally:
+                store.close()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    '--db', str(root / 'missing.sqlite3'),
+                    'journal-handoff-check', str(handoff)]), 0)
+            report = __import__('json').loads(output.getvalue())
+            self.assertTrue(report['valid'])
+            lines = handoff.read_text().splitlines()
+            summary = __import__('json').loads(lines[-1])
+            summary['event_count'] = 0
+            lines[-1] = __import__('json').dumps(summary)
+            handoff.write_text('\n'.join(lines) + '\n')
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    'journal-handoff-check', str(handoff)]), 1)
+            self.assertFalse(__import__('json').loads(output.getvalue())['valid'])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -123,6 +123,12 @@ references are validated identifiers only. It excludes prompts, project paths,
 result/checkpoint blobs, leases, raw errors and test output. The artifact is a
 non-executing replay plan; it does not import rows, resolve evidence or replay
 actions, and an operator should run `journal-check` before relying on it.
+`Store.check_handoff()` verifies that artifact offline: it reads one bounded
+JSONL record at a time, requires the header/task/events/summary order, checks
+event IDs and reference fields, and retains at most 32 diagnostics. It does
+not initialize `Store`, open SQLite, resolve evidence, or execute a planned
+action. A valid report proves format and internal consistency only, not
+authenticity or artifact availability.
 
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing

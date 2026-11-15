@@ -2290,6 +2290,36 @@ not alter its timing. No production behavior changed. The affected local
 `test_local_models` + `test_managed_llama` sequence passes; the updated
 exact-head Linux/Windows matrix remains required.
 
+## 2026-11-15 — offline bounded journal handoff verification
+
+**Change:** added `Store.check_handoff()` and the offline
+`forgeos journal-handoff-check` command. It opens only the supplied regular
+file, reads at most a 16 KiB JSONL record at a time, validates the
+header/task/events/summary sequence, enforces increasing event IDs and
+validated artifact/evidence references, and caps diagnostics at 32 rows. It
+does not initialize a task Store, open SQLite, resolve evidence, import rows or
+execute actions.
+
+**Safety boundary:** a successful report proves internal format consistency
+only. It does not authenticate a transferred file or prove that referenced
+evidence/worktree artifacts still exist. The command therefore complements,
+but does not replace, `journal-check`, signed/encrypted retention or a future
+explicit import/replay policy.
+
+**Regression coverage:** core tests cover a valid handoff, tampered artifact
+references, capped malformed-record diagnostics and oversized journal-field
+refusal. CLI coverage verifies offline operation with a missing `--db` path
+and reports a tampered summary as a nonzero result. Exact-head Linux/Windows
+matrix, packaging and physical interruption acceptance remain required.
+
+**Local verification:** Python 3.12 focused journal/CLI tests passed (62 tests
+and 31 subtests); the full pytest run passed 626 tests, 7 skips and 406
+subtests. The only local failure was the pre-existing Windows AppContainer
+probe because the repository virtualenv executable returned `icacls` access
+denied; the same AppContainer module passed under system Python. Compileall,
+diff checks and the documented 12 MiB x3 memory benchmark passed. Exact-head
+GitHub checks remain the acceptance gate for this host ACL condition.
+
 ## 2026-11-15 — task-scoped bounded journal replay plan
 
 **Change:** added `Store.export_handoff()` and `forgeos journal-handoff`.

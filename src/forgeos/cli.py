@@ -36,6 +36,9 @@ def main(argv=None):
         'journal-handoff', help='Export one task as a bounded replay plan')
     journal_handoff.add_argument('destination', help='New JSONL file path')
     journal_handoff.add_argument('--task-id', type=int, required=True)
+    journal_handoff_check = sub.add_parser(
+        'journal-handoff-check', help='Verify a bounded journal handoff plan')
+    journal_handoff_check.add_argument('source', help='Existing JSONL file path')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -252,6 +255,10 @@ def main(argv=None):
             store.close()
         print(f'Exported journal handoff: {exported}')
         return 0
+    if args.action == 'journal-handoff-check':
+        report = Store.check_handoff(args.source)
+        print(json.dumps(report, indent=2))
+        return 0 if report['valid'] else 1
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))

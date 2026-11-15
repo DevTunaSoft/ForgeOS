@@ -312,3 +312,13 @@ paths, checkpoints, leases, raw errors and test output. It is intentionally
 read-only and non-executing; import, evidence resolution, action replay,
 encryption, complete worktree bundles and physical power-loss acceptance
 remain open.
+
+### 2026-11-15 — offline bounded journal handoff verification
+
+`journal-handoff-check` now validates one exported task handoff without
+opening SQLite or initializing a Store. It streams bounded JSONL records,
+requires the header/task/event/summary structure, checks increasing event IDs,
+validated references and the completion count, and caps diagnostics at 32
+issues. This detects truncation and format tampering but does not authenticate
+the file, resolve evidence, import rows, replay actions, encrypt data or prove
+physical power-loss recovery.

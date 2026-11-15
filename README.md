@@ -275,6 +275,8 @@ The **Activity & diagnostics** tab now shows the active task ID, operation, elap
 
 For a task-scoped recovery handoff, first run `py -m forgeos journal-check`,
 then `py -m forgeos journal-handoff "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --task-id 1`.
+Verify a transferred handoff with `py -m forgeos journal-handoff-check
+"C:\\ForgeOS-backups\\task-1-handoff.jsonl"`.
 The JSONL replay plan contains scalar task state, ordered lifecycle events and
 validated artifact/evidence identifiers without copying prompts, checkpoints,
 raw errors or test output. It is diagnostic and non-executing; it is not a
