@@ -2174,6 +2174,16 @@ Python 3.10/3.12, documentation and Windows packaging checks passed for
 `a173bc1`. Physical power-loss and active-database restoration remain
 unverified.
 
+## 2026-11-14 — bounded journal action metadata
+
+The event journal schema now includes backward-compatible bounded action,
+attempt, artifact-reference and evidence-reference columns. Existing databases
+receive these columns during `Store` initialization. Canonical plan and manual
+test transitions populate the action field and carry only validated evidence
+identifiers; raw prompts, errors and test output remain excluded. Tests cover
+metadata validation, old-schema migration and linkage. Full replayable
+artifact export and physical interruption acceptance remain unverified.
+
 ## 2026-11-14 — streamed backup digest manifests
 
 `Store.backup_to()` now optionally publishes a new bounded JSON manifest with

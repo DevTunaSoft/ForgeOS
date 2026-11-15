@@ -711,5 +711,6 @@ py -m forgeos journal --task-id 1 --limit 20
 ```
 
 Journal rows record task, lease and recovery transitions—not full prompts,
-errors or test output. The command is for recovery diagnosis; it does not
+errors or test output. Test transitions may include a bounded action, attempt,
+artifact identifier and evidence digest for correlation. The command is for recovery diagnosis; it does not
 activate a backup or replace the running database.

@@ -31,6 +31,10 @@ EVENT_SCHEMA = """CREATE TABLE IF NOT EXISTS forgeos_events (
  actor TEXT NOT NULL DEFAULT '',
  created REAL NOT NULL,
  details TEXT NOT NULL DEFAULT '',
+ action TEXT NOT NULL DEFAULT '',
+ attempt INTEGER,
+ artifact_ref TEXT NOT NULL DEFAULT '',
+ evidence_ref TEXT NOT NULL DEFAULT '',
  FOREIGN KEY(task_id) REFERENCES tasks(id)
 );"""
 EVENT_INDEX = """CREATE INDEX IF NOT EXISTS idx_forgeos_events_task_time
@@ -60,6 +64,10 @@ MAX_EVENT_TYPE_BYTES = 64
 MAX_EVENT_ACTOR_BYTES = 128
 MAX_EVENT_DETAILS_BYTES = 2048
 EVENT_TYPE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+MAX_EVENT_ACTION_BYTES = 64
+MAX_EVENT_ARTIFACT_BYTES = 128
+MAX_EVENT_EVIDENCE_BYTES = 64
+EVENT_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]+$")
 BACKUP_MANIFEST_FORMAT = "forgeos-sqlite-backup-v1"
 MAX_BACKUP_MANIFEST_BYTES = 1024
 
@@ -208,11 +216,27 @@ class Store:
         self.db.execute(SCHEMA)
         self.db.execute(LEASE_SCHEMA)
         self.db.execute(EVENT_SCHEMA)
+        self._migrate_event_metadata()
         self.db.execute(EVENT_INDEX)
         self.db.execute(EVENT_NO_UPDATE)
         self.db.execute(EVENT_NO_DELETE)
         self.db.execute(ACTIVE_TASK_LOOKUP_INDEX)
         self.db.commit()
+
+    def _migrate_event_metadata(self) -> None:
+        """Add bounded journal metadata columns to pre-journal databases."""
+        columns = {row[1] for row in self.db.execute(
+            "PRAGMA table_info(forgeos_events)")}
+        migrations = {
+            "action": "TEXT NOT NULL DEFAULT ''",
+            "attempt": "INTEGER",
+            "artifact_ref": "TEXT NOT NULL DEFAULT ''",
+            "evidence_ref": "TEXT NOT NULL DEFAULT ''",
+        }
+        for name, definition in migrations.items():
+            if name not in columns:
+                self.db.execute(
+                    f"ALTER TABLE forgeos_events ADD COLUMN {name} {definition}")
 
     @staticmethod
     def _validate_event_text(value: str, limit: int, label: str) -> str:
@@ -223,7 +247,9 @@ class Store:
         return value
 
     def _record_event(self, event_type: str, *, task_id: int | None = None,
-                      status: str = '', actor: str = '', details: str = '') -> None:
+                      status: str = '', actor: str = '', details: str = '',
+                      action: str = '', attempt: int | None = None,
+                      artifact_ref: str = '', evidence_ref: str = '') -> None:
         """Append a bounded lifecycle event inside the caller's transaction."""
         event_type = self._validate_event_text(
             event_type, MAX_EVENT_TYPE_BYTES, 'type')
@@ -240,10 +266,28 @@ class Store:
             raise ValueError('Event details must be text')
         if len(details.encode('utf-8')) > MAX_EVENT_DETAILS_BYTES:
             raise ValueError('Event details exceed 2048 bytes')
+        if action:
+            self._validate_event_text(action, MAX_EVENT_ACTION_BYTES, 'action')
+            if not EVENT_TYPE_PATTERN.fullmatch(action):
+                raise ValueError('Event action contains unsupported characters')
+        if attempt is not None and (
+                type(attempt) is not int or not 1 <= attempt <= 1000000):
+            raise ValueError('Event attempt must be 1..1000000')
+        for value, limit, label in (
+                (artifact_ref, MAX_EVENT_ARTIFACT_BYTES, 'artifact reference'),
+                (evidence_ref, MAX_EVENT_EVIDENCE_BYTES, 'evidence reference')):
+            if value:
+                self._validate_event_text(value, limit, label)
+                pattern = (re.compile(r"^[0-9a-f]{64}$")
+                           if label == 'evidence reference'
+                           else EVENT_REFERENCE_PATTERN)
+                if not pattern.fullmatch(value):
+                    raise ValueError(f'Event {label} contains unsupported characters')
         self.db.execute(
-            'INSERT INTO forgeos_events(task_id,event_type,status,actor,created,details) '
-            'VALUES(?,?,?,?,?,?)',
-            (task_id, event_type, status, actor, time.time(), details))
+            'INSERT INTO forgeos_events(task_id,event_type,status,actor,created,details,'
+            'action,attempt,artifact_ref,evidence_ref) VALUES(?,?,?,?,?,?,?,?,?,?)',
+            (task_id, event_type, status, actor, time.time(), details, action,
+             attempt, artifact_ref, evidence_ref))
 
     def iter_events(self, *, task_id: int | None = None, limit: int = 100):
         """Yield a bounded journal page without materializing all history."""
@@ -253,11 +297,13 @@ class Store:
             raise ValueError('Event page limit must be 1..500')
         if task_id is None:
             cursor = self.db.execute(
-                'SELECT id,task_id,event_type,status,actor,created,details '
+                'SELECT id,task_id,event_type,status,actor,created,details,action,attempt,'
+                'artifact_ref,evidence_ref '
                 'FROM forgeos_events ORDER BY id DESC LIMIT ?', (limit,))
         else:
             cursor = self.db.execute(
-                'SELECT id,task_id,event_type,status,actor,created,details '
+                'SELECT id,task_id,event_type,status,actor,created,details,action,attempt,'
+                'artifact_ref,evidence_ref '
                 'FROM forgeos_events WHERE task_id=? ORDER BY id DESC LIMIT ?',
                 (task_id, limit))
         try:
@@ -537,7 +583,9 @@ class Store:
 
     def transition(self, task_id: int, expected, status: str, *,
                    increment: bool = False, result: str | None = None,
-                   error: str = '', lease_owner: str | None = None) -> bool:
+                   error: str = '', lease_owner: str | None = None,
+                   event_action: str = '', event_attempt: int | None = None,
+                   event_artifact: str = '', event_evidence: str = '') -> bool:
         """Atomic state/result update, optionally guarded by task lease owner.
 
         The default preserves prior behavior and checkpoint content. When a
@@ -573,7 +621,10 @@ class Store:
             cur = self.db.execute(sql, params)
             if cur.rowcount == 1:
                 self._record_event('task.transitioned', task_id=task_id,
-                                   status=status, actor=lease_owner or '')
+                                   status=status, actor=lease_owner or '',
+                                   action=event_action, attempt=event_attempt,
+                                   artifact_ref=event_artifact,
+                                   evidence_ref=event_evidence)
         return cur.rowcount == 1
 
     def acquire_lease(self, task_id: int, owner: str,
