@@ -3066,3 +3066,27 @@ the bounded 12 MiB x 3-cycle memory benchmark reported a 1,982,228-byte
 Python tracemalloc peak and a 29,806,592-byte process peak RSS. Hosted
 exact-head Linux/Windows checks, physical Windows restart/filesystem-race
 testing and NTFS power-loss acceptance remain required.
+
+## 2026-11-15 — private POSIX edit-journal metadata
+
+**Change:** edit transaction directories are now forced to mode `0700` on
+POSIX. Manifests, streamed backups and restore temporaries are created with
+mode `0600`; staged replacement files intentionally retain their umask-derived
+mode because they become published workspace files. Windows ACL behavior is
+unchanged and remains an operator review boundary. The 64 KiB streaming and
+8 MiB backup limits remain unchanged.
+
+**Regression coverage:** added a POSIX-only engine regression that creates
+umask-permissive journal paths and verifies the canonical directory, pending
+journal, backup and manifest modes are tightened before sensitive bytes are
+stored. The Windows skip is intentional because standard-library POSIX mode
+bits do not model NTFS DACLs.
+
+**Local verification:** focused engine/transaction tests ran 82 tests with 1
+expected POSIX-only skip (81 passed); the full isolated suite passed 723 tests
+with 9 expected skips. The known local-model test may emit its existing
+`WinError 10053` server trace, but the suite exits successfully. Compileall,
+documentation/link coverage and `git diff --check` passed. The bounded 12 MiB
+x 3-cycle memory benchmark reported a 1,982,228-byte Python tracemalloc peak
+and a 30,011,392-byte process peak RSS. Exact-head hosted checks, Windows ACL
+review and physical NTFS power-loss acceptance remain open.
