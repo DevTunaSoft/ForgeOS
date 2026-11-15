@@ -571,3 +571,19 @@ patching `os.name` before `Path` construction selected `PosixPath` on Windows.
 The follow-up removes that global platform patch and verifies the existing
 directory-sync call directly; the corrected head remains cross-version and
 Windows-compatible.
+
+### 2026-11-15 — Windows open-handle activation refusal
+
+The activation regression suite now holds the active database with a real
+Windows `CreateFileW` share mode that permits no sharing, then verifies
+activation fails before moving the active file, creating a rollback copy or
+leaving a marker. The test is skipped on non-Windows hosts; hosted Windows
+coverage is useful compatibility evidence, not physical reboot or NTFS
+power-loss acceptance.
+
+Focused activation tests passed 15/15 on Windows; the full isolated suite
+passed 700 tests with 8 expected skips. The bounded memory benchmark passed
+for three 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
+30,179,328-byte process peak RSS. Documentation/link coverage, compileall and
+`git diff --check` passed; physical reboot and NTFS power-loss acceptance
+remain open.

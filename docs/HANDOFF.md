@@ -2873,3 +2873,20 @@ constructed, causing `pathlib` to select `PosixPath` on Windows. Follow-up
 commit `98c33fb` removes that global platform patch and asserts the existing
 directory-sync helper call directly; the focused and full local suites then
 passed again.
+
+## 2026-11-15 — Windows open-handle activation refusal
+
+**Change:** added a Windows-only activation regression that opens the active
+database through `CreateFileW` with an exclusive share mode, attempts the
+verified offline replacement, and requires the operation to fail closed before
+the active file moves. After releasing the handle, the test confirms the old
+database remains, no rollback copy was published and no marker was left behind.
+POSIX and other non-Windows runs skip this OS-specific contract.
+
+**Local verification:** focused activation tests passed 15/15 on Windows; the
+full isolated suite passed 700 tests with 8 expected skips. Documentation/link
+coverage, compileall and `git diff --check` passed. The bounded memory benchmark
+passed for three 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak
+and a 30,179,328-byte process peak RSS. Exact-head hosted Linux/Windows,
+packaging, physical reboot and NTFS power-loss acceptance remain required for
+this branch.

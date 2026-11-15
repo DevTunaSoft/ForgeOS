@@ -1,5 +1,6 @@
 """Guarded, offline SQLite activation and rollback tests."""
 from contextlib import closing
+import os
 from pathlib import Path
 import json
 import sqlite3
@@ -238,6 +239,34 @@ class ActivateBackupTests(unittest.TestCase):
             core._remove_activation_marker(marker)
         self.assertFalse(marker.exists())
         sync.assert_called_once_with(self.root)
+
+    @unittest.skipUnless(os.name == "nt", "Windows share-mode contract")
+    def test_windows_open_handle_refuses_activation_before_moving_active(self):
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateFileW.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+            ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.CreateFileW(
+            str(self.active), 0x80000000, 0, None, 3, 0x80, None)
+        invalid = ctypes.c_void_p(-1).value
+        if handle == invalid or handle == -1:
+            raise ctypes.WinError(ctypes.get_last_error())
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        try:
+            with self.assertRaises((OSError, sqlite3.DatabaseError)):
+                Store.activate_backup_to(
+                    self.backup, self.active, self.rollback, confirm=True)
+        finally:
+            self.assertTrue(kernel32.CloseHandle(handle))
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":
