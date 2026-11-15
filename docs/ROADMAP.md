@@ -301,3 +301,14 @@ preflight uses immutable mode when no sidecars exist so diagnostics do not
 create journal files. This is still cooperative offline recovery, not marker
 replay, encryption, a complete evidence/worktree bundle or physical
 power-loss acceptance.
+
+### 2026-11-15 — task-scoped bounded journal replay plan
+
+`journal-handoff` now streams a self-describing JSONL plan for one task: a
+scalar current-state projection, ordered lifecycle events, validated
+artifact/evidence identifiers and a completion summary. SQL bounds journal
+text before Python materializes it, and the artifact excludes prompts, project
+paths, checkpoints, leases, raw errors and test output. It is intentionally
+read-only and non-executing; import, evidence resolution, action replay,
+encryption, complete worktree bundles and physical power-loss acceptance
+remain open.

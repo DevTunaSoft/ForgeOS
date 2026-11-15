@@ -115,6 +115,14 @@ corruption is found; it does not rewrite or repair the database.
 newline-delimited JSON to a new same-directory artifact, then publishes it
 without overwriting an existing export. It is a journal handoff artifact, not
 a complete database, worktree or evidence backup.
+`Store.export_handoff()` is the task-scoped recovery form: it streams a
+self-describing header, scalar task-state projection, ordered event records
+and a completion summary to a new same-directory JSONL artifact. Its SQL
+projection bounds journal text before Python materializes it and its event
+references are validated identifiers only. It excludes prompts, project paths,
+result/checkpoint blobs, leases, raw errors and test output. The artifact is a
+non-executing replay plan; it does not import rows, resolve evidence or replay
+actions, and an operator should run `journal-check` before relying on it.
 
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing

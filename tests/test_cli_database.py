@@ -224,6 +224,29 @@ class DatabaseCommandsTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]['task_id'], task)
 
+    def test_journal_handoff_command_writes_replay_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.git').mkdir()
+            db_path = root / 'state.sqlite3'
+            store = Store(db_path)
+            try:
+                task = store.add(str(root), 'journal handoff cli test')
+            finally:
+                store.close()
+            target = root / 'handoff.jsonl'
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    '--db', str(db_path), 'journal-handoff', str(target),
+                    '--task-id', str(task)]), 0)
+            self.assertIn('Exported journal handoff:', output.getvalue())
+            rows = [__import__('json').loads(line)
+                    for line in target.read_text().splitlines()]
+            self.assertEqual(rows[0]['format'], 'forgeos-journal-handoff-v1')
+            self.assertEqual(rows[0]['task_id'], task)
+            self.assertEqual(rows[-1]['complete'], True)
+
 
 if __name__ == "__main__":
     unittest.main()

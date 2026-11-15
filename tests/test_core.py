@@ -134,6 +134,48 @@ class ForgeOSTests(unittest.TestCase):
                             for line in filtered.read_text().splitlines()))
         with self.assertRaisesRegex(ValueError, 'new file'):
             self.store.export_events(target)
+
+    def test_journal_handoff_streams_state_events_and_validated_references(self):
+        task = self.store.add(str(self.repo), 'HIDDEN task prompt')
+        self.assertTrue(self.store.transition(
+            task, ('queued',), 'testing', result='HIDDEN checkpoint output',
+            event_action='test', event_attempt=1,
+            event_artifact='test-result', event_evidence='a' * 64))
+        target = self.root / 'handoff.jsonl'
+        self.assertEqual(self.store.export_handoff(target, task_id=task), target)
+        rows = [json.loads(line) for line in target.read_text().splitlines()]
+        self.assertEqual(rows[0], {
+            'record': 'header', 'format': 'forgeos-journal-handoff-v1',
+            'task_id': task})
+        self.assertEqual(rows[1]['record'], 'task')
+        self.assertEqual(rows[1]['status'], 'testing')
+        events = [row for row in rows if row['record'] == 'event']
+        self.assertEqual([row['event_type'] for row in events],
+                         ['task.created', 'task.transitioned'])
+        self.assertEqual(events[-1]['artifact_ref'], 'test-result')
+        self.assertEqual(events[-1]['evidence_ref'], 'a' * 64)
+        self.assertEqual(rows[-1], {
+            'record': 'summary', 'task_id': task, 'event_count': 2,
+            'last_event_id': events[-1]['id'], 'complete': True})
+        content = target.read_text()
+        self.assertNotIn('HIDDEN task prompt', content)
+        self.assertNotIn('HIDDEN checkpoint output', content)
+        with self.assertRaisesRegex(ValueError, 'new file'):
+            self.store.export_handoff(target, task_id=task)
+
+    def test_journal_handoff_rejects_missing_or_oversized_event_without_target(self):
+        task = self.store.add(str(self.repo), 'Handoff validation')
+        with self.assertRaisesRegex(ValueError, 'Task not found'):
+            self.store.export_handoff(self.root / 'missing.jsonl', task_id=999999)
+        with self.store.db:
+            self.store.db.execute(
+                'INSERT INTO forgeos_events(task_id,event_type,status,actor,created,details) '
+                'VALUES(?,?,?,?,?,?)',
+                (task, 'task.corrupt', '', '', time.time(), 'x' * 4097))
+        target = self.root / 'invalid-handoff.jsonl'
+        with self.assertRaisesRegex(ValueError, 'oversized event details'):
+            self.store.export_handoff(target, task_id=task)
+        self.assertFalse(target.exists())
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES

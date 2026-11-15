@@ -2289,3 +2289,34 @@ own sleep callable before the server thread starts, so unrelated test seams do
 not alter its timing. No production behavior changed. The affected local
 `test_local_models` + `test_managed_llama` sequence passes; the updated
 exact-head Linux/Windows matrix remains required.
+
+## 2026-11-15 — task-scoped bounded journal replay plan
+
+**Change:** added `Store.export_handoff()` and `forgeos journal-handoff`.
+The command requires one task ID and streams a self-describing JSONL artifact
+with a header, scalar task state, ascending lifecycle events and a completion
+summary. Journal text is bounded in the SQL projection before Python receives
+it. Event action, artifact and evidence values remain validated identifiers;
+the export does not copy prompts, project paths, checkpoints, leases, raw
+errors or test output.
+
+**Safety boundary:** this is a read-only, non-executing replay plan. It does
+not import or mutate journal rows, resolve evidence files, run actions or
+prove that a referenced artifact is still available. Run `journal-check` first
+and treat the plan as diagnostic recovery evidence, not a complete database,
+evidence/worktree bundle or disaster-recovery guarantee.
+
+**Regression coverage:** core tests cover ordered task state/events, linked
+artifact/evidence references, omission of sensitive task blobs, no-overwrite
+publication, missing tasks and oversized journal text. CLI coverage verifies
+task-scoped dispatch and the completion record. Exact-head full Linux/Windows
+matrix, packaging and physical interruption acceptance remain required.
+
+**Local verification:** Python 3.12 focused journal/CLI tests passed (60 tests
+and 31 subtests); the full pytest run passed 624 tests, 7 skips and 406
+subtests. One pre-existing Windows AppContainer probe failed only because the
+repository virtualenv executable returned `icacls` access denied; the same
+five-test AppContainer module passed with the system Python interpreter. The
+documented compileall and 12 MiB x3 memory benchmark also passed. This host ACL
+condition is not evidence for weakening the AppContainer assertion; exact-head
+GitHub Windows checks remain the acceptance gate.

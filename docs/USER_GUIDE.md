@@ -748,6 +748,7 @@ py -m forgeos journal --limit 50
 py -m forgeos journal --task-id 1 --limit 20
 py -m forgeos journal-check
 py -m forgeos journal-export "C:\\ForgeOS-backups\\journal.jsonl"
+py -m forgeos journal-handoff "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --task-id 1
 ```
 
 Journal rows record task, lease and recovery transitions—not full prompts,
@@ -760,3 +761,10 @@ activate a backup or replace the running database.
 `journal-export` writes one bounded event object per line in ascending event
 order and refuses an existing destination. It excludes task prompts, raw
 errors and test output; it is not a complete database or evidence backup.
+`journal-handoff` is the task-scoped recovery form: it writes a header, the
+current scalar task state, ordered lifecycle events (including validated
+artifact/evidence identifiers), and a completion summary. It bounds journal
+text before loading it, omits prompts, project paths, checkpoints, leases,
+errors and test output, and never executes or imports actions. Run
+`journal-check` first; this file is a non-executing replay plan, not a complete
+database or evidence/worktree bundle.
