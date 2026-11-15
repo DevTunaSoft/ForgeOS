@@ -940,3 +940,19 @@ coverage and `git diff --check` passed. The bounded 12 MiB x 3-cycle memory
 benchmark reported a 1,982,228-byte Python tracemalloc peak and a
 29,949,952-byte process peak RSS. Exact-head hosted checks remain required;
 Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — POSIX staging identity pin
+
+The hosted Ubuntu 3.12 run exposed that unlinking and recreating a staging
+path can immediately reuse its inode. Activation cleanup now holds the
+original POSIX staging descriptor through the identity decision, so a
+substituted temporary remains available for inspection even when the
+filesystem reuses the inode. Windows keeps the file-identity path without an
+open handle that could block its rename contract.
+
+The existing substitution regression now passes on both the Windows checkout
+and hosted Linux. The full isolated suite passed 753 tests with 10 expected
+skips; the known local-model test may emit its existing `WinError 10053`
+server trace while still exiting successfully. Exact-head hosted checks remain
+required before merge. Windows ACL review and physical NTFS power-loss
+acceptance remain open.

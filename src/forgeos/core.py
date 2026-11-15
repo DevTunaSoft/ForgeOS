@@ -164,6 +164,62 @@ def _same_publication_identity(before, after) -> bool:
                for field in ("st_dev", "st_ino"))
 
 
+class _PrivateStagingIdentity:
+    """Keep a private staging file identity stable through cleanup."""
+
+    def __init__(self, info, fd=None):
+        self.info = info
+        self.fd = fd
+
+    def matches(self, current) -> bool:
+        if self.fd is not None:
+            try:
+                info = os.fstat(self.fd)
+            except OSError:
+                return False
+        else:
+            info = self.info
+        return _same_publication_identity(info, current)
+
+    def close(self) -> None:
+        if self.fd is None:
+            return
+        fd = self.fd
+        self.fd = None
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _hold_private_staging(path: Path, description: str):
+    """Capture staging identity and pin the POSIX file object until cleanup."""
+    info = _publication_file_info(path, description, require_unlinked=True)
+    if os.name == "nt":
+        # Windows file identity is not safely held open here: an open handle
+        # can prevent the atomic rename that publishes this private file.
+        return _PrivateStagingIdentity(info)
+    fd = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+        held = os.fstat(fd)
+    except OSError as exc:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        raise ValueError(f"Cannot hold {description}: {path}") from exc
+    if not _same_publication_identity(info, held):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise ValueError(f"{description} changed during inspection: {path}")
+    return _PrivateStagingIdentity(info, fd)
+
+
 def _database_source_info(path: Path, description: str):
     return _publication_file_info(path, description)
 
@@ -429,15 +485,17 @@ def _cleanup_private_staging(staging: Path, staging_identity,
         current = _publication_file_info(
             staging, description)
         current_parent = _publication_directory_info(staging.parent)
+        if (not staging_identity.matches(current)
+                or not _same_publication_identity(parent_info, current_parent)):
+            return
+        try:
+            staging.unlink(missing_ok=True)
+        except OSError:
+            pass
     except ValueError:
         return
-    if (not _same_publication_identity(staging_identity, current)
-            or not _same_publication_identity(parent_info, current_parent)):
-        return
-    try:
-        staging.unlink(missing_ok=True)
-    except OSError:
-        pass
+    finally:
+        staging_identity.close()
 
 
 def _write_activation_marker(marker: Path, payload: dict,
@@ -459,15 +517,15 @@ def _write_activation_marker(marker: Path, payload: dict,
     staging = Path(name)
     staging_identity = None
     try:
-        staging_identity = _publication_file_info(
-            staging, "Activation marker staging", require_unlinked=True)
+        staging_identity = _hold_private_staging(
+            staging, "Activation marker staging")
         staging.write_bytes(encoded)
         with staging.open("rb+") as stream:
             os.fsync(stream.fileno())
         written_staging = _publication_file_info(
             staging, "Activation marker staging", require_unlinked=True)
         current_parent = _publication_directory_info(marker.parent)
-        if (not _same_publication_identity(staging_identity, written_staging)
+        if (not staging_identity.matches(written_staging)
                 or not _same_publication_identity(parent_info, current_parent)):
             raise ValueError("Activation marker publication inputs changed")
         if replace:
@@ -1503,8 +1561,8 @@ class Store:
             if not _same_publication_identity(
                     staged_parent_info, current_parent):
                 raise ValueError("Activation staging directory changed")
-            staged_identity = _publication_file_info(
-                staged, "Activation staging", require_unlinked=True)
+            staged_identity = _hold_private_staging(
+                staged, "Activation staging")
             marker_payload = {
                 "format": ACTIVATION_MARKER_FORMAT,
                 "source": str(src),

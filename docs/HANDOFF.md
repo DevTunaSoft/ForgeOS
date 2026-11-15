@@ -3351,3 +3351,19 @@ x 3-cycle memory benchmark reported a 1,982,228-byte Python tracemalloc peak
 and a 29,949,952-byte process peak RSS. Exact-head hosted checks remain
 required before merge. Windows ACL review and physical NTFS power-loss
 acceptance remain open.
+
+## 2026-11-15 — POSIX staging identity pin
+
+**Correction:** the first hosted Ubuntu 3.12 run of the activation cleanup
+change failed because Linux reused the original staging inode after the test
+substituted the path. Cleanup now holds the original POSIX staging descriptor
+until the final identity check; the replacement is therefore preserved even
+when its pathname receives the same inode. Windows continues using the
+existing identity comparison without holding an open handle that could block
+atomic rename.
+
+**Verification:** the targeted substituted-staging regression passed, and the
+full isolated suite passed 753 tests with 10 expected skips. The known
+local-model test may emit its existing `WinError 10053` server trace while
+still exiting successfully. Exact-head hosted checks remain required before
+merge. Windows ACL review and physical NTFS power-loss acceptance remain open.
