@@ -818,6 +818,14 @@ py -m forgeos recovery-bundle-index-check `
   --worktree-archive "C:\ForgeOS-backups\task-1-worktree.zip" `
   --manifest "C:\ForgeOS-backups\task-1-handoff.json" `
   --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
+py -m forgeos recovery-bundle `
+  "C:\ForgeOS-backups\task-1-handoff.jsonl" `
+  "C:\ForgeOS-backups\task-1-worktree.zip" `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  --manifest "C:\ForgeOS-backups\task-1-handoff.json" `
+  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
+py -m forgeos recovery-bundle-check `
+  "C:\ForgeOS-backups\task-1-recovery.zip"
 ```
 
 The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
@@ -857,3 +865,13 @@ archive without opening SQLite or extracting anything. The index does not copy
 the artifacts, authenticate them against a signer, encrypt them, preserve
 database state or execute a replay plan; it is an integrity/coherence record
 toward a future complete recovery bundle.
+
+`recovery-bundle` is the transfer form after that validation step. It creates a
+single new ZIP containing the handoff, source archive, optional manifest,
+referenced evidence, and the index. It streams inputs, refuses an existing
+destination, and self-checks the package before publication. The checker uses
+private bounded temporary validation copies rather than exposing an extraction
+directory; it also rechecks every nested artifact and rejects unsafe or ZIP64
+layouts. The package is capped at 1 GiB with 256 MiB of compressed evidence.
+It is not encrypted, signed, a database backup, a restore/import/replay
+mechanism or a physical power-loss guarantee.

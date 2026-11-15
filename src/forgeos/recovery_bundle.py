@@ -35,12 +35,13 @@ MAX_RECOVERY_BUNDLE_INDEX_LINE_BYTES = 4 * 1024
 MAX_RECOVERY_BUNDLE_EVIDENCE_FILES = 4096
 MAX_RECOVERY_BUNDLE_HANDOFF_BYTES = 64 * 1024 * 1024
 MAX_RECOVERY_BUNDLE_EVIDENCE_FILE_BYTES = 64 * 1024 * 1024
+MAX_RECOVERY_BUNDLE_EVIDENCE_BYTES = 256 * 1024 * 1024
 MAX_RECOVERY_BUNDLE_ISSUES = MAX_WORKTREE_ISSUES
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FILENAME = re.compile(r"^[^\\/:*?\"<>|\x00]{1,255}$")
 
 
-def _artifact_digest(path: Path, *, max_bytes: int) -> tuple[int, str]:
+def _artifact_digest(path: Path, *, max_bytes: int, consumer=None) -> tuple[int, str]:
     info = _plain_info(path, directory=False)
     if info.st_size > max_bytes:
         raise ValueError("Recovery artifact exceeds its size limit")
@@ -67,6 +68,8 @@ def _artifact_digest(path: Path, *, max_bytes: int) -> tuple[int, str]:
                 size += len(block)
                 if size > max_bytes:
                     raise ValueError("Recovery artifact exceeds its size limit")
+                if consumer is not None:
+                    consumer(block)
                 digest.update(block)
     except ValueError:
         raise

@@ -2548,3 +2548,40 @@ diff checks passed. The 12 MiB x3 memory benchmark passed with a Python
 tracemalloc peak of about 1.86 MiB, stable post-GC RSS of about 22.6 MiB, and
 process peak RSS of about 25.0 MiB. Exact-head hosted Linux/Windows checks,
 packaging and physical interruption acceptance remain required.
+
+## 2026-11-15 — bounded recovery transfer package
+
+**Change:** added `recovery-bundle` and `recovery-bundle-check`. The exporter
+creates a single classic DEFLATE ZIP from the validated handoff, source-only
+worktree archive, optional handoff manifest and referenced evidence, alongside
+the recovery coherence index and a format header. It streams each artifact,
+performs a private bounded self-check, and publishes through the existing
+no-overwrite boundary. The checker preflights ZIP bounds and unsafe metadata,
+then revalidates the nested index, handoff, source archive and evidence through
+private temporary copies without opening SQLite or exposing an extraction
+directory.
+
+**Safety boundary:** the package is capped at 1 GiB with 256 MiB of aggregate
+compressed evidence; it rejects ZIP64, encrypted, traversal and unsafe entries.
+The package is transport and integrity checked, but it is not encrypted,
+signed, authenticated against a signer, a database backup, a restore/import or
+replay mechanism, or physical power-loss durability. Publication is staged and
+no-overwrite; failed publication removes the temporary index and ZIP.
+
+**Regression coverage:** package tests cover valid content and nested
+verification, handoff tampering, unindexed evidence rejection, failed
+publication cleanup and database-free CLI export/check dispatch. Exact-head
+Linux/Windows checks, packaging, memory validation and physical interruption
+acceptance remain required.
+
+**Local verification:** the focused recovery-package, recovery-index and CLI
+suite passed 10 tests. With an isolated temporary `USERPROFILE`, the full
+current checkout `pytest -q -p no:cacheprovider` run passed 655 tests, skipped
+7 and reported 406 subtests; the only failure was the known repository-
+virtualenv Windows AppContainer probe because `icacls` returned access denied
+for the active `.venv` Python executable. Compileall, documentation links,
+diff checks and the 12 MiB x3 memory benchmark passed. The benchmark reported
+a Python tracemalloc peak of about 1.86 MiB, stable post-GC RSS of about
+22.6 MiB and process peak RSS of about 24.3 MiB. Exact-head hosted
+Linux/Windows checks, packaging and physical interruption acceptance remain
+required.

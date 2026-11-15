@@ -278,3 +278,18 @@ most 4,096 evidence metadata records in memory, caps its JSONL output at 2 MiB,
 and hashes handoff, source-archive and compressed evidence bytes in 64 KiB
 blocks. It is an index only, so it never collects raw handoff, source or
 diagnostic content in Python and never creates a second copy of those files.
+
+## Bounded recovery package allocation boundary
+
+`recovery-bundle` first creates and validates the bounded coherence index, then
+streams each input into a DEFLATE ZIP through the same 64 KiB hash blocks. It
+retains only index metadata and ZIP writer state; the 1 GiB package bound and
+256 MiB aggregate compressed-evidence bound are checked before and during
+publication. `recovery-bundle-check` reads bounded ZIP metadata and copies
+entries only into a private temporary directory for nested validation; it does
+not expose an extraction directory, open SQLite or retain raw artifacts in a
+Python collection.
+
+These are application-level allocation and input limits, not a complete
+process-RSS, decompressor CPU, disk-space or filesystem-cache quota. ZIP/zlib
+buffers and the operating system remain outside the ForgeOS memory budget.

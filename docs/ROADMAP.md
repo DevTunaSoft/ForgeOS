@@ -391,3 +391,16 @@ opening SQLite or extracting content. This binds separately stored recovery
 artifacts before a future copy/encryption step; the index itself is not a
 complete bundle, signature, encrypted retention format, restore/import/replay
 mechanism or physical power-loss acceptance.
+
+### 2026-11-15 — bounded recovery transfer package
+
+`recovery-bundle` now packages the validated handoff, source-only archive,
+optional handoff manifest and referenced evidence together with the coherence
+index in one classic DEFLATE ZIP. The exporter streams and hashes every input,
+self-checks the finished package through private bounded validation copies and
+publishes with the existing no-overwrite boundary. `recovery-bundle-check`
+rejects unsafe ZIP layouts and revalidates the nested index, source archive,
+handoff and evidence without opening SQLite. The 1 GiB package and 256 MiB
+aggregate compressed-evidence limits keep this a low-memory transfer artifact;
+encryption, signing, database restore, replay and physical power-loss
+acceptance remain future work.
