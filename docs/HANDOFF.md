@@ -3187,3 +3187,24 @@ exits successfully. Compileall, documentation/link coverage and
 reported a 1,982,228-byte Python tracemalloc peak and a 30,056,448-byte process
 peak RSS. Exact-head hosted checks remain required before merge. Windows ACL
 review and physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — database source check-and-use identity
+
+**Change:** read-only task-database inspection, streamed backup-manifest
+hashing and restore-copy now capture the source regular-file identity before
+use and recheck device/inode, size and modification time afterward. Links,
+Windows reparse points and source substitution fail closed before a new
+artifact is published. This is a bounded check-and-use guard, not a
+descriptor-bound SQLite read or a lock against a writer that deliberately
+preserves metadata.
+
+**Regression coverage:** added source-identity fault injection during streamed
+manifest hashing and restore-copy. The focused core/database/CLI recovery
+suite passed 91 tests. The full isolated suite passed 734 tests with 9
+expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace but exits successfully. Compileall,
+documentation/link coverage and `git diff --check` passed. The bounded 12 MiB
+x 3-cycle memory benchmark reported a 1,982,228-byte Python tracemalloc peak
+and a 30,035,968-byte process peak RSS. Exact-head hosted checks remain
+required before merge. Windows ACL review and physical NTFS power-loss
+acceptance remain open.

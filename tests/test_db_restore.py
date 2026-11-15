@@ -94,6 +94,28 @@ class RestoreBackupTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertFalse(list(self.root.glob(".forgeos-restore-*")))
 
+    def test_source_identity_change_blocks_restore_publication(self):
+        from forgeos import core
+        output = self.root / "changed-source.sqlite3"
+        replacement = self.database
+        real_info = core._database_source_info
+        calls = {"count": 0}
+
+        def source_info(path, description):
+            value = real_info(path, description)
+            calls["count"] += 1
+            if calls["count"] == 2:
+                return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_database_source_info", side_effect=source_info):
+            with self.assertRaisesRegex(ValueError, "changed during use"):
+                Store.restore_backup_to(self.backup, output)
+        self.assertEqual(calls["count"], 2)
+        self.assertFalse(output.exists())
+        self.assertFalse(list(self.root.glob(".forgeos-restore-*")))
+
     def test_windows_publication_path_is_shared_with_restore(self):
         target = self.root / "windows-restored.sqlite3"
         with patch("forgeos.core._publish_database_copy") as publish:

@@ -49,6 +49,27 @@ class OnlineBackupTests(unittest.TestCase):
             value["sha256"], hashlib.sha256(target.read_bytes()).hexdigest())
         self.assertLessEqual(manifest.stat().st_size, 1024)
 
+    def test_streamed_digest_refuses_source_identity_change(self):
+        from forgeos import core
+        replacement = self.root / "replacement.sqlite3"
+        replacement.write_bytes(b"replacement")
+        real_info = core._database_source_info
+        calls = {"count": 0}
+
+        def source_info(path, description):
+            value = real_info(path, description)
+            calls["count"] += 1
+            if calls["count"] == 2:
+                return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_database_source_info", side_effect=source_info):
+            with self.assertRaisesRegex(
+                    ValueError, "Database artifact changed during use"):
+                core._database_file_digest(self.store.path)
+        self.assertEqual(calls["count"], 2)
+
     def test_backup_manifest_never_overwrites_an_existing_file(self):
         target = self.root / "task-copy.sqlite3"
         manifest = self.root / "task-copy.json"
