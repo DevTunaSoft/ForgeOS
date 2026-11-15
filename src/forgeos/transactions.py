@@ -225,6 +225,67 @@ def _open_bound_file(path: Path, before, description: str, *,
     return descriptor
 
 
+class _PrivateStagingIdentity:
+    """Keep a transaction rollback temporary identity stable through cleanup."""
+
+    def __init__(self, info, descriptor=None):
+        self.info = info
+        self.descriptor = descriptor
+
+    def matches(self, current) -> bool:
+        if self.descriptor is not None:
+            try:
+                info = os.fstat(self.descriptor)
+            except OSError:
+                return False
+        else:
+            info = self.info
+        return _same_identity(info, current)
+
+    def close(self) -> None:
+        if self.descriptor is None:
+            return
+        descriptor = self.descriptor
+        self.descriptor = None
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _hold_private_staging(path: Path, description: str):
+    """Capture a rollback temporary and pin its POSIX file object."""
+    info = _regular_file_info(path, description, require_unlinked=True)
+    if os.name == "nt":
+        # Windows cannot keep this handle open because os.replace may reject
+        # the rename while the handle is live; its file identity is stable.
+        return _PrivateStagingIdentity(info)
+    descriptor = _open_bound_file(
+        path, info, description, require_unlinked=True)
+    return _PrivateStagingIdentity(info, descriptor)
+
+
+def _cleanup_private_staging(path: Path, staging_identity,
+                             parent_info, description: str) -> None:
+    """Remove only an unchanged rollback temporary and real parent."""
+    if staging_identity is None:
+        return
+    try:
+        current = _regular_file_info(path, description)
+        current_parent = _directory_info(path.parent, "Edit target directory")
+        if (not staging_identity.matches(current)
+                or not _same_identity(parent_info, current_parent)):
+            return
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    except TransactionError:
+        return
+    finally:
+        staging_identity.close()
+
+
 def _hash_file(path: Path, *, expected=None,
                require_unlinked: bool = False,
                description: str = "Transaction file") -> str:
@@ -624,13 +685,20 @@ def recover_edits(root: Path) -> bool:
             if (current_info is None
                     or not _same_file(target_info, current_info)):
                 raise TransactionError(f"Edit target changed during recovery: {target}")
+            parent_info = _directory_info(
+                target.parent, "Edit target directory")
             temp = target.parent / (".forgeos-restore-" + next(tempfile._get_candidate_names()))
+            temp_identity = None
             try:
                 _copy_bounded(backup, temp, require_unlinked=True)
+                temp_identity = _hold_private_staging(
+                    temp, "Transaction rollback staging")
                 os.replace(temp, target)
                 _sync_dir(target.parent)
             finally:
-                temp.unlink(missing_ok=True)
+                _cleanup_private_staging(
+                    temp, temp_identity, parent_info,
+                    "Transaction rollback staging")
     _remove_journal(txn, expected_names=cleanup_names)
     return True
 

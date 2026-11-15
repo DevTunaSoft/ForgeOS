@@ -311,6 +311,14 @@ audit log. No additional service or background polling is started.
 
 **File transaction limits:** ForgeOS now streams backup copies instead of loading an existing source file fully into RAM. Existing files larger than 8 MiB are rejected for automated replacement, and edit journals larger than 32 KiB are preserved for manual inspection. The internal `.forgeos` and `pending-edit` paths must be real directories; symlinked, Windows-reparse-point or hard-linked journal metadata fails closed. On POSIX, ForgeOS enforces mode `0700` on those internal directories and mode `0600` on manifests, backups and restore temporaries; staged replacement files remain umask-derived because they become published workspace files. Journal files and edit targets are opened through bounded, identity-checked descriptors so a substitution during a read or backup fails closed. Journal cleanup only removes the bounded allowlist of regular files created by the transaction; unexpected, linked or directory children remain in place for inspection instead of being recursively traversed. Before publishing a staged replacement, ForgeOS rechecks the real parent directory chain and target identity, then verifies both staged and published digests. Windows ACL behavior is unchanged and remains an operator review boundary; atomic publication and cleanup are not a complete concurrent-writer lock. If a committed journal remains after an interruption, ForgeOS rechecks the published file hashes before clearing it. Do not delete the journal or original workspace to bypass a safety check. These are transaction limits, separate from the 64 KiB task-checkpoint limit.
 
+During rollback recovery, the temporary copy used to restore an edited file is
+also removed only when its file and real parent identities still match. POSIX
+keeps the original temporary descriptor open through a failed replacement
+decision so inode reuse cannot authorize deletion of a substitute; Windows
+uses file identity without holding a handle that could block `os.replace`.
+An unexpected rollback temporary remains available beside the journal for
+inspection.
+
 **Expired or replaced worker:** ForgeOS now rejects a stale worker's attempt to publish a test result, checkpoint or failure after its task lease expires or is reclaimed. The workspace may still contain edits from the interrupted run. Inspect it and any journal before using guarded recovery; do not delete or automatically overwrite files just because the status says Blocked.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.

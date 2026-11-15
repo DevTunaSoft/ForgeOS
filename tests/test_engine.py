@@ -1128,6 +1128,37 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertTrue(recover_edits(self.root))
         self.assertEqual((self.root / "first.py").read_text(), "old")
 
+    def test_rollback_failure_preserves_substituted_temporary(self):
+        from unittest.mock import patch
+        from forgeos.transactions import recover_edits, _digest
+        import os
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (self.root / "first.py").write_text("new")
+        (txn / "0.bak").write_bytes(b"old")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "first.py", "before": _digest(b"old"),
+                "after": _digest(b"new") }]}))
+        real_replace = os.replace
+
+        def substitute(source, target):
+            if source.name.startswith(".forgeos-restore-"):
+                source.unlink()
+                source.write_bytes(b"operator-owned rollback staging")
+                raise OSError("disk locked")
+            return real_replace(source, target)
+
+        with patch("forgeos.transactions.os.replace", side_effect=substitute):
+            with self.assertRaisesRegex(OSError, "disk locked"):
+                recover_edits(self.root)
+        self.assertTrue(txn.exists())
+        self.assertEqual((self.root / "first.py").read_text(), "new")
+        staging = list(self.root.glob(".forgeos-restore-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(
+            staging[0].read_bytes(), b"operator-owned rollback staging")
+
     def test_new_file_crash_rollback_removes_only_transaction_file(self):
         from forgeos.transactions import recover_edits, _digest
         txn = self.root / ".forgeos" / "pending-edit"
