@@ -92,6 +92,21 @@ def main(argv=None):
     bundle_index_check.add_argument('--evidence-directory', default='',
                                     help='Optional existing evidence directory')
     bundle_index_check.add_argument('--max-issues', type=int, default=32)
+    recovery_bundle = sub.add_parser(
+        'recovery-bundle',
+        help='Package validated recovery artifacts into one bounded ZIP')
+    recovery_bundle.add_argument('handoff', help='Existing JSONL handoff path')
+    recovery_bundle.add_argument('worktree_archive', help='Existing source ZIP archive')
+    recovery_bundle.add_argument('destination', help='New recovery bundle ZIP path')
+    recovery_bundle.add_argument('--manifest', default='',
+                                 help='Optional existing handoff digest manifest')
+    recovery_bundle.add_argument('--evidence-directory', default='',
+                                 help='Optional existing evidence directory')
+    recovery_bundle_check = sub.add_parser(
+        'recovery-bundle-check',
+        help='Verify one bounded recovery bundle ZIP')
+    recovery_bundle_check.add_argument('source', help='Existing recovery bundle ZIP path')
+    recovery_bundle_check.add_argument('--max-issues', type=int, default=32)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -352,6 +367,20 @@ def main(argv=None):
             manifest=args.manifest or None,
             evidence_directory=args.evidence_directory or None,
             max_issues=args.max_issues)
+        print(json.dumps(report, indent=2))
+        return 0 if report['valid'] else 1
+    if args.action == 'recovery-bundle':
+        from .recovery_package import export_recovery_bundle
+        exported = export_recovery_bundle(
+            args.handoff, args.worktree_archive, args.destination,
+            manifest=args.manifest or None,
+            evidence_directory=args.evidence_directory or None)
+        print(f'Exported recovery bundle: {exported}')
+        return 0
+    if args.action == 'recovery-bundle-check':
+        from .recovery_package import check_recovery_bundle
+        report = check_recovery_bundle(
+            args.source, max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
     if args.action == 'memory':

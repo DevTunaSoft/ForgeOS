@@ -182,6 +182,18 @@ proves that the named files matched at check time, not that the files are
 available after transfer or that a future bundle has disaster-recovery
 durability.
 
+`export_recovery_bundle()` is the bounded transfer boundary built on that
+index. It streams the validated handoff, source archive, optional manifest and
+referenced evidence into one classic DEFLATE ZIP, includes the index and a
+small format header, and performs a complete private self-check before
+no-overwrite publication. `check_recovery_bundle()` preflights ZIP central
+directory bounds, rejects traversal, encryption, ZIP64 and unsafe entry
+metadata, materializes only bounded validation copies in a private temporary
+directory, and reuses the index checker plus nested source-archive checker.
+The package has a 1 GiB archive bound and a 256 MiB aggregate compressed
+evidence bound; it is a transport artifact, not encryption, authentication,
+database restoration or action replay.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback

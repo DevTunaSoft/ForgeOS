@@ -306,6 +306,16 @@ artifact paths. The index streams hashes for the handoff, source archive and
 referenced diagnostic archives; it does not copy or encrypt them, so it is a
 coherence record toward a future complete recovery bundle rather than the
 bundle itself.
+To create the portable transfer artifact after those inputs are validated, run
+`py -m forgeos recovery-bundle HANDOFF WORKTREE_ARCHIVE DESTINATION` with the
+same optional `--manifest` and `--evidence-directory` arguments, then run
+`py -m forgeos recovery-bundle-check DESTINATION`. The ZIP contains the
+handoff, source archive, optional manifest, referenced evidence, and the
+coherence index; each is copied in bounded 64 KiB blocks and rechecked before
+no-overwrite publication. The checker validates the ZIP and its nested index
+through private bounded temporary files. This is still not encrypted, signed,
+authenticated, a database backup, an import/replay mechanism or physical
+power-loss durability.
 
 ### Verified task database backups (experimental)
 
