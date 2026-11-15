@@ -134,6 +134,18 @@ loading remain outside these adapters, so there is no claimed full
 resource governor or native GGUF execution. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
+## Desktop preference read boundary
+
+The GUI's local preference file is user-controlled input even though it is
+written by ForgeOS. Startup reads `~/.forgeos/desktop-settings.json` through
+the shared bounded identity reader: it accepts only an unlinked regular file,
+opens it through a descriptor with no-follow behavior where available, caps
+the read at 16 KiB plus one byte, and rechecks the path after reading. A
+symlink, Windows reparse point, hard link, oversized file or replacement
+during the read fails closed to an empty preference set. This protects
+backend, model, endpoint and task-role choices from a path substitution race
+without retaining the settings file in memory beyond its small JSON bound.
+
 ## Low-memory SQLite read boundary
 
 Database backup and restore publication uses one shared fail-closed helper:

@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from forgeos.desktop_settings import load_settings, save_settings
 
@@ -47,6 +49,22 @@ class DesktopSettingsTests(unittest.TestCase):
             save_settings(path, {"backend": "remote", "repair_count": 999,
                                  "model": "ok"})
             self.assertEqual(load_settings(path), {"model": "ok"})
+
+    def test_replacement_during_open_is_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            save_settings(path, {"backend": "ollama", "model": "safe"})
+
+            def replace_before_open(candidate, flags):
+                candidate.unlink()
+                candidate.write_bytes(b'{"backend":"operator-owned"}\n')
+                return os.open(candidate, flags)
+
+            with patch("forgeos.file_security._open_bounded_file",
+                       side_effect=replace_before_open):
+                self.assertEqual(load_settings(path), {})
+            self.assertEqual(path.read_bytes(),
+                             b'{"backend":"operator-owned"}\n')
 
 
 if __name__ == "__main__":

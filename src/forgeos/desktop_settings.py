@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import tempfile
 
+from .file_security import read_bounded_file
+
 DEFAULTS = {
     "project": "", "model": "auto", "task_role": "implementation",
     "backend": "ollama", "endpoint": "", "preset": "python-unittest",
@@ -37,10 +39,11 @@ def _sanitize(values):
 
 
 def load_settings(path: Path) -> dict:
+    path = Path(path)
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > 16384:
-            return {}
-        return _sanitize(json.loads(path.read_text(encoding="utf-8")))
+        content = read_bounded_file(
+            path, max_bytes=16384, description="Desktop settings")
+        return _sanitize(json.loads(content.decode("utf-8")))
     except (OSError, ValueError, UnicodeError):
         return {}
 

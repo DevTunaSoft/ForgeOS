@@ -1170,3 +1170,24 @@ documentation/link coverage, `git diff --check` and the bounded 12 MiB x
 Python tracemalloc peak and a 30,138,368-byte process peak RSS. Exact-head
 hosted checks, Windows ACL review and physical NTFS power-loss acceptance
 remain open.
+
+### 2026-11-15 — desktop settings read identity
+
+Desktop preference loading now uses the shared bounded identity reader for
+`~/.forgeos/desktop-settings.json`. The 16 KiB settings file must remain an
+unlinked regular file with the same identity before and after a descriptor-
+bound read; symlinks, Windows reparse points, hard links, replacements and
+oversized files fail closed to an empty preference set. This keeps a swapped
+settings file from changing backend, model, endpoint or task-role choices at
+startup while retaining low memory use and the existing safe fallback.
+
+Regression coverage adds replacement-during-open preservation. The focused
+desktop-settings suite passed 5 tests. The full isolated suite passed 778
+tests with 10 expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace while still exiting successfully. Compileall,
+documentation/link coverage, `git diff --check` and the bounded 12 MiB x
+3-cycle memory benchmark passed; the benchmark measured a 1,982,228-byte
+Python tracemalloc peak and a 30,306,304-byte process peak RSS. The work is
+on `feat/security-desktop-settings-read-identity-20261115` for takeover.
+Exact-head hosted checks, Windows ACL review and physical NTFS power-loss
+acceptance remain open.

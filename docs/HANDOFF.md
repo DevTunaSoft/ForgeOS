@@ -3465,6 +3465,29 @@ the benchmark measured a 1,982,228-byte Python tracemalloc peak and a
 before merge. Windows ACL review and physical NTFS power-loss acceptance
 remain open.
 
+## 2026-11-15 — desktop settings read identity
+
+**Change:** desktop preference loading now reads
+`~/.forgeos/desktop-settings.json` through the shared bounded identity reader.
+The 16 KiB file must remain an unlinked regular file with the same identity
+before and after a descriptor-bound read. Symlinks, Windows reparse points,
+hard links, replacements and oversized files fail closed to an empty
+preference set, so a path substitution cannot change startup backend, model,
+endpoint or task-role choices. The replacement file is preserved for
+inspection.
+
+**Verification:** the focused desktop-settings suite passed 5 tests. The full
+isolated suite passed 778 tests with 10 expected skips; the known local-model
+test may emit its existing `WinError 10053` server trace while still exiting
+successfully. Compileall, documentation/link coverage, `git diff --check` and
+the bounded 12 MiB x 3-cycle memory benchmark passed; the benchmark measured
+a 1,982,228-byte Python tracemalloc peak and a 30,306,304-byte process peak
+RSS. The feature branch is
+`feat/security-desktop-settings-read-identity-20261115`; all source, test and
+documentation changes must remain committed and pushed for takeover. Exact-
+head hosted checks, Windows ACL review and physical NTFS power-loss
+acceptance remain open.
+
 ## 2026-11-15 — execution snapshot marker publication
 
 **Change:** snapshot creation now encodes its compact ownership marker within
