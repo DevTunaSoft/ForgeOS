@@ -56,6 +56,21 @@ class ActivateBackupTests(unittest.TestCase):
                 Store.activate_backup_to(
                     self.backup, self.active, self.rollback, confirm=True)
 
+    def _leave_crashed_activation_with_staged_file(self):
+        staged = self.root / ".forgeos-activate-crashed.sqlite3"
+        Store.restore_backup_to(self.backup, staged)
+        core._move_database_copy(self.active, self.rollback)
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        core._write_activation_marker(marker, {
+            "format": core.ACTIVATION_MARKER_FORMAT,
+            "source": str(self.backup),
+            "destination": str(self.active),
+            "rollback": str(self.rollback),
+            "staged": str(staged),
+            "phase": "old_moved",
+        })
+        return staged, marker
+
     def test_activation_publishes_backup_and_retains_old_database(self):
         result = Store.activate_backup_to(
             self.backup, self.active, self.rollback, confirm=True)
@@ -216,6 +231,36 @@ class ActivateBackupTests(unittest.TestCase):
             sidecar.unlink()
         self.assertFalse(self.active.exists())
         self.assertTrue(self.rollback.exists())
+
+    def test_rollback_preserves_crashed_staging_until_explicit_discard(self):
+        staged, marker = self._leave_crashed_activation_with_staged_file()
+
+        with self.assertRaisesRegex(RuntimeError, "staged activation file"):
+            Store.rollback_activation(self.active, confirm=True)
+        self.assertFalse(self.active.exists())
+        self.assertTrue(self.rollback.exists())
+        self.assertTrue(staged.exists())
+        self.assertTrue(marker.exists())
+
+        result = Store.rollback_activation(
+            self.active, confirm=True, discard_staged=True)
+        self.assertEqual(result, self.active)
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertFalse(staged.exists())
+        self.assertFalse(marker.exists())
+
+    def test_discard_staged_refuses_corrupt_file_without_moving_rollback(self):
+        staged, marker = self._leave_crashed_activation_with_staged_file()
+        staged.write_bytes(b"not a ForgeOS database")
+
+        with self.assertRaises((ValueError, sqlite3.DatabaseError)):
+            Store.rollback_activation(
+                self.active, confirm=True, discard_staged=True)
+        self.assertFalse(self.active.exists())
+        self.assertTrue(self.rollback.exists())
+        self.assertTrue(staged.exists())
+        self.assertTrue(marker.exists())
 
     def test_oversized_marker_is_rejected_without_unbounded_read(self):
         marker = Path(str(self.active) + ".forgeos-activation.json")

@@ -287,11 +287,15 @@ claim physical power-loss recovery.
 bounded path/phase/existence metadata. `Store.rollback_activation()` accepts
 only the durable `old_moved` phase, validates the retained database through a
 bounded read-only preflight (using immutable mode when no sidecar exists), and
-publishes it with the same
-no-overwrite move boundary. Neither command initializes the active Store or
-replays journal actions. Read-only checks use immutable SQLite URI mode when
-no sidecars exist, avoiding inspection-created `-shm` files; an existing WAL
-or rollback journal remains on the normal read-only path.
+publishes it with the same no-overwrite move boundary. A staged replacement
+left by a process crash is preserved by default; the explicit
+`--discard-staged` CLI option validates that private SQLite file and removes it
+before restoring the retained database. A corrupt, linked, sidecar-bearing or
+unreadable staged path fails closed without moving the rollback. Neither
+command initializes the active Store or replays journal actions. Read-only
+checks use immutable SQLite URI mode when no sidecars exist, avoiding
+inspection-created `-shm` files; an existing WAL or rollback journal remains
+on the normal read-only path.
 
 ## Workflow and state
 

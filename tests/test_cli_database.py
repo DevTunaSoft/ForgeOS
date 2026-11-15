@@ -92,6 +92,55 @@ class DatabaseCommandsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "confirmation"):
                 main(["db-activation-rollback", str(destination)])
 
+    def test_activation_rollback_cli_can_discard_valid_crash_staging(self):
+        import forgeos.core as core
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            active = root / "tasks.sqlite3"
+            source = root / "source.sqlite3"
+            backup = root / "backup.sqlite3"
+            rollback = root / "before-activation.sqlite3"
+            staged = root / ".forgeos-activate-crashed.sqlite3"
+
+            active_store = Store(active)
+            try:
+                active_store.add(str(repo), "old CLI task")
+            finally:
+                active_store.close()
+            source_store = Store(source)
+            try:
+                source_store.add(str(repo), "new CLI task")
+                source_store.backup_to(backup)
+            finally:
+                source_store.close()
+            Store.restore_backup_to(backup, staged)
+            core._move_database_copy(active, rollback)
+            marker = Path(str(active) + ".forgeos-activation.json")
+            core._write_activation_marker(marker, {
+                "format": core.ACTIVATION_MARKER_FORMAT,
+                "source": str(backup),
+                "destination": str(active),
+                "rollback": str(rollback),
+                "staged": str(staged),
+                "phase": "old_moved",
+            })
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    "db-activation-rollback", str(active), "--confirm",
+                    "--discard-staged"]), 0)
+            self.assertIn("Rolled back database:", output.getvalue())
+            self.assertFalse(staged.exists())
+            self.assertFalse(marker.exists())
+            with closing(sqlite3.connect(active)) as db:
+                self.assertEqual(db.execute(
+                    "SELECT description FROM tasks").fetchone()[0],
+                    "old CLI task")
+
     def test_database_commands_never_initialize_a_missing_database(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

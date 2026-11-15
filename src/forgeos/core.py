@@ -1188,10 +1188,18 @@ class Store:
         }
 
     @staticmethod
-    def rollback_activation(destination: str | Path, *, confirm: bool = False) -> Path:
-        """Restore an interrupted activation's retained database, never overwrite."""
+    def rollback_activation(destination: str | Path, *, confirm: bool = False,
+                            discard_staged: bool = False) -> Path:
+        """Restore an interrupted activation's retained database, never overwrite.
+
+        A staged replacement left by a process crash is preserved by default.
+        An operator may explicitly discard it after ForgeOS validates the
+        staged SQLite file and confirms the rollback operation.
+        """
         if confirm is not True:
             raise ValueError("Explicit activation rollback confirmation is required")
+        if type(discard_staged) is not bool:
+            raise ValueError("Staged activation discard must be boolean")
         target = Path(destination).expanduser().absolute()
         marker = _activation_marker_path(target)
         if marker.is_symlink() or not marker.is_file():
@@ -1211,12 +1219,24 @@ class Store:
                    for sidecar in _database_sidecars(database)):
                 raise RuntimeError(
                     "Clear SQLite sidecars before activation rollback")
-        if staged.exists() or staged.is_symlink():
-            raise RuntimeError(
-                "Preserve the staged activation file for manual inspection")
         if old.is_symlink() or not old.is_file():
             raise ValueError("Retained rollback database is unavailable")
         Store.inspect_existing_database(old)
+        staged_present = staged.exists() or staged.is_symlink()
+        if staged_present and not discard_staged:
+            raise RuntimeError(
+                "Preserve the staged activation file for manual inspection, "
+                "or explicitly pass discard_staged=True")
+        if any(sidecar.exists() or sidecar.is_symlink()
+               for sidecar in _database_sidecars(staged)):
+            raise RuntimeError(
+                "Clear SQLite sidecars beside the staged activation file")
+        if staged_present:
+            if staged.is_symlink() or not staged.is_file():
+                raise ValueError("Staged activation file must be a regular file")
+            Store.inspect_existing_database(staged)
+            staged.unlink()
+            _sync_publication_directory(staged.parent)
         _move_database_copy(old, target)
         if marker.is_symlink():
             raise RuntimeError("Activation marker changed during rollback")
