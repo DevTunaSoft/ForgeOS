@@ -349,3 +349,12 @@ the handoff is published retains the valid handoff and does not leave a partial
 manifest. The behavior is documented as a no-overwrite, staged publication
 boundary; directory durability on physical power loss and complete
 evidence/worktree bundles remain open.
+
+### 2026-11-15 — POSIX publication directory flush
+
+The shared no-overwrite publisher now flushes the parent directory after its
+POSIX hard-link publication, while Windows retains the exclusive same-directory
+rename and staged-file flush. Regression coverage verifies the platform split.
+This improves crash-durability evidence on POSIX but does not establish
+physical Windows NTFS interruption recovery or complete source/evidence
+bundles.

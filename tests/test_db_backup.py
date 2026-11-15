@@ -1,6 +1,7 @@
 """SQLite online backup regressions. No network, models or user projects."""
 from contextlib import closing
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -82,11 +83,13 @@ class OnlineBackupTests(unittest.TestCase):
         staging.write_bytes(b"snapshot")
         with patch("forgeos.core.os.name", "nt"), \
                 patch("forgeos.core.os.rename") as rename, \
-                patch("forgeos.core.os.link") as link:
+                patch("forgeos.core.os.link") as link, \
+                patch("forgeos.core._sync_publication_directory") as sync:
             from forgeos.core import _publish_database_copy
             _publish_database_copy(staging, target)
         rename.assert_called_once_with(staging, target)
         link.assert_not_called()
+        sync.assert_not_called()
 
     def test_posix_publication_keeps_hard_link_path(self):
         staging = self.root / "staging.sqlite3"
@@ -94,11 +97,24 @@ class OnlineBackupTests(unittest.TestCase):
         staging.write_bytes(b"snapshot")
         with patch("forgeos.core.os.name", "posix"), \
                 patch("forgeos.core.os.link") as link, \
-                patch("forgeos.core.os.rename") as rename:
+                patch("forgeos.core.os.rename") as rename, \
+                patch("forgeos.core._sync_publication_directory") as sync:
             from forgeos.core import _publish_database_copy
             _publish_database_copy(staging, target)
         link.assert_called_once_with(staging, target)
         rename.assert_not_called()
+        sync.assert_called_once_with(target.parent)
+
+    def test_posix_directory_sync_flushes_and_closes_descriptor(self):
+        from forgeos.core import _sync_publication_directory
+        with patch("forgeos.core.os.name", "posix"), \
+                patch("forgeos.core.os.open", return_value=17) as open_, \
+                patch("forgeos.core.os.fsync") as fsync, \
+                patch("forgeos.core.os.close") as close:
+            _sync_publication_directory(self.root)
+        open_.assert_called_once_with(self.root, os.O_RDONLY)
+        fsync.assert_called_once_with(17)
+        close.assert_called_once_with(17)
 
     def test_active_transaction_is_rejected_without_a_partial_backup(self):
         target = self.root / "not-committed.sqlite3"

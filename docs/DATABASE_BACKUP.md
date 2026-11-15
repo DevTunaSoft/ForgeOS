@@ -33,10 +33,13 @@ The source integrity check uses `PRAGMA integrity_check(1)`; the online
 copy is produced using SQLite's `Connection.backup(pages=64)`. The completed
 temporary file is checked independently and flushed before exclusive
 same-directory publication. On Windows, ForgeOS uses an exclusive rename;
-on POSIX it uses a same-volume hard link. If publishing fails, no partial
-destination is made visible. Python does not read the full database into
-RAM. The operation may still take time and disk space proportional to the
-database's real size.
+on POSIX it uses a same-volume hard link followed by a parent-directory flush.
+If the link or POSIX directory flush fails, the operation reports failure; the
+publication path is never overwritten, and any visible destination must be
+inspected before retrying. Python does not read the full database into RAM.
+Windows flushes the staged file before rename but physical NTFS interruption
+acceptance remains outstanding. The operation may still take time and disk
+space proportional to the database's real size.
 
 To inspect a different database, place the top-level `--db` option
 before the subcommand:

@@ -2396,6 +2396,31 @@ documentation links/change coverage and the 12 MiB x3 memory benchmark passed;
 post-GC RSS remained about 22.8 MiB across the three benchmark cycles. Exact-
 head GitHub checks remain the acceptance gate.
 
+## 2026-11-15 — POSIX publication directory flush
+
+**Change:** the shared no-overwrite publication helper now flushes the parent
+directory after a POSIX hard-link publication. Windows continues to use its
+exclusive same-directory rename after flushing the staged file; no unsupported
+directory-flush emulation was added for Windows.
+
+**Safety boundary:** this improves the POSIX crash-durability boundary but does
+not claim physical power-loss recovery. A POSIX directory-flush failure is
+reported after publication and any visible destination must be inspected before
+retrying. Windows NTFS interruption acceptance, complete source/evidence
+bundles and encrypted retention remain open.
+
+**Regression coverage:** database publication tests verify the Windows rename
+path does not request directory syncing and the POSIX hard-link path flushes its
+parent directory. Exact-head Linux/Windows matrix and physical interruption
+acceptance remain required.
+
+**Local verification:** the isolated Python 3.12 recovery/database focus passed
+94 tests and 39 subtests. The full pytest run passed 631 tests, 7 skips and 406
+subtests; the known virtualenv AppContainer `icacls` ACL probe remains the only
+local failure. Compileall, documentation links/change coverage and the 12 MiB
+x3 memory benchmark passed; post-GC RSS remained about 22.8 MiB across the
+three cycles. Exact-head GitHub checks remain the acceptance gate.
+
 ## 2026-11-15 — task-scoped bounded journal replay plan
 
 **Change:** added `Store.export_handoff()` and `forgeos journal-handoff`.
