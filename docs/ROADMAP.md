@@ -267,3 +267,12 @@ failure status without rewriting data when malformed records are found.
 Regression coverage verifies clean CLI output and capped corruption reports.
 This is a diagnostic integrity gate, not replay, repair, encryption or
 physical power-loss acceptance.
+
+### 2026-11-15 — streamed journal handoff export
+
+`journal-export` now publishes a new JSONL artifact from one bounded event-row
+projection, optionally filtered to a task. Publication is same-directory and
+no-overwrite on Windows and POSIX, and the exporter does not materialize the
+full history in Python. Regression coverage verifies ordering, filtering and
+CLI routing. This is a diagnostic journal handoff, not a complete database,
+worktree/evidence bundle or import/replay implementation.

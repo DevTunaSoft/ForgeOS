@@ -148,6 +148,28 @@ class DatabaseCommandsTests(unittest.TestCase):
             self.assertEqual(report['issues'], [])
             self.assertEqual(report['checked'], 1)
 
+    def test_journal_export_command_writes_jsonl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.git').mkdir()
+            db_path = root / 'state.sqlite3'
+            store = Store(db_path)
+            try:
+                task = store.add(str(root), 'journal export cli test')
+            finally:
+                store.close()
+            target = root / 'journal.jsonl'
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    '--db', str(db_path), 'journal-export', str(target),
+                    '--task-id', str(task)]), 0)
+            self.assertIn('Exported journal:', output.getvalue())
+            rows = [__import__('json').loads(line)
+                    for line in target.read_text().splitlines()]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['task_id'], task)
+
 
 if __name__ == "__main__":
     unittest.main()

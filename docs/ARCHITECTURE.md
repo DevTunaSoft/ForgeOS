@@ -111,6 +111,10 @@ an existing validated digest reference.
 references, bounded metadata, statuses and timestamps, and retains at most 32
 diagnostic rows. The `journal-check` CLI command returns a nonzero status when
 corruption is found; it does not rewrite or repair the database.
+`Store.export_events()` uses the same bounded row projection and streams
+newline-delimited JSON to a new same-directory artifact, then publishes it
+without overwriting an existing export. It is a journal handoff artifact, not
+a complete database, worktree or evidence backup.
 
 ## Workflow and state
 

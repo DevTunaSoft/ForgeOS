@@ -119,6 +119,21 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(len(report['issues']), 1)
         self.assertTrue(report['truncated'])
         self.assertIn('event references a missing task', report['issues'][0]['problems'])
+
+    def test_event_journal_export_streams_jsonl_and_filters_without_overwrite(self):
+        first = self.store.add(str(self.repo), 'Export first journal task')
+        second = self.store.add(str(self.repo), 'Export second journal task')
+        target = self.root / 'journal.jsonl'
+        self.assertEqual(self.store.export_events(target), target)
+        rows = [json.loads(line) for line in target.read_text().splitlines()]
+        self.assertEqual([row['id'] for row in rows], sorted(row['id'] for row in rows))
+        self.assertEqual({row['task_id'] for row in rows}, {first, second})
+        filtered = self.root / 'first.jsonl'
+        self.store.export_events(filtered, task_id=first)
+        self.assertTrue(all(json.loads(line)['task_id'] == first
+                            for line in filtered.read_text().splitlines()))
+        with self.assertRaisesRegex(ValueError, 'new file'):
+            self.store.export_events(target)
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES

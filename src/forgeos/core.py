@@ -382,6 +382,48 @@ class Store:
             cursor.close()
         return {'checked': checked, 'issues': issues, 'truncated': truncated}
 
+    def export_events(self, destination: str | Path,
+                      *, task_id: int | None = None) -> Path:
+        """Stream bounded journal rows to a new, durable JSONL artifact."""
+        if task_id is not None and (type(task_id) is not int or task_id < 1):
+            raise ValueError('Task ID must be a positive integer')
+        target = Path(destination).expanduser().absolute()
+        if (not target.parent.is_dir() or target.parent.is_symlink()
+                or target.is_symlink() or target.exists()):
+            raise ValueError('Journal export must be a new file in an existing directory')
+        import tempfile
+        fd, name = tempfile.mkstemp(
+            prefix='.forgeos-journal-', suffix='.tmp', dir=target.parent)
+        os.close(fd)
+        staging = Path(name)
+        try:
+            with staging.open('w', encoding='utf-8', newline='\n') as output:
+                if task_id is None:
+                    cursor = self.db.execute(
+                        'SELECT id,task_id,event_type,status,actor,created,details,'
+                        'action,attempt,artifact_ref,evidence_ref '
+                        'FROM forgeos_events ORDER BY id ASC')
+                else:
+                    cursor = self.db.execute(
+                        'SELECT id,task_id,event_type,status,actor,created,details,'
+                        'action,attempt,artifact_ref,evidence_ref '
+                        'FROM forgeos_events WHERE task_id=? ORDER BY id ASC',
+                        (task_id,))
+                try:
+                    for row in cursor:
+                        output.write(json.dumps(
+                            dict(row), ensure_ascii=False,
+                            separators=(',', ':')))
+                        output.write('\n')
+                finally:
+                    cursor.close()
+                output.flush()
+                os.fsync(output.buffer.fileno())
+            _publish_database_copy(staging, target)
+            return target
+        finally:
+            staging.unlink(missing_ok=True)
+
     def check_integrity(self) -> None:
         """Explicitly check SQLite integrity and ForgeOS task schema."""
         try:
