@@ -77,7 +77,7 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
     description = validate_task_description(task["description"])
     with _owned_task(store, task_id) as owner:
         _publish(store, task_id, owner, PLAN_STATUSES, "planning",
-                 increment=True, result="")
+                 increment=True, result="", event_action="plan")
         try:
             chosen_model = (model if model is not None else
                             model_factory() if model_factory is not None else
@@ -90,7 +90,7 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
             output = _bounded_result_text(chosen_model.plan(description))
             _heartbeat(store, task_id, owner)
             _publish(store, task_id, owner, {"planning"}, "planned",
-                     result=output)
+                     result=output, event_action="plan")
             return output
         except Exception as exc:
             # Stale workers and changed statuses fail closed.
@@ -114,7 +114,7 @@ def test_task(store: Store, task_id: int, preset: str, *,
         raise ValueError("Task is not eligible for a manual test run")
     with _owned_task(store, task_id) as owner:
         _publish(store, task_id, owner, TEST_STATUSES, "testing",
-                 increment=True, result="")
+                 increment=True, result="", event_action="test")
         try:
             outcome = _run_workspace_tests(Path(task["project"]), preset)
             # Incomplete evidence must always be rejected first, even if the
@@ -146,6 +146,8 @@ def test_task(store: Store, task_id: int, preset: str, *,
                 "passed" if outcome["passed"] else "failed",
                 result=result_text,
                 error="" if outcome["passed"] else str(outcome.get("output", ""))[-4000:],
+                event_action="test",
+                event_evidence=outcome.get("evidence_reference", ""),
             )
             return outcome
         except Exception as exc:

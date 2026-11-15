@@ -100,6 +100,9 @@ recovery reconciliation append records in the same SQLite transaction as the
 state mutation. Update/delete triggers prevent history rewriting, while
 `Store.iter_events()` and the CLI journal command expose only a bounded page;
 raw prompts, errors and test output remain outside the journal.
+Transition callers may also attach bounded action, attempt, artifact and
+evidence references; these are identifiers only, never raw output or paths.
+The event schema migrates these columns in place for existing task databases.
 
 ## Workflow and state
 

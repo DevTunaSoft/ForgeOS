@@ -239,3 +239,12 @@ Regression coverage includes bounded manifest contents, no-overwrite
 preflight, and mismatch refusal. This is not encryption, authentication,
 active-database activation, or physical power-loss acceptance; issue #4 stays
 open.
+
+### 2026-11-14 — bounded journal action metadata
+
+The append-only lifecycle journal now migrates and exposes bounded action,
+attempt, artifact-reference and evidence-reference fields. Canonical planning
+and manual-test transitions populate action metadata, while evidence remains a
+validated identifier rather than raw test output. Existing journal databases
+migrate in place; regression coverage verifies migration, bounds and linkage.
+Full replayable action/artifact export and power-loss acceptance remain open.

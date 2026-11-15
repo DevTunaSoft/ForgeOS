@@ -65,6 +65,42 @@ class ForgeOSTests(unittest.TestCase):
             list(self.store.iter_events(limit=501))
         with self.assertRaises(ValueError):
             list(self.store.iter_events(task_id=second, limit=0))
+
+    def test_event_journal_links_bounded_action_attempt_and_evidence(self):
+        task = self.store.add(str(self.repo), 'Journal action metadata')
+        self.assertTrue(self.store.transition(
+            task, ('queued',), 'testing', event_action='test',
+            event_attempt=2, event_artifact='test-result',
+            event_evidence='a' * 64))
+        event = list(self.store.iter_events(task_id=task, limit=1))[0]
+        self.assertEqual(event['action'], 'test')
+        self.assertEqual(event['attempt'], 2)
+        self.assertEqual(event['artifact_ref'], 'test-result')
+        self.assertEqual(event['evidence_ref'], 'a' * 64)
+        for kwargs in (
+                {'event_action': 'unsafe action'},
+                {'event_attempt': 0},
+                {'event_evidence': 'not-a-digest'}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                self.store.transition(task, ('testing',), 'failed', **kwargs)
+
+    def test_event_metadata_columns_migrate_existing_journal(self):
+        legacy = self.root / 'legacy.sqlite3'
+        db = sqlite3.connect(legacy)
+        try:
+            db.execute('CREATE TABLE forgeos_events ('
+                       'id INTEGER PRIMARY KEY, task_id INTEGER, '
+                       'event_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT "", '
+                       'actor TEXT NOT NULL DEFAULT "", created REAL NOT NULL, '
+                       'details TEXT NOT NULL DEFAULT "")')
+            db.commit()
+        finally:
+            db.close()
+        migrated = Store(legacy)
+        columns = {row[1] for row in migrated.db.execute(
+            'PRAGMA table_info(forgeos_events)')}
+        self.assertTrue({'action', 'attempt', 'artifact_ref', 'evidence_ref'} <= columns)
+        migrated.close()
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES
