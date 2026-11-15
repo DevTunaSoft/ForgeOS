@@ -308,6 +308,12 @@ marker. The rollback copy remains available for deliberate retention or a
 separate operator decision; `prepared` and an absent-destination `old_moved`
 phase cannot be finalized through this path.
 
+New activation markers also carry optional streamed size/SHA-256 bindings for
+the staged replacement and retained rollback. Rollback, abandonment and
+finalization reject a regular but substituted database when a binding is
+present. Older markers without these fields remain readable for cooperative
+recovery, but do not claim the newer artifact-integrity evidence.
+
 `Store.abandon_activation()` and `db-activation-abandon` accept only the
 `prepared` phase. They require explicit confirmation, verify that the active
 database is still present and no rollback path appeared, and preserve the

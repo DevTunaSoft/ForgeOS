@@ -50,6 +50,7 @@ ACTIVATION_MARKER_LIMIT = 4096
 ACTIVATION_PHASES = frozenset(
     ("prepared", "old_moved", "publishing", "published"))
 ACTIVATION_PATH_FIELDS = ("source", "destination", "rollback", "staged")
+ACTIVATION_BINDING_FIELDS = ("staged", "rollback")
 DATABASE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
 EVENT_NO_DELETE = """CREATE TRIGGER IF NOT EXISTS forgeos_events_no_delete
  BEFORE DELETE ON forgeos_events BEGIN
@@ -176,6 +177,15 @@ def _validate_activation_marker(marker: Path, payload: dict) -> dict[str, Path]:
             if not path.is_absolute():
                 raise ValueError("Activation marker paths must be absolute")
             paths[field] = path
+        for field in ACTIVATION_BINDING_FIELDS:
+            size = payload.get(f"{field}_size")
+            digest = payload.get(f"{field}_sha256")
+            if size is None and digest is None:
+                continue
+            if (type(size) is not int or size < 0
+                    or not isinstance(digest, str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+                raise ValueError("Activation marker database binding is invalid")
         target = paths["destination"]
         rollback = paths["rollback"]
         staged = paths["staged"]
@@ -229,6 +239,26 @@ def _remove_activation_marker(marker: Path, *, missing_ok: bool = False) -> None
     """Remove an activation marker and flush its POSIX directory entry."""
     marker.unlink(missing_ok=missing_ok)
     _sync_publication_directory(marker.parent)
+
+
+def _set_activation_binding(payload: dict, field: str, path: Path) -> None:
+    size, digest = _database_file_digest(path)
+    payload[f"{field}_size"] = size
+    payload[f"{field}_sha256"] = digest
+
+
+def _verify_activation_binding(payload: dict, field: str, path: Path) -> None:
+    expected_size = payload.get(f"{field}_size")
+    expected_digest = payload.get(f"{field}_sha256")
+    if expected_size is None and expected_digest is None:
+        return
+    try:
+        size, digest = _database_file_digest(path)
+    except OSError as exc:
+        raise ValueError(
+            f"Activation {field} database binding could not be read") from exc
+    if size != expected_size or digest != expected_digest:
+        raise ValueError(f"Activation {field} database changed")
 
 
 def _discard_activation_staged(staged: Path) -> None:
@@ -1148,10 +1178,12 @@ class Store:
                 "staged": str(staged),
                 "phase": "prepared",
             }
+            _set_activation_binding(marker_payload, "staged", staged)
             _write_activation_marker(marker, marker_payload)
             if target.exists():
                 _move_database_copy(target, old)
                 old_moved = True
+                _set_activation_binding(marker_payload, "rollback", old)
                 marker_payload["phase"] = "old_moved"
                 _write_activation_marker(marker, marker_payload, replace=True)
             marker_payload["phase"] = "publishing"
@@ -1238,6 +1270,7 @@ class Store:
                     "Clear SQLite sidecars before activation rollback")
         if old.is_symlink() or not old.is_file():
             raise ValueError("Retained rollback database is unavailable")
+        _verify_activation_binding(payload, "rollback", old)
         Store.inspect_existing_database(old)
         staged_present = staged.exists() or staged.is_symlink()
         if staged_present and not discard_staged:
@@ -1249,6 +1282,7 @@ class Store:
             raise RuntimeError(
                 "Clear SQLite sidecars beside the staged activation file")
         if staged_present:
+            _verify_activation_binding(payload, "staged", staged)
             _discard_activation_staged(staged)
         _move_database_copy(old, target)
         if marker.is_symlink():
@@ -1288,6 +1322,8 @@ class Store:
             raise RuntimeError(
                 "Clear SQLite sidecars beside the staged activation file")
         Store.inspect_existing_database(target)
+        _verify_activation_binding(payload, "staged", target)
+        _verify_activation_binding(payload, "rollback", old)
         Store.inspect_existing_database(old)
         _remove_activation_marker(marker)
         return target
@@ -1329,6 +1365,7 @@ class Store:
                 "Preserve the staged activation file for manual inspection, "
                 "or explicitly pass discard_staged=True")
         if staged_present:
+            _verify_activation_binding(payload, "staged", staged)
             _discard_activation_staged(staged)
         _remove_activation_marker(marker)
         return target
