@@ -127,6 +127,14 @@ standard-library path. This is a filesystem compatibility and no-overwrite
 boundary, not a guarantee against non-cooperating external writers or physical
 power loss.
 
+Every caller of the shared publisher now uses the same identity-bound cleanup
+for its private temporary: database backups and restores, journal exports,
+recovery indexes/packages/authentication records, and worktree manifests and
+archives. The cleanup captures the real parent before staging, pins the
+original POSIX file descriptor through the final decision, and preserves a
+same-path replacement instead of deleting it. Windows uses the file identity
+without holding an open handle that could block its exclusive rename.
+
 The private file move shared by offline activation and recovery-bundle
 materialization applies the same no-overwrite identity checks around its
 Windows rename or POSIX hard-link/unlink sequence. It validates the source,

@@ -8,7 +8,12 @@ from pathlib import Path, PurePosixPath
 import stat
 import re
 
-from .core import _publish_database_copy
+from .core import (
+    _cleanup_private_staging,
+    _hold_private_staging,
+    _publication_directory_info,
+    _publish_database_copy,
+)
 
 
 WORKTREE_MANIFEST_FORMAT = "forgeos-worktree-manifest-v1"
@@ -199,15 +204,19 @@ def export_worktree_manifest(root: str | Path, destination: str | Path) -> Path:
     """Stream regular-file digests from one Git worktree to a new JSONL file."""
     worktree = _root(root)
     target = _destination(worktree, destination)
+    parent_info = _publication_directory_info(target.parent)
     import tempfile as _tempfile
     fd, name = _tempfile.mkstemp(
         prefix=".forgeos-worktree-", suffix=".tmp", dir=target.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     count = 0
     total = 0
     written = 0
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Worktree manifest staging")
         with staging.open("w", encoding="utf-8", newline="\n") as output:
             written = _record(output, {
                 "record": "header", "format": WORKTREE_MANIFEST_FORMAT}, written)
@@ -232,7 +241,8 @@ def export_worktree_manifest(root: str | Path, destination: str | Path) -> Path:
         _publish_database_copy(staging, target)
         return target
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info, "Worktree manifest staging")
 
 
 def _issue(issues: list, message: str, line: int, path: str,

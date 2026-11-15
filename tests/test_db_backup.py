@@ -98,6 +98,23 @@ class OnlineBackupTests(unittest.TestCase):
         self.assertEqual(list(self.root.glob(".forgeos-backup-*")), [])
         self.assertIsNone(self.store.check_integrity())
 
+    def test_failed_publication_preserves_substituted_temporary_file(self):
+        target = self.root / "not-published.sqlite3"
+
+        def substitute(staging, destination):
+            staging.unlink()
+            staging.write_bytes(b"operator-owned backup staging")
+            raise OSError("disk unavailable")
+
+        with patch("forgeos.core._publish_database_copy",
+                   side_effect=substitute):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                self.store.backup_to(target)
+        self.assertFalse(target.exists())
+        staging = list(self.root.glob(".forgeos-backup-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"operator-owned backup staging")
+
     def test_windows_publication_uses_exclusive_rename(self):
         staging = self.root / "staging.sqlite3"
         target = self.root / "published.sqlite3"

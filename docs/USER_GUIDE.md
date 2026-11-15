@@ -698,6 +698,12 @@ The shared publication check rejects linked or Windows-reparse staging files
 and parent directories, and rechecks their identities before and after the
 no-overwrite operation. This narrows path-substitution risk but is not a lock
 against a non-cooperating writer or a physical power-loss guarantee.
+Backup, restore, journal, recovery-bundle and worktree artifact publishers
+also use identity-bound cleanup for their private temporaries. On POSIX the
+original staging descriptor stays open through that decision, preventing
+immediate inode reuse from authorizing deletion of a replacement; Windows
+uses file identity checks without holding a handle that could block rename.
+Unexpected substituted temporaries remain available for inspection.
 Read-only database checks, streamed manifest hashing and restore-copy also
 recheck the source regular-file identity after use; a link, reparse point or
 substituted source fails closed before a destination is published. This is a

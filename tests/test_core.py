@@ -204,6 +204,25 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(list(self.root.glob('.forgeos-handoff-*')), [])
         self.assertEqual(list(self.root.glob('.forgeos-handoff-manifest-*')), [])
 
+    def test_journal_handoff_failure_preserves_substituted_staging(self):
+        task = self.store.add(str(self.repo), 'Handoff substituted staging')
+        target = self.root / 'substituted-handoff.jsonl'
+
+        def substitute(staging, destination):
+            staging.unlink()
+            staging.write_bytes(b'operator-owned handoff staging')
+            raise OSError('disk unavailable')
+
+        with patch('forgeos.core._publish_database_copy',
+                   side_effect=substitute):
+            with self.assertRaisesRegex(OSError, 'disk unavailable'):
+                self.store.export_handoff(target, task_id=task)
+        self.assertFalse(target.exists())
+        staging = list(self.root.glob('.forgeos-handoff-*'))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(),
+                         b'operator-owned handoff staging')
+
     def test_journal_handoff_manifest_failure_retains_unmanifested_handoff(self):
         task = self.store.add(str(self.repo), 'Handoff manifest failure')
         target = self.root / 'handoff-without-manifest.jsonl'

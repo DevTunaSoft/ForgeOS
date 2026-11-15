@@ -181,6 +181,22 @@ class RecoveryBundlePackageTests(unittest.TestCase):
         self.assertEqual(list(self.root.glob(".forgeos-recovery-bundle-*")), [])
         self.assertEqual(list(self.root.glob(".forgeos-bundle-index-*")), [])
 
+    def test_publication_failure_preserves_substituted_staging(self):
+        def substitute(staging, target):
+            staging.unlink()
+            staging.write_bytes(b"operator-owned bundle staging")
+            raise OSError("disk unavailable")
+
+        with patch("forgeos.recovery_package._publish_database_copy",
+                   side_effect=substitute):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                self._export()
+        self.assertFalse(self.bundle.exists())
+        self.assertEqual(list(self.root.glob(".forgeos-bundle-index-*")), [])
+        staging = list(self.root.glob(".forgeos-recovery-bundle-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"operator-owned bundle staging")
+
 
 if __name__ == "__main__":
     unittest.main()

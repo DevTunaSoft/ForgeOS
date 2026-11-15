@@ -178,6 +178,24 @@ class RecoveryBundleIndexTests(unittest.TestCase):
         self.assertFalse(self.index.exists())
         self.assertEqual(list(self.root.glob(".forgeos-recovery-index-*")), [])
 
+    def test_publication_failure_preserves_substituted_staging(self):
+        def substitute(staging, target):
+            staging.unlink()
+            staging.write_bytes(b"operator-owned index staging")
+            raise OSError("disk unavailable")
+
+        with patch("forgeos.recovery_bundle._publish_database_copy",
+                   side_effect=substitute):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                export_recovery_bundle_index(
+                    self.handoff, self.archive, self.index,
+                    manifest=self.manifest,
+                    evidence_directory=self.evidence_root)
+        self.assertFalse(self.index.exists())
+        staging = list(self.root.glob(".forgeos-recovery-index-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"operator-owned index staging")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,7 +12,12 @@ import struct
 import tempfile
 import zipfile
 
-from .core import _publish_database_copy
+from .core import (
+    _cleanup_private_staging,
+    _hold_private_staging,
+    _publication_directory_info,
+    _publish_database_copy,
+)
 from .worktree_manifest import (
     HASH_CHUNK_BYTES,
     MAX_WORKTREE_FILE_BYTES,
@@ -224,15 +229,19 @@ def export_worktree_archive(root: str | Path, destination: str | Path) -> Path:
     """Stream a regular-file-only worktree into a new bounded ZIP archive."""
     worktree = _root(root)
     target = _destination(worktree, destination)
+    parent_info = _publication_directory_info(target.parent)
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-worktree-archive-", suffix=".tmp", dir=target.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     count = 0
     total = 0
     written = 0
     manifest = io.StringIO()
     try:
+        staging_identity = _hold_private_staging(
+            staging, "Worktree archive staging")
         with zipfile.ZipFile(
                 staging, "w", compression=zipfile.ZIP_DEFLATED,
                 compresslevel=6, allowZip64=False) as archive:
@@ -274,7 +283,8 @@ def export_worktree_archive(root: str | Path, destination: str | Path) -> Path:
         _publish_database_copy(staging, target)
         return target
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info, "Worktree archive staging")
 
 
 def check_worktree_archive(source: str | Path,
