@@ -340,6 +340,11 @@ input is capped at 4 KiB. If a runtime, marker or parent is substituted, ForgeOS
 fails closed and leaves the replacement available for inspection. These checks
 are a cleanup guard, not a full concurrent-writer sandbox.
 
+Snapshot creation also publishes its compact ownership marker exclusively with
+the same 4 KiB limit. If a marker appears after the initial cleanup check,
+creation fails rather than truncating that file; the marker and partial runtime
+remain available for inspection.
+
 **Expired or replaced worker:** ForgeOS now rejects a stale worker's attempt to publish a test result, checkpoint or failure after its task lease expires or is reclaimed. The workspace may still contain edits from the interrupted run. Inspect it and any journal before using guarded recovery; do not delete or automatically overwrite files just because the status says Blocked.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.

@@ -141,3 +141,20 @@ class TestRuntimeTests(unittest.TestCase):
             remove_test_snapshot(self.workspace)
         self.assertTrue(runtime.path.exists())
         self.assertTrue(marker.exists())
+
+    def test_snapshot_creation_does_not_overwrite_appearing_marker(self):
+        runtime = self.root / ".forgeos-exec-task-7"
+        marker = runtime.with_name(runtime.name + MARKER)
+        real_write = test_runtime._write_snapshot_marker
+
+        def write_after_operator_race(marker_path, payload):
+            marker_path.write_text("operator-owned-marker")
+            return real_write(marker_path, payload)
+
+        with patch.object(
+                test_runtime, "_write_snapshot_marker",
+                side_effect=write_after_operator_race):
+            with self.assertRaisesRegex(ValueError, "appeared"):
+                create_test_snapshot(self.workspace)
+        self.assertTrue(runtime.exists())
+        self.assertEqual(marker.read_text(), "operator-owned-marker")
