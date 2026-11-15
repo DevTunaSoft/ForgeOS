@@ -1148,3 +1148,25 @@ Compileall, documentation/link coverage, `git diff --check` and the bounded
 byte Python tracemalloc peak and a 29,966,336-byte process peak RSS. Exact-head
 hosted checks, Windows ACL review and physical NTFS power-loss acceptance
 remain open.
+
+### 2026-11-15 — model manifest read identity
+
+Pinned GGUF manifests used by local inventory and managed llama.cpp now pass
+through one shared bounded identity reader. The reader opens the 4 KiB manifest
+through a descriptor, compares the opened file with its pre-read identity and
+rechecks it afterward, rejecting reparse points, replacements and oversized
+inputs. Inventory retains its existing hard-link inspection behavior so model
+retirement can issue the explicit single-link refusal; managed inference
+requires an unlinked manifest before trusting its identity fields.
+
+Regression coverage adds inventory and managed-inference replacement-during-
+open preservation and retains the retirement hard-link contract. The focused
+model inventory/managed-runtime/retirement suite passed 65 tests with 4
+expected platform skips. The full isolated suite passed 777 tests with 10
+expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace while still exiting successfully. Compileall,
+documentation/link coverage, `git diff --check` and the bounded 12 MiB x
+3-cycle memory benchmark passed; the benchmark measured a 1,982,178-byte
+Python tracemalloc peak and a 30,138,368-byte process peak RSS. Exact-head
+hosted checks, Windows ACL review and physical NTFS power-loss acceptance
+remain open.

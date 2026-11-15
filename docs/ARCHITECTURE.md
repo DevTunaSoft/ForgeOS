@@ -559,6 +559,11 @@ partial lines without a summary; never treat such output as success.
   pinned-revision manifests with bounded `os.scandir`. Inventory
   metadata does **not** reread full weights; explicit re-verification
   streams SHA-256 on demand and does no inference/network IO.
+- Pinned GGUF manifest metadata is read through the shared identity-bound
+  bounded-file helper. Inventory inspection may retain a hard-linked manifest
+  for the retirement layer's explicit single-link decision, while managed
+  inference requires an unlinked manifest before trusting its JSON. Both paths
+  reject reparse points, substitutions and reads beyond the 4 KiB bound.
 - `recovery.py` fails closed on the ephemeral `forgeos-managed`
   alias because a random port and transient token are not adequate
   cross-reboot model identities. Pinned binary/model contract plus

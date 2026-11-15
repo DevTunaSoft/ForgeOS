@@ -1,6 +1,7 @@
 """Bounded offline GGUF inventory tests, no Hugging Face network or inference."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -77,6 +78,18 @@ class GGUFInventoryTests(unittest.TestCase):
         self.write_manifest()
         self.manifest.write_bytes(b"X" * 6000)
         self.assertEqual(list_downloads(self.root), [])
+
+    def test_manifest_rejects_replacement_during_open(self):
+        def replace_before_open(path, flags):
+            path.unlink()
+            path.write_bytes(b"operator-owned model manifest\n")
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open):
+            self.assertEqual(list_downloads(self.root), [])
+        self.assertEqual(
+            self.manifest.read_bytes(), b"operator-owned model manifest\n")
 
     def test_prevent_symlink_from_becoming_installed_model(self):
         self.path.unlink()

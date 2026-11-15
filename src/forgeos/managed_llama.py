@@ -23,6 +23,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
+from .file_security import read_bounded_file
 from .local_models import LocalChatModel, _open
 from .model_routing import (
     local_memory_settings, managed_runtime_memory_ceiling,
@@ -62,16 +63,32 @@ def _existing_file(path: str | Path, *, suffix: str) -> Path:
 def _verified_model(path: str | Path) -> tuple[Path, dict]:
     target = _existing_file(path, suffix=".gguf")
     manifest = target.with_name(target.name + ".forgeos.json")
-    if manifest.is_symlink() or not manifest.is_file():
-        raise ValueError("Only SHA-verified ForgeOS GGUF downloads can be loaded")
-    if manifest.stat().st_nlink != 1:
-        raise ValueError("Hard-linked GGUF verification manifests are not trusted")
     if target.stat().st_nlink != 1:
         raise ValueError("Hard-linked GGUF model files are not trusted")
-    if manifest.stat().st_size > MAX_MANIFEST_BYTES:
-        raise ValueError("GGUF verification manifest is too large")
     try:
-        info = json.loads(manifest.read_text(encoding="utf-8"))
+        raw = read_bounded_file(
+            manifest, max_bytes=MAX_MANIFEST_BYTES,
+            description="GGUF verification manifest")
+    except ValueError as exc:
+        message = str(exc)
+        if "oversized" in message:
+            raise ValueError("GGUF verification manifest is too large") from exc
+        if "unavailable" in message:
+            raise ValueError(
+                "Only SHA-verified ForgeOS GGUF downloads can be loaded") from exc
+        if "not a plain file" in message:
+            try:
+                linked = manifest.lstat().st_nlink != 1
+            except OSError:
+                linked = False
+            if linked:
+                raise ValueError(
+                    "Hard-linked GGUF verification manifests are not trusted") from exc
+            raise ValueError(
+                "Only SHA-verified ForgeOS GGUF downloads can be loaded") from exc
+        raise ValueError("Invalid GGUF verification manifest") from exc
+    try:
+        info = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError, UnicodeError) as exc:
         raise ValueError("Invalid GGUF verification manifest") from exc
     if not isinstance(info, dict):

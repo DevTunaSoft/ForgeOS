@@ -14,6 +14,7 @@ from .gguf_download import (
     MAX_MODEL_BYTES, _digest, _reject_existing_link,
     _safe_name, _safe_storage_root,
 )
+from .file_security import read_bounded_file
 from .huggingface_catalog import REPO_ID
 
 MAX_SCAN_ENTRIES = 4096
@@ -24,11 +25,11 @@ CHECKSUM = re.compile(r"[a-f0-9]{64}\Z")
 
 
 def _manifest_model_file(manifest: Path, root: Path) -> tuple[Path, dict]:
-    if (manifest.is_symlink() or not manifest.is_file()
-            or manifest.stat().st_size > MAX_MANIFEST_BYTES):
-        raise ValueError("Missing or oversized GGUF manifest")
     try:
-        info = json.loads(manifest.read_text(encoding="utf-8"))
+        raw = read_bounded_file(
+            manifest, max_bytes=MAX_MANIFEST_BYTES,
+            description="GGUF manifest", require_unlinked=False)
+        info = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
         raise ValueError("Unreadable GGUF manifest") from exc
     if not isinstance(info, dict):

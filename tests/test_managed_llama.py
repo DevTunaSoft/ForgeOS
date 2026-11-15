@@ -225,6 +225,22 @@ class ManagedLlamaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity"):
             _verified_model(self.model)
 
+    def test_manifest_replacement_during_open_fails_closed(self):
+        metadata = self.model.with_name(self.model.name + ".forgeos.json")
+
+        def replace_before_open(path, flags):
+            path.unlink()
+            path.write_bytes(b"operator-owned model manifest\n")
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open):
+            with self.assertRaisesRegex(
+                    ValueError, "Invalid GGUF verification manifest"):
+                _verified_model(self.model)
+        self.assertEqual(
+            metadata.read_bytes(), b"operator-owned model manifest\n")
+
     def test_symlink_model_rejected_if_supported(self):
         link = self.root / "linked.gguf"
         try:

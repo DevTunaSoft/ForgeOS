@@ -454,6 +454,13 @@ pinned download manifest. The list is metadata-only and does **not**
 rehash multi-gigabyte models; a full rehash is performed when the managed
 server is started.
 
+ForgeOS reads each small pinned manifest through a bounded identity check. A
+replacement, Windows reparse point or oversized manifest is rejected before
+its JSON can describe a model. Inventory can display a hard-linked manifest
+for diagnosis, but managed inference requires the manifest to be an unlinked
+regular file; model retirement applies its own explicit single-link check
+before moving anything.
+
 Advanced users can run `forgeos models-local` to list model weights and
 `forgeos model-verify-local "C:\\Users\\You\\.forgeos\\models\\...\\model.gguf"`
 to recheck one SHA-256 explicitly, without downloading or running anything.
