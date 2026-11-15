@@ -485,6 +485,13 @@ Snapshot creation serializes the compact marker through an exclusive
 marker that appeared after the initial cleanup check. A creation race fails
 closed and preserves the appearing marker for inspection.
 
+After a contained Windows test exits, ForgeOS opens each required output file
+through an identity-bound descriptor. It rechecks the unlinked regular-file
+identity before and after the open, then streams the descriptor into the
+existing bounded evidence reader. A hard-link, reparse point or replacement
+during the final open therefore fails closed instead of redirecting diagnostic
+capture; the reader still uses the existing disk-bounded memory contract.
+
 Docker is **not required**. Git worktrees are version-control isolation, not operating-system security isolation. No test runner is allowed to claim full untrusted-code containment without real runtime proof.
 
 ## Sensitive data and storage

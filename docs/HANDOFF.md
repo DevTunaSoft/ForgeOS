@@ -3482,3 +3482,23 @@ Python tracemalloc peak and a 30,167,040-byte process peak RSS. Documentation/
 link coverage, `git diff --check` and exact-head hosted checks remain required
 before merge. Windows ACL review and physical NTFS power-loss acceptance
 remain open.
+
+## 2026-11-15 — secure output final-read identity
+
+**Change:** secure Windows test finalization now opens the required output
+through an identity-bound descriptor. The path must remain an unlinked regular
+file with the same identity before and after opening; hard-linked, reparse or
+replacement output fails closed. The descriptor is then streamed through the
+existing bounded evidence reader, preserving low-memory behavior and leaving a
+substitute available for inspection.
+
+**Verification:** secure-runner/output-capture coverage adds final-open
+replacement preservation and hard-link rejection. The focused suite passed 41
+tests with 2 expected skips. The full isolated suite passed 771 tests with 10
+expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace while still exiting successfully. Compileall
+passed. The 12 MiB x 3-cycle memory benchmark passed with a 1,982,176-byte
+Python tracemalloc peak and a 30,044,160-byte process peak RSS.
+Documentation/link coverage,
+`git diff --check` and exact-head hosted checks remain required before merge.
+Windows ACL review and physical NTFS power-loss acceptance remain open.

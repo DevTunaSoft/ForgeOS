@@ -392,6 +392,12 @@ In the packaged Windows executable, a zero exit code from the secure AppContaine
 
 The secure Windows output monitor now enforces **one combined 32 MiB limit** across captured native stdout, the owned test output file, and the optional pytest log. Exceeding that combined budget terminates the contained job and blocks acceptance. No additional polling loop or service was introduced; the existing output monitor checks this limit. Inspect the blocked task and reduce excessive test logging instead of increasing the limit without resource measurements. Real packaged Windows validation is still required.
 
+After the child exits, ForgeOS opens the required `test-output.txt` through an
+identity-bound descriptor and streams it through the existing bounded evidence
+reader. The file must still be an unlinked regular file with the same identity
+before and after opening; a hard-link, reparse point or replacement during
+that last read fails closed and cannot redirect diagnostic capture.
+
 ### Automated test-output limits
 
 **If the diagnostic archive cannot be written** (such as disk full, read-only storage, or an invalid pre-archived evidence reference), ForgeOS marks the test **not passed**, sets `capture_complete=False`, and records `evidence-archive-failed`. It retains only a bounded head/tail preview with a manual-review warning, even when the test executable exited with code 0. Do not treat the exit code alone as acceptance: free disk space or repair diagnostic storage, inspect the task, and explicitly rerun testing when safe. Automatic repair and approval remain blocked until the evidence path is healthy.
