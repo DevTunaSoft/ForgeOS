@@ -2953,3 +2953,22 @@ active Store.
 on Windows. Full isolated tests, documentation/link coverage, compileall,
 bounded memory and exact-head hosted Linux/Windows checks remain required for
 this branch; physical reboot and NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — Windows rollback open-handle refusal
+
+**Change:** extended the Windows share-mode regression to the explicit rollback
+path. A real `CreateFileW` handle with no sharing is held on the retained
+rollback database; `Store.rollback_activation()` must fail before moving it
+back to the active path. After the handle is released, the same marker and
+rollback are successfully reconciled. This covers Windows handle behavior in
+both activation directions; it is not physical NTFS power-loss evidence.
+
+**Regression coverage:** the shared test helper preserves Python 3.10 Windows
+compatibility and the regression verifies the active path remains absent, the
+rollback and marker remain intact during the refusal, and retry succeeds only
+after the handle closes.
+
+**Local verification:** focused activation and database CLI tests passed 36/36
+on Windows. Full isolated tests, documentation/link coverage, compileall,
+bounded memory and exact-head hosted Linux/Windows checks remain required for
+this branch; physical reboot and NTFS power-loss acceptance remain open.
