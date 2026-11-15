@@ -766,7 +766,11 @@ ForgeOS checks the staged file as a ForgeOS SQLite database before deleting
 only that private path. It also requires the staged file and its real parent
 to retain their identities through inspection, verifies the path is gone and
 flushes the directory entry; a linked or substituted staged file is preserved
-for inspection. `prepared` and `published` markers are diagnostic states; do
+for inspection. On POSIX, activation keeps the original staging descriptor
+open through cleanup so immediate inode reuse cannot authorize deletion of a
+replacement. If activation fails before publication, its cleanup applies the
+same file and parent identity check and preserves a substituted temporary.
+`prepared` and `published` markers are diagnostic states; do
 not force them into a rollback without inspecting the paths. If a
 crash occurred after the replacement was published, the marker phase is
 `published`, the active and retained rollback databases both exist, and the
@@ -807,7 +811,10 @@ When ForgeOS advances a marker phase, it also rechecks the real marker,
 temporary marker and parent directory before atomic replacement and verifies
 the new marker afterward. Redirected parents, hard-linked markers and
 unexpected staging substitutions fail closed; this is a bounded race guard,
-not a complete concurrent-writer lock or physical power-loss guarantee.
+not a complete concurrent-writer lock or physical power-loss guarantee. On
+POSIX, private staging cleanup holds the original descriptor until the
+identity decision; Windows avoids that handle because it can block atomic
+rename and uses the existing file-identity comparison instead.
 When a recovery operation clears a marker, ForgeOS rechecks the same unlinked
 regular-file and parent identity, verifies that the marker path is gone, and
 flushes the directory entry. A missing-marker cleanup only accepts a path that

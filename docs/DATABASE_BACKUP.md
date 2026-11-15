@@ -205,6 +205,11 @@ the explicit discard also requires the same unlinked file and real parent
 identity before unlinking, verifies that the staged path is gone and flushes
 the directory entry. A hard-linked or substituted staged file remains for
 inspection. ForgeOS never replaces an occupied destination or rollback path.
+If activation fails before publication, its private staging cleanup applies
+the same file and parent identity check; on POSIX it keeps the original
+temporary file descriptor open through that decision so inode reuse cannot
+authorize deletion of a replacement. A substituted temporary is preserved for
+inspection rather than deleted.
 If the marker says
 `published`, the new active database and retained rollback both exist and the
 staged path is absent, use `py -m forgeos db-activation-finalize ACTIVE

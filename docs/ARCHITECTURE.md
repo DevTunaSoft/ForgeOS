@@ -133,6 +133,11 @@ Windows rename or POSIX hard-link/unlink sequence. It validates the source,
 both parent directories and the new target before use, then verifies the
 published identity and source disappearance; a source or directory
 substitution leaves recovery evidence instead of deleting an unexpected path.
+Activation and marker-publication cleanup also pins the original private
+staging file with a held POSIX descriptor until the cleanup decision, so an
+unlink/recreate that reuses the same inode cannot authorize deletion of the
+replacement. Windows retains the file-identity comparison without holding an
+open handle that could block its atomic rename contract.
 
 Read-only task-database inspection, streamed backup-manifest hashing and
 restore-copy capture the source's regular-file identity before use and recheck
@@ -157,9 +162,11 @@ Phase updates use a separate atomic-replace boundary: the real marker,
 temporary marker and parent directory are rechecked before replacement, and
 the new marker and parent are checked again afterward. Hard-linked markers,
 redirected parents and unexpected private staging substitutions fail closed;
-staging cleanup removes only the file identity created by this process. This
-is a bounded check-and-use guard, not an operating-system concurrent-writer
-lock or physical power-loss guarantee.
+staging cleanup removes only the file identity created by this process. On
+POSIX, the private file remains descriptor-pinned through that cleanup check,
+which also defeats immediate inode reuse after an unlink/recreate. This is a
+bounded check-and-use guard, not an operating-system concurrent-writer lock or
+physical power-loss guarantee.
 Marker removal uses the same boundary: it requires the marker to remain an
 unlinked real regular file, compares its captured identity and parent before
 unlinking, verifies that the path is absent afterward, and flushes the parent
@@ -381,6 +388,9 @@ The discard path captures the staged file and real parent identities before
 inspection, rechecks them before unlinking, verifies that the staged path is
 gone and flushes the parent entry. A hard-linked, redirected or substituted
 staged file is preserved for manual recovery rather than deleted.
+The activation operation's exception cleanup uses the same identity-bound
+staging rule, so a replacement created after a marker or publication failure
+is preserved instead of being unlinked as if it were ForgeOS's temporary.
 
 `Store.finalize_activation()` and `db-activation-finalize` accept the
 `publishing` or `published` phase when the new active database is present and
