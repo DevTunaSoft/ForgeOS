@@ -76,6 +76,7 @@ MAX_EVENT_ARTIFACT_BYTES = 128
 MAX_EVENT_EVIDENCE_BYTES = 64
 EVENT_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]+$")
 MAX_JOURNAL_ISSUES = 32
+JOURNAL_HANDOFF_FORMAT = "forgeos-journal-handoff-v1"
 BACKUP_MANIFEST_FORMAT = "forgeos-sqlite-backup-v1"
 MAX_BACKUP_MANIFEST_BYTES = 1024
 
@@ -538,6 +539,146 @@ class Store:
             return target
         finally:
             staging.unlink(missing_ok=True)
+
+    def export_handoff(self, destination: str | Path, *, task_id: int) -> Path:
+        """Export one task's bounded state and journal as a replay plan.
+
+        The artifact is deliberately a plan, not an action executor.  It
+        contains no task description, project path, result/checkpoint blob,
+        lease data, raw error or test output.  Event artifact/evidence fields
+        remain validated identifiers so a later recovery tool can resolve
+        them under an explicit policy without copying sensitive output here.
+        """
+        if type(task_id) is not int or task_id < 1:
+            raise ValueError('Task ID must be a positive integer')
+        target = Path(destination).expanduser().absolute()
+        if (not target.parent.is_dir() or target.parent.is_symlink()
+                or target.is_symlink() or target.exists()):
+            raise ValueError('Journal handoff must be a new file in an existing directory')
+        task = self.db.execute(
+            'SELECT id,status,attempts,created,updated FROM tasks WHERE id=?',
+            (task_id,)).fetchone()
+        if task is None:
+            raise ValueError('Task not found')
+        if (not isinstance(task['status'], str)
+                or task['status'] not in STATUSES
+                or type(task['attempts']) is not int or task['attempts'] < 0
+                or not isinstance(task['created'], (int, float))
+                or not math.isfinite(task['created'])
+                or not isinstance(task['updated'], (int, float))
+                or not math.isfinite(task['updated'])):
+            raise ValueError('Task state is invalid')
+        import tempfile
+        fd, name = tempfile.mkstemp(
+            prefix='.forgeos-handoff-', suffix='.tmp', dir=target.parent)
+        os.close(fd)
+        staging = Path(name)
+        event_count = 0
+        last_event_id = None
+
+        def write_record(output, record):
+            output.write(json.dumps(
+                record, ensure_ascii=False, separators=(',', ':')))
+            output.write('\n')
+
+        try:
+            with staging.open('w', encoding='utf-8', newline='\n') as output:
+                write_record(output, {
+                    'record': 'header', 'format': JOURNAL_HANDOFF_FORMAT,
+                    'task_id': task_id,
+                })
+                write_record(output, {
+                    'record': 'task', 'task_id': task_id,
+                    'status': task['status'], 'attempts': task['attempts'],
+                    'created': task['created'], 'updated': task['updated'],
+                })
+                cursor = self.db.execute(
+                    'SELECT id,task_id,'
+                    'CASE WHEN length(CAST(event_type AS BLOB))<=? '
+                    'THEN event_type ELSE NULL END AS event_type,'
+                    'CASE WHEN length(CAST(status AS BLOB))<=? '
+                    'THEN status ELSE NULL END AS status,'
+                    'CASE WHEN length(CAST(actor AS BLOB))<=? '
+                    'THEN actor ELSE NULL END AS actor,'
+                    'created,'
+                    'CASE WHEN length(CAST(details AS BLOB))<=? '
+                    'THEN details ELSE NULL END AS details,'
+                    'CASE WHEN length(CAST(action AS BLOB))<=? '
+                    'THEN action ELSE NULL END AS action,'
+                    'attempt,'
+                    'CASE WHEN length(CAST(artifact_ref AS BLOB))<=? '
+                    'THEN artifact_ref ELSE NULL END AS artifact_ref,'
+                    'CASE WHEN length(CAST(evidence_ref AS BLOB))<=? '
+                    'THEN evidence_ref ELSE NULL END AS evidence_ref '
+                    'FROM forgeos_events WHERE task_id=? ORDER BY id ASC',
+                    (MAX_EVENT_TYPE_BYTES, MAX_EVENT_TYPE_BYTES,
+                     MAX_EVENT_ACTOR_BYTES, MAX_EVENT_DETAILS_BYTES,
+                     MAX_EVENT_ACTION_BYTES, MAX_EVENT_ARTIFACT_BYTES,
+                     MAX_EVENT_EVIDENCE_BYTES, task_id))
+                try:
+                    for row in cursor:
+                        event = dict(row)
+                        self._validate_handoff_event(event, task_id)
+                        write_record(output, {'record': 'event', **event})
+                        event_count += 1
+                        last_event_id = event['id']
+                finally:
+                    cursor.close()
+                write_record(output, {
+                    'record': 'summary', 'task_id': task_id,
+                    'event_count': event_count, 'last_event_id': last_event_id,
+                    'complete': True,
+                })
+                output.flush()
+                os.fsync(output.buffer.fileno())
+            _publish_database_copy(staging, target)
+            return target
+        finally:
+            staging.unlink(missing_ok=True)
+
+    @classmethod
+    def _validate_handoff_event(cls, event: dict, task_id: int) -> None:
+        """Reject malformed journal data before it reaches a replay plan."""
+        if (type(event.get('id')) is not int or event['id'] < 1
+                or event.get('task_id') != task_id):
+            raise ValueError('Journal handoff contains an invalid event identity')
+        event_type = event.get('event_type')
+        if (not isinstance(event_type, str)
+                or not EVENT_TYPE_PATTERN.fullmatch(event_type)
+                or len(event_type.encode('utf-8')) > MAX_EVENT_TYPE_BYTES):
+            raise ValueError('Journal handoff contains an invalid event type')
+        status = event.get('status')
+        if status != '' and (not isinstance(status, str) or status not in STATUSES):
+            raise ValueError('Journal handoff contains an invalid event status')
+        actor = event.get('actor')
+        if (not isinstance(actor, str)
+                or len(actor.encode('utf-8')) > MAX_EVENT_ACTOR_BYTES):
+            raise ValueError('Journal handoff contains an oversized event actor')
+        details = event.get('details')
+        if (not isinstance(details, str)
+                or len(details.encode('utf-8')) > MAX_EVENT_DETAILS_BYTES):
+            raise ValueError('Journal handoff contains oversized event details')
+        action = event.get('action')
+        if (action != '' and (not isinstance(action, str)
+                        or not EVENT_TYPE_PATTERN.fullmatch(action)
+                        or len(action.encode('utf-8')) > MAX_EVENT_ACTION_BYTES)):
+            raise ValueError('Journal handoff contains an invalid event action')
+        attempt = event.get('attempt')
+        if (attempt is not None
+                and (type(attempt) is not int or not 1 <= attempt <= 1000000)):
+            raise ValueError('Journal handoff contains an invalid event attempt')
+        artifact = event.get('artifact_ref')
+        if (artifact != '' and (not isinstance(artifact, str)
+                          or len(artifact.encode('utf-8')) > MAX_EVENT_ARTIFACT_BYTES
+                          or not EVENT_REFERENCE_PATTERN.fullmatch(artifact))):
+            raise ValueError('Journal handoff contains an invalid artifact reference')
+        evidence = event.get('evidence_ref')
+        if (evidence != '' and (not isinstance(evidence, str)
+                          or not re.fullmatch(r'[0-9a-f]{64}', evidence))):
+            raise ValueError('Journal handoff contains an invalid evidence reference')
+        created = event.get('created')
+        if (not isinstance(created, (int, float)) or not math.isfinite(created)):
+            raise ValueError('Journal handoff contains an invalid event timestamp')
 
     def check_integrity(self) -> None:
         """Explicitly check SQLite integrity and ForgeOS task schema."""

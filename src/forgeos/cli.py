@@ -32,6 +32,10 @@ def main(argv=None):
         'journal-export', help='Export bounded lifecycle rows as JSONL')
     journal_export.add_argument('destination', help='New JSONL file path')
     journal_export.add_argument('--task-id', type=int, default=None)
+    journal_handoff = sub.add_parser(
+        'journal-handoff', help='Export one task as a bounded replay plan')
+    journal_handoff.add_argument('destination', help='New JSONL file path')
+    journal_handoff.add_argument('--task-id', type=int, required=True)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -238,6 +242,15 @@ def main(argv=None):
         finally:
             store.close()
         print(f'Exported journal: {exported}')
+        return 0
+    if args.action == 'journal-handoff':
+        store = Store(args.db)
+        try:
+            exported = store.export_handoff(
+                args.destination, task_id=args.task_id)
+        finally:
+            store.close()
+        print(f'Exported journal handoff: {exported}')
         return 0
     if args.action == 'memory':
         from .model_routing import memory_report
