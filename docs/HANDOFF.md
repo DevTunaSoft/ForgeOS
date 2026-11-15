@@ -2972,3 +2972,25 @@ after the handle closes.
 on Windows. Full isolated tests, documentation/link coverage, compileall,
 bounded memory and exact-head hosted Linux/Windows checks remain required for
 this branch; physical reboot and NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — durable publishing phase and ENOSPC recovery
+
+**Change:** activation now writes a durable `publishing` marker immediately
+before moving the staged database into the active path. If marker persistence
+fails before that move, the original active database is restored; if the final
+`published` marker cannot be persisted after the move, the `publishing` marker
+and both databases remain recoverable. Rollback accepts `publishing` when the
+destination is absent, while finalization accepts it when the new destination
+is present and staging is absent.
+
+**Regression coverage:** `ENOSPC` fault injection covers both sides of the
+publishing boundary, including clean automatic rollback before the move and
+explicit finalization after the new database is visible. Existing bundled and
+CLI recovery tests now assert the durable publishing phase where publication
+failure occurs after the boundary.
+
+**Local verification:** focused activation, bundled recovery and CLI tests
+passed 49/49 on Windows. Full isolated tests, documentation/link coverage,
+compileall, bounded memory and exact-head hosted Linux/Windows checks remain
+required for this branch; physical disk-full, reboot and NTFS power-loss
+acceptance remain open.

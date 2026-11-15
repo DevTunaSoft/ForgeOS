@@ -1,5 +1,6 @@
 """Guarded, offline SQLite activation and rollback tests."""
 from contextlib import closing
+import errno
 import os
 from pathlib import Path
 import json
@@ -212,6 +213,51 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertFalse(self.rollback.exists())
         self.assertFalse(Path(str(self.active) + ".forgeos-activation.json").exists())
 
+    def test_enospc_before_publishing_marker_rolls_back_cleanly(self):
+        real_write = core._write_activation_marker
+
+        def fail_publishing_marker(marker, payload, *, replace=False):
+            if replace and payload["phase"] == "publishing":
+                raise OSError(errno.ENOSPC, "No space left on device")
+            return real_write(marker, payload, replace=replace)
+
+        with patch("forgeos.core._write_activation_marker",
+                   side_effect=fail_publishing_marker):
+            with self.assertRaisesRegex(OSError, "No space"):
+                Store.activate_backup_to(
+                    self.backup, self.active, self.rollback, confirm=True)
+
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertFalse(Path(str(self.active) + ".forgeos-activation.json").exists())
+        self.assertFalse(list(self.root.glob(".forgeos-activate-*")))
+
+    def test_enospc_after_publication_leaves_recoverable_publishing_marker(self):
+        real_write = core._write_activation_marker
+
+        def fail_published_marker(marker, payload, *, replace=False):
+            if replace and payload["phase"] == "published":
+                raise OSError(errno.ENOSPC, "No space left on device")
+            return real_write(marker, payload, replace=replace)
+
+        with patch("forgeos.core._write_activation_marker",
+                   side_effect=fail_published_marker):
+            with self.assertRaisesRegex(OSError, "No space"):
+                Store.activate_backup_to(
+                    self.backup, self.active, self.rollback, confirm=True)
+
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        self.assertEqual(self._descriptions(self.active), ["restored task"])
+        self.assertEqual(self._descriptions(self.rollback), ["old active task"])
+        self.assertEqual(Store.activation_status(self.active)["phase"],
+                         "publishing")
+        self.assertFalse(list(self.root.glob(".forgeos-activate-*")))
+
+        result = Store.finalize_activation(self.active, confirm=True)
+        self.assertEqual(result, self.active)
+        self.assertFalse(marker.exists())
+        self.assertTrue(self.rollback.exists())
+
     def test_failed_rollback_keeps_marker_and_old_database_for_recovery(self):
         self._leave_interrupted_activation()
 
@@ -220,14 +266,14 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertEqual(self._descriptions(self.rollback), ["old active task"])
         self.assertTrue(marker.is_file())
         self.assertEqual(json.loads(marker.read_text(encoding="utf-8"))["phase"],
-                         "old_moved")
+                         "publishing")
 
     def test_marker_status_is_bounded_and_explicit_rollback_reconciles(self):
         self._leave_interrupted_activation()
 
         status = Store.activation_status(self.active)
         self.assertEqual(status["status"], "pending")
-        self.assertEqual(status["phase"], "old_moved")
+        self.assertEqual(status["phase"], "publishing")
         self.assertFalse(status["destination_exists"])
         self.assertTrue(status["rollback_exists"])
         self.assertFalse(status["staged_exists"])

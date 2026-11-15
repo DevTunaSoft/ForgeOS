@@ -626,3 +626,12 @@ with a real no-share `CreateFileW` handle while explicit rollback runs. The
 operation fails closed before moving the rollback or clearing its marker; after
 the handle closes, the same rollback succeeds. This strengthens Windows
 compatibility evidence without claiming physical NTFS power-loss acceptance.
+
+### 2026-11-15 — durable publishing phase and ENOSPC recovery
+
+Activation now records a durable `publishing` phase before the final staged
+database move. Simulated `ENOSPC` before that marker rolls the original active
+database back cleanly; simulated `ENOSPC` after publication leaves a bounded
+`publishing` marker that the operator can finalize once the new active file and
+retained rollback are validated. This is fault-injection evidence, not
+physical disk-full, reboot or NTFS power-loss acceptance.

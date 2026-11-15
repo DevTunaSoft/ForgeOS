@@ -729,9 +729,9 @@ active Store:
 py -m forgeos db-activation-status "$env:USERPROFILE\\.forgeos\\tasks.sqlite3"
 ```
 
-If the status is `pending` with phase `old_moved`, the destination is absent,
-ForgeOS remains stopped and the retained rollback is trusted, explicitly
-reconcile it with:
+If the status is `pending` with phase `old_moved` or `publishing` and the
+destination is absent, ForgeOS remains stopped and the retained rollback is
+trusted, explicitly reconcile it with:
 
 ```powershell
 py -m forgeos db-activation-rollback "$env:USERPROFILE\\.forgeos\\tasks.sqlite3" --confirm
@@ -760,8 +760,10 @@ py -m forgeos db-activation-finalize `
 ```
 
 Finalization validates both databases, refuses sidecars or unexpected staging,
-removes only the marker, and keeps the rollback copy. It does not finalize a
-`prepared` or `old_moved` marker.
+removes only the marker, and keeps the rollback copy. It accepts a
+`publishing` or `published` marker only when the new destination is present
+and staging is absent; it does not finalize a `prepared` marker or an
+absent-destination rollback state.
 
 If the marker phase is `prepared`, the active database was not moved. When the
 staged replacement is not wanted, abandon that interrupted attempt explicitly:
