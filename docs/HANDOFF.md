@@ -2866,3 +2866,10 @@ and a 30,031,872-byte process peak RSS. These remain local synthetic/process
 measurements, not physical Windows or model-memory acceptance. Exact-head
 hosted Linux/Windows, packaging and physical interruption evidence remain
 required for this branch.
+
+The first hosted Foundation run caught a Python 3.10 Windows-only test error:
+the regression temporarily patched global `os.name` before `Path(name)` was
+constructed, causing `pathlib` to select `PosixPath` on Windows. Follow-up
+commit `98c33fb` removes that global platform patch and asserts the existing
+directory-sync helper call directly; the focused and full local suites then
+passed again.

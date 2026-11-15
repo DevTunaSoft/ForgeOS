@@ -565,3 +565,9 @@ with 8 expected skips. Documentation/link coverage, compileall and
 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
 30,031,872-byte process peak RSS. These remain local synthetic/process
 measurements, not physical Windows or model-memory acceptance.
+
+The first hosted PR Foundation attempt exposed a Python 3.10 Windows test seam:
+patching `os.name` before `Path` construction selected `PosixPath` on Windows.
+The follow-up removes that global platform patch and verifies the existing
+directory-sync call directly; the corrected head remains cross-version and
+Windows-compatible.
