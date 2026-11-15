@@ -893,21 +893,21 @@ class TransactionRecoveryTests(unittest.TestCase):
             "version": 1, "state": "committed", "entries": [{
                 "path": "first.py", "before": _digest(b"original"),
                 "after": _digest(b"published")}] }))
-        real_open_bound = transactions._open_bound_file
+        real_hash = transactions._hash_file
         swapped = {"value": False}
 
-        def swap_before_open(path, before, description, **kwargs):
-            if Path(path) == target and not swapped["value"]:
+        def swap_before_hash(path, *args, **kwargs):
+            if not swapped["value"]:
                 swapped["value"] = True
                 target.unlink()
                 try:
                     target.symlink_to(outside)
                 except (OSError, NotImplementedError):
                     self.skipTest("File symlinks unavailable")
-            return real_open_bound(path, before, description, **kwargs)
+            return real_hash(path, *args, **kwargs)
 
         with patch.object(
-                transactions, "_open_bound_file", side_effect=swap_before_open):
+                transactions, "_hash_file", side_effect=swap_before_hash):
             with self.assertRaisesRegex(
                     TransactionError, "safely|became a link|during hashing"):
                 recover_edits(self.root)
