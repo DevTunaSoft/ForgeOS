@@ -322,3 +322,12 @@ validated references and the completion count, and caps diagnostics at 32
 issues. This detects truncation and format tampering but does not authenticate
 the file, resolve evidence, import rows, replay actions, encrypt data or prove
 physical power-loss recovery.
+
+### 2026-11-15 — streamed handoff integrity manifests
+
+`journal-handoff` can now publish an optional bounded JSON manifest with the
+handoff byte size and streamed SHA-256. `journal-handoff-check --manifest`
+verifies that digest without buffering the JSONL artifact, detecting transfer
+or storage corruption before a future import/replay step. The manifest is not
+a signature, encryption, complete evidence/worktree bundle or physical
+power-loss guarantee.

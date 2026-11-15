@@ -129,6 +129,10 @@ event IDs and reference fields, and retains at most 32 diagnostics. It does
 not initialize `Store`, open SQLite, resolve evidence, or execute a planned
 action. A valid report proves format and internal consistency only, not
 authenticity or artifact availability.
+`export_handoff()` can also publish a separate bounded SHA-256 manifest, and
+`check_handoff(..., manifest=...)` verifies it by streaming the handoff bytes.
+The manifest detects accidental transfer/storage changes but is not a
+signature, encryption layer or proof of who produced the artifact.
 
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing

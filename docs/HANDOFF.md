@@ -2320,6 +2320,27 @@ denied; the same AppContainer module passed under system Python. Compileall,
 diff checks and the documented 12 MiB x3 memory benchmark passed. Exact-head
 GitHub checks remain the acceptance gate for this host ACL condition.
 
+## 2026-11-15 — streamed handoff integrity manifests
+
+**Change:** `Store.export_handoff()` and `forgeos journal-handoff` now accept
+an optional new manifest path. The manifest records the handoff filename,
+byte size and streamed SHA-256 under the bounded
+`forgeos-journal-handoff-manifest-v1` format. `Store.check_handoff()` and
+`journal-handoff-check` accept the same manifest and fail the report closed on
+a mismatch without buffering the JSONL artifact.
+
+**Safety boundary:** the digest detects accidental transfer or storage
+corruption only. It is not a signature, encryption, provenance proof or
+evidence/worktree bundle; a trusted retention policy is still required before
+using it as an integrity reference.
+
+**Regression coverage:** core tests cover manifest publication, bounded
+manifest verification, no-overwrite refusal and post-publication mismatch;
+CLI coverage verifies manifest-required offline checking. Focused and full
+local suites, compileall and the 12 MiB x3 benchmark pass except the known
+host-only virtualenv AppContainer ACL probe; exact-head Linux/Windows checks,
+packaging and physical interruption acceptance remain required.
+
 ## 2026-11-15 — task-scoped bounded journal replay plan
 
 **Change:** added `Store.export_handoff()` and `forgeos journal-handoff`.

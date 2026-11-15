@@ -78,6 +78,8 @@ EVENT_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]+$")
 MAX_JOURNAL_ISSUES = 32
 JOURNAL_HANDOFF_FORMAT = "forgeos-journal-handoff-v1"
 MAX_JOURNAL_HANDOFF_LINE_BYTES = 16 * 1024
+JOURNAL_HANDOFF_MANIFEST_FORMAT = "forgeos-journal-handoff-manifest-v1"
+MAX_JOURNAL_HANDOFF_MANIFEST_BYTES = 1024
 BACKUP_MANIFEST_FORMAT = "forgeos-sqlite-backup-v1"
 MAX_BACKUP_MANIFEST_BYTES = 1024
 
@@ -275,6 +277,68 @@ def _publish_backup_manifest(database: Path, manifest: Path) -> None:
     import tempfile
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-manifest-", suffix=".tmp", dir=manifest.parent)
+    os.close(fd)
+    staging = Path(name)
+    try:
+        staging.write_text(payload, encoding="utf-8", newline="\n")
+        with staging.open("rb+") as stream:
+            os.fsync(stream.fileno())
+        _publish_database_copy(staging, manifest)
+    finally:
+        staging.unlink(missing_ok=True)
+
+
+def _read_handoff_manifest(path: str | Path) -> dict[str, object]:
+    manifest = Path(path).expanduser().absolute()
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError("Journal handoff manifest must be an existing regular file")
+    if manifest.stat().st_size > MAX_JOURNAL_HANDOFF_MANIFEST_BYTES:
+        raise ValueError("Journal handoff manifest is oversized")
+    try:
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Journal handoff manifest is invalid") from exc
+    if (not isinstance(value, dict)
+            or value.get("format") != JOURNAL_HANDOFF_MANIFEST_FORMAT):
+        raise ValueError("Journal handoff manifest format is unsupported")
+    size = value.get("size")
+    digest = value.get("sha256")
+    if (type(size) is not int or size < 0
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+        raise ValueError("Journal handoff manifest fields are invalid")
+    return value
+
+
+def _verify_handoff_manifest(handoff: Path, manifest: str | Path) -> None:
+    expected = _read_handoff_manifest(manifest)
+    size, digest = _database_file_digest(handoff)
+    if size != expected["size"] or digest != expected["sha256"]:
+        raise ValueError("Journal handoff does not match its manifest")
+
+
+def _validate_handoff_manifest_destination(handoff: Path, manifest: Path) -> None:
+    if (manifest == handoff or not manifest.parent.is_dir()
+            or manifest.parent.is_symlink() or manifest.is_symlink()
+            or manifest.exists()):
+        raise ValueError(
+            "Journal handoff manifest must be a new file in an existing directory")
+
+
+def _publish_handoff_manifest(handoff: Path, manifest: Path) -> None:
+    _validate_handoff_manifest_destination(handoff, manifest)
+    size, digest = _database_file_digest(handoff)
+    payload = json.dumps({
+        "format": JOURNAL_HANDOFF_MANIFEST_FORMAT,
+        "filename": handoff.name,
+        "size": size,
+        "sha256": digest,
+    }, sort_keys=True, separators=(",", ":")) + "\n"
+    if len(payload.encode("utf-8")) > MAX_JOURNAL_HANDOFF_MANIFEST_BYTES:
+        raise RuntimeError("Journal handoff manifest unexpectedly exceeds its bound")
+    import tempfile
+    fd, name = tempfile.mkstemp(
+        prefix=".forgeos-handoff-manifest-", suffix=".tmp", dir=manifest.parent)
     os.close(fd)
     staging = Path(name)
     try:
@@ -541,7 +605,8 @@ class Store:
         finally:
             staging.unlink(missing_ok=True)
 
-    def export_handoff(self, destination: str | Path, *, task_id: int) -> Path:
+    def export_handoff(self, destination: str | Path, *, task_id: int,
+                       manifest: str | Path | None = None) -> Path:
         """Export one task's bounded state and journal as a replay plan.
 
         The artifact is deliberately a plan, not an action executor.  It
@@ -556,6 +621,10 @@ class Store:
         if (not target.parent.is_dir() or target.parent.is_symlink()
                 or target.is_symlink() or target.exists()):
             raise ValueError('Journal handoff must be a new file in an existing directory')
+        manifest_target = None
+        if manifest is not None:
+            manifest_target = Path(manifest).expanduser().absolute()
+            _validate_handoff_manifest_destination(target, manifest_target)
         task = self.db.execute(
             'SELECT id,status,attempts,created,updated FROM tasks WHERE id=?',
             (task_id,)).fetchone()
@@ -627,6 +696,8 @@ class Store:
                 output.flush()
                 os.fsync(output.buffer.fileno())
             _publish_database_copy(staging, target)
+            if manifest_target is not None:
+                _publish_handoff_manifest(target, manifest_target)
             return target
         finally:
             staging.unlink(missing_ok=True)
@@ -665,8 +736,8 @@ class Store:
         return True
 
     @classmethod
-    def check_handoff(cls, source: str | Path,
-                      *, max_issues: int = MAX_JOURNAL_ISSUES) -> dict:
+    def check_handoff(cls, source: str | Path, *, manifest: str | Path | None = None,
+                      max_issues: int = MAX_JOURNAL_ISSUES) -> dict:
         """Stream-check one exported handoff without opening the task database."""
         if (type(max_issues) is not int or isinstance(max_issues, bool)
                 or not 1 <= max_issues <= MAX_JOURNAL_ISSUES):
@@ -787,12 +858,23 @@ class Store:
             issue('missing or invalid task projection', 0)
         if not summary_valid:
             issue('missing or invalid completion summary', checked)
+        manifest_valid = None
+        if manifest is not None:
+            manifest_valid = False
+            try:
+                _verify_handoff_manifest(path, manifest)
+            except (OSError, ValueError) as exc:
+                issue(str(exc), 0)
+            else:
+                manifest_valid = True
         return {
             'valid': not issues,
             'format': JOURNAL_HANDOFF_FORMAT if header_valid else '',
             'task_id': header_task_id,
             'records': checked,
             'events': event_count,
+            'manifest_checked': manifest is not None,
+            'manifest_valid': manifest_valid,
             'issues': issues,
             'truncated': truncated,
         }

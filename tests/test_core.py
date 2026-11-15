@@ -142,7 +142,10 @@ class ForgeOSTests(unittest.TestCase):
             event_action='test', event_attempt=1,
             event_artifact='test-result', event_evidence='a' * 64))
         target = self.root / 'handoff.jsonl'
-        self.assertEqual(self.store.export_handoff(target, task_id=task), target)
+        manifest = self.root / 'handoff.json'
+        self.assertEqual(
+            self.store.export_handoff(target, task_id=task, manifest=manifest),
+            target)
         rows = [json.loads(line) for line in target.read_text().splitlines()]
         self.assertEqual(rows[0], {
             'record': 'header', 'format': 'forgeos-journal-handoff-v1',
@@ -157,15 +160,21 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(rows[-1], {
             'record': 'summary', 'task_id': task, 'event_count': 2,
             'last_event_id': events[-1]['id'], 'complete': True})
-        checked = self.store.check_handoff(target)
+        checked = self.store.check_handoff(target, manifest=manifest)
         self.assertEqual(checked['valid'], True)
         self.assertEqual(checked['task_id'], task)
         self.assertEqual(checked['events'], 2)
+        self.assertEqual(checked['manifest_valid'], True)
         content = target.read_text()
         self.assertNotIn('HIDDEN task prompt', content)
         self.assertNotIn('HIDDEN checkpoint output', content)
         with self.assertRaisesRegex(ValueError, 'new file'):
             self.store.export_handoff(target, task_id=task)
+
+        with self.assertRaisesRegex(ValueError, 'new file'):
+            self.store.export_handoff(
+                self.root / 'another-handoff.jsonl', task_id=task,
+                manifest=manifest)
 
     def test_journal_handoff_rejects_missing_or_oversized_event_without_target(self):
         task = self.store.add(str(self.repo), 'Handoff validation')
@@ -199,6 +208,18 @@ class ForgeOSTests(unittest.TestCase):
         self.assertFalse(report['valid'])
         self.assertEqual(len(report['issues']), 32)
         self.assertTrue(report['truncated'])
+
+    def test_journal_handoff_checker_reports_manifest_mismatch(self):
+        task = self.store.add(str(self.repo), 'Handoff manifest')
+        target = self.root / 'manifest-handoff.jsonl'
+        manifest = self.root / 'manifest-handoff.json'
+        self.store.export_handoff(target, task_id=task, manifest=manifest)
+        target.write_bytes(target.read_bytes() + b'\n')
+        report = self.store.check_handoff(target, manifest=manifest)
+        self.assertFalse(report['valid'])
+        self.assertFalse(report['manifest_valid'])
+        self.assertTrue(any('does not match its manifest' in issue['problem']
+                            for issue in report['issues']))
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES
