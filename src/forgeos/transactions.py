@@ -69,6 +69,16 @@ def _is_reparse_point(info) -> bool:
         getattr(info, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT)
 
 
+def _is_link_or_reparse(path: Path, info) -> bool:
+    """Include Windows link presentation when lstat mode bits are generic."""
+    if _is_reparse_point(info):
+        return True
+    try:
+        return path.is_symlink()
+    except OSError:
+        return True
+
+
 def _same_file(before, after, *, require_unlinked: bool = False) -> bool:
     same = all(getattr(before, field, None) == getattr(after, field, None)
                for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
@@ -87,7 +97,7 @@ def _regular_file_info(path: Path, description: str, *,
         raise TransactionError(f"{description} is missing: {path}")
     except OSError as exc:
         raise TransactionError(f"Cannot inspect {description}: {path}") from exc
-    if not stat.S_ISREG(info.st_mode) or _is_reparse_point(info):
+    if not stat.S_ISREG(info.st_mode) or _is_link_or_reparse(path, info):
         raise TransactionError(f"{description} must be a regular file: {path}")
     if require_unlinked and getattr(info, "st_nlink", 1) != 1:
         raise TransactionError(
@@ -105,6 +115,12 @@ def _open_bound_file(path: Path, before, description: str, *,
         raise TransactionError(
             f"{description} could not be opened safely: {path}") from exc
     try:
+        current = path.lstat()
+        if (_is_link_or_reparse(path, current)
+                or not _same_file(before, current,
+                                  require_unlinked=require_unlinked)):
+            raise TransactionError(
+                f"{description} changed or became a link: {path}")
         opened = os.fstat(descriptor)
         if (not stat.S_ISREG(opened.st_mode)
                 or _is_reparse_point(opened)
@@ -160,7 +176,7 @@ def _hash_file(path: Path, *, expected=None,
     except OSError as exc:
         raise TransactionError(
             f"{description} changed during hashing: {path}") from exc
-    if (_is_reparse_point(after) or not stat.S_ISREG(after.st_mode)
+    if (_is_link_or_reparse(path, after) or not stat.S_ISREG(after.st_mode)
             or not _same_file(before, after,
                               require_unlinked=require_unlinked)):
         raise TransactionError(f"{description} changed during hashing: {path}")
@@ -217,7 +233,7 @@ def _copy_bounded(source: Path, destination: Path, *, mode: int = 0o600,
     except OSError as exc:
         raise TransactionError(
             f"{description} changed during copying: {source}") from exc
-    if (_is_reparse_point(after) or not stat.S_ISREG(after.st_mode)
+    if (_is_link_or_reparse(source, after) or not stat.S_ISREG(after.st_mode)
             or not _same_file(before, after,
                               require_unlinked=require_unlinked)):
         raise TransactionError(f"{description} changed during copying: {source}")
@@ -249,7 +265,7 @@ def _read_bounded(path: Path, *, max_bytes: int, description: str,
     except OSError as exc:
         raise TransactionError(
             f"{description} changed during reading: {path}") from exc
-    if (len(content) > max_bytes or _is_reparse_point(after)
+    if (len(content) > max_bytes or _is_link_or_reparse(path, after)
             or not stat.S_ISREG(after.st_mode)
             or not _same_file(before, after,
                               require_unlinked=require_unlinked)):
@@ -275,7 +291,7 @@ def _restrict_permissions(path: Path, mode: int, description: str) -> None:
 
 def _require_journal_directory(path: Path, description: str) -> None:
     info = _lstat(path, description)
-    if not stat.S_ISDIR(info.st_mode) or _is_reparse_point(info):
+    if not stat.S_ISDIR(info.st_mode) or _is_link_or_reparse(path, info):
         raise TransactionError(
             f"{description} must be a real directory: {path}")
     _restrict_permissions(path, 0o700, description)
@@ -283,7 +299,7 @@ def _require_journal_directory(path: Path, description: str) -> None:
 
 def _require_journal_file(path: Path, description: str):
     info = _lstat(path, description)
-    if (not stat.S_ISREG(info.st_mode) or _is_reparse_point(info)
+    if (not stat.S_ISREG(info.st_mode) or _is_link_or_reparse(path, info)
             or getattr(info, "st_nlink", 1) != 1):
         raise TransactionError(
             f"{description} must be an unlinked regular file: {path}")
