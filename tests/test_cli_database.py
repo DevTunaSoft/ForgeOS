@@ -130,6 +130,24 @@ class DatabaseCommandsTests(unittest.TestCase):
             self.assertEqual(events[0]['event_type'], 'task.created')
             self.assertEqual(events[0]['task_id'], task)
 
+    def test_journal_check_command_reports_clean_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.git').mkdir()
+            db_path = root / 'state.sqlite3'
+            store = Store(db_path)
+            try:
+                store.add(str(root), 'journal check cli test')
+            finally:
+                store.close()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    '--db', str(db_path), 'journal-check']), 0)
+            report = __import__('json').loads(output.getvalue())
+            self.assertEqual(report['issues'], [])
+            self.assertEqual(report['checked'], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

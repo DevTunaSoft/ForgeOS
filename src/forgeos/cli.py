@@ -26,6 +26,8 @@ def main(argv=None):
         'journal', help='Show a bounded append-only task lifecycle journal page')
     journal.add_argument('--task-id', type=int, default=None)
     journal.add_argument('--limit', type=int, default=100)
+    sub.add_parser(
+        'journal-check', help='Stream-check lifecycle journal integrity')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -176,6 +178,14 @@ def main(argv=None):
         finally:
             store.close()
         return 0
+    if args.action == 'journal-check':
+        store = Store(args.db)
+        try:
+            report = store.check_journal()
+            print(json.dumps(report, indent=2))
+            return 1 if report['issues'] else 0
+        finally:
+            store.close()
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))
