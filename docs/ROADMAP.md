@@ -340,3 +340,12 @@ It fails closed on missing, symlinked, corrupt or oversized evidence without
 creating directories or loading raw output into memory. The check is opt-in;
 complete evidence/worktree bundles, encrypted retention, action replay and
 physical power-loss acceptance remain open.
+
+### 2026-11-15 — handoff publication fault-injection coverage
+
+Handoff export regression coverage now exercises both publication phases:
+failed primary publication removes all staged artifacts, while a failure after
+the handoff is published retains the valid handoff and does not leave a partial
+manifest. The behavior is documented as a no-overwrite, staged publication
+boundary; directory durability on physical power loss and complete
+evidence/worktree bundles remain open.

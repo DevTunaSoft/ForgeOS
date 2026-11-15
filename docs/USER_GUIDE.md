@@ -780,6 +780,11 @@ manifest containing the handoff byte size and streamed SHA-256, then pass the
 same manifest to `journal-handoff-check` to detect transfer or storage
 corruption. This digest is not a signature or encryption and must be retained
 under a trusted policy if it is used as an integrity reference.
+Both output paths are new-file destinations. If handoff publication fails,
+ForgeOS removes its temporary files and publishes neither artifact. If the
+handoff is already published and a later manifest write fails, the handoff is
+retained but the manifest is absent; check the handoff without `--manifest` or
+retry with a new manifest path only after diagnosing the storage failure.
 When `--evidence-directory` is supplied, the checker verifies each referenced
 SHA-256 gzip archive by streaming and hashing its decompressed bytes under the
 existing 32 MiB bound. It never creates the directory or returns the archived

@@ -190,6 +190,45 @@ class ForgeOSTests(unittest.TestCase):
             self.store.export_handoff(target, task_id=task)
         self.assertFalse(target.exists())
 
+    def test_journal_handoff_publication_failure_cleans_all_staging(self):
+        task = self.store.add(str(self.repo), 'Handoff publication failure')
+        target = self.root / 'not-published.jsonl'
+        manifest = self.root / 'not-published.json'
+        with patch('forgeos.core._publish_database_copy',
+                   side_effect=OSError('disk unavailable')):
+            with self.assertRaisesRegex(OSError, 'disk unavailable'):
+                self.store.export_handoff(
+                    target, task_id=task, manifest=manifest)
+        self.assertFalse(target.exists())
+        self.assertFalse(manifest.exists())
+        self.assertEqual(list(self.root.glob('.forgeos-handoff-*')), [])
+        self.assertEqual(list(self.root.glob('.forgeos-handoff-manifest-*')), [])
+
+    def test_journal_handoff_manifest_failure_retains_unmanifested_handoff(self):
+        task = self.store.add(str(self.repo), 'Handoff manifest failure')
+        target = self.root / 'handoff-without-manifest.jsonl'
+        manifest = self.root / 'handoff-without-manifest.json'
+        from forgeos.core import _publish_database_copy
+        calls = []
+
+        def fail_manifest(staging, destination):
+            calls.append(destination)
+            if len(calls) == 2:
+                raise OSError('manifest disk unavailable')
+            return _publish_database_copy(staging, destination)
+
+        with patch('forgeos.core._publish_database_copy',
+                   side_effect=fail_manifest):
+            with self.assertRaisesRegex(OSError, 'manifest disk unavailable'):
+                self.store.export_handoff(
+                    target, task_id=task, manifest=manifest)
+        self.assertEqual(calls, [target, manifest])
+        self.assertTrue(target.is_file())
+        self.assertFalse(manifest.exists())
+        self.assertEqual(list(self.root.glob('.forgeos-handoff-*')), [])
+        self.assertEqual(list(self.root.glob('.forgeos-handoff-manifest-*')), [])
+        self.assertTrue(self.store.check_handoff(target)['valid'])
+
     def test_journal_handoff_checker_rejects_tampering_and_caps_diagnostics(self):
         task = self.store.add(str(self.repo), 'Handoff checker')
         target = self.root / 'checked-handoff.jsonl'

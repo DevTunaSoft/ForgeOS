@@ -280,7 +280,10 @@ Verify a transferred handoff with `py -m forgeos journal-handoff-check
 The JSONL replay plan contains scalar task state, ordered lifecycle events and
 validated artifact/evidence identifiers without copying prompts, checkpoints,
 raw errors or test output. It is diagnostic and non-executing; it is not a
-database, evidence/worktree bundle or automatic replay mechanism.
+database, evidence/worktree bundle or automatic replay mechanism. Publication
+is staged, flushed and no-overwrite: a handoff publication failure leaves no
+artifact, while a later optional-manifest failure retains the handoff without
+claiming manifest-backed integrity.
 
 ### Verified task database backups (experimental)
 
