@@ -3465,6 +3465,29 @@ the benchmark measured a 1,982,228-byte Python tracemalloc peak and a
 before merge. Windows ACL review and physical NTFS power-loss acceptance
 remain open.
 
+## 2026-11-15 — desktop settings read identity
+
+**Change:** desktop preference loading now reads
+`~/.forgeos/desktop-settings.json` through the shared bounded identity reader.
+The 16 KiB file must remain an unlinked regular file with the same identity
+before and after a descriptor-bound read. Symlinks, Windows reparse points,
+hard links, replacements and oversized files fail closed to an empty
+preference set, so a path substitution cannot change startup backend, model,
+endpoint or task-role choices. The replacement file is preserved for
+inspection.
+
+**Verification:** the focused desktop-settings suite passed 5 tests. The full
+isolated suite passed 778 tests with 10 expected skips; the known local-model
+test may emit its existing `WinError 10053` server trace while still exiting
+successfully. Compileall, documentation/link coverage, `git diff --check` and
+the bounded 12 MiB x 3-cycle memory benchmark passed; the benchmark measured
+a 1,982,228-byte Python tracemalloc peak and a 30,306,304-byte process peak
+RSS. The feature branch is
+`feat/security-desktop-settings-read-identity-20261115`; all source, test and
+documentation changes must remain committed and pushed for takeover. Exact-
+head hosted checks, Windows ACL review and physical NTFS power-loss
+acceptance remain open.
+
 ## 2026-11-15 — execution snapshot marker publication
 
 **Change:** snapshot creation now encodes its compact ownership marker within
@@ -3580,3 +3603,32 @@ documentation/link coverage, `git diff --check` and the bounded 12 MiB x
 Python tracemalloc peak and a 30,138,368-byte process peak RSS. Exact-head
 hosted checks, Windows ACL review and physical NTFS power-loss acceptance
 remain open.
+
+## 2026-11-15 — external takeover dossier refresh
+
+**Change:** refreshed `docs/ENGINEERING_TAKEOVER.md` for an external engineer
+who has not seen the repository or prior development conversation. The dossier
+now identifies PR #134 and its feature branch, records the current local test
+and memory evidence plus the four successful exact-head hosted workflows, and
+states the remaining physical-Windows, real-model and clean-room takeover
+boundaries. It also explains how the revision-labelled PDF and recovery ZIP
+relate to the canonical Markdown sources.
+
+**Verification:** the dossier refresh was committed and pushed. From source
+SHA `2050a43ef22d6d1f06a339da8c407e8fbe5fae59`, the canonical exporter passed
+and produced a 228-page PDF with 226 body pages, 83,118 source words and
+SHA-256
+`640eb8e3b9334be92c48c3675e341c430dec432cbb4d55b7752be16a2aaaebd6`.
+The portable recovery package passed with 13 files and SHA-256
+`99fd61751d5e863fed1fda26f281a8c748bedf2906a356f7012398a8f3a985f6`.
+`pdfinfo` confirmed an unencrypted letter-size PDF; representative pages
+covering the cover, dossier checkpoint, artifact rules, current security
+entry, cumulative ledger and final pages were rendered with Poppler and
+visually inspected without layout defects. Handoff link validation passed,
+and the focused handoff, takeover, snapshot, PDF-wrapping and package test
+suites passed 5, 2, 4, 3 and 4 tests respectively. Exact-head hosted checks
+also passed: Foundation tests run 1254, Handoff integrity run 442, Windows EXE
+run 832 and Documentation run 407. The repository-only audit remains
+`INCOMPLETE` by design because clean-room takeover, physical Windows/model
+acceptance and external artifact receipt are manual gates. The package is not
+a source backup, credential archive or production-certification claim.

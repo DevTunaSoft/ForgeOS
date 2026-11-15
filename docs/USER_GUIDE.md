@@ -704,6 +704,13 @@ paths or identifiers from reaching the task workflow. If a preference does
 not reappear after a restart, reselect it. ForgeOS does not alter the project
 files or start background services as part of this validation.
 
+At startup, ForgeOS reads this file through a bounded identity check. It only
+accepts an unlinked ordinary file, rejects symlinks and Windows reparse
+points, and refuses a file that changes while it is being opened or read. The
+read is capped at 16 KiB. If the file is unavailable or fails these checks,
+ForgeOS starts with no saved preferences; it does not apply a replacement
+file's backend, model, endpoint or task-role values.
+
 ### Safe Resume: damaged or moved task workspaces
 
 Safe Resume processes valid blocked-task checkpoints independently. If a
