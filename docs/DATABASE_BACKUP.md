@@ -201,7 +201,11 @@ rollback refuses to delete it. After inspecting that file, verifying it is
 not needed and confirming the old database is the desired result, use
 `py -m forgeos db-activation-rollback ACTIVE --confirm --discard-staged`.
 ForgeOS validates the staged SQLite file before deleting only that staged path;
-it never replaces an occupied destination or rollback path. If the marker says
+the explicit discard also requires the same unlinked file and real parent
+identity before unlinking, verifies that the staged path is gone and flushes
+the directory entry. A hard-linked or substituted staged file remains for
+inspection. ForgeOS never replaces an occupied destination or rollback path.
+If the marker says
 `published`, the new active database and retained rollback both exist and the
 staged path is absent, use `py -m forgeos db-activation-finalize ACTIVE
 --confirm` after stopping ForgeOS. Finalization validates both databases and

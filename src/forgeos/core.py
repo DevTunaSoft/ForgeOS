@@ -476,59 +476,69 @@ def _write_activation_marker(marker: Path, payload: dict,
         _cleanup_activation_marker_staging(staging, staging_identity)
 
 
-def _remove_activation_marker(marker: Path, *, missing_ok: bool = False,
-                              expected_info=None) -> None:
-    """Remove one unchanged, unlinked activation marker and flush its parent."""
-    parent_info = _publication_directory_info(marker.parent)
+def _remove_publication_file(path: Path, description: str, *,
+                             missing_ok: bool = False,
+                             expected_info=None,
+                             expected_parent_info=None) -> None:
+    """Remove one unchanged, unlinked file and flush its real parent."""
+    parent_info = (expected_parent_info
+                   if expected_parent_info is not None
+                   else _publication_directory_info(path.parent))
     if expected_info is None:
         try:
             expected_info = _publication_file_info(
-                marker, "Activation marker", require_unlinked=True)
+                path, description, require_unlinked=True)
         except ValueError:
             try:
-                marker.lstat()
+                path.lstat()
             except FileNotFoundError:
                 if not missing_ok:
                     raise
-                current_parent = _publication_directory_info(marker.parent)
+                current_parent = _publication_directory_info(path.parent)
                 if not _same_publication_identity(parent_info, current_parent):
                     raise ValueError(
-                        "Activation marker publication directory changed")
-                _sync_publication_directory(marker.parent)
+                        f"{description} publication directory changed")
+                _sync_publication_directory(path.parent)
                 return
             except OSError as exc:
-                raise ValueError(
-                    "Activation marker could not be inspected") from exc
+                raise ValueError(f"{description} could not be inspected") from exc
             raise
     current_marker = _publication_file_info(
-        marker, "Activation marker", require_unlinked=True)
-    current_parent = _publication_directory_info(marker.parent)
+        path, description, require_unlinked=True)
+    current_parent = _publication_directory_info(path.parent)
     if (not _same_publication_file(expected_info, current_marker)
             or not _same_publication_identity(parent_info, current_parent)):
-        raise ValueError("Activation marker changed before removal")
+        raise ValueError(f"{description} changed before removal")
     try:
-        marker.unlink()
+        path.unlink()
     except FileNotFoundError:
         if not missing_ok:
             raise
-        current_parent = _publication_directory_info(marker.parent)
+        current_parent = _publication_directory_info(path.parent)
         if not _same_publication_identity(parent_info, current_parent):
-            raise ValueError(
-                "Activation marker publication directory changed")
-        _sync_publication_directory(marker.parent)
+            raise ValueError(f"{description} publication directory changed")
+        _sync_publication_directory(path.parent)
         return
     try:
-        marker.lstat()
+        path.lstat()
     except FileNotFoundError:
         pass
     except OSError as exc:
-        raise ValueError("Activation marker removal could not be verified") from exc
+        raise ValueError(f"{description} removal could not be verified") from exc
     else:
-        raise ValueError("Activation marker changed during removal")
-    current_parent = _publication_directory_info(marker.parent)
+        raise ValueError(f"{description} changed during removal")
+    current_parent = _publication_directory_info(path.parent)
     if not _same_publication_identity(parent_info, current_parent):
-        raise ValueError("Activation marker publication directory changed")
-    _sync_publication_directory(marker.parent)
+        raise ValueError(f"{description} publication directory changed")
+    _sync_publication_directory(path.parent)
+
+
+def _remove_activation_marker(marker: Path, *, missing_ok: bool = False,
+                              expected_info=None) -> None:
+    """Remove one unchanged, unlinked activation marker and flush its parent."""
+    _remove_publication_file(
+        marker, "Activation marker", missing_ok=missing_ok,
+        expected_info=expected_info)
 
 
 def _set_activation_binding(payload: dict, field: str, path: Path) -> None:
@@ -553,15 +563,17 @@ def _verify_activation_binding(payload: dict, field: str, path: Path) -> None:
 
 def _discard_activation_staged(staged: Path) -> None:
     """Validate and remove one private staged activation database."""
-    if staged.is_symlink() or not staged.is_file():
-        raise ValueError("Staged activation file must be a regular file")
+    staged_info = _publication_file_info(
+        staged, "Staged activation file", require_unlinked=True)
+    parent_info = _publication_directory_info(staged.parent)
     if any(sidecar.exists() or sidecar.is_symlink()
            for sidecar in _database_sidecars(staged)):
         raise RuntimeError(
             "Clear SQLite sidecars beside the staged activation file")
     Store.inspect_existing_database(staged)
-    staged.unlink()
-    _sync_publication_directory(staged.parent)
+    _remove_publication_file(
+        staged, "Staged activation file", expected_info=staged_info,
+        expected_parent_info=parent_info)
 
 
 def _utf8_size(value: str) -> int:

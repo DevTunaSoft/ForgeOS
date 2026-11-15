@@ -901,3 +901,24 @@ bounded 12 MiB x 3-cycle memory benchmark reported a 1,982,228-byte Python
 tracemalloc peak and a 29,405,184-byte process peak RSS. Exact-head hosted
 checks remain required; Windows ACL review and physical NTFS power-loss
 acceptance remain open.
+
+### 2026-11-15 — staged activation discard identity
+
+Explicit staged-artifact discard now requires an unlinked real regular file
+and stable real parent directory captured before SQLite inspection. It
+rechecks both before unlinking, verifies that the staged path is gone and
+flushes the parent entry. Hard-linked, redirected or substituted staged files
+remain available for manual recovery instead of being deleted. The change
+keeps the existing bounded read-only validation and does not add memory-heavy
+copying or a system-wide writer lock.
+
+Regression coverage adds hard-linked staged-file refusal and staged-file and
+parent substitution checks after inspection. Focused activation/core/CLI
+recovery tests passed 98 tests. The full isolated suite passed 752 tests with
+10 expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace while still exiting successfully. Compileall,
+documentation/link coverage and `git diff --check` passed. The bounded
+12 MiB x 3-cycle memory benchmark reported a 1,982,228-byte Python
+tracemalloc peak and a 29,933,568-byte process peak RSS. Exact-head hosted
+checks remain required; Windows ACL review and physical NTFS power-loss
+acceptance remain open.
