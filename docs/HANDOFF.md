@@ -3614,10 +3614,21 @@ states the remaining physical-Windows, real-model and clean-room takeover
 boundaries. It also explains how the revision-labelled PDF and recovery ZIP
 relate to the canonical Markdown sources.
 
-**Verification:** documentation/link coverage and the handoff audit remain
-required after this documentation-only update. The next executable step is to
-commit this refresh, generate the PDF and portable recovery package from the
-clean source SHA, render and inspect representative PDF pages, record their
-checksums, and deliver the artifacts with the GitHub PR. The package is not a
-source backup and no artifact publication or independent takeover rehearsal is
-claimed until separately verified.
+**Verification:** the dossier refresh was committed and pushed. From source
+SHA `2050a43ef22d6d1f06a339da8c407e8fbe5fae59`, the canonical exporter passed
+and produced a 228-page PDF with 226 body pages, 83,118 source words and
+SHA-256
+`640eb8e3b9334be92c48c3675e341c430dec432cbb4d55b7752be16a2aaaebd6`.
+The portable recovery package passed with 13 files and SHA-256
+`99fd61751d5e863fed1fda26f281a8c748bedf2906a356f7012398a8f3a985f6`.
+`pdfinfo` confirmed an unencrypted letter-size PDF; representative pages
+covering the cover, dossier checkpoint, artifact rules, current security
+entry, cumulative ledger and final pages were rendered with Poppler and
+visually inspected without layout defects. Handoff link validation passed,
+and the focused handoff, takeover, snapshot, PDF-wrapping and package test
+suites passed 5, 2, 4, 3 and 4 tests respectively. Exact-head hosted checks
+also passed: Foundation tests run 1254, Handoff integrity run 442, Windows EXE
+run 832 and Documentation run 407. The repository-only audit remains
+`INCOMPLETE` by design because clean-room takeover, physical Windows/model
+acceptance and external artifact receipt are manual gates. The package is not
+a source backup, credential archive or production-certification claim.
