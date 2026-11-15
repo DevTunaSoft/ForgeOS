@@ -203,10 +203,12 @@ power-loss recovery.
 
 ## Verification
 
-The repository includes automated backup, restore-copy and activation
-regressions in `tests/test_db_backup.py`, `tests/test_db_restore.py`,
-`tests/test_db_activation.py` and `tests/test_cli_database.py`. Exact-head
-GitHub CI is required for Linux and Windows. A CI green result does not
+The repository includes automated backup, restore-copy, activation and bundled
+activation fault-injection regressions in `tests/test_db_backup.py`,
+`tests/test_db_restore.py`, `tests/test_db_activation.py`,
+`tests/test_recovery_database.py`, `tests/test_cli_database.py` and
+`tests/test_cli_recovery_database.py`. Exact-head GitHub CI is required for
+Linux and Windows. A CI green result does not
 replace full physical Windows/restore, open-handle, disk-full, interruption
 or power-loss testing.
 
