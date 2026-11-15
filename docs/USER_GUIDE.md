@@ -319,6 +319,12 @@ uses file identity without holding a handle that could block `os.replace`.
 An unexpected rollback temporary remains available beside the journal for
 inspection.
 
+Recovery removes a newly created edit target, or a flat journal child, only
+after rechecking the original file and real parent identities. POSIX pins the
+file object through the unlink decision and Windows uses the same identity
+comparison without holding a rename-blocking handle. A substituted target or
+journal child is preserved and the journal remains available for inspection.
+
 **Expired or replaced worker:** ForgeOS now rejects a stale worker's attempt to publish a test result, checkpoint or failure after its task lease expires or is reclaimed. The workspace may still contain edits from the interrupted run. Inspect it and any journal before using guarded recovery; do not delete or automatically overwrite files just because the status says Blocked.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.

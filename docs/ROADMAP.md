@@ -993,3 +993,23 @@ server trace while still exiting successfully. The 12 MiB x 3-cycle memory
 benchmark passed with a 1,982,228-byte Python tracemalloc peak and a
 30,019,584-byte process peak RSS. Exact-head hosted checks remain required;
 Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — transaction recovery delete identity
+
+Transaction recovery now removes a newly created edit target and flat journal
+children only through an identity-bound deletion helper. It rechecks the
+original file and real parent identities, pins the POSIX file object through
+the unlink decision, uses identity checks without a rename-blocking handle on
+Windows, verifies the path is absent, and flushes the parent entry. A
+substituted target or journal child is preserved with the journal for
+inspection.
+
+Regression coverage adds target and journal-child substitution during cleanup.
+The focused engine/transaction suite passed 91 tests with one platform skip.
+The full isolated suite passed 763 tests with 10 expected skips; the known
+local-model test may emit its existing `WinError 10053` server trace while
+still exiting successfully. Compileall, documentation/link coverage and
+`git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+passed with a 1,982,228-byte Python tracemalloc peak and a 29,757,440-byte
+process peak RSS. Exact-head hosted checks remain required; Windows ACL review
+and physical NTFS power-loss acceptance remain open.
