@@ -290,6 +290,15 @@ For a content-free worktree integrity inventory, run
 bounded file hashes without opening the task database, excludes Git/runtime/
 environment metadata and rejects links or reparse points; it is not a source
 archive or authenticated bundle.
+For a source-only transfer artifact, use
+`py -m forgeos worktree-archive WORKTREE DESTINATION` followed by
+`py -m forgeos worktree-archive-check DESTINATION`. The archive streams regular
+files into a bounded ZIP, embeds the same hash manifest, refuses path traversal,
+symlink-like entries and ZIP64/oversized central directories, and verifies
+contents without extracting or opening SQLite. It excludes the same Git,
+ForgeOS, environment, virtual-environment and dependency paths; it is still
+not a task database, evidence bundle, Git-object backup, encrypted artifact or
+authenticated signature.
 
 ### Verified task database backups (experimental)
 

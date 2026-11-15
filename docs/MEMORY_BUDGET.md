@@ -256,3 +256,19 @@ integrity check requests only the first reported fault. This reduces
 application-level temporary allocations but does not cap disk consumption,
 SQLite's native page cache, system filesystem cache or elapsed backup time.
 No scheduled backup polling or extra worker process is installed.
+
+## Source-only worktree archive allocation boundary
+
+`worktree-archive` forwards regular source files to the standard-library ZIP
+writer in 64 KiB blocks while hashing them; it never materializes a source
+file in a Python bytes object. The embedded JSONL manifest is capped at 2 MiB
+with 2 KiB records, and `worktree-archive-check` preflights a classic ZIP
+central directory capped at 4 MiB before `zipfile` builds its bounded entry
+metadata. Archive source contents and output are each capped at 512 MiB, with
+4,096 source files and 64 MiB per file.
+
+These are application-level allocation and input limits, not a complete
+process-RSS or decompressor CPU quota. Python's `zipfile`/zlib buffers,
+filesystem cache, disk space, external tools and the operating system remain
+outside the ForgeOS memory budget. No extraction directory, background worker
+or database connection is created by either archive command.

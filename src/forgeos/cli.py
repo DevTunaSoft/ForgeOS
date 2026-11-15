@@ -58,6 +58,17 @@ def main(argv=None):
     worktree_manifest_check.add_argument('source', help='Existing JSONL manifest path')
     worktree_manifest_check.add_argument('root', help='Existing Git worktree directory')
     worktree_manifest_check.add_argument('--max-issues', type=int, default=32)
+    worktree_archive = sub.add_parser(
+        'worktree-archive',
+        help='Export a bounded source-only ZIP archive for one Git worktree')
+    worktree_archive.add_argument('root', help='Existing Git worktree directory')
+    worktree_archive.add_argument(
+        'destination', help='New ZIP archive path outside the worktree')
+    worktree_archive_check = sub.add_parser(
+        'worktree-archive-check',
+        help='Verify a source-only worktree ZIP archive')
+    worktree_archive_check.add_argument('source', help='Existing ZIP archive path')
+    worktree_archive_check.add_argument('--max-issues', type=int, default=32)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -290,6 +301,17 @@ def main(argv=None):
         from .worktree_manifest import check_worktree_manifest
         report = check_worktree_manifest(
             args.source, args.root, max_issues=args.max_issues)
+        print(json.dumps(report, indent=2))
+        return 0 if report['valid'] else 1
+    if args.action == 'worktree-archive':
+        from .worktree_archive import export_worktree_archive
+        exported = export_worktree_archive(args.root, args.destination)
+        print(f'Exported worktree archive: {exported}')
+        return 0
+    if args.action == 'worktree-archive-check':
+        from .worktree_archive import check_worktree_archive
+        report = check_worktree_archive(
+            args.source, max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
     if args.action == 'memory':

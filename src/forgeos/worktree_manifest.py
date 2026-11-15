@@ -116,7 +116,8 @@ def _same_file(before, after) -> bool:
                for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
 
 
-def _hash_file(path: Path, before) -> tuple[int, str]:
+def _stream_file(path: Path, before, consumer=None) -> tuple[int, str]:
+    """Hash one regular file while optionally forwarding bounded blocks."""
     if before.st_size > MAX_WORKTREE_FILE_BYTES:
         raise ValueError("Worktree file exceeds size limit")
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
@@ -142,6 +143,8 @@ def _hash_file(path: Path, before) -> tuple[int, str]:
                 size += len(block)
                 if size > MAX_WORKTREE_FILE_BYTES:
                     raise ValueError("Worktree file exceeds size limit")
+                if consumer is not None:
+                    consumer(block)
                 digest.update(block)
     except ValueError:
         raise
@@ -157,6 +160,10 @@ def _hash_file(path: Path, before) -> tuple[int, str]:
     if not _same_file(before, after):
         raise ValueError("Worktree file changed during hashing")
     return size, digest.hexdigest()
+
+
+def _hash_file(path: Path, before) -> tuple[int, str]:
+    return _stream_file(path, before)
 
 
 def _destination(root: Path, destination: str | Path) -> Path:
