@@ -4,8 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import stat
 
 FINAL_JSON_RATE = 0.95
 FINAL_OBJECTIVE_RATE = 0.80
@@ -24,6 +26,68 @@ class QualifiedCandidate:
     model_bytes: int
     peak_memory_bytes: int
     median_latency_seconds: float
+
+
+def _is_reparse(info) -> bool:
+    return bool(
+        getattr(info, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def _same_file(before, after) -> bool:
+    return all(getattr(before, field, None) == getattr(after, field, None)
+               for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
+
+
+def _open_qualification_file(path: Path, flags: int) -> int:
+    """Open one qualification record through a narrow test seam."""
+    return os.open(path, flags)
+
+
+def _read_qualification_record(path: Path) -> bytes:
+    """Read one bounded evidence record without losing its file identity."""
+    before = path.lstat()
+    if (stat.S_ISLNK(before.st_mode) or _is_reparse(before)
+            or not stat.S_ISREG(before.st_mode)
+            or getattr(before, "st_nlink", 1) != 1):
+        raise ValueError("Qualification evidence file is not a plain file")
+    if before.st_size > MAX_QUALIFICATION_RECORD_BYTES:
+        raise ValueError("Qualification evidence file is oversized")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = _open_qualification_file(path, flags)
+    except OSError as exc:
+        raise ValueError(
+            "Qualification evidence file could not be opened safely") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if (_is_reparse(opened) or not stat.S_ISREG(opened.st_mode)
+                or getattr(opened, "st_nlink", 1) != 1
+                or not _same_file(before, opened)):
+            raise ValueError(
+                "Qualification evidence file changed or became a link")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = None
+            content = stream.read(MAX_QUALIFICATION_RECORD_BYTES + 1)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError(
+            "Qualification evidence file could not be read safely") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = path.lstat()
+    except OSError as exc:
+        raise ValueError(
+            "Qualification evidence file changed during read") from exc
+    if (not _same_file(before, after)
+            or getattr(after, "st_nlink", 1) != 1
+            or len(content) > MAX_QUALIFICATION_RECORD_BYTES):
+        raise ValueError("Qualification evidence file changed during read")
+    return content
 
 
 def _sha(value, field):
@@ -130,14 +194,7 @@ def load_qualification_records(directory: str | Path | None = None) -> list[dict
         if len(records) >= MAX_QUALIFICATION_RECORDS:
             break
         try:
-            if path.is_symlink() or not path.is_file():
-                continue
-            stat = path.stat()
-            if stat.st_nlink != 1 or stat.st_size > MAX_QUALIFICATION_RECORD_BYTES:
-                continue
-            raw = path.read_bytes()
-            if len(raw) > MAX_QUALIFICATION_RECORD_BYTES:
-                continue
+            raw = _read_qualification_record(path)
             value = json.loads(raw.decode("utf-8"))
             if isinstance(value, dict):
                 records.append(value)

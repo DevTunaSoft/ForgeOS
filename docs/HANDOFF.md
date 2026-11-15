@@ -3538,3 +3538,23 @@ expected skips; the known local-model test may emit its existing
 documentation/link coverage, `git diff --check` and the bounded 12 MiB x
 3-cycle memory benchmark remain required. Exact-head hosted checks, Windows
 ACL review and physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — qualified evidence read identity
+
+**Change:** the qualified-model evidence loader now treats local final-
+qualification JSON as an autonomy security boundary. Each candidate must
+remain an unlinked real regular file with the same identity before and after a
+descriptor-bound read, and the read is capped at the existing 64 KiB record
+limit plus one byte. Hard links, Windows reparse points, replacements and
+oversized records are ignored rather than parsed; a substituted record remains
+available for inspection.
+
+**Verification:** replacement-during-open preservation passed in the focused
+qualification/benchmark suite: 30 tests. The full isolated suite passed 775
+tests with 10 expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace while still exiting successfully. Compileall,
+documentation/link coverage, `git diff --check` and the bounded 12 MiB x
+3-cycle memory benchmark passed; the benchmark measured a 1,982,176-byte
+Python tracemalloc peak and a 29,966,336-byte process peak RSS. Exact-head
+hosted checks, Windows ACL review and physical NTFS power-loss acceptance
+remain open.

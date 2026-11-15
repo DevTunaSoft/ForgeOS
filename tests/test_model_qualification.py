@@ -118,6 +118,30 @@ class ModelQualificationTests(unittest.TestCase):
         self.assertEqual(len(values), 1)
         self.assertEqual(values[0]["model_name"], "forgeos-managed")
 
+    def test_loader_rejects_replacement_during_open(self):
+        import json
+        from pathlib import Path
+        import os
+        import tempfile
+        from unittest.mock import patch
+        from forgeos.model_qualification import load_qualification_records
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record = root / "qualification-replaced.json"
+            record.write_text(json.dumps(evidence()), encoding="utf-8")
+
+            def replace_before_open(path, flags):
+                path.unlink()
+                path.write_bytes(b"operator-owned qualification\n")
+                return os.open(path, flags)
+
+            with patch(
+                    "forgeos.model_qualification._open_qualification_file",
+                    side_effect=replace_before_open):
+                self.assertEqual(load_qualification_records(root), [])
+            self.assertEqual(
+                record.read_bytes(), b"operator-owned qualification\n")
+
     def test_router_can_pin_exact_evidence_digest_for_resume(self):
         from forgeos.model_qualification import qualify_role_evidence
         first = evidence(latency=1.0)
