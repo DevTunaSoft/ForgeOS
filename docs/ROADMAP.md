@@ -1013,3 +1013,23 @@ still exiting successfully. Compileall, documentation/link coverage and
 passed with a 1,982,228-byte Python tracemalloc peak and a 29,757,440-byte
 process peak RSS. Exact-head hosted checks remain required; Windows ACL review
 and physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — transaction recovery directory identity
+
+Pending recovery now snapshots each edit target's real parent before hashing
+and rechecks it before planning or rollback. Journal completion rechecks the
+original `pending-edit` directory after its last child is removed, verifies
+that the path is absent, and only then flushes the metadata parent. A
+replacement target parent or journal directory remains available for
+inspection instead of being deleted as if it were the original recovery
+boundary.
+
+Regression coverage adds target-parent and final-journal-directory substitution
+during recovery. The focused engine/transaction suite passed 93 tests with one
+platform skip. The full isolated suite passed 765 tests with 10 expected skips;
+the known local-model test may emit its existing `WinError 10053` server trace
+while still exiting successfully. Compileall, documentation/link coverage and
+`git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+passed with a 1,982,176-byte Python tracemalloc peak and a 30,060,544-byte
+process peak RSS. Exact-head hosted checks remain required; Windows ACL review
+and physical NTFS power-loss acceptance remain open.

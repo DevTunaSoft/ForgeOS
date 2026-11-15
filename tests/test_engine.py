@@ -1172,6 +1172,45 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertFalse((self.root / "created.py").exists())
 
 
+    def test_new_file_rollback_preserves_substituted_parent_target(self):
+        from unittest.mock import patch
+        from forgeos import transactions
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        nested = self.root / "nested"
+        nested.mkdir()
+        target = nested / "created.py"
+        target.write_text("new")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "nested/created.py", "before": None,
+                "after": _digest(b"new") }]}))
+        real_directory_info = transactions._directory_info
+        swapped = {"value": False}
+
+        def inspect_then_substitute(path, *args, **kwargs):
+            info = real_directory_info(path, *args, **kwargs)
+            if (path.name.casefold() == nested.name.casefold()
+                    and not swapped["value"]):
+                retained = self.root / "nested-retained"
+                nested.rename(retained)
+                nested.mkdir()
+                (nested / "created.py").write_text("new")
+                swapped["value"] = True
+            return info
+
+        with patch.object(
+                transactions, "_directory_info",
+                side_effect=inspect_then_substitute):
+            with self.assertRaisesRegex(
+                    TransactionError, "Edit target directory changed"):
+                recover_edits(self.root)
+        self.assertTrue(swapped["value"])
+        self.assertEqual(target.read_text(), "new")
+        self.assertTrue(txn.exists())
+
+
     def test_new_file_rollback_preserves_substituted_target(self):
         from unittest.mock import patch
         from forgeos import transactions
@@ -1242,6 +1281,45 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertTrue(swapped["value"])
         self.assertEqual(
             child.read_bytes(), b"operator-owned journal evidence")
+        self.assertTrue(txn.exists())
+
+
+    def test_journal_cleanup_preserves_substituted_directory(self):
+        from unittest.mock import patch
+        from forgeos import transactions
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        target = self.root / "published.py"
+        target.write_text("published")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "published.py", "before": None,
+                "after": _digest(b"published") }]}))
+        retained = self.root / ".forgeos" / "retained-pending-edit"
+        real_remove = transactions._remove_identity_bound_file
+        swapped = {"value": False}
+
+        def remove_then_substitute(path, *args, **kwargs):
+            result = real_remove(path, *args, **kwargs)
+            if (path.name.casefold() == "manifest.json"
+                    and not swapped["value"]):
+                txn.rename(retained)
+                txn.mkdir()
+                (txn / "operator-owned.txt").write_text("retain")
+                swapped["value"] = True
+            return result
+
+        with patch.object(
+                transactions, "_remove_identity_bound_file",
+                side_effect=remove_then_substitute):
+            with self.assertRaisesRegex(
+                    TransactionError, "Pending edit journal changed"):
+                recover_edits(self.root)
+        self.assertTrue(swapped["value"])
+        self.assertEqual(
+            (txn / "operator-owned.txt").read_text(), "retain")
+        self.assertTrue(retained.exists())
         self.assertTrue(txn.exists())
 
 
