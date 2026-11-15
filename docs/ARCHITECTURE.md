@@ -469,6 +469,17 @@ Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, br
 | Frozen Windows EXE, other presets on `main` | Not all supported in the secure runner; unsupported runtimes fail closed | Do not bypass containment to make tests pass |
 | Frozen Windows `python-pytest` (PR #43) | Bundles optional pytest, invokes a hidden frozen child, keeps logging inside a snapshot-owned watched file and uses the same AppContainer + Job Object | **Implemented experimental; hosted Windows unittest+pytest secure smoke passed**, physical end-user validation outstanding |
 
+Disposable execution snapshots keep their ownership marker outside the runtime
+directory because the contained child must not be able to forge or remove it.
+Cleanup snapshots the real parent, runtime directory and marker identities
+before validation. POSIX cleanup pins directory/file descriptors through the
+decision; Windows performs the same identity and reparse-point checks without
+holding handles that could block recursive removal or marker unlinking. The
+marker read is capped at 4 KiB, and a substituted runtime, marker or parent
+fails closed while preserving the replacement for inspection. These checks
+reduce same-user path substitution risk but are not a complete concurrent
+writer lock on Windows.
+
 Docker is **not required**. Git worktrees are version-control isolation, not operating-system security isolation. No test runner is allowed to claim full untrusted-code containment without real runtime proof.
 
 ## Sensitive data and storage
