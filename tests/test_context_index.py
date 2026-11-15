@@ -67,7 +67,8 @@ class ContextIndexTests(unittest.TestCase):
         replacement.write_text("def replacement_signature():\n pass\n")
 
         def replace_before_open(path, flags):
-            if Path(path) == source:
+            if (Path(path).resolve(strict=False).as_posix().casefold()
+                    == source.resolve(strict=False).as_posix().casefold()):
                 replacement.replace(source)
             return os.open(path, flags)
 
