@@ -44,6 +44,12 @@ EVENT_NO_UPDATE = """CREATE TRIGGER IF NOT EXISTS forgeos_events_no_update
  BEFORE UPDATE ON forgeos_events BEGIN
  SELECT RAISE(ABORT, 'ForgeOS event journal is append-only');
  END;"""
+
+ACTIVATION_MARKER_FORMAT = "forgeos-db-activation-v1"
+ACTIVATION_MARKER_LIMIT = 4096
+ACTIVATION_PHASES = frozenset(("prepared", "old_moved", "published"))
+ACTIVATION_PATH_FIELDS = ("source", "destination", "rollback", "staged")
+DATABASE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
 EVENT_NO_DELETE = """CREATE TRIGGER IF NOT EXISTS forgeos_events_no_delete
  BEFORE DELETE ON forgeos_events BEGIN
  SELECT RAISE(ABORT, 'ForgeOS event journal is append-only');
@@ -105,13 +111,83 @@ def _move_database_copy(source: Path, target: Path) -> None:
         os.unlink(source)
 
 
+def _activation_marker_path(destination: Path) -> Path:
+    try:
+        return destination.with_name(
+            destination.name + ".forgeos-activation.json")
+    except ValueError as exc:
+        raise ValueError("Activation destination must name a database file") from exc
+
+
+def _database_sidecars(database: Path) -> tuple[Path, ...]:
+    return tuple(Path(str(database) + suffix)
+                 for suffix in DATABASE_SIDECAR_SUFFIXES)
+
+
+def _read_activation_marker(marker: Path) -> dict:
+    """Read one bounded activation marker without trusting its contents."""
+    if marker.is_symlink() or not marker.is_file():
+        raise ValueError("Activation marker must be a regular file")
+    try:
+        with marker.open("rb") as stream:
+            encoded = stream.read(ACTIVATION_MARKER_LIMIT + 1)
+    except OSError as exc:
+        raise ValueError("Activation marker could not be read") from exc
+    if len(encoded) > ACTIVATION_MARKER_LIMIT:
+        raise ValueError("Activation marker is oversized")
+    try:
+        payload = json.loads(encoded.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Activation marker is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Activation marker must contain an object")
+    return payload
+
+
+def _validate_activation_marker(marker: Path, payload: dict) -> dict[str, Path]:
+    """Validate marker identity and return only its bounded path projection."""
+    if (payload.get("format") != ACTIVATION_MARKER_FORMAT
+            or payload.get("phase") not in ACTIVATION_PHASES):
+        raise ValueError("Activation marker format or phase is invalid")
+    paths = {}
+    try:
+        for field in ACTIVATION_PATH_FIELDS:
+            value = payload.get(field)
+            if type(value) is not str or not value:
+                raise ValueError("Activation marker path is invalid")
+            path = Path(value)
+            if not path.is_absolute():
+                raise ValueError("Activation marker paths must be absolute")
+            paths[field] = path
+        target = paths["destination"]
+        rollback = paths["rollback"]
+        staged = paths["staged"]
+        if marker != _activation_marker_path(target):
+            raise ValueError("Activation marker does not match its destination")
+        if (target == rollback or target == paths["source"]
+                or target == staged or rollback == paths["source"]
+                or rollback == staged or staged == paths["source"]):
+            raise ValueError("Activation marker paths must be distinct")
+        if (target.parent != rollback.parent or staged.parent != target.parent
+                or not target.parent.is_dir()
+                or target.parent.is_symlink()):
+            raise ValueError("Activation marker directory is unsafe")
+        if any(path.is_symlink() for path in (target, rollback, staged, marker)):
+            raise ValueError("Activation marker paths cannot be symlinks")
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("Activation marker"):
+            raise
+        raise ValueError("Activation marker paths are invalid") from exc
+    return paths
+
+
 def _write_activation_marker(marker: Path, payload: dict,
                              *, replace: bool = False) -> None:
     """Durably write a small activation phase marker owned by this process."""
     import tempfile
     encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"))
                + "\n").encode("utf-8")
-    if len(encoded) > 4096:
+    if len(encoded) > ACTIVATION_MARKER_LIMIT:
         raise ValueError("Database activation marker is oversized")
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-activation-", suffix=".tmp", dir=marker.parent)
@@ -478,7 +554,14 @@ class Store:
         source = Path(path).expanduser().absolute()
         if source.is_symlink() or not source.is_file():
             raise ValueError("Task database must be an existing regular file")
-        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as db:
+        # SQLite may create a -shm file merely by opening a sidecar-free
+        # WAL-mode database read-only. Immutable mode prevents that mutation
+        # when no journal sidecar exists; a present WAL/rollback journal must
+        # remain visible through the normal read-only connection instead.
+        has_sidecar = any(sidecar.exists() or sidecar.is_symlink()
+                          for sidecar in _database_sidecars(source))
+        query = "?mode=ro" if has_sidecar else "?mode=ro&immutable=1"
+        with closing(sqlite3.connect(source.as_uri() + query, uri=True)) as db:
             db.execute("PRAGMA query_only=ON")
             _verify_task_database_connection(db)
 
@@ -585,7 +668,7 @@ class Store:
         src = Path(source).expanduser().absolute()
         target = Path(destination).expanduser().absolute()
         old = Path(rollback).expanduser().absolute()
-        marker = target.with_name(target.name + ".forgeos-activation.json")
+        marker = _activation_marker_path(target)
         if src.is_symlink() or not src.is_file():
             raise ValueError("Restore source must be a regular SQLite database file")
         if (target.parent != old.parent or not target.parent.is_dir()
@@ -597,8 +680,7 @@ class Store:
             raise ValueError("Activation rollback and marker paths must be new files")
         if target.exists() and not target.is_file():
             raise ValueError("Activation destination must be a regular database file")
-        for suffix in ("-wal", "-shm", "-journal"):
-            sidecar = Path(str(target) + suffix)
+        for sidecar in _database_sidecars(target):
             if sidecar.exists() or sidecar.is_symlink():
                 raise RuntimeError(
                     "Stop ForgeOS and clear SQLite sidecars before activation")
@@ -616,7 +698,7 @@ class Store:
         try:
             Store.restore_backup_to(src, staged, manifest=manifest)
             marker_payload = {
-                "format": "forgeos-db-activation-v1",
+                "format": ACTIVATION_MARKER_FORMAT,
                 "source": str(src),
                 "destination": str(target),
                 "rollback": str(old),
@@ -651,6 +733,66 @@ class Store:
             raise
         finally:
             staged.unlink(missing_ok=True)
+
+    @staticmethod
+    def activation_status(destination: str | Path) -> dict:
+        """Return bounded, read-only status for an activation marker."""
+        target = Path(destination).expanduser().absolute()
+        marker = _activation_marker_path(target)
+        if marker.is_symlink():
+            raise ValueError("Activation marker cannot be a symlink")
+        if not marker.exists():
+            return {"status": "clear", "marker": str(marker)}
+        payload = _read_activation_marker(marker)
+        paths = _validate_activation_marker(marker, payload)
+        return {
+            "status": "pending",
+            "marker": str(marker),
+            "phase": payload["phase"],
+            "source": str(paths["source"]),
+            "destination": str(paths["destination"]),
+            "rollback": str(paths["rollback"]),
+            "staged": str(paths["staged"]),
+            "destination_exists": paths["destination"].exists(),
+            "rollback_exists": paths["rollback"].exists(),
+            "staged_exists": paths["staged"].exists(),
+        }
+
+    @staticmethod
+    def rollback_activation(destination: str | Path, *, confirm: bool = False) -> Path:
+        """Restore an interrupted activation's retained database, never overwrite."""
+        if confirm is not True:
+            raise ValueError("Explicit activation rollback confirmation is required")
+        target = Path(destination).expanduser().absolute()
+        marker = _activation_marker_path(target)
+        if marker.is_symlink() or not marker.is_file():
+            raise ValueError("No activation marker is available for rollback")
+        payload = _read_activation_marker(marker)
+        paths = _validate_activation_marker(marker, payload)
+        if payload["phase"] != "old_moved":
+            raise ValueError(
+                "Activation marker is not awaiting rollback from old_moved phase")
+        target = paths["destination"]
+        old = paths["rollback"]
+        staged = paths["staged"]
+        if target.exists() or target.is_symlink():
+            raise ValueError("Activation rollback refuses an occupied destination")
+        for database in (target, old):
+            if any(sidecar.exists() or sidecar.is_symlink()
+                   for sidecar in _database_sidecars(database)):
+                raise RuntimeError(
+                    "Clear SQLite sidecars before activation rollback")
+        if staged.exists() or staged.is_symlink():
+            raise RuntimeError(
+                "Preserve the staged activation file for manual inspection")
+        if old.is_symlink() or not old.is_file():
+            raise ValueError("Retained rollback database is unavailable")
+        Store.inspect_existing_database(old)
+        _move_database_copy(old, target)
+        if marker.is_symlink():
+            raise RuntimeError("Activation marker changed during rollback")
+        marker.unlink()
+        return target
 
     def add(self, project: str, description: str) -> int:
         project_path = Path(project).expanduser().resolve(strict=True)

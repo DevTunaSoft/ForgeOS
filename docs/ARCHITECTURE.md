@@ -127,6 +127,16 @@ complete, the marker and rollback file remain for manual recovery. It does not
 coordinate a running process, replay journal actions, merge task histories or
 claim physical power-loss recovery.
 
+`Store.activation_status()` reads at most 4 KiB of the marker and returns only
+bounded path/phase/existence metadata. `Store.rollback_activation()` accepts
+only the durable `old_moved` phase, validates the retained database through a
+bounded read-only preflight (using immutable mode when no sidecar exists), and
+publishes it with the same
+no-overwrite move boundary. Neither command initializes the active Store or
+replays journal actions. Read-only checks use immutable SQLite URI mode when
+no sidecars exist, avoiding inspection-created `-shm` files; an existing WAL
+or rollback journal remains on the normal read-only path.
+
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository. The optional GUI/CLI **Plan** and **Run tests only** actions now share `task_actions.py` instead of using independent, unguarded SQLite state writes. Direct tests require explicit host-test permission and use the engine's platform-specific test containment (frozen Windows supported presets only).

@@ -721,7 +721,24 @@ folder. On Windows an open database handle causes the move to fail. If a later
 step cannot finish, ForgeOS attempts to restore the old file; preserve the
 rollback and `tasks.sqlite3.forgeos-activation.json` marker if that recovery
 also fails. This is an operator-guided replacement, not automatic failover or
-full power-loss recovery.
+full power-loss recovery. Inspect an interrupted marker without opening the
+active Store:
+
+```powershell
+py -m forgeos db-activation-status "$env:USERPROFILE\\.forgeos\\tasks.sqlite3"
+```
+
+If the status is `pending` with phase `old_moved`, the destination is absent,
+ForgeOS remains stopped and the retained rollback is trusted, explicitly
+reconcile it with:
+
+```powershell
+py -m forgeos db-activation-rollback "$env:USERPROFILE\\.forgeos\\tasks.sqlite3" --confirm
+```
+
+Rollback refuses an occupied destination, sidecars, a remaining staged file or
+an invalid marker. `prepared` and `published` markers are diagnostic states;
+do not force them into a rollback without inspecting the paths.
 
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:

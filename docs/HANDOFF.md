@@ -2255,6 +2255,30 @@ Linux/Windows checks, frozen packaging and physical Windows open-handle,
 disk-full, interruption and power-loss acceptance remain required before
 calling this a disaster-recovery guarantee.
 
+## 2026-11-15 — bounded activation-marker reconciliation
+
+**Change:** interrupted offline database activation now has read-only
+`Store.activation_status()` / `db-activation-status` inspection and an
+explicit `Store.rollback_activation()` / `db-activation-rollback` path. Marker
+input is capped at 4 KiB, the format/phase/path projection is validated, and
+rollback is accepted only for `old_moved` with an absent destination, no
+sidecars, no staged file and a verified retained database. The no-overwrite
+move is reused; the marker is removed only after the retained database is
+published back.
+
+**Root-cause correction:** read-only SQLite inspection of a sidecar-free
+WAL-mode database can create `-shm`. `Store.inspect_existing_database()` now
+uses `mode=ro&immutable=1` when no sidecar exists, while preserving normal
+read-only WAL visibility when a sidecar is present. This prevents ForgeOS's
+own preflight from leaving artifacts that would block safe activation rollback.
+
+**Regression coverage:** activation tests cover bounded status, explicit
+rollback, confirmation, occupied destinations, oversized markers and the
+absence of inspection-created sidecars; CLI tests verify status dispatch does
+not initialize the active Store. Focused tests and compile/diff checks pass;
+the full exact-head Linux/Windows matrix, packaging and physical
+interruption/power-loss acceptance remain required.
+
 ## 2026-11-15 — isolate loopback test timing seams
 
 The protected Windows Python 3.12 run exposed a test-harness race: the

@@ -56,6 +56,17 @@ def main(argv=None):
     restore_activate.add_argument(
         '--confirm', action='store_true',
         help='Confirm ForgeOS is stopped and activation is intended')
+    activation_status = sub.add_parser(
+        'db-activation-status',
+        help='Inspect a bounded offline database activation marker')
+    activation_status.add_argument('destination', help='Active database path')
+    activation_rollback = sub.add_parser(
+        'db-activation-rollback',
+        help='Roll back an interrupted offline database activation')
+    activation_rollback.add_argument('destination', help='Active database path')
+    activation_rollback.add_argument(
+        '--confirm', action='store_true',
+        help='Confirm ForgeOS is stopped and rollback is intended')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
     models=sub.add_parser('models',help='List models reported by one local runtime')
@@ -194,6 +205,15 @@ def main(argv=None):
             args.source, args.destination, args.rollback,
             manifest=args.manifest or None, confirm=args.confirm)
         print(f'Activated database: {activated}')
+        return 0
+    if args.action == 'db-activation-status':
+        status = Store.activation_status(args.destination)
+        print(json.dumps(status, indent=2))
+        return 0
+    if args.action == 'db-activation-rollback':
+        restored = Store.rollback_activation(
+            args.destination, confirm=args.confirm)
+        print(f'Rolled back database: {restored}')
         return 0
     if args.action == 'journal':
         store = Store(args.db)

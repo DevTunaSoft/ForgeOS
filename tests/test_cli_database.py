@@ -77,6 +77,21 @@ class DatabaseCommandsTests(unittest.TestCase):
                 self.assertEqual(db.execute(
                     "SELECT description FROM tasks").fetchone()[0], "old CLI task")
 
+    def test_activation_status_cli_is_bounded_and_rollback_requires_confirmation(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "tasks.sqlite3"
+            output = io.StringIO()
+            with patch.object(Store, "__init__", side_effect=AssertionError(
+                    "Activation status must not open the active task database")), \
+                    redirect_stdout(output):
+                self.assertEqual(main([
+                    "db-activation-status", str(destination)]), 0)
+            self.assertEqual(
+                __import__("json").loads(output.getvalue())["status"], "clear")
+            with self.assertRaisesRegex(ValueError, "confirmation"):
+                main(["db-activation-rollback", str(destination)])
+
     def test_database_commands_never_initialize_a_missing_database(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
