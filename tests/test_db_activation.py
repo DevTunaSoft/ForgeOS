@@ -222,6 +222,25 @@ class ActivateBackupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "oversized"):
             Store.activation_status(self.active)
 
+    def test_replacing_activation_marker_flushes_posix_directory(self):
+        marker = self.root / "activation-marker.json"
+        payload = {"format": "forgeos-db-activation-v1", "phase": "prepared"}
+        with patch("forgeos.core.os.name", "posix"), \
+                patch("forgeos.core.os.replace") as replace, \
+                patch("forgeos.core._sync_publication_directory") as sync:
+            core._write_activation_marker(marker, payload, replace=True)
+        replace.assert_called_once()
+        sync.assert_called_once_with(self.root)
+
+    def test_removing_activation_marker_flushes_posix_directory(self):
+        marker = self.root / "activation-marker.json"
+        marker.write_text("marker", encoding="utf-8")
+        with patch("forgeos.core.os.name", "posix"), \
+                patch("forgeos.core._sync_publication_directory") as sync:
+            core._remove_activation_marker(marker)
+        self.assertFalse(marker.exists())
+        sync.assert_called_once_with(self.root)
+
 
 if __name__ == "__main__":
     unittest.main()

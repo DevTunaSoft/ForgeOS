@@ -550,3 +550,18 @@ passed 697 tests with 8 expected skips. Documentation/link coverage and
 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
 30,404,608-byte process peak RSS. These remain local synthetic/process
 measurements, not physical Windows or model-memory acceptance.
+
+### 2026-11-15 — activation marker directory durability
+
+Activation phase-marker replacement and removal now flush the containing POSIX
+directory entry, closing the window where a moved rollback file could be paired
+with a stale `prepared` marker after a crash. Windows retains the existing
+directory-sync no-op and exclusive rename behavior; this is a one-shot
+durability improvement, not physical NTFS power-loss acceptance.
+
+Focused activation tests passed 14/14; the full isolated suite passed 699 tests
+with 8 expected skips. Documentation/link coverage, compileall and
+`git diff --check` passed. The bounded memory benchmark passed for three
+12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
+30,031,872-byte process peak RSS. These remain local synthetic/process
+measurements, not physical Windows or model-memory acceptance.
