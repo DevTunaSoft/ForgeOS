@@ -164,8 +164,9 @@ def main(argv=None):
         return 0
     if args.action == 'db-restore-copy':
         # Do not open or initialize the active task database for a restore copy.
-        print(f'Verified restore copy: {Store.restore_backup_to(
-            args.source, args.destination, manifest=args.manifest or None)}')
+        restored = Store.restore_backup_to(
+            args.source, args.destination, manifest=args.manifest or None)
+        print(f'Verified restore copy: {restored}')
         return 0
     if args.action == 'journal':
         store = Store(args.db)
@@ -226,8 +227,9 @@ def main(argv=None):
                 first = False
             sys.stdout.write("\n]\n" if not first else "]\n")
         elif args.action=='db-backup':
-            print(f'Verified backup: {store.backup_to(
-                args.destination, manifest=args.manifest or None)}')
+            backup = store.backup_to(
+                args.destination, manifest=args.manifest or None)
+            print(f'Verified backup: {backup}')
         elif args.action=='recover':
             print(f'Inspected {store.recover()} interrupted tasks; editing/testing tasks blocked for inspection')
         elif args.action=='recover-edits':
