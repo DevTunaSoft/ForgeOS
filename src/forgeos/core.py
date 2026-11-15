@@ -88,6 +88,17 @@ class LeaseLostError(RuntimeError):
     """An expired, reclaimed, or concurrently changed task cannot be published."""
 
 
+def _sync_publication_directory(directory: Path) -> None:
+    """Flush a POSIX publication directory without changing Windows behavior."""
+    if os.name == "nt":
+        return
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _publish_database_copy(staging: Path, target: Path) -> None:
     """Publish a staged SQLite copy without replacing a concurrent destination.
 
@@ -100,6 +111,7 @@ def _publish_database_copy(staging: Path, target: Path) -> None:
         os.rename(staging, target)
     else:
         os.link(staging, target)
+        _sync_publication_directory(target.parent)
 
 
 def _move_database_copy(source: Path, target: Path) -> None:
