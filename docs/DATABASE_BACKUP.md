@@ -156,6 +156,13 @@ finish. Add `--authentication AUTH_RECORD --key KEY` to require the detached
 HMAC before staging. This is an explicit offline operator action, not journal
 replay, history merging or automatic failover.
 
+The activation and recovery-bundle materialization moves validate the private
+source, destination parents and new target before use, then recheck their
+identities around the Windows rename or POSIX hard-link/unlink sequence. A
+substituted source or directory fails closed; this narrows the move race but
+does not provide a system-wide concurrent-writer lock or physical power-loss
+acceptance.
+
 ## Explicit offline activation with rollback
 
 When a deliberate replacement of the active database is required, first exit

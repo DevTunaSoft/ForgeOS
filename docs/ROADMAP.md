@@ -800,3 +800,23 @@ coverage and `git diff --check` passed. The bounded 12 MiB x 3-cycle memory
 benchmark reported a 1,982,228-byte Python tracemalloc peak and a
 30,035,968-byte process peak RSS. Exact-head hosted checks remain required;
 Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — private recovery move identity checks
+
+The private file move shared by offline activation and recovery-bundle
+materialization now validates the source, both parent directories and the new
+target before use, then rechecks their identities around the Windows rename or
+POSIX hard-link/unlink sequence. A redirected source, destination parent or
+unexpected residual source fails closed, preserving recovery evidence instead
+of deleting an untrusted path.
+
+Regression coverage adds source redirection, source substitution and
+destination-parent substitution tests for the shared move helper. Focused
+activation/recovery-bundle/database tests passed 73 tests. The full isolated
+suite passed 737 tests with 9 expected skips; the known local-model test may
+emit its existing `WinError 10053` server trace while still exiting
+successfully. Compileall, documentation/link coverage and `git diff --check`
+passed. The bounded 12 MiB x 3-cycle memory benchmark reported a
+1,982,228-byte Python tracemalloc peak and a 30,015,488-byte process peak RSS.
+Exact-head hosted checks remain required; Windows ACL review and physical
+NTFS power-loss acceptance remain open.

@@ -730,7 +730,10 @@ database causes the corresponding move or inspection to fail closed. If a later
 step cannot finish, ForgeOS attempts to restore the old file; preserve the
 rollback and `tasks.sqlite3.forgeos-activation.json` marker if that recovery
 also fails. This is an operator-guided replacement, not automatic failover or
-full power-loss recovery. Inspect an interrupted marker without opening the
+full power-loss recovery. Activation and recovery-bundle file moves recheck
+their private source and parent identities around publication, so a path
+substitution fails closed rather than deleting an unexpected file. Inspect an
+interrupted marker without opening the
 active Store:
 
 ```powershell

@@ -127,6 +127,13 @@ standard-library path. This is a filesystem compatibility and no-overwrite
 boundary, not a guarantee against non-cooperating external writers or physical
 power loss.
 
+The private file move shared by offline activation and recovery-bundle
+materialization applies the same no-overwrite identity checks around its
+Windows rename or POSIX hard-link/unlink sequence. It validates the source,
+both parent directories and the new target before use, then verifies the
+published identity and source disappearance; a source or directory
+substitution leaves recovery evidence instead of deleting an unexpected path.
+
 Read-only task-database inspection, streamed backup-manifest hashing and
 restore-copy capture the source's regular-file identity before use and recheck
 device/inode, size and modification time afterward. A link, reparse point or
