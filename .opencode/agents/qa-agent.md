@@ -27,10 +27,34 @@ permissions:
     resource: "git rev-parse *"
     effect: allow
   - action: shell
+    resource: "git -C * status *"
+    effect: allow
+  - action: shell
+    resource: "git -C * diff *"
+    effect: allow
+  - action: shell
+    resource: "git -C * rev-parse *"
+    effect: allow
+  - action: shell
+    resource: "git worktree list *"
+    effect: allow
+  - action: shell
     resource: "python -B -m unittest *"
     effect: allow
   - action: shell
     resource: "py -B -m unittest *"
+    effect: allow
+  - action: shell
+    resource: "python -m unittest *"
+    effect: allow
+  - action: shell
+    resource: "py -m unittest *"
+    effect: allow
+  - action: shell
+    resource: "PYTHONPATH=src python -m unittest *"
+    effect: allow
+  - action: shell
+    resource: "*PYTHONPATH*"
     effect: allow
   - action: shell
     resource: "python -B tools/check_documentation.py *"
@@ -39,10 +63,22 @@ permissions:
     resource: "py -B tools/check_documentation.py *"
     effect: allow
   - action: shell
+    resource: "python tools/check_documentation.py *"
+    effect: allow
+  - action: shell
+    resource: "py tools/check_documentation.py *"
+    effect: allow
+  - action: shell
     resource: "python -B scripts/check_handoff.py *"
     effect: allow
   - action: shell
     resource: "py -B scripts/check_handoff.py *"
+    effect: allow
+  - action: shell
+    resource: "python scripts/check_handoff.py *"
+    effect: allow
+  - action: shell
+    resource: "py scripts/check_handoff.py *"
     effect: allow
   - action: shell
     resource: "python -B tools/memory_benchmark.py *"
@@ -61,7 +97,7 @@ permissions:
     effect: allow
 ---
 
-Independently verify one lead-assigned fragment at its exact branch, worktree, and commit. Read the acceptance criteria, owned-file list, relevant source and tests, documentation, and diff. Confirm the worktree is the assigned isolated one and check for changes outside owned files.
+Independently verify one lead-assigned fragment at its exact branch, worktree, and commit. Read the acceptance criteria, owned-file list, relevant source and tests, documentation, and diff. Confirm the worktree is the assigned isolated one and check for changes outside owned files. The lead may launch QA from the canonical checkout: in that case use the assigned absolute worktree path with `git -C` and absolute reads. On Windows, set `PYTHONPATH` to that worktree's `src` directory for test commands using only a process-local environment assignment; do not install the package or dependencies.
 
 You are read-only: do not edit, write, patch, commit, create/delete branches, push, merge, or run unapproved shell commands. File-edit tools are denied. Shell commands are limited to read-only Git/GitHub inspection and the listed test/documentation checks; other commands require approval. Do not use `--auto`, approve your own changes, or rely on the coding agent's test claims.
 
