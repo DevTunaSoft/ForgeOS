@@ -28,11 +28,15 @@ def main(argv=None):
     journal.add_argument('--limit', type=int, default=100)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
+    db_backup.add_argument('--manifest', default='',
+                           help='Optional new JSON digest manifest path')
     restore_copy=sub.add_parser(
         'db-restore-copy',
         help='Validate an SQLite task backup and restore only to a brand-new file')
     restore_copy.add_argument('source', help='Existing SQLite task backup file')
     restore_copy.add_argument('destination', help='New database path; never overwrites')
+    restore_copy.add_argument('--manifest', default='',
+                              help='Optional manifest required to match the source')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
     models=sub.add_parser('models',help='List models reported by one local runtime')
@@ -160,7 +164,9 @@ def main(argv=None):
         return 0
     if args.action == 'db-restore-copy':
         # Do not open or initialize the active task database for a restore copy.
-        print(f'Verified restore copy: {Store.restore_backup_to(args.source, args.destination)}')
+        restored = Store.restore_backup_to(
+            args.source, args.destination, manifest=args.manifest or None)
+        print(f'Verified restore copy: {restored}')
         return 0
     if args.action == 'journal':
         store = Store(args.db)
@@ -221,7 +227,9 @@ def main(argv=None):
                 first = False
             sys.stdout.write("\n]\n" if not first else "]\n")
         elif args.action=='db-backup':
-            print(f'Verified backup: {store.backup_to(args.destination)}')
+            backup = store.backup_to(
+                args.destination, manifest=args.manifest or None)
+            print(f'Verified backup: {backup}')
         elif args.action=='recover':
             print(f'Inspected {store.recover()} interrupted tasks; editing/testing tasks blocked for inspection')
         elif args.action=='recover-edits':

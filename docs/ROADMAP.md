@@ -228,3 +228,14 @@ one SQLite transaction, and update/delete triggers prevent recovery history
 rewriting. The bounded `journal` CLI view supports diagnosis without loading
 task result blobs. Full active-database restoration, encryption, external
 evidence/worktree bundles and physical power-loss acceptance remain open.
+
+### 2026-11-14 — streamed backup digest manifests
+
+`db-backup` can now publish an optional new JSON manifest containing the
+backup's byte size and streamed SHA-256. `db-restore-copy` can require the
+manifest before opening the source, detecting accidental transfer/storage
+corruption without buffering the database or replacing an active database.
+Regression coverage includes bounded manifest contents, no-overwrite
+preflight, and mismatch refusal. This is not encryption, authentication,
+active-database activation, or physical power-loss acceptance; issue #4 stays
+open.

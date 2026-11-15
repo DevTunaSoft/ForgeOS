@@ -1,5 +1,6 @@
 """SQLite online backup regressions. No network, models or user projects."""
 from contextlib import closing
+import json
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -33,6 +34,28 @@ class OnlineBackupTests(unittest.TestCase):
                              (task,)).fetchone(), ("planned", "checkpoint"))
         self.assertEqual(self.store.get_status(task), "planned")
         self.assertEqual(list(self.root.glob(".forgeos-backup-*")), [])
+
+    def test_backup_manifest_is_bounded_and_matches_published_bytes(self):
+        target = self.root / "task-copy.sqlite3"
+        manifest = self.root / "task-copy.json"
+        self.store.backup_to(target, manifest=manifest)
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+        self.assertEqual(value["format"], "forgeos-sqlite-backup-v1")
+        self.assertEqual(value["filename"], target.name)
+        self.assertEqual(value["size"], target.stat().st_size)
+        import hashlib
+        self.assertEqual(
+            value["sha256"], hashlib.sha256(target.read_bytes()).hexdigest())
+        self.assertLessEqual(manifest.stat().st_size, 1024)
+
+    def test_backup_manifest_never_overwrites_an_existing_file(self):
+        target = self.root / "task-copy.sqlite3"
+        manifest = self.root / "task-copy.json"
+        manifest.write_text("preserve", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "new file"):
+            self.store.backup_to(target, manifest=manifest)
+        self.assertFalse(target.exists())
+        self.assertEqual(manifest.read_text(encoding="utf-8"), "preserve")
 
     def test_never_overwrites_an_existing_file(self):
         target = self.root / "prior.sqlite3"

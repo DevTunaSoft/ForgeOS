@@ -1,5 +1,6 @@
 """Fail-closed, on-demand SQLite task backup restoration tests."""
 from contextlib import closing
+import json
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -38,6 +39,21 @@ class RestoreBackupTests(unittest.TestCase):
         self.assertTrue(self.backup.is_file())
         self.assertEqual(self.store.get_status(self.task), "blocked")
         self.assertFalse(list(self.root.glob(".forgeos-restore-*")))
+
+    def test_manifest_must_match_before_restore_copy(self):
+        manifest = self.root / "saved-backup.json"
+        self.store.backup_to(self.root / "manifest-backup.sqlite3", manifest=manifest)
+        output = self.root / "manifest-restored.sqlite3"
+        Store.restore_backup_to(self.root / "manifest-backup.sqlite3", output,
+                                manifest=manifest)
+        self.assertTrue(output.is_file())
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+        value["sha256"] = "0" * 64
+        manifest.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            Store.restore_backup_to(self.backup, self.root / "rejected.sqlite3",
+                                    manifest=manifest)
+        self.assertFalse((self.root / "rejected.sqlite3").exists())
 
     def test_existing_destination_is_never_overwritten(self):
         output = self.root / "existing.sqlite3"

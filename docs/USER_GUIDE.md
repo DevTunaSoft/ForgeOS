@@ -687,11 +687,17 @@ Create a trusted folder for backups first, then use these PowerShell commands:
 ```powershell
 py -m forgeos db-check
 py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup.sqlite3"
+# Optional digest manifest for transfer/storage verification
+py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup.sqlite3" --manifest "C:\\ForgeOS-backups\\tasks-backup.json"
 ```
 
 Always supply a **new filename**. An existing backup is never overwritten.
 ForgeOS includes committed SQLite WAL changes and checks the completed
 snapshot before making it visible. No background backup process is started.
+The optional manifest is a bounded JSON record of the backup size and streamed
+SHA-256; require it during offline inspection with
+`db-restore-copy SOURCE DESTINATION --manifest MANIFEST`. It detects accidental
+corruption, but is not encryption or an attacker-resistant signature.
 The backup is **not encrypted** and does not include external evidence archives,
 Git worktrees or model weights. Do not attempt a live database overwrite to
 restore. Read [database backup limitations](DATABASE_BACKUP.md) first.

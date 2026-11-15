@@ -1,6 +1,7 @@
 """Persistent task store and cautious, bounded development workflow."""
 from __future__ import annotations
 from io import BytesIO
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -59,6 +60,8 @@ MAX_EVENT_TYPE_BYTES = 64
 MAX_EVENT_ACTOR_BYTES = 128
 MAX_EVENT_DETAILS_BYTES = 2048
 EVENT_TYPE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+BACKUP_MANIFEST_FORMAT = "forgeos-sqlite-backup-v1"
+MAX_BACKUP_MANIFEST_BYTES = 1024
 
 
 class LeaseLostError(RuntimeError):
@@ -84,6 +87,76 @@ def _utf8_size(value: str) -> int:
         return len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:
         raise ValueError("Input contains invalid Unicode text") from exc
+
+
+def _database_file_digest(path: Path) -> tuple[int, str]:
+    """Stream a database digest without loading the file into memory."""
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        while True:
+            chunk = stream.read(64 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+    return size, digest.hexdigest()
+
+
+def _read_backup_manifest(path: str | Path) -> dict[str, object]:
+    manifest = Path(path).expanduser().absolute()
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError("Backup manifest must be an existing regular file")
+    if manifest.stat().st_size > MAX_BACKUP_MANIFEST_BYTES:
+        raise ValueError("Backup manifest is oversized")
+    try:
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Backup manifest is invalid") from exc
+    if not isinstance(value, dict) or value.get("format") != BACKUP_MANIFEST_FORMAT:
+        raise ValueError("Backup manifest format is unsupported")
+    size = value.get("size")
+    digest = value.get("sha256")
+    if (type(size) is not int or size < 0 or
+            not isinstance(digest, str) or
+            not re.fullmatch(r"[0-9a-f]{64}", digest)):
+        raise ValueError("Backup manifest fields are invalid")
+    return value
+
+
+def _verify_backup_manifest(database: Path, manifest: str | Path) -> None:
+    expected = _read_backup_manifest(manifest)
+    size, digest = _database_file_digest(database)
+    if size != expected["size"] or digest != expected["sha256"]:
+        raise ValueError("Backup does not match its manifest")
+
+
+def _publish_backup_manifest(database: Path, manifest: Path) -> None:
+    if (manifest == database or not manifest.parent.is_dir() or
+            manifest.parent.is_symlink() or manifest.is_symlink() or
+            manifest.exists()):
+        raise ValueError("Backup manifest must be a new file in an existing directory")
+    size, digest = _database_file_digest(database)
+    payload = json.dumps({
+        "format": BACKUP_MANIFEST_FORMAT,
+        "filename": database.name,
+        "size": size,
+        "sha256": digest,
+    }, sort_keys=True, separators=(",", ":")) + "\n"
+    if len(payload.encode("utf-8")) > MAX_BACKUP_MANIFEST_BYTES:
+        raise RuntimeError("Backup manifest unexpectedly exceeds its bound")
+    import tempfile
+    fd, name = tempfile.mkstemp(
+        prefix=".forgeos-manifest-", suffix=".tmp", dir=manifest.parent)
+    os.close(fd)
+    staging = Path(name)
+    try:
+        staging.write_text(payload, encoding="utf-8", newline="\n")
+        with staging.open("rb+") as stream:
+            os.fsync(stream.fileno())
+        _publish_database_copy(staging, manifest)
+    finally:
+        staging.unlink(missing_ok=True)
 
 
 def validate_task_description(description: str) -> str:
@@ -212,7 +285,8 @@ class Store:
             db.execute("PRAGMA query_only=ON")
             _verify_task_database_connection(db)
 
-    def backup_to(self, destination: str | Path) -> Path:
+    def backup_to(self, destination: str | Path,
+                  manifest: str | Path | None = None) -> Path:
         """Publish an integrity-checked, non-overwriting SQLite online backup."""
         import tempfile
         from contextlib import closing
@@ -222,6 +296,14 @@ class Store:
                 or target.parent.is_symlink() or target.is_symlink()
                 or target.exists()):
             raise ValueError("Backup destination must be a new file in an existing directory")
+        manifest_target = None
+        if manifest is not None:
+            manifest_target = Path(manifest).expanduser().absolute()
+            if (manifest_target == target or not manifest_target.parent.is_dir()
+                    or manifest_target.parent.is_symlink()
+                    or manifest_target.is_symlink() or manifest_target.exists()):
+                raise ValueError(
+                    "Backup manifest must be a new file in an existing directory")
         if self.db.in_transaction:
             raise RuntimeError("Finish the active task transaction before backup")
         self.check_integrity()
@@ -239,12 +321,15 @@ class Store:
                 os.fsync(stream.fileno())
             # Exclusive atomic publication; never replace another backup.
             _publish_database_copy(staging, target)
+            if manifest_target is not None:
+                _publish_backup_manifest(target, manifest_target)
             return target
         finally:
             staging.unlink(missing_ok=True)
 
     @staticmethod
-    def restore_backup_to(source: str | Path, destination: str | Path) -> Path:
+    def restore_backup_to(source: str | Path, destination: str | Path,
+                          manifest: str | Path | None = None) -> Path:
         """Verify a ForgeOS SQLite database and copy it to a new file only.
 
         The old database, backup and active ForgeOS database are never
@@ -257,6 +342,8 @@ class Store:
         target = Path(destination).expanduser().absolute()
         if src.is_symlink() or not src.is_file():
             raise ValueError("Restore source must be a regular SQLite database file")
+        if manifest is not None:
+            _verify_backup_manifest(src, manifest)
         if (src == target or not target.parent.is_dir()
                 or target.parent.is_symlink() or target.is_symlink()
                 or target.exists()):
