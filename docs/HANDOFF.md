@@ -2421,6 +2421,27 @@ local failure. Compileall, documentation links/change coverage and the 12 MiB
 x3 memory benchmark passed; post-GC RSS remained about 22.8 MiB across the
 three cycles. Exact-head GitHub checks remain the acceptance gate.
 
+## 2026-11-15 — bounded worktree integrity manifest
+
+**Change:** added `worktree-manifest` and `worktree-manifest-check`. The
+exporter streams regular-file SHA-256 metadata in 64 KiB blocks under bounded
+file, depth, scan and total-byte limits. The verifier rehashes listed files and
+detects changed, missing or extra files without opening SQLite or materializing
+source contents.
+
+**Safety boundary:** `.git`, ForgeOS runtime/journal directories, dependencies,
+virtual environments and `.env*` files are excluded. Symlinks, hard links,
+Windows reparse points and special files are rejected. The manifest contains
+paths, sizes and hashes only; it is not a source archive, Git-object backup,
+signature or encryption layer, and ignored metadata/empty directories are not
+proven preserved.
+
+**Regression coverage:** worktree tests cover clean verification, changed/
+missing/extra files, symlink refusal, oversized input, destination safety and
+publication cleanup. CLI tests verify export and checking remain database-free.
+Exact-head Linux/Windows matrix, packaging, memory validation and a complete
+source/evidence bundle remain required.
+
 ## 2026-11-15 — task-scoped bounded journal replay plan
 
 **Change:** added `Store.export_handoff()` and `forgeos journal-handoff`.

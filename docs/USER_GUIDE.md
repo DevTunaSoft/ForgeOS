@@ -790,3 +790,24 @@ SHA-256 gzip archive by streaming and hashing its decompressed bytes under the
 existing 32 MiB bound. It never creates the directory or returns the archived
 text. Missing, symlinked, corrupt or oversized evidence makes the report
 invalid; omit this option when the evidence store is intentionally unavailable.
+
+For a content-free worktree integrity inventory, use a destination outside the
+worktree:
+
+```powershell
+py -m forgeos worktree-manifest `
+  "C:\ForgeOS-workspaces\task-1" `
+  "C:\ForgeOS-backups\task-1-worktree.jsonl"
+py -m forgeos worktree-manifest-check `
+  "C:\ForgeOS-backups\task-1-worktree.jsonl" `
+  "C:\ForgeOS-workspaces\task-1"
+```
+
+The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
+64 MiB-per-file and 512 MiB-total bound. It excludes `.git`, `.forgeos`,
+`.forgeos-runtime`, virtual-environment/dependency directories and `.env*`
+files, and never copies source text or initializes the task database. The
+checker detects changed, missing or extra regular files and rejects symlinks,
+hard links, Windows reparse points and special files. Paths and hashes can
+still be sensitive; this is an integrity inventory, not a complete source
+archive or authenticated/encrypted bundle.
