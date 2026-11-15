@@ -160,6 +160,11 @@ redirected parents and unexpected private staging substitutions fail closed;
 staging cleanup removes only the file identity created by this process. This
 is a bounded check-and-use guard, not an operating-system concurrent-writer
 lock or physical power-loss guarantee.
+Marker removal uses the same boundary: it requires the marker to remain an
+unlinked real regular file, compares its captured identity and parent before
+unlinking, verifies that the path is absent afterward, and flushes the parent
+entry. The `missing_ok` cleanup mode suppresses only an already-absent marker;
+it does not delete a linked, redirected or substituted path.
 
 An optional backup manifest is generated with a streamed 64 KiB SHA-256 and
 byte count, capped to a 1 KiB JSON file. Restore-copy can verify that manifest
