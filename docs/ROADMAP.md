@@ -741,3 +741,22 @@ while still exiting successfully. Compileall, documentation/link coverage and
 reported a 1,982,228-byte Python tracemalloc peak and a 30,060,544-byte
 process peak RSS. Exact-head hosted checks remain required; Windows ACL review
 and physical NTFS power-loss acceptance remain open.
+
+### 2026-11-15 — staged edit publication identity checks
+
+Before replacing an edit target, transaction publication now validates every
+real directory component from the workspace root, rechecks the target identity
+captured during staging, and verifies both the staged and published SHA-256
+digests. A parent-directory or target substitution therefore fails closed
+before publication or leaves the journal for recovery inspection. This narrows
+the atomic publication race boundary but is not a complete concurrent-writer
+lock or physical Windows power-loss guarantee.
+
+Focused publication and engine regressions passed 88 tests with 1 expected
+platform skip. The full isolated suite passed 729 tests with 9 expected skips;
+the known local-model test may emit its existing `WinError 10053` server trace
+while still exiting successfully. Compileall, documentation/link coverage and
+`git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+reported a 1,982,228-byte Python tracemalloc peak and a 30,052,352-byte
+process peak RSS. Exact-head hosted checks remain required; Windows ACL review
+and physical NTFS power-loss acceptance remain open.
