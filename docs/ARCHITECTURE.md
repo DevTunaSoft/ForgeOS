@@ -221,6 +221,14 @@ must ensure the previous writer has stopped. A bundled database is materialized
 as a passive file and is never activated or used to initialize the running
 Store.
 
+`restore_recovery_bundle_database_to()` is the copy-only shortcut for a bundle
+that contains a database artifact. It fully validates the ZIP, optionally
+requires the detached HMAC gate, streams only the database and optional backup
+manifest into private temporary staging, rechecks the package digest, and
+delegates to `Store.restore_backup_to()` for read-only SQLite verification and
+no-overwrite publication. It rejects bundles without a database and never
+activates the running database or initializes a `Store` instance.
+
 `export_recovery_bundle_auth()` adds a detached operator-held authenticity
 record without changing the passive ZIP format. It validates the package,
 streams the complete ZIP through the existing 64 KiB artifact digest boundary

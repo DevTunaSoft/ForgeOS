@@ -131,6 +131,14 @@ def main(argv=None):
                                  help='Optional existing verified SQLite backup')
     recovery_bundle.add_argument('--database-manifest', default='',
                                  help='Optional SQLite backup manifest')
+    recovery_bundle_db_restore = sub.add_parser(
+        'recovery-bundle-db-restore-copy',
+        help='Restore a bundled database only to a new SQLite copy')
+    recovery_bundle_db_restore.add_argument(
+        'source', help='Existing recovery bundle ZIP path')
+    recovery_bundle_db_restore.add_argument(
+        'destination', help='New SQLite database path; never overwrites')
+    _add_recovery_auth_gate(recovery_bundle_db_restore)
     recovery_bundle_check = sub.add_parser(
         'recovery-bundle-check',
         help='Verify one bounded recovery bundle ZIP')
@@ -454,6 +462,14 @@ def main(argv=None):
             database=args.database or None,
             database_manifest=args.database_manifest or None)
         print(f'Exported recovery bundle: {exported}')
+        return 0
+    if args.action == 'recovery-bundle-db-restore-copy':
+        from .recovery_database import restore_recovery_bundle_database_to
+        authentication, key = _recovery_auth_gate(parser, args)
+        restored = restore_recovery_bundle_database_to(
+            args.source, args.destination,
+            authentication=authentication, key=key)
+        print(f'Restored recovery bundle database copy: {restored}')
         return 0
     if args.action == 'recovery-bundle-check':
         authentication, key = _recovery_auth_gate(parser, args)

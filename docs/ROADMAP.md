@@ -504,3 +504,12 @@ the existing handoff/source/evidence transfer without activating a database,
 initializing Store, replaying actions, encrypting the package or claiming
 physical power-loss durability. Database restore/activation remains an
 explicit operator step.
+
+### 2026-11-15 — copy-only restore from passive recovery bundles
+
+`recovery-bundle-db-restore-copy` now validates a package, optionally enforces
+its detached HMAC, stages only the bundled database and manifest, and delegates
+to the existing read-only SQLite restore-copy boundary. The destination must
+be new; the active database is never opened or replaced, and bundles without
+database artifacts are refused. Explicit offline activation, journal replay,
+encryption and physical power-loss acceptance remain separate future work.

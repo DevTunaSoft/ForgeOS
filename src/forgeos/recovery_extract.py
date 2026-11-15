@@ -332,17 +332,8 @@ def _ensure_directory(path: Path) -> None:
 
 
 def _require_authentication(bundle: Path, authentication, key) -> None:
-    if authentication is None and key is None:
-        return
-    if (authentication is None) != (key is None):
-        raise ValueError(
-            "Recovery bundle authentication record and key are required together")
-    from .recovery_auth import check_recovery_bundle_auth
-    report = check_recovery_bundle_auth(bundle, authentication, key)
-    if not report["valid"]:
-        problem = (report["issues"][0]["problem"]
-                   if report["issues"] else "authentication failed")
-        raise ValueError("Recovery bundle authentication failed: " + problem)
+    from .recovery_auth import require_recovery_bundle_authentication
+    require_recovery_bundle_authentication(bundle, authentication, key)
 
 
 def resume_recovery_bundle_extraction(source: str | Path,

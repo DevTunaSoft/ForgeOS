@@ -2774,3 +2774,26 @@ construction. Existing unsigned bundles remain compatible.
 passed 21 tests. Compileall and the existing recovery regressions passed.
 Full test, documentation, memory, exact-head hosted Linux/Windows, packaging
 and physical interruption evidence remain required for this branch.
+
+## 2026-11-15 — copy-only restore from passive recovery bundles
+
+**Change:** added `recovery-bundle-db-restore-copy`. The command validates the
+complete recovery ZIP, optionally requires the detached package HMAC, streams
+only its `database/` entry and optional backup manifest into private temporary
+staging, rechecks the package digest, and delegates to
+`Store.restore_backup_to()` for read-only SQLite verification and
+no-overwrite publication. It refuses packages without a database and never
+initializes an active `Store`, replaces the running database, executes a task
+or replays the journal. Explicit `db-restore-activate` remains the separate
+operator-controlled activation boundary.
+
+**Regression coverage:** five direct restore tests cover valid copy, wrong-key
+refusal, existing-destination preservation, database-less package refusal and
+tampered-entry refusal. The CLI regression proves dispatch remains active-
+Store-init-free. The Windows-safe fixture uses a closed immutable read-only
+SQLite connection so it does not create or hold sidecars.
+
+**Local verification:** focused restore-copy and CLI suites passed 6 tests;
+existing package and extraction suites remained green. Full test,
+documentation, memory, exact-head hosted Linux/Windows, packaging and physical
+interruption evidence remain required for this branch.

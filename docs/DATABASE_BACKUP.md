@@ -103,6 +103,20 @@ inspection or a later explicit `db-restore-copy`/`db-restore-activate` step;
 it never activates the file or overwrites the running task database. The
 bundle remains unencrypted and does not provide physical power-loss recovery.
 
+To restore only the bundled database into a new copy without materializing the
+full directory, use:
+
+```powershell
+py -m forgeos recovery-bundle-db-restore-copy `
+  "C:\\ForgeOS-backups\\task-1-recovery.zip" `
+  "C:\\ForgeOS-received\\tasks-restored.sqlite3"
+```
+
+This command validates the package, stages only its database entry, and reuses
+the read-only SQLite checks and no-overwrite publication of `db-restore-copy`.
+It never activates the running database. If the package has a detached HMAC,
+add `--authentication AUTH_RECORD --key KEY` to require it before staging.
+
 **This is a verified offline copy, not automatic activation.** It does not
 stop ForgeOS, switch the GUI's active database, merge task histories, or
 replace an existing database. The new copy is for inspection or a deliberately
