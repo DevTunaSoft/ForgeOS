@@ -331,12 +331,16 @@ entries and refuses mismatched existing entries. It marks the directory
 complete only after the same final checks; the resume command also never
 executes or replays the handoff.
 For an operator-held shared-secret authenticity check, create and verify a
-detached record with `py -m forgeos recovery-bundle-auth PACKAGE KEY
-AUTH_RECORD` and `py -m forgeos recovery-bundle-auth-check PACKAGE
-AUTH_RECORD KEY`. The package is streamed once through HMAC-SHA-256 with the
+detached record with `py -m forgeos recovery-bundle-auth PACKAGE KEY AUTH_RECORD`
+and `py -m forgeos recovery-bundle-auth-check PACKAGE AUTH_RECORD KEY`. The
+package is streamed once through HMAC-SHA-256 with the
 same bounded key/file checks; the key is never copied into the record or
 logged. This authenticates possession of the shared secret but is not
 encryption or a public-key signature, so protect and rotate the key separately.
+To require that authenticity before checking or receiving a package, add
+`--authentication AUTH_RECORD --key KEY` to `recovery-bundle-check`,
+`recovery-bundle-extract`, or `recovery-bundle-extract-resume`; a missing or
+invalid pair fails before materialization.
 
 ### Verified task database backups (experimental)
 

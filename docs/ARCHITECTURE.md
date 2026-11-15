@@ -226,6 +226,15 @@ package, record and same shared secret to agree; this is authenticity by
 shared-secret possession, not encryption, a public-key signature or database
 restoration.
 
+The package checker exposes that same optional gate as a combined report, and
+the receiving `extract_recovery_bundle()` and
+`resume_recovery_bundle_extraction()` APIs accept the record and key as a
+pair. A failed gate occurs before extraction staging or resume file moves;
+unsigned calls retain their existing integrity-only behavior. The extraction
+marker deliberately stores only the package digest and phase, so an operator
+who chooses authentication must provide the record and key again for every
+resume operation.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback

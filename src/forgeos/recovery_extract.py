@@ -305,8 +305,24 @@ def _ensure_directory(path: Path) -> None:
         raise ValueError("Recovery extraction directory could not be created") from exc
 
 
+def _require_authentication(bundle: Path, authentication, key) -> None:
+    if authentication is None and key is None:
+        return
+    if (authentication is None) != (key is None):
+        raise ValueError(
+            "Recovery bundle authentication record and key are required together")
+    from .recovery_auth import check_recovery_bundle_auth
+    report = check_recovery_bundle_auth(bundle, authentication, key)
+    if not report["valid"]:
+        problem = (report["issues"][0]["problem"]
+                   if report["issues"] else "authentication failed")
+        raise ValueError("Recovery bundle authentication failed: " + problem)
+
+
 def resume_recovery_bundle_extraction(source: str | Path,
-                                      destination: str | Path) -> Path:
+                                      destination: str | Path, *,
+                                      authentication: str | Path | None = None,
+                                      key: str | Path | None = None) -> Path:
     """Resume only a marked incomplete extraction without overwriting files."""
     bundle = Path(source).expanduser().absolute()
     root, state = _resume_root(destination)
@@ -321,6 +337,7 @@ def resume_recovery_bundle_extraction(source: str | Path,
         report = check_recovery_bundle(bundle)
         if not report["valid"]:
             raise ValueError("Recovery bundle is invalid")
+        _require_authentication(bundle, authentication, key)
         entries = _validated_entries(bundle)
         staging = Path(tempfile.mkdtemp(
             prefix=".forgeos-recovery-resume-", dir=root.parent))
@@ -392,7 +409,9 @@ def resume_recovery_bundle_extraction(source: str | Path,
 
 
 def extract_recovery_bundle(source: str | Path,
-                            destination: str | Path) -> Path:
+                            destination: str | Path, *,
+                            authentication: str | Path | None = None,
+                            key: str | Path | None = None) -> Path:
     """Materialize one verified bundle into a new marked directory."""
     bundle = Path(source).expanduser().absolute()
     target = _destination(destination)
@@ -403,6 +422,7 @@ def extract_recovery_bundle(source: str | Path,
     report = check_recovery_bundle(bundle)
     if not report["valid"]:
         raise ValueError("Recovery bundle is invalid")
+    _require_authentication(bundle, authentication, key)
     package_size, package_sha256 = _artifact_digest(
         bundle, max_bytes=MAX_RECOVERY_BUNDLE_BYTES)
     staging = Path(tempfile.mkdtemp(

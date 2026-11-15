@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from forgeos.core import JOURNAL_HANDOFF_MANIFEST_FORMAT, _move_database_copy
 from forgeos.diagnostics import EvidenceStore
+from forgeos.recovery_auth import export_recovery_bundle_auth
 from forgeos.recovery_extract import (
     RECOVERY_EXTRACTION_STATE_NAME,
     check_recovery_bundle_extraction,
@@ -61,6 +62,11 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
         export_recovery_bundle(
             handoff, archive, self.bundle,
             manifest=manifest, evidence_directory=evidence_root)
+        self.key = self.root / "recovery.key"
+        self.key.write_bytes(b"k" * 64)
+        self.authentication = self.root / "recovery.auth.json"
+        export_recovery_bundle_auth(
+            self.bundle, self.key, self.authentication)
 
     def test_extracts_and_checks_a_complete_new_directory(self):
         destination = self.root / "restored"
@@ -82,6 +88,23 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "new directory"):
             extract_recovery_bundle(self.bundle, destination)
         self.assertEqual(marker.read_text(), "keep\n")
+
+    def test_authentication_gate_rejects_wrong_key_before_new_directory(self):
+        wrong_key = self.root / "wrong.key"
+        wrong_key.write_bytes(b"w" * 64)
+        destination = self.root / "restored"
+        with self.assertRaisesRegex(ValueError, "authentication failed"):
+            extract_recovery_bundle(
+                self.bundle, destination,
+                authentication=self.authentication, key=wrong_key)
+        self.assertFalse(destination.exists())
+
+        self.assertEqual(
+            extract_recovery_bundle(
+                self.bundle, destination,
+                authentication=self.authentication, key=self.key),
+            destination)
+        self.assertTrue(check_recovery_bundle_extraction(destination)["valid"])
 
     def test_checker_detects_tampered_materialized_handoff(self):
         destination = self.root / "restored"
@@ -122,9 +145,34 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
                 extract_recovery_bundle(self.bundle, destination)
         self.assertFalse(check_recovery_bundle_extraction(destination)["valid"])
         self.assertEqual(
-            resume_recovery_bundle_extraction(self.bundle, destination),
+            resume_recovery_bundle_extraction(
+                self.bundle, destination,
+                authentication=self.authentication, key=self.key),
             destination)
         self.assertTrue(check_recovery_bundle_extraction(destination)["valid"])
+
+    def test_resume_authentication_gate_rejects_wrong_key_before_copying(self):
+        destination = self.root / "restored"
+        calls = 0
+
+        def fail_after_two(source, target):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise OSError("interrupted publication")
+            return _move_database_copy(source, target)
+
+        with patch("forgeos.recovery_extract._move_database_copy",
+                   side_effect=fail_after_two):
+            with self.assertRaises(OSError):
+                extract_recovery_bundle(self.bundle, destination)
+        wrong_key = self.root / "wrong.key"
+        wrong_key.write_bytes(b"w" * 64)
+        with self.assertRaisesRegex(ValueError, "authentication failed"):
+            resume_recovery_bundle_extraction(
+                self.bundle, destination,
+                authentication=self.authentication, key=wrong_key)
+        self.assertFalse((destination / "source" / "source.zip").exists())
 
     def test_resume_refuses_a_tampered_existing_entry(self):
         destination = self.root / "restored"

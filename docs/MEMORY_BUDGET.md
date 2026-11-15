@@ -336,3 +336,14 @@ not encrypt the ZIP, provide public-key signer identity or protect the key
 file; operators must store and rotate the shared secret separately. ZIP/zlib
 buffers, filesystem cache and process RSS remain outside these application-
 level allocation limits.
+
+## Authenticated recovery materialization allocation boundary
+
+The optional authentication gate for `recovery-bundle-check`,
+`recovery-bundle-extract` and `recovery-bundle-extract-resume` performs the
+same bounded package coherence check plus one streamed HMAC pass. It retains
+only the existing package metadata, the 32-byte-to-4 KiB key and the bounded
+authentication record; no ZIP or key-sized collection is added to extraction.
+The gate runs before staging or no-overwrite moves, and an operator must pass
+the pair again when resuming because the durable extraction marker does not
+store secrets or authentication-record contents.

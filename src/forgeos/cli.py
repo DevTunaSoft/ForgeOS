@@ -16,6 +16,23 @@ def _cli_model(*, backend: str, model: str, endpoint: str):
     return create_model(backend=backend, model=model, endpoint=endpoint)
 
 
+def _add_recovery_auth_gate(parser):
+    parser.add_argument(
+        '--authentication', default='',
+        help='Optional detached HMAC authentication record')
+    parser.add_argument(
+        '--key', default='',
+        help='Shared-secret key required with --authentication')
+
+
+def _recovery_auth_gate(parser, args):
+    authentication = args.authentication or None
+    key = args.key or None
+    if (authentication is None) != (key is None):
+        parser.error('--authentication and --key must be provided together')
+    return authentication, key
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description='ForgeOS local-first development manager')
     parser.add_argument('--db',default=str(default_db()))
@@ -107,12 +124,14 @@ def main(argv=None):
         help='Verify one bounded recovery bundle ZIP')
     recovery_bundle_check.add_argument('source', help='Existing recovery bundle ZIP path')
     recovery_bundle_check.add_argument('--max-issues', type=int, default=32)
+    _add_recovery_auth_gate(recovery_bundle_check)
     recovery_extract = sub.add_parser(
         'recovery-bundle-extract',
         help='Materialize a verified recovery bundle into a new directory')
     recovery_extract.add_argument('source', help='Existing recovery bundle ZIP path')
     recovery_extract.add_argument(
         'destination', help='New recovery directory path; never overwrites')
+    _add_recovery_auth_gate(recovery_extract)
     recovery_extract_check = sub.add_parser(
         'recovery-bundle-extract-check',
         help='Verify a completed materialized recovery bundle')
@@ -126,6 +145,7 @@ def main(argv=None):
         'source', help='Existing recovery bundle ZIP path')
     recovery_extract_resume.add_argument(
         'destination', help='Existing incomplete recovery directory')
+    _add_recovery_auth_gate(recovery_extract_resume)
     recovery_auth = sub.add_parser(
         'recovery-bundle-auth',
         help='Create a detached HMAC authentication record for a recovery ZIP')
@@ -410,14 +430,24 @@ def main(argv=None):
         print(f'Exported recovery bundle: {exported}')
         return 0
     if args.action == 'recovery-bundle-check':
-        from .recovery_package import check_recovery_bundle
-        report = check_recovery_bundle(
-            args.source, max_issues=args.max_issues)
+        authentication, key = _recovery_auth_gate(parser, args)
+        if authentication is None:
+            from .recovery_package import check_recovery_bundle
+            report = check_recovery_bundle(
+                args.source, max_issues=args.max_issues)
+        else:
+            from .recovery_auth import check_recovery_bundle_authenticated
+            report = check_recovery_bundle_authenticated(
+                args.source, authentication, key,
+                max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
     if args.action == 'recovery-bundle-extract':
         from .recovery_extract import extract_recovery_bundle
-        extracted = extract_recovery_bundle(args.source, args.destination)
+        authentication, key = _recovery_auth_gate(parser, args)
+        extracted = extract_recovery_bundle(
+            args.source, args.destination,
+            authentication=authentication, key=key)
         print(f'Extracted recovery bundle: {extracted}')
         return 0
     if args.action == 'recovery-bundle-extract-check':
@@ -428,8 +458,10 @@ def main(argv=None):
         return 0 if report['valid'] else 1
     if args.action == 'recovery-bundle-extract-resume':
         from .recovery_extract import resume_recovery_bundle_extraction
+        authentication, key = _recovery_auth_gate(parser, args)
         resumed = resume_recovery_bundle_extraction(
-            args.source, args.destination)
+            args.source, args.destination,
+            authentication=authentication, key=key)
         print(f'Resumed recovery bundle extraction: {resumed}')
         return 0
     if args.action == 'recovery-bundle-auth':

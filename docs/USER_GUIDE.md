@@ -920,3 +920,11 @@ and verifies the package filename, size, SHA-256 and HMAC-SHA-256. The key is
 never placed in the record or CLI output. This is not ZIP encryption or a
 public-key signature; protect and rotate the key outside ForgeOS, and treat
 the package contents as potentially sensitive.
+
+To enforce that authenticity before a transfer is checked or materialized, add
+`--authentication CREDENTIAL_RECORD --key SHARED_SECRET_FILE` to
+`recovery-bundle-check`, `recovery-bundle-extract`, or
+`recovery-bundle-extract-resume`. Both options are required together. The gate
+fails before extraction staging or resume moves, and the pair must be supplied
+again for a later resume because the durable extraction marker never stores
+the secret or authentication record.
