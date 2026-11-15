@@ -806,6 +806,18 @@ py -m forgeos worktree-archive `
   "C:\ForgeOS-backups\task-1-worktree.zip"
 py -m forgeos worktree-archive-check `
   "C:\ForgeOS-backups\task-1-worktree.zip"
+py -m forgeos recovery-bundle-index `
+  "C:\ForgeOS-backups\task-1-handoff.jsonl" `
+  "C:\ForgeOS-backups\task-1-worktree.zip" `
+  "C:\ForgeOS-backups\task-1-bundle-index.jsonl" `
+  --manifest "C:\ForgeOS-backups\task-1-handoff.json" `
+  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
+py -m forgeos recovery-bundle-index-check `
+  "C:\ForgeOS-backups\task-1-bundle-index.jsonl" `
+  --handoff "C:\ForgeOS-backups\task-1-handoff.jsonl" `
+  --worktree-archive "C:\ForgeOS-backups\task-1-worktree.zip" `
+  --manifest "C:\ForgeOS-backups\task-1-handoff.json" `
+  --evidence-directory "$env:USERPROFILE\.forgeos\diagnostics"
 ```
 
 The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
@@ -833,3 +845,15 @@ may contain secrets and should be reviewed before transfer. It is not a task
 database backup, diagnostic evidence bundle, Git-object backup, signature or
 encryption layer; it does not preserve empty directories or provide restore,
 action replay or physical power-loss acceptance.
+
+`recovery-bundle-index` is the coherence step after those separate artifacts
+exist. It requires a valid handoff and source archive, optionally checks the
+handoff digest manifest, and records only bounded filenames, sizes and streamed
+SHA-256 values for the handoff, archive and each referenced diagnostic gzip.
+When a handoff references evidence, `--evidence-directory` is required and
+each archive is verified through the existing 32 MiB decompressed-evidence
+bound. `recovery-bundle-index-check` rechecks the same paths and nested source
+archive without opening SQLite or extracting anything. The index does not copy
+the artifacts, authenticate them against a signer, encrypt them, preserve
+database state or execute a replay plan; it is an integrity/coherence record
+toward a future complete recovery bundle.

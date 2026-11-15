@@ -380,3 +380,14 @@ symlink-like entries, and preserves the no-overwrite publication boundary.
 This is a source-transfer artifact, not a task database/evidence bundle,
 Git-object backup, encrypted or signed retention format, restore/import/replay
 mechanism or physical power-loss acceptance.
+
+### 2026-11-15 — bounded recovery bundle coherence index
+
+`recovery-bundle-index` now validates a handoff, source-only worktree archive
+and every referenced evidence archive, then publishes a bounded JSONL index of
+their filenames, sizes and streamed hashes. The offline checker revalidates
+all three artifact classes, including the nested source archive, without
+opening SQLite or extracting content. This binds separately stored recovery
+artifacts before a future copy/encryption step; the index itself is not a
+complete bundle, signature, encrypted retention format, restore/import/replay
+mechanism or physical power-loss acceptance.

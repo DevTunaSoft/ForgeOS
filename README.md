@@ -299,6 +299,13 @@ contents without extracting or opening SQLite. It excludes the same Git,
 ForgeOS, environment, virtual-environment and dependency paths; it is still
 not a task database, evidence bundle, Git-object backup, encrypted artifact or
 authenticated signature.
+After publishing a handoff and source archive, bind them with
+`py -m forgeos recovery-bundle-index HANDOFF WORKTREE_ARCHIVE DESTINATION`
+and verify that index with `recovery-bundle-index-check` plus the original
+artifact paths. The index streams hashes for the handoff, source archive and
+referenced diagnostic archives; it does not copy or encrypt them, so it is a
+coherence record toward a future complete recovery bundle rather than the
+bundle itself.
 
 ### Verified task database backups (experimental)
 

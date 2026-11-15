@@ -272,3 +272,9 @@ process-RSS or decompressor CPU quota. Python's `zipfile`/zlib buffers,
 filesystem cache, disk space, external tools and the operating system remain
 outside the ForgeOS memory budget. No extraction directory, background worker
 or database connection is created by either archive command.
+
+The recovery bundle index follows the same streaming boundary: it retains at
+most 4,096 evidence metadata records in memory, caps its JSONL output at 2 MiB,
+and hashes handoff, source-archive and compressed evidence bytes in 64 KiB
+blocks. It is an index only, so it never collects raw handoff, source or
+diagnostic content in Python and never creates a second copy of those files.
