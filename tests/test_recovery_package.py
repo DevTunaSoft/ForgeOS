@@ -1,6 +1,7 @@
 """Bounded recovery-package regressions."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ from forgeos.recovery_package import (
     RECOVERY_BUNDLE_FORMAT,
     RECOVERY_BUNDLE_HEADER_NAME,
     RECOVERY_BUNDLE_INDEX_NAME,
+    _index_rows,
     check_recovery_bundle,
     export_recovery_bundle,
 )
@@ -171,6 +173,25 @@ class RecoveryBundlePackageTests(unittest.TestCase):
         self.assertFalse(report["valid"])
         self.assertIn(
             "evidence entries", " ".join(issue["problem"] for issue in report["issues"]))
+
+    def test_index_reader_rejects_replacement_during_open(self):
+        index = self.root / "index.jsonl"
+        index.write_text(
+            '{"record":"header","format":"forgeos-recovery-bundle-index-v1"}\n',
+            encoding="utf-8")
+
+        def replace_before_open(path, flags):
+            path.unlink()
+            path.write_text('{"record":"replacement"}\n', encoding="utf-8")
+            return os.open(path, flags)
+
+        with patch("forgeos.recovery_bundle._open_bounded_file",
+                   side_effect=replace_before_open):
+            with self.assertRaisesRegex(ValueError, "changed or became a link"):
+                _index_rows(index)
+        self.assertEqual(
+            index.read_text(encoding="utf-8"),
+            '{"record":"replacement"}\n')
 
     def test_publication_failure_cleans_staging_and_output(self):
         with patch("forgeos.recovery_package._publish_database_copy",

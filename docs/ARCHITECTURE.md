@@ -313,6 +313,15 @@ limited to 512 MiB, must have no SQLite sidecars, and are inspected read-only;
 the package remains a passive transport artifact, not encryption,
 authentication, active-database restoration or action replay.
 
+Package creation and extraction parse the materialized JSONL index through a
+descriptor-bound reader rather than a path-following `read_bytes()` call. It
+captures the real regular-file identity, opens with the platform no-follow
+flags when available, checks the opened descriptor, reads at most the 2 MiB
+index bound plus one byte, and rechecks the path identity afterward. Hard
+links, reparse points, replacements and oversized indexes fail closed while
+the replacement remains available for inspection; the bounded read preserves
+the low-memory recovery contract.
+
 `extract_recovery_bundle()` is the receiving-side recovery boundary. It first
 checks the complete ZIP and streams its entries into a private staging
 directory, then verifies the staged index before reserving a new destination

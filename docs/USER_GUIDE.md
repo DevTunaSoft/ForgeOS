@@ -1029,6 +1029,13 @@ nested artifact and rejects unsafe or ZIP64 layouts. The package is capped at
 It is not encrypted, signed, an active-database replacement, a
 restore/import/replay mechanism or a physical power-loss guarantee.
 
+ForgeOS reads the package's 2 MiB JSONL index through an identity-checked,
+bounded file descriptor. If another process replaces, redirects, hard-links
+or enlarges that index while it is being opened or read, package creation or
+checking fails closed and leaves the replacement for inspection. This protects
+the recovery decision without loading an unbounded file into memory; it is a
+race guard, not a system-wide concurrent-writer lock.
+
 `recovery-bundle-extract` is the receiving-side materialization step. It
 requires a new destination directory, verifies the package before copying,
 uses private staging and bounded 64 KiB streaming writes, and writes

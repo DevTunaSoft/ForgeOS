@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import tempfile
 
 from .core import (
@@ -32,6 +33,7 @@ from .worktree_archive import (
 from .worktree_manifest import (
     HASH_CHUNK_BYTES,
     MAX_WORKTREE_ISSUES,
+    _is_reparse,
     _plain_info,
     _same_file,
 )
@@ -49,6 +51,50 @@ MAX_RECOVERY_BUNDLE_ISSUES = MAX_WORKTREE_ISSUES
 RECOVERY_BUNDLE_DATABASE_FORMAT = "forgeos-sqlite-backup-v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FILENAME = re.compile(r"^[^\\/:*?\"<>|\x00]{1,255}$")
+
+
+def _open_bounded_file(path: Path, flags: int) -> int:
+    """Open one recovery file through a patchable, narrow test seam."""
+    return os.open(path, flags)
+
+
+def _read_bounded_file(path: Path, *, max_bytes: int,
+                       description: str) -> bytes:
+    """Read a small regular file without losing its path identity."""
+    info = _plain_info(path, directory=False)
+    if info.st_size > max_bytes:
+        raise ValueError(f"{description} is oversized")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = _open_bounded_file(path, flags)
+    except OSError as exc:
+        raise ValueError(f"{description} could not be opened safely") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if (_is_reparse(opened) or not stat.S_ISREG(opened.st_mode)
+                or not _same_file(info, opened)
+                or getattr(opened, "st_nlink", 1) != 1):
+            raise ValueError(f"{description} changed or became a link")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = None
+            content = stream.read(max_bytes + 1)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError(f"{description} could not be read safely") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = path.lstat()
+    except OSError as exc:
+        raise ValueError(f"{description} changed during read") from exc
+    if (not _same_file(info, after)
+            or getattr(after, "st_nlink", 1) != 1
+            or len(content) > max_bytes):
+        raise ValueError(f"{description} changed during read")
+    return content
 
 
 def _artifact_digest(path: Path, *, max_bytes: int, consumer=None) -> tuple[int, str]:

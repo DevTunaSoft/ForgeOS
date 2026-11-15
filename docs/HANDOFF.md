@@ -3502,3 +3502,21 @@ Python tracemalloc peak and a 30,044,160-byte process peak RSS.
 Documentation/link coverage,
 `git diff --check` and exact-head hosted checks remain required before merge.
 Windows ACL review and physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — recovery bundle index read identity
+
+**Change:** recovery bundle creation and checking now read the materialized
+JSONL index through a bounded, identity-bound descriptor. The reader captures
+the real regular-file identity, uses no-follow flags where available, checks
+the opened descriptor, caps the read at 2 MiB plus one byte, and rechecks the
+path after reading. Hard-linked, reparse-backed, oversized or substituted
+indexes fail closed; a replacement is retained for inspection.
+
+**Verification:** replacement-during-open preservation coverage passed in the
+focused recovery/package/extraction/authentication/database/CLI suite: 48
+tests with one expected platform skip. The full isolated suite passed 772
+tests with 10 expected skips; the known local-model test may emit its existing
+`WinError 10053` server trace while still exiting successfully. Compileall,
+documentation/link coverage and `git diff --check` remain required, as does
+the bounded 12 MiB x 3-cycle memory benchmark. Exact-head hosted checks,
+Windows ACL review and physical NTFS power-loss acceptance remain open.
