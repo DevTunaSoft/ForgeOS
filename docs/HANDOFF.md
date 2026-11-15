@@ -3165,3 +3165,25 @@ passed. The bounded 12 MiB x 3-cycle memory benchmark reported a
 1,982,228-byte Python tracemalloc peak and a 30,052,352-byte process peak RSS.
 Exact-head hosted checks remain required before merge. Windows ACL review and
 physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — shared database publication identity checks
+
+**Change:** the shared `_publish_database_copy()` boundary now rejects linked
+or Windows-reparse staging files, publication directories and occupied
+destinations. It rechecks staging identity and parent-directory identity before
+the exclusive Windows rename or POSIX hard-link publication, then validates the
+published artifact and parent again. This protects database backups, restore
+copies, backup manifests, handoff manifests and activation markers through one
+canonical helper without adding a second publication path.
+
+**Regression coverage:** database backup tests cover redirected staging,
+redirected parent directories and staging substitution between identity
+checks; existing Windows rename/POSIX hard-link tests now exercise the real
+publication operation. The focused core/database/CLI recovery suite passed 89
+tests. The full isolated suite passed 732 tests with 9 expected skips; the
+known local-model test may emit its existing `WinError 10053` server trace but
+exits successfully. Compileall, documentation/link coverage and
+`git diff --check` passed. The bounded 12 MiB x 3-cycle memory benchmark
+reported a 1,982,228-byte Python tracemalloc peak and a 30,056,448-byte process
+peak RSS. Exact-head hosted checks remain required before merge. Windows ACL
+review and physical NTFS power-loss acceptance remain open.

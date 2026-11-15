@@ -119,10 +119,13 @@ Windows uses an exclusive same-directory rename because hard-link publication
 is not a portable Windows contract; POSIX retains the same-volume hard-link
 path and flushes the parent directory after the link. Both paths refuse an
 existing destination and remove only their own staging file after publication
-or failure. Windows flushes the staged file before its exclusive rename but has
-no equivalent portable directory flush in this standard-library path. This is
-a filesystem compatibility and no-overwrite boundary, not a guarantee against
-non-cooperating external writers or physical power loss.
+or failure. The helper rejects linked/reparse staging files and publication
+directories, then rechecks staging identity and the parent directory identity
+before and after the operation. Windows flushes the staged file before its
+exclusive rename but has no equivalent portable directory flush in this
+standard-library path. This is a filesystem compatibility and no-overwrite
+boundary, not a guarantee against non-cooperating external writers or physical
+power loss.
 
 An optional backup manifest is generated with a streamed 64 KiB SHA-256 and
 byte count, capped to a 1 KiB JSON file. Restore-copy can verify that manifest

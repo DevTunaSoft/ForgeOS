@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import subprocess
 import time
 from urllib.request import Request, urlopen
@@ -84,6 +85,7 @@ JOURNAL_HANDOFF_MANIFEST_FORMAT = "forgeos-journal-handoff-manifest-v1"
 MAX_JOURNAL_HANDOFF_MANIFEST_BYTES = 1024
 BACKUP_MANIFEST_FORMAT = "forgeos-sqlite-backup-v1"
 MAX_BACKUP_MANIFEST_BYTES = 1024
+_WINDOWS_REPARSE_POINT = 0x0400
 
 
 class LeaseLostError(RuntimeError):
@@ -101,6 +103,67 @@ def _sync_publication_directory(directory: Path) -> None:
         os.close(fd)
 
 
+def _is_link_or_reparse(path: Path, info) -> bool:
+    if (stat.S_ISLNK(info.st_mode) or bool(
+            getattr(info, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT)):
+        return True
+    try:
+        return path.is_symlink()
+    except OSError:
+        return True
+
+
+def _publication_directory_info(path: Path):
+    try:
+        info = path.lstat()
+    except FileNotFoundError as exc:
+        raise ValueError(f"Publication directory is missing: {path}") from exc
+    except OSError as exc:
+        raise ValueError(f"Cannot inspect publication directory: {path}") from exc
+    if not stat.S_ISDIR(info.st_mode) or _is_link_or_reparse(path, info):
+        raise ValueError(f"Publication directory must be real: {path}")
+    return info
+
+
+def _publication_file_info(path: Path, description: str, *,
+                           require_unlinked: bool = False):
+    try:
+        info = path.lstat()
+    except FileNotFoundError as exc:
+        raise ValueError(f"{description} is missing: {path}") from exc
+    except OSError as exc:
+        raise ValueError(f"Cannot inspect {description}: {path}") from exc
+    if not stat.S_ISREG(info.st_mode) or _is_link_or_reparse(path, info):
+        raise ValueError(f"{description} must be a regular file: {path}")
+    if require_unlinked and getattr(info, "st_nlink", 1) != 1:
+        raise ValueError(f"{description} must be unlinked: {path}")
+    return info
+
+
+def _publication_target_info(target: Path):
+    try:
+        info = target.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ValueError(
+            f"Cannot inspect publication destination: {target}") from exc
+    if _is_link_or_reparse(target, info) or not stat.S_ISREG(info.st_mode):
+        raise ValueError(
+            f"Publication destination must be a new regular file: {target}")
+    raise ValueError(f"Publication destination already exists: {target}")
+
+
+def _same_publication_file(before, after) -> bool:
+    return all(getattr(before, field, None) == getattr(after, field, None)
+               for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns"))
+
+
+def _same_publication_identity(before, after) -> bool:
+    return all(getattr(before, field, None) == getattr(after, field, None)
+               for field in ("st_dev", "st_ino"))
+
+
 def _publish_database_copy(staging: Path, target: Path) -> None:
     """Publish a staged SQLite copy without replacing a concurrent destination.
 
@@ -109,10 +172,36 @@ def _publish_database_copy(staging: Path, target: Path) -> None:
     POSIX keeps the hard-link publication used by the existing same-volume
     atomic path.
     """
+    staging_info = _publication_file_info(
+        staging, "Publication staging", require_unlinked=True)
+    parent_info = _publication_directory_info(target.parent)
+    _publication_target_info(target)
+    current_staging = _publication_file_info(
+        staging, "Publication staging", require_unlinked=True)
+    current_parent = _publication_directory_info(target.parent)
+    if not _same_publication_file(staging_info, current_staging):
+        raise ValueError(f"Publication staging changed: {staging}")
+    if not _same_publication_identity(parent_info, current_parent):
+        raise ValueError(f"Publication directory changed: {target.parent}")
+    _publication_target_info(target)
+    current_staging = _publication_file_info(
+        staging, "Publication staging", require_unlinked=True)
+    current_parent = _publication_directory_info(target.parent)
+    if (not _same_publication_file(staging_info, current_staging)
+            or not _same_publication_identity(parent_info, current_parent)):
+        raise ValueError(f"Publication inputs changed: {target}")
     if os.name == "nt":
         os.rename(staging, target)
     else:
         os.link(staging, target)
+    published_info = _publication_file_info(
+        target, "Published artifact")
+    if not _same_publication_file(staging_info, published_info):
+        raise ValueError(f"Published artifact changed: {target}")
+    current_parent = _publication_directory_info(target.parent)
+    if not _same_publication_identity(parent_info, current_parent):
+        raise ValueError(f"Publication directory changed: {target.parent}")
+    if os.name != "nt":
         _sync_publication_directory(target.parent)
 
 

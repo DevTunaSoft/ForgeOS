@@ -27,7 +27,10 @@ py -m forgeos db-backup "C:\\ForgeOS-backups\\tasks-backup-2026-11-11.sqlite3" -
 
 The backup destination must not exist. Repeated backups need a *new name*.
 The command refuses an active SQLite transaction, a missing destination
-directory, an existing destination, or a symlink at the backup path.
+directory, an existing destination, or a linked/reparse backup path. The
+shared publication boundary also rejects linked/reparse staging files and
+parent directories, then rechecks their identities before and after making
+the new artifact visible.
 
 The source integrity check uses `PRAGMA integrity_check(1)`; the online
 copy is produced using SQLite's `Connection.backup(pages=64)`. The completed
