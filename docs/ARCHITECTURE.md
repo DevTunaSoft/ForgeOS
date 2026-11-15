@@ -107,6 +107,11 @@ The autonomous engine labels edit, test and recovery publications and records
 the bounded repair attempt when it is known; test evidence is carried only as
 an existing validated digest reference.
 
+`Store.check_journal()` scans rows through one SQLite cursor, validates task
+references, bounded metadata, statuses and timestamps, and retains at most 32
+diagnostic rows. The `journal-check` CLI command returns a nonzero status when
+corruption is found; it does not rewrite or repair the database.
+
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository. The optional GUI/CLI **Plan** and **Run tests only** actions now share `task_actions.py` instead of using independent, unguarded SQLite state writes. Direct tests require explicit host-test permission and use the engine's platform-specific test containment (frozen Windows supported presets only).

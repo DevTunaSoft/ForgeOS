@@ -2194,6 +2194,16 @@ not copied into the journal. Engine regression coverage verifies attempt
 ordering through a repair loop. Full replayable artifact export and physical
 interruption acceptance remain unverified.
 
+## 2026-11-15 — bounded journal semantic integrity check
+
+`Store.check_journal()` and `forgeos journal-check` now perform a read-only,
+streamed semantic scan of the append-only event table. They validate linked
+task IDs, bounded event metadata, statuses and finite timestamps while keeping
+at most 32 issue records in memory. The CLI returns status 1 for detected
+corruption and never rewrites or deletes journal rows. Tests cover clean CLI
+output and capped malformed-row diagnostics. This is not replay, repair,
+encryption or physical power-loss acceptance.
+
 ## 2026-11-14 — streamed backup digest manifests
 
 `Store.backup_to()` now optionally publishes a new bounded JSON manifest with

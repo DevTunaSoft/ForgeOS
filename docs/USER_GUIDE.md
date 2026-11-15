@@ -708,9 +708,13 @@ database. Inspect the newest entries without loading task result blobs:
 ```powershell
 py -m forgeos journal --limit 50
 py -m forgeos journal --task-id 1 --limit 20
+py -m forgeos journal-check
 ```
 
 Journal rows record task, lease and recovery transitions—not full prompts,
 errors or test output. Test transitions may include a bounded action, attempt,
-artifact identifier and evidence digest for correlation. The command is for recovery diagnosis; it does not
+artifact identifier and evidence digest for correlation. `journal-check` streams
+semantic checks and returns a failure status with capped diagnostics if rows
+refer to missing tasks or contain malformed metadata. It never repairs or
+deletes records. The command is for recovery diagnosis; it does not
 activate a backup or replace the running database.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -68,6 +69,7 @@ MAX_EVENT_ACTION_BYTES = 64
 MAX_EVENT_ARTIFACT_BYTES = 128
 MAX_EVENT_EVIDENCE_BYTES = 64
 EVENT_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]+$")
+MAX_JOURNAL_ISSUES = 32
 BACKUP_MANIFEST_FORMAT = "forgeos-sqlite-backup-v1"
 MAX_BACKUP_MANIFEST_BYTES = 1024
 
@@ -311,6 +313,74 @@ class Store:
                 yield dict(row)
         finally:
             cursor.close()
+
+    def check_journal(self, *, max_issues: int = MAX_JOURNAL_ISSUES) -> dict:
+        """Stream-check journal rows and return bounded corruption diagnostics."""
+        if (type(max_issues) is not int or isinstance(max_issues, bool)
+                or not 1 <= max_issues <= MAX_JOURNAL_ISSUES):
+            raise ValueError('Journal issue limit must be 1..32')
+        checked = 0
+        issues = []
+        truncated = False
+        previous_id = 0
+        cursor = self.db.execute(
+            'SELECT e.id,e.task_id,e.event_type,e.status,e.actor,e.created,e.details,'
+            'e.action,e.attempt,e.artifact_ref,e.evidence_ref,t.id AS linked_task_id '
+            'FROM forgeos_events e LEFT JOIN tasks t ON t.id=e.task_id '
+            'ORDER BY e.id ASC')
+        try:
+            for row in cursor:
+                checked += 1
+                row_id = row['id']
+                row_issues = []
+                if type(row_id) is not int or row_id <= previous_id:
+                    row_issues.append('event id is not strictly increasing')
+                previous_id = row_id if type(row_id) is int else previous_id
+                task_id = row['task_id']
+                if task_id is not None and row['linked_task_id'] is None:
+                    row_issues.append('event references a missing task')
+                event_type = row['event_type']
+                if (not isinstance(event_type, str)
+                        or not EVENT_TYPE_PATTERN.fullmatch(event_type)
+                        or len(event_type.encode('utf-8')) > MAX_EVENT_TYPE_BYTES):
+                    row_issues.append('event type is invalid')
+                if row['status'] and row['status'] not in STATUSES:
+                    row_issues.append('event status is invalid')
+                if not isinstance(row['actor'], str) or (
+                        len(row['actor'].encode('utf-8')) > MAX_EVENT_ACTOR_BYTES):
+                    row_issues.append('event actor is oversized')
+                if not isinstance(row['details'], str) or (
+                        len(row['details'].encode('utf-8')) > MAX_EVENT_DETAILS_BYTES):
+                    row_issues.append('event details are oversized')
+                action = row['action']
+                if action and (not isinstance(action, str)
+                               or not EVENT_TYPE_PATTERN.fullmatch(action)
+                               or len(action.encode('utf-8')) > MAX_EVENT_ACTION_BYTES):
+                    row_issues.append('event action is invalid')
+                attempt = row['attempt']
+                if attempt is not None and (
+                        type(attempt) is not int or not 1 <= attempt <= 1000000):
+                    row_issues.append('event attempt is invalid')
+                artifact = row['artifact_ref']
+                if artifact and (not isinstance(artifact, str)
+                                 or len(artifact.encode('utf-8')) > MAX_EVENT_ARTIFACT_BYTES
+                                 or not EVENT_REFERENCE_PATTERN.fullmatch(artifact)):
+                    row_issues.append('event artifact reference is invalid')
+                evidence = row['evidence_ref']
+                if evidence and (not isinstance(evidence, str)
+                                 or not re.fullmatch(r'[0-9a-f]{64}', evidence)):
+                    row_issues.append('event evidence reference is invalid')
+                created = row['created']
+                if (not isinstance(created, (int, float))
+                        or not math.isfinite(created)):
+                    row_issues.append('event timestamp is invalid')
+                if row_issues and len(issues) < max_issues:
+                    issues.append({'id': row_id, 'problems': row_issues})
+                elif row_issues:
+                    truncated = True
+        finally:
+            cursor.close()
+        return {'checked': checked, 'issues': issues, 'truncated': truncated}
 
     def check_integrity(self) -> None:
         """Explicitly check SQLite integrity and ForgeOS task schema."""

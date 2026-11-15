@@ -101,6 +101,24 @@ class ForgeOSTests(unittest.TestCase):
             'PRAGMA table_info(forgeos_events)')}
         self.assertTrue({'action', 'attempt', 'artifact_ref', 'evidence_ref'} <= columns)
         migrated.close()
+
+    def test_event_journal_checker_streams_valid_rows_and_caps_corruption(self):
+        self.store.add(str(self.repo), 'Check journal integrity')
+        valid = self.store.check_journal()
+        self.assertEqual(valid, {'checked': 1, 'issues': [], 'truncated': False})
+        with self.store.db:
+            for _ in (999, 1000):
+                self.store.db.execute(
+                    'INSERT INTO forgeos_events(task_id,event_type,status,actor,created,'
+                    'details,action,attempt,artifact_ref,evidence_ref) '
+                    'VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    (999999, 'Bad Event', 'bogus', '', float('inf'), '',
+                     'unsafe action', 0, '', 'not-a-digest'))
+        report = self.store.check_journal(max_issues=1)
+        self.assertEqual(report['checked'], 3)
+        self.assertEqual(len(report['issues']), 1)
+        self.assertTrue(report['truncated'])
+        self.assertIn('event references a missing task', report['issues'][0]['problems'])
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES

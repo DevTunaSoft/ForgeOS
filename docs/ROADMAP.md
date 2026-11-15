@@ -257,3 +257,13 @@ When a test runner supplies an existing validated evidence digest, the engine
 links that identifier without copying output. Regression coverage verifies
 repair-loop attempt ordering. Replayable artifact export and interruption
 acceptance remain open.
+
+### 2026-11-15 — bounded journal semantic integrity check
+
+The read-only `journal-check` command now streams lifecycle rows through one
+SQLite cursor, validates task references, event metadata, statuses and finite
+timestamps, and caps reported corruption diagnostics at 32 rows. It returns a
+failure status without rewriting data when malformed records are found.
+Regression coverage verifies clean CLI output and capped corruption reports.
+This is a diagnostic integrity gate, not replay, repair, encryption or
+physical power-loss acceptance.
