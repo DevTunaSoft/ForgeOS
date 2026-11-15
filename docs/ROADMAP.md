@@ -587,3 +587,15 @@ for three 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
 30,179,328-byte process peak RSS. Documentation/link coverage, compileall and
 `git diff --check` passed; physical reboot and NTFS power-loss acceptance
 remain open.
+
+### 2026-11-15 — explicit rollback of crash-retained activation staging
+
+An interrupted offline activation can leave the verified replacement in its
+private staging path after the `old_moved` marker is durable. Rollback now
+preserves that file by default, while `db-activation-rollback --confirm
+--discard-staged` validates it as a regular, sidecar-free ForgeOS SQLite
+database and then removes only that staged artifact before restoring the
+retained active database. Corrupt, linked, sidecar-bearing or unreadable
+staging fails closed without moving the rollback copy. This is bounded
+process-crash recovery evidence, not physical reboot or NTFS power-loss
+acceptance.

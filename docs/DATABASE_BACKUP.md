@@ -178,7 +178,13 @@ file. Inspect the bounded state with
 `py -m forgeos db-activation-status ACTIVE`. When it reports `old_moved`,
 ForgeOS is stopped, the destination is still absent, and the retained rollback
 is trusted, use `py -m forgeos db-activation-rollback ACTIVE --confirm` to
-restore the old database without overwriting an occupied path. A `prepared` or
+restore the old database without overwriting an occupied path. A process crash
+can leave the private staged replacement beside the marker; the default
+rollback refuses to delete it. After inspecting that file, verifying it is
+not needed and confirming the old database is the desired result, use
+`py -m forgeos db-activation-rollback ACTIVE --confirm --discard-staged`.
+ForgeOS validates the staged SQLite file before deleting only that staged path;
+it never replaces an occupied destination or rollback path. A `prepared` or
 `published` marker is inspection-only until its paths are understood. The
 marker is evidence of an interrupted operation, not a guarantee of physical
 power-loss recovery.

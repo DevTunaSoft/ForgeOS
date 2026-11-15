@@ -235,6 +235,9 @@ def main(argv=None):
     activation_rollback.add_argument(
         '--confirm', action='store_true',
         help='Confirm ForgeOS is stopped and rollback is intended')
+    activation_rollback.add_argument(
+        '--discard-staged', action='store_true',
+        help='After validation, discard a crashed activation staging file')
     sub.add_parser('memory', help='One-shot local ForgeOS RAM/working-set report')
     sub.add_parser('acceptance', help='Write one bounded local acceptance snapshot')
     models=sub.add_parser('models',help='List models reported by one local runtime')
@@ -380,7 +383,8 @@ def main(argv=None):
         return 0
     if args.action == 'db-activation-rollback':
         restored = Store.rollback_activation(
-            args.destination, confirm=args.confirm)
+            args.destination, confirm=args.confirm,
+            discard_staged=args.discard_staged)
         print(f'Rolled back database: {restored}')
         return 0
     if args.action == 'journal':

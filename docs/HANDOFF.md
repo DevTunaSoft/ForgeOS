@@ -2890,3 +2890,25 @@ passed for three 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak
 and a 30,179,328-byte process peak RSS. Exact-head hosted Linux/Windows,
 packaging, physical reboot and NTFS power-loss acceptance remain required for
 this branch.
+
+## 2026-11-15 — explicit rollback of crash-retained activation staging
+
+**Change:** `Store.rollback_activation()` and `db-activation-rollback` now keep
+the safe default of refusing a remaining staged replacement, while adding an
+explicit `--discard-staged` path for a real process-crash recovery. The staged
+file is validated as a regular, sidecar-free ForgeOS SQLite database before it
+is deleted; only then does ForgeOS move the verified retained rollback back to
+the absent active path. Corrupt, linked, sidecar-bearing, unreadable or
+occupied paths remain fail-closed.
+
+**Regression coverage:** activation tests construct a durable `old_moved`
+marker with a staged database still present, prove the default rollback
+preserves all recovery artifacts, prove explicit discard restores the old
+database and removes only the staged file, and prove corrupt staging cannot
+move the rollback. The CLI test exercises the explicit flag without opening
+the active Store.
+
+**Local verification:** focused activation and database CLI tests passed 30/30
+on Windows. Full isolated tests, documentation/link coverage, compileall,
+bounded memory and exact-head hosted Linux/Windows checks remain required for
+this branch; physical reboot and NTFS power-loss acceptance remain open.

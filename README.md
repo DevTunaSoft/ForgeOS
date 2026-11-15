@@ -379,7 +379,10 @@ active file is retained at the new rollback path and a phase marker remains if
 rollback cannot complete. This refuses SQLite sidecars and occupied recovery
 paths; inspect a pending marker with `db-activation-status ACTIVE` and use
 `db-activation-rollback ACTIVE --confirm` only for its validated `old_moved`
-phase. It is not automatic failover or physical power-loss recovery.
+phase. If a crashed process left the private staged replacement, inspect it
+first; then add `--discard-staged` to that explicit rollback command to validate
+and remove only the staged file. It is not automatic failover or physical
+power-loss recovery.
 See [database backup and recovery limits](docs/DATABASE_BACKUP.md).
 This is not an encrypted, scheduled or physically accepted disaster-recovery
 solution. A previously created `db-backup` can be included in a passive

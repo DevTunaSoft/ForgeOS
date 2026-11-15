@@ -737,8 +737,18 @@ py -m forgeos db-activation-rollback "$env:USERPROFILE\\.forgeos\\tasks.sqlite3"
 ```
 
 Rollback refuses an occupied destination, sidecars, a remaining staged file or
-an invalid marker. `prepared` and `published` markers are diagnostic states;
-do not force them into a rollback without inspecting the paths.
+an invalid marker. If a real process crash left the private staged replacement,
+inspect it first. When the retained database is trusted and the staged file is
+not needed, explicitly authorize its validated removal:
+
+```powershell
+py -m forgeos db-activation-rollback `
+  "$env:USERPROFILE\\.forgeos\\tasks.sqlite3" --confirm --discard-staged
+```
+
+ForgeOS checks the staged file as a ForgeOS SQLite database before deleting
+only that private path. `prepared` and `published` markers are diagnostic
+states; do not force them into a rollback without inspecting the paths.
 
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:
