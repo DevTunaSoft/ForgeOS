@@ -995,12 +995,13 @@ class Store:
         issues = []
         truncated = False
         previous_id = 0
-        cursor = self.db.execute(
-            'SELECT e.id,e.task_id,e.event_type,e.status,e.actor,e.created,e.details,'
-            'e.action,e.attempt,e.artifact_ref,e.evidence_ref,t.id AS linked_task_id '
-            'FROM forgeos_events e LEFT JOIN tasks t ON t.id=e.task_id '
-            'ORDER BY e.id ASC')
+        cursor = None
         try:
+            cursor = self.db.execute(
+                'SELECT e.id,e.task_id,e.event_type,e.status,e.actor,e.created,e.details,'
+                'e.action,e.attempt,e.artifact_ref,e.evidence_ref,t.id AS linked_task_id '
+                'FROM forgeos_events e LEFT JOIN tasks t ON t.id=e.task_id '
+                'ORDER BY e.id ASC')
             for row in cursor:
                 checked += 1
                 row_id = row['id']
@@ -1050,8 +1051,19 @@ class Store:
                     issues.append({'id': row_id, 'problems': row_issues})
                 elif row_issues:
                     truncated = True
+        except sqlite3.DatabaseError as exc:
+            if len(issues) < max_issues:
+                issues.append({
+                    'id': None,
+                    'problems': [
+                        f'SQLite journal scan failed ({type(exc).__name__})'
+                    ],
+                })
+            else:
+                truncated = True
         finally:
-            cursor.close()
+            if cursor is not None:
+                cursor.close()
         return {'checked': checked, 'issues': issues, 'truncated': truncated}
 
     def export_events(self, destination: str | Path,

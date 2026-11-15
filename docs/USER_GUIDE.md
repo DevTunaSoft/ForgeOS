@@ -908,6 +908,12 @@ semantic checks and returns a failure status with capped diagnostics if rows
 refer to missing tasks or contain malformed metadata. It never repairs or
 deletes records. The command is for recovery diagnosis; it does not
 activate a backup or replace the running database.
+If SQLite cannot decode a damaged journal row, the command also returns a
+bounded scan-failure diagnostic and a nonzero exit status instead of a raw
+exception. It does not repair or remove the unreadable row. Stop before using
+that journal for a handoff, preserve the database, and create a verified
+backup to a new path only if SQLite can still read it; otherwise retain the
+original file for manual recovery.
 `journal-export` writes one bounded event object per line in ascending event
 order and refuses an existing destination. It excludes task prompts, raw
 errors and test output; it is not a complete database or evidence backup.

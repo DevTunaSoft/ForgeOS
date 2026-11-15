@@ -241,7 +241,11 @@ an existing validated digest reference.
 `Store.check_journal()` scans rows through one SQLite cursor, validates task
 references, bounded metadata, statuses and timestamps, and retains at most 32
 diagnostic rows. The `journal-check` CLI command returns a nonzero status when
-corruption is found; it does not rewrite or repair the database.
+corruption is found; it does not rewrite or repair the database. If SQLite
+cannot decode or fetch a damaged row (for example, invalid UTF-8 in a TEXT
+field), the checker returns a bounded SQLite scan-failure diagnostic and the
+CLI exits nonzero rather than raising without a report. Rows read before that
+failure are counted; the source database is preserved for inspection.
 `Store.export_events()` uses the same bounded row projection and streams
 newline-delimited JSON to a new same-directory artifact, then publishes it
 without overwriting an existing export. It is a journal handoff artifact, not

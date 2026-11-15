@@ -3632,3 +3632,44 @@ run 832 and Documentation run 407. The repository-only audit remains
 `INCOMPLETE` by design because clean-room takeover, physical Windows/model
 acceptance and external artifact receipt are manual gates. The package is not
 a source backup, credential archive or production-certification claim.
+
+## 2026-11-15 — journal-check reports SQLite row-decode failures
+
+**Baseline and reproduction:** `main` at
+`4347514a28bc72cf3387611a88fd12d642809add`. The existing semantic checker
+streamed all journal columns but did not handle a SQLite read/decode error
+raised while fetching a row. An event containing invalid UTF-8 in a TEXT value
+(reproduced with `CAST(X'80' AS TEXT)`) made `Store.check_journal()` raise
+`sqlite3.OperationalError`; `journal-check` emitted no JSON diagnostic even
+though it is the documented integrity-reporting command.
+
+**Scoped correction:** the canonical checker in `src/forgeos/core.py` now
+catches `sqlite3.DatabaseError` from cursor execution/iteration and adds a
+bounded issue identifying the SQLite error class. It retains the count of
+fully read rows, honors the existing 32-issue cap, returns an invalid report,
+and does not mutate or remove the unreadable database content. The existing
+CLI consequently returns nonzero and prints JSON. No new dependency,
+database, repair behavior or in-memory journal buffering was added.
+
+**Regression evidence:** the first in-repository test run failed as expected
+with `sqlite3.OperationalError: Could not decode to UTF-8 column 'event_type'`.
+After the fix, the invalid-text CLI regression and clean-database CLI case
+passed (2 tests), as did the existing semantic-journal cap test (1 test).
+Commands: `PYTHONPATH=src python -m unittest
+tests.test_cli_database.DatabaseCommandsTests.test_journal_check_reports_invalid_sqlite_text_as_corruption
+tests.test_cli_database.DatabaseCommandsTests.test_journal_check_command_reports_clean_database
+-v`; and
+`PYTHONPATH=src python -m unittest
+tests.test_core.ForgeOSTests.test_event_journal_checker_streams_valid_rows_and_caps_corruption
+-v`. Full isolated `unittest` discovery passed 779 tests with 23 skips.
+The skipped cases were 22 Windows-only runtime/integration tests and one
+symlink test unavailable on this host. Documentation link and change-coverage
+checks, the handoff checker, `compileall` and `git diff --check` passed.
+Exact-head hosted CI, Windows restart/NTFS and physical power-loss acceptance
+remain unverified.
+
+**Limitations / next:** a failed SQLite scan is intentionally a diagnostic
+failure, not row repair. Backups preserve verified SQLite snapshots but are
+not logical journal repair tools; if SQLite cannot read the database, retain
+the original bytes and investigate a separate safe recovery path. Open a
+draft PR for review; do not merge.
