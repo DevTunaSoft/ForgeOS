@@ -581,7 +581,21 @@ def _remove_journal(txn: Path, *, expected_names: set[str]) -> None:
     if not _same_identity(parent_info, current_parent):
         raise TransactionError(
             f"Transaction metadata directory changed during cleanup: {txn.parent}")
+    current_txn = _require_journal_directory(txn, "Pending edit journal")
+    if not _same_identity(txn_info, current_txn):
+        raise TransactionError(
+            f"Pending edit journal changed during cleanup: {txn}")
     txn.rmdir()
+    try:
+        txn.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise TransactionError(
+            f"Pending edit journal removal could not be verified: {txn}") from exc
+    else:
+        raise TransactionError(
+            f"Pending edit journal changed during cleanup: {txn}")
     _sync_dir(txn.parent)
 
 
@@ -682,23 +696,31 @@ def recover_edits(root: Path) -> bool:
                     require_unlinked=True,
                     description="Transaction backup") != before):
                 raise TransactionError("Backup missing or damaged")
+        target_parent_info = _directory_info(
+            target.parent, "Edit target directory")
         target_info = _regular_file_info(
             target, "Edit target", allow_missing=True)
         current_hash = (_hash_file(
             target, expected=target_info, description="Edit target")
                         if target_info is not None else None)
+        current_parent = _directory_info(
+            target.parent, "Edit target directory")
+        if not _same_identity(target_parent_info, current_parent):
+            raise TransactionError(
+                f"Edit target directory changed during recovery: {target.parent}")
         if current_hash is not None and current_hash not in {before, after}:
             raise TransactionError(f"Conflicting external edit: {target}")
         if current_hash is None and before is not None:
             raise TransactionError(f"Original file unexpectedly removed: {target}")
         planned.append((target, target_info,
                         backup if before is not None else None,
-                        current_hash, before))
+                        current_hash, before, target_parent_info))
     if data["state"] == "committed":
         _remove_journal(txn, expected_names=cleanup_names)
         return True
 
-    for target, target_info, backup, current_hash, before in planned:
+    for (target, target_info, backup, current_hash, before,
+         target_parent_info) in planned:
         if backup is None:
             current_info = _regular_file_info(
                 target, "Edit target", allow_missing=True)
@@ -709,10 +731,8 @@ def recover_edits(root: Path) -> bool:
                      or not _same_file(target_info, current_info))):
                 raise TransactionError(f"Edit target changed during recovery: {target}")
             if current_info is not None:
-                parent_info = _directory_info(
-                    target.parent, "Edit target directory")
                 _remove_identity_bound_file(
-                    target, target_info, parent_info, "Edit target",
+                    target, target_info, target_parent_info, "Edit target",
                     "Edit target directory")
         elif current_hash != before:
             current_info = _regular_file_info(
@@ -720,8 +740,12 @@ def recover_edits(root: Path) -> bool:
             if (current_info is None
                     or not _same_file(target_info, current_info)):
                 raise TransactionError(f"Edit target changed during recovery: {target}")
-            parent_info = _directory_info(
+            current_parent = _directory_info(
                 target.parent, "Edit target directory")
+            if not _same_identity(target_parent_info, current_parent):
+                raise TransactionError(
+                    f"Edit target directory changed during recovery: {target.parent}")
+            parent_info = target_parent_info
             temp = target.parent / (".forgeos-restore-" + next(tempfile._get_candidate_names()))
             temp_identity = None
             try:

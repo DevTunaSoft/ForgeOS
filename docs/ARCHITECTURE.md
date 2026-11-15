@@ -97,6 +97,13 @@ and successful removal is verified before the parent entry is flushed. A
 substituted target or journal child therefore fails closed and remains beside
 the journal for inspection.
 
+Pending recovery also snapshots each target's real parent before hashing and
+rechecks it before planning or rollback. Journal completion rechecks the
+original `pending-edit` directory after its last child is removed, verifies
+that the directory is absent, and only then flushes the metadata parent. A
+replacement journal directory is preserved rather than being removed as if it
+were the completed transaction.
+
 If a crash leaves a `committed` journal behind, recovery also re-hashes every
 published target against its recorded post-edit digest before removing that
 journal. A missing, substituted, symlinked, reparse-point or nonregular target
