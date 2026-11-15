@@ -352,6 +352,19 @@ issues. This detects truncation and format tampering but does not authenticate
 the file, resolve evidence, import rows, replay actions, encrypt data or prove
 physical power-loss recovery.
 
+### 2026-11-15 — identity-bound context symbol reads
+
+The local-AI context index now reads selected Python sources through the shared
+bounded identity reader instead of doing a separate size check followed by an
+unbounded `read_text()`. Each file remains a real unlinked regular file, uses
+no-follow opening where available, and is capped at the existing 100 KiB
+source limit plus one byte before AST parsing. A replacement, link, reparse
+point or oversized source therefore contributes no symbols and cannot bypass
+the local context memory budget. Regression coverage includes a replacement
+during-open race; the focused 7-test suite and compile check pass. Full
+repository/hosted checks, Windows filesystem review and physical Windows
+memory/recovery acceptance remain required.
+
 ### 2026-11-15 — streamed handoff integrity manifests
 
 `journal-handoff` can now publish an optional bounded JSON manifest with the

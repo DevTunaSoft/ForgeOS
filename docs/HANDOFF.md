@@ -3632,3 +3632,21 @@ run 832 and Documentation run 407. The repository-only audit remains
 `INCOMPLETE` by design because clean-room takeover, physical Windows/model
 acceptance and external artifact receipt are manual gates. The package is not
 a source backup, credential archive or production-certification claim.
+
+## 2026-11-15 — identity-bound context symbol reads
+
+**Change:** the local-AI context index now reads selected Python sources
+through the shared bounded identity reader instead of performing a separate
+size check followed by an unbounded `read_text()`. The file must remain an
+unlinked regular file, no-follow opening is used where available, and the
+existing 100 KiB source limit is enforced with one extra byte to detect growth.
+Symlinks, Windows reparse points, hard links, replacements and oversized
+sources contribute no symbols while their relative filenames remain available
+as metadata. This keeps the context index metadata-only and fail-closed under
+path races without adding a worker, dependency or polling loop.
+
+**Verification:** the focused context-index unittest suite passed 7 tests,
+including replacement-during-open preservation, and compileall passed for
+`src` plus the changed test. Full isolated tests, documentation/link checks,
+memory benchmark, exact-head hosted workflows, Windows filesystem review and
+physical Windows acceptance remain pending for the candidate branch.

@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import re
 
+from forgeos.file_security import read_bounded_file
+
 EXCLUDE = {".git", ".github", ".env", ".forgeos", ".venv", "venv", "node_modules",
            "__pycache__", "dist", "build", ".idea", ".vscode", ".pytest_cache"}
 EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".cs",
@@ -17,9 +19,10 @@ def _score(path: Path, query: set[str]) -> int:
 
 def _signatures(path: Path) -> list[str]:
     try:
-        if path.stat().st_size > MAX_BYTES:
-            return []
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        source = read_bounded_file(
+            path, max_bytes=MAX_BYTES, description="Context source").decode(
+                "utf-8")
+        tree = ast.parse(source)
     except (OSError, UnicodeError, SyntaxError, ValueError):
         return []
     result = []
