@@ -695,3 +695,15 @@ snapshot before making it visible. No background backup process is started.
 The backup is **not encrypted** and does not include external evidence archives,
 Git worktrees or model weights. Do not attempt a live database overwrite to
 restore. Read [database backup limitations](DATABASE_BACKUP.md) first.
+
+ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
+database. Inspect the newest entries without loading task result blobs:
+
+```powershell
+py -m forgeos journal --limit 50
+py -m forgeos journal --task-id 1 --limit 20
+```
+
+Journal rows record task, lease and recovery transitions—not full prompts,
+errors or test output. The command is for recovery diagnosis; it does not
+activate a backup or replace the running database.

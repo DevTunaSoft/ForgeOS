@@ -2150,3 +2150,23 @@ Linux/Windows Python 3.10/3.12, documentation and Windows packaging all passed
 for `7915299`. Physical Windows NTFS behavior, disk-full fault injection and
 power-loss recovery remain **UNVERIFIED**. Keep issue #4 open; this is a
 compatibility correction, not disaster recovery certification.
+
+## 2026-11-14 — append-only recovery event journal
+
+**Change:** `Store` now migrates an append-only `forgeos_events` table with
+bounded event type, actor and detail fields. Task creation, task updates and
+guarded transitions, lease acquisition/release and stale-recovery
+reconciliation append lifecycle records in the same transaction as the
+corresponding state mutation. SQLite triggers reject event updates and deletes.
+`Store.iter_events()` and `forgeos journal` expose a maximum 500-row page, so
+diagnosis does not materialize the complete event history or task result blobs.
+
+**Security boundary:** journal rows intentionally omit prompts, raw errors,
+test output and credentials. The journal is diagnostic history, not an
+encryption layer, backup bundle or active-database restore mechanism.
+
+**Regression coverage:** tests cover lifecycle ordering, append-only rejection,
+transaction rollback when journaling fails, bounded/filterable reads and the
+CLI page. Full exact-head CI and memory validation for this new branch remain
+pending; physical power-loss and active-database restoration remain
+unverified.

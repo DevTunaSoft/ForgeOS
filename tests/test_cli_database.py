@@ -99,6 +99,26 @@ class DatabaseCommandsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "new file"):
                 main(["--db", str(db_path), "db-backup", str(target)])
 
+    def test_journal_command_returns_bounded_task_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            db_path = root / "state.sqlite3"
+            store = Store(db_path)
+            try:
+                task = store.add(str(root), "journal cli test")
+            finally:
+                store.close()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    "--db", str(db_path), "journal", "--task-id", str(task),
+                    "--limit", "1"]), 0)
+            events = __import__('json').loads(output.getvalue())
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0]['event_type'], 'task.created')
+            self.assertEqual(events[0]['task_id'], task)
+
 
 if __name__ == "__main__":
     unittest.main()

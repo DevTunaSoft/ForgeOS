@@ -88,6 +88,13 @@ The persistent `Store.get()` API remains available for explicit detailed history
 
 The Tkinter Live Activity Monitor uses `Store.get_status()` to select one scalar status value at its existing once-per-second cadence. It never fetches model output, error logs or checkpoints merely to update a stage label. These are **read-path optimizations**, not a guarantee that SQLite's internal page cache, the external model process or the complete application has a fixed RAM ceiling. Full process-tree Windows acceptance remains open.
 
+The `forgeos_events` table is an append-only, bounded-field lifecycle journal.
+Task creation, guarded transitions, lease acquisition/release and stale
+recovery reconciliation append records in the same SQLite transaction as the
+state mutation. Update/delete triggers prevent history rewriting, while
+`Store.iter_events()` and the CLI journal command expose only a bounded page;
+raw prompts, errors and test output remain outside the journal.
+
 ## Workflow and state
 
 1. A user adds a task referencing an existing local Git repository. The optional GUI/CLI **Plan** and **Run tests only** actions now share `task_actions.py` instead of using independent, unguarded SQLite state writes. Direct tests require explicit host-test permission and use the engine's platform-specific test containment (frozen Windows supported presets only).

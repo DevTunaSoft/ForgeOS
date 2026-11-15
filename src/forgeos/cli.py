@@ -22,6 +22,10 @@ def main(argv=None):
     sub=parser.add_subparsers(dest='action',required=True)
     sub.add_parser('gui'); sub.add_parser('list'); sub.add_parser('recover')
     sub.add_parser('db-check', help='Run an explicit SQLite database integrity check')
+    journal = sub.add_parser(
+        'journal', help='Show a bounded append-only task lifecycle journal page')
+    journal.add_argument('--task-id', type=int, default=None)
+    journal.add_argument('--limit', type=int, default=100)
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     restore_copy=sub.add_parser(
@@ -157,6 +161,14 @@ def main(argv=None):
     if args.action == 'db-restore-copy':
         # Do not open or initialize the active task database for a restore copy.
         print(f'Verified restore copy: {Store.restore_backup_to(args.source, args.destination)}')
+        return 0
+    if args.action == 'journal':
+        store = Store(args.db)
+        try:
+            print(json.dumps(list(store.iter_events(
+                task_id=args.task_id, limit=args.limit)), indent=2))
+        finally:
+            store.close()
         return 0
     if args.action == 'memory':
         from .model_routing import memory_report
