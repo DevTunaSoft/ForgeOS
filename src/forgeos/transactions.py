@@ -253,9 +253,12 @@ class _PrivateStagingIdentity:
             pass
 
 
-def _hold_private_staging(path: Path, description: str):
+def _hold_private_staging(path: Path, description: str, *, expected=None):
     """Capture a rollback temporary and pin its POSIX file object."""
     info = _regular_file_info(path, description, require_unlinked=True)
+    if (expected is not None
+            and not _same_file(expected, info, require_unlinked=True)):
+        raise TransactionError(f"{description} changed during cleanup: {path}")
     if os.name == "nt":
         # Windows cannot keep this handle open because os.replace may reject
         # the rename while the handle is live; its file identity is stable.
@@ -263,6 +266,38 @@ def _hold_private_staging(path: Path, description: str):
     descriptor = _open_bound_file(
         path, info, description, require_unlinked=True)
     return _PrivateStagingIdentity(info, descriptor)
+
+
+def _remove_identity_bound_file(path: Path, expected, parent_info,
+                                description: str,
+                                parent_description: str) -> None:
+    """Remove one unchanged file while pinning its POSIX file object."""
+    identity = _hold_private_staging(
+        path, description, expected=expected)
+    try:
+        current = _regular_file_info(
+            path, description, require_unlinked=True)
+        current_parent = _directory_info(path.parent, parent_description)
+        if (not _same_file(expected, current, require_unlinked=True)
+                or not identity.matches(current)
+                or not _same_identity(parent_info, current_parent)):
+            raise TransactionError(f"{description} changed during cleanup: {path}")
+        try:
+            path.unlink()
+        except OSError as exc:
+            raise TransactionError(f"Cannot remove {description}: {path}") from exc
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise TransactionError(
+                f"Cannot verify removed {description}: {path}") from exc
+        else:
+            raise TransactionError(f"{description} changed during cleanup: {path}")
+        _sync_dir(path.parent)
+    finally:
+        identity.close()
 
 
 def _cleanup_private_staging(path: Path, staging_identity,
@@ -537,13 +572,9 @@ def _remove_journal(txn: Path, *, expected_names: set[str]) -> None:
         if not _same_identity(parent_info, current_parent):
             raise TransactionError(
                 f"Transaction metadata directory changed during cleanup: {txn.parent}")
-        current = _lstat(child, "Transaction journal file")
-        if (not stat.S_ISREG(current.st_mode)
-                or _is_link_or_reparse(child, current)
-                or not _same_file(before, current, require_unlinked=True)):
-            raise TransactionError(
-                f"Transaction journal file changed during cleanup: {child}")
-        child.unlink()
+        _remove_identity_bound_file(
+            child, before, txn_info, "Transaction journal file",
+            "Pending edit journal")
 
     current_parent = _require_journal_directory(
         txn.parent, "Transaction metadata directory")
@@ -678,7 +709,11 @@ def recover_edits(root: Path) -> bool:
                      or not _same_file(target_info, current_info))):
                 raise TransactionError(f"Edit target changed during recovery: {target}")
             if current_info is not None:
-                target.unlink()
+                parent_info = _directory_info(
+                    target.parent, "Edit target directory")
+                _remove_identity_bound_file(
+                    target, target_info, parent_info, "Edit target",
+                    "Edit target directory")
         elif current_hash != before:
             current_info = _regular_file_info(
                 target, "Edit target", allow_missing=True)

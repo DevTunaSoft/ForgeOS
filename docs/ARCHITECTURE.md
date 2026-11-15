@@ -89,6 +89,14 @@ identity without holding a handle that could block `os.replace`. A substituted
 rollback temporary is preserved for inspection rather than removed by the
 recovery `finally` path.
 
+Rollback deletion of a newly created target and cleanup of flat journal
+children use the same identity-bound removal boundary. The original file and
+real parent identities are rechecked, POSIX keeps the file descriptor through
+the unlink decision, Windows compares file identity without holding a handle,
+and successful removal is verified before the parent entry is flushed. A
+substituted target or journal child therefore fails closed and remains beside
+the journal for inspection.
+
 If a crash leaves a `committed` journal behind, recovery also re-hashes every
 published target against its recorded post-edit digest before removing that
 journal. A missing, substituted, symlinked, reparse-point or nonregular target

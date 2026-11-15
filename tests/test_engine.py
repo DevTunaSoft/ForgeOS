@@ -1172,6 +1172,79 @@ class TransactionRecoveryTests(unittest.TestCase):
         self.assertFalse((self.root / "created.py").exists())
 
 
+    def test_new_file_rollback_preserves_substituted_target(self):
+        from unittest.mock import patch
+        from forgeos import transactions
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        target = self.root / "created.py"
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        target.write_text("new")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "pending", "entries": [{
+                "path": "created.py", "before": None,
+                "after": _digest(b"new") }]}))
+        real_hold = transactions._hold_private_staging
+        swapped = {"value": False}
+
+        def hold_then_substitute(path, *args, **kwargs):
+            identity = real_hold(path, *args, **kwargs)
+            if (path.name.casefold() == target.name.casefold()
+                    and not swapped["value"]):
+                target.unlink()
+                target.write_text("operator-owned target")
+                swapped["value"] = True
+            return identity
+
+        with patch.object(
+                transactions, "_hold_private_staging",
+                side_effect=hold_then_substitute):
+            with self.assertRaisesRegex(
+                    TransactionError, "changed during cleanup|recovery"):
+                recover_edits(self.root)
+        self.assertTrue(swapped["value"])
+        self.assertEqual(target.read_text(), "operator-owned target")
+        self.assertTrue(txn.exists())
+
+
+    def test_journal_cleanup_preserves_substituted_child(self):
+        from unittest.mock import patch
+        from forgeos import transactions
+        from forgeos.transactions import TransactionError, recover_edits, _digest
+        target = self.root / "published.py"
+        target.write_text("published")
+        txn = self.root / ".forgeos" / "pending-edit"
+        txn.mkdir(parents=True)
+        child = txn / "0.bak"
+        child.write_bytes(b"journal evidence")
+        (txn / "manifest.json").write_text(json.dumps({
+            "version": 1, "state": "committed", "entries": [{
+                "path": "published.py", "before": None,
+                "after": _digest(b"published") }]}))
+        real_hold = transactions._hold_private_staging
+        swapped = {"value": False}
+
+        def hold_then_substitute(path, *args, **kwargs):
+            identity = real_hold(path, *args, **kwargs)
+            if (path.name.casefold() == child.name.casefold()
+                    and not swapped["value"]):
+                child.unlink()
+                child.write_bytes(b"operator-owned journal evidence")
+                swapped["value"] = True
+            return identity
+
+        with patch.object(
+                transactions, "_hold_private_staging",
+                side_effect=hold_then_substitute):
+            with self.assertRaisesRegex(
+                    TransactionError, "Transaction journal file changed"):
+                recover_edits(self.root)
+        self.assertTrue(swapped["value"])
+        self.assertEqual(
+            child.read_bytes(), b"operator-owned journal evidence")
+        self.assertTrue(txn.exists())
+
+
     def test_tampered_journal_path_cannot_escape_workspace(self):
         from forgeos.transactions import recover_edits, _digest
         outside = self.root.parent / ("forgeos-outside-" + self.root.name + ".py")
