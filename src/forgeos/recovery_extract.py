@@ -1,6 +1,7 @@
 """Fail-closed materialization of a validated recovery bundle."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -260,6 +261,134 @@ def _validated_entries(source: Path) -> dict[str, zipfile.ZipInfo]:
         return entries
     finally:
         archive.close()
+
+
+def _zip_entry_digest(archive: zipfile.ZipFile, entry: zipfile.ZipInfo,
+                      max_bytes: int) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with archive.open(entry, "r") as stream:
+            while True:
+                block = stream.read(64 * 1024)
+                if not block:
+                    break
+                size += len(block)
+                if size > max_bytes:
+                    raise ValueError("Recovery bundle entry exceeds size limit")
+                digest.update(block)
+    except ValueError:
+        raise
+    except (OSError, RuntimeError, EOFError, zipfile.BadZipFile) as exc:
+        raise ValueError("Recovery bundle entry could not be read") from exc
+    if size != entry.file_size:
+        raise ValueError("Recovery bundle entry size is inconsistent")
+    return size, digest.hexdigest()
+
+
+def _resume_root(destination: str | Path) -> tuple[Path, dict]:
+    root = Path(destination).expanduser().absolute()
+    _plain_info(root, directory=True)
+    state = _read_state(root)
+    if state["phase"] not in {"publishing", "failed"} or state["complete"]:
+        raise ValueError("Recovery extraction destination is not resumable")
+    return root, state
+
+
+def _ensure_directory(path: Path) -> None:
+    if path.exists() or path.is_symlink():
+        _plain_info(path, directory=True)
+        return
+    try:
+        path.mkdir()
+    except OSError as exc:
+        raise ValueError("Recovery extraction directory could not be created") from exc
+
+
+def resume_recovery_bundle_extraction(source: str | Path,
+                                      destination: str | Path) -> Path:
+    """Resume only a marked incomplete extraction without overwriting files."""
+    bundle = Path(source).expanduser().absolute()
+    root, state = _resume_root(destination)
+    package_size = state["package_size"]
+    package_sha256 = state["package_sha256"]
+    try:
+        _plain_info(bundle, directory=False)
+        source_size, source_sha256 = _artifact_digest(
+            bundle, max_bytes=MAX_RECOVERY_BUNDLE_BYTES)
+        if (source_size != package_size or source_sha256 != package_sha256):
+            raise ValueError("Recovery bundle does not match extraction marker")
+        report = check_recovery_bundle(bundle)
+        if not report["valid"]:
+            raise ValueError("Recovery bundle is invalid")
+        entries = _validated_entries(bundle)
+        staging = Path(tempfile.mkdtemp(
+            prefix=".forgeos-recovery-resume-", dir=root.parent))
+        try:
+            missing = []
+            with zipfile.ZipFile(bundle, "r") as archive:
+                expected = {}
+                for name, entry in entries.items():
+                    expected[name] = _zip_entry_digest(
+                        archive, entry, _entry_limit(_bundle_entry_kind(name)[0]))
+                    destination_path = root / Path(*name.split("/"))
+                    if destination_path.exists() or destination_path.is_symlink():
+                        try:
+                            actual = _artifact_digest(
+                                destination_path,
+                                max_bytes=_entry_limit(_bundle_entry_kind(name)[0]))
+                        except (OSError, ValueError) as exc:
+                            raise ValueError(
+                                f"Existing recovery entry is unsafe: {name}") from exc
+                        if actual != expected[name]:
+                            raise ValueError(
+                                f"Existing recovery entry does not match: {name}")
+                        continue
+                    staged_path = staging / Path(*name.split("/"))
+                    _materialize_entry(
+                        archive, entry, staged_path,
+                        _entry_limit(_bundle_entry_kind(name)[0]))
+                    staged_digest = _artifact_digest(
+                        staged_path,
+                        max_bytes=_entry_limit(_bundle_entry_kind(name)[0]))
+                    if staged_digest != expected[name]:
+                        raise ValueError(
+                            f"Staged recovery entry does not match: {name}")
+                    missing.append((name, staged_path))
+            _write_state(root, _state_payload(
+                package_size, package_sha256, "publishing", complete=False))
+            for name, staged_path in missing:
+                destination_path = root / Path(*name.split("/"))
+                _ensure_directory(destination_path.parent)
+                _move_database_copy(staged_path, destination_path)
+            final_size, final_sha256 = _artifact_digest(
+                bundle, max_bytes=MAX_RECOVERY_BUNDLE_BYTES)
+            if (final_size != package_size or final_sha256 != package_sha256):
+                raise ValueError("Recovery bundle changed during resume")
+            final_report = _check_materialized(root)
+            if not final_report["valid"]:
+                raise RuntimeError(
+                    "Resumed recovery bundle failed integrity check")
+            verified_size, verified_sha256 = _artifact_digest(
+                bundle, max_bytes=MAX_RECOVERY_BUNDLE_BYTES)
+            if (verified_size != package_size
+                    or verified_sha256 != package_sha256):
+                raise ValueError("Recovery bundle changed during final resume check")
+            _write_state(root, _state_payload(
+                package_size, package_sha256, "complete", complete=True))
+            _sync_publication_directory(root)
+            _sync_publication_directory(root.parent)
+            return root
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    except Exception as exc:
+        try:
+            _write_state(root, _state_payload(
+                package_size, package_sha256, "failed", complete=False,
+                problem=str(exc)))
+        except (OSError, ValueError):
+            pass
+        raise
 
 
 def extract_recovery_bundle(source: str | Path,

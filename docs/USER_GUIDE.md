@@ -831,6 +831,9 @@ py -m forgeos recovery-bundle-extract `
   "C:\ForgeOS-received\task-1"
 py -m forgeos recovery-bundle-extract-check `
   "C:\ForgeOS-received\task-1"
+py -m forgeos recovery-bundle-extract-resume `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  "C:\ForgeOS-received\task-1"
 ```
 
 The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
@@ -891,3 +894,13 @@ pass the nested integrity checks. A failed or interrupted move remains marked
 inspection. `recovery-bundle-extract-check` reports the durable completion
 state. This step never opens SQLite, starts ForgeOS, executes a task or replays
 the handoff.
+
+If extraction stops after its destination marker is written, first confirm the
+original extractor is no longer running. Then use
+`recovery-bundle-extract-resume` with the same package and directory. It checks
+the marker's package size and SHA-256, preserves only matching existing files,
+refuses changed or linked files, and copies missing entries through the same
+no-overwrite boundary. It marks the directory complete only after the final
+index, evidence, source-archive and package checks pass. There is no automatic
+retry worker; use a new destination if the existing directory is tampered or
+its package identity no longer matches.

@@ -2620,3 +2620,30 @@ a Python tracemalloc peak of about 1.86 MiB, stable post-GC RSS of about
 22.6 MiB and process peak RSS of about 24.3 MiB. Exact-head hosted
 Linux/Windows checks, packaging and physical interruption acceptance remain
 required.
+
+## 2026-11-15 — resumable marked recovery materialization
+
+**Change:** added `recovery-bundle-extract-resume`. The explicit receiving-side
+resume path accepts only `publishing` or `failed` extraction markers, verifies
+the supplied package against the marker's streamed size and SHA-256, hashes
+existing materialized entries against the corresponding ZIP entries, and
+refuses to overwrite mismatches or links. It stages only missing entries and
+promotes the marker to `complete` after the final package and copied-index
+checks. The operator must ensure the prior writer has stopped; no background
+retry, task execution or journal replay is introduced.
+
+**Regression coverage:** resume tests cover completion after an interrupted
+partial publication, tampered-existing-entry refusal and database-free CLI
+dispatch. Exact-head Linux/Windows checks, packaging, memory validation and
+physical interruption acceptance remain required.
+
+**Local verification:** the focused extraction/resume and CLI suite passed 8
+tests. With an isolated temporary `USERPROFILE`, the full current checkout
+`python -m unittest discover -s tests -q` run executed 671 tests, skipped 7
+and had only the known repository-virtualenv Windows AppContainer failure:
+`icacls` returned access denied for the active `.venv` Python executable.
+Compileall, documentation links and diff checks passed. The standard 12 MiB
+x3 memory benchmark passed with a Python tracemalloc peak of about 1.86 MiB,
+stable post-GC RSS of about 22.7 MiB and process peak RSS of about 24.4 MiB.
+Exact-head hosted Linux/Windows checks, packaging and physical interruption
+acceptance remain required.

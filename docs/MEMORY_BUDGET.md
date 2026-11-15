@@ -308,3 +308,16 @@ handoff, manifest and evidence without opening SQLite. A failed move leaves a
 bounded failed marker rather than claiming completion. Staging directories,
 filesystem cache, ZIP/zlib buffers and process RSS remain outside these
 application-level allocation limits.
+
+## Recovery bundle resume allocation boundary
+
+`recovery-bundle-extract-resume` streams a package entry once for its bounded
+digest and once for any missing staged copy, while existing destination files
+are hashed in 64 KiB blocks and never loaded as a collection. It retains only
+the ZIP metadata map, missing-entry paths and one block at a time. The original
+package digest is checked before and after the resume, and the same package,
+entry and evidence bounds remain active.
+
+Resume is explicit and single-writer: it does not install a daemon, polling
+loop or retry worker. If an existing file is changed, linked or otherwise
+unsafe, the operation fails closed and leaves the marker incomplete.
