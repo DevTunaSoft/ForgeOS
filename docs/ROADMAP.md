@@ -289,3 +289,15 @@ occupied-path refusal, manifest mismatch, successful rollback retention and
 injected publication/rollback faults. This remains an operator-guided offline
 prototype: no running-process coordination, journal replay, encryption,
 complete evidence/worktree bundle or physical power-loss/Windows acceptance.
+
+### 2026-11-15 — bounded activation-marker reconciliation
+
+Interrupted activation is now inspectable with `db-activation-status` and can
+be explicitly rolled back from the durable `old_moved` phase with
+`db-activation-rollback`. Marker reads are capped at 4 KiB, marker paths and
+phases are validated, no active Store is initialized, and rollback refuses
+occupied destinations, sidecars and leftover staged files. Read-only SQLite
+preflight uses immutable mode when no sidecars exist so diagnostics do not
+create journal files. This is still cooperative offline recovery, not marker
+replay, encryption, a complete evidence/worktree bundle or physical
+power-loss acceptance.

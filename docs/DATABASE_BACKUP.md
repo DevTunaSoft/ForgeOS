@@ -104,9 +104,14 @@ If a Windows open handle or another publication error prevents replacement,
 ForgeOS fails closed. After the old file has moved, it attempts to put that
 file back. If that recovery move also fails, preserve both the rollback file
 and the activation marker for diagnosis; do not delete or overwrite either
-file. A later rollback uses the same command with the retained rollback as
-the source and a different, new rollback filename. The marker is evidence of
-an interrupted operation, not a guarantee of physical power-loss recovery.
+file. Inspect the bounded state with
+`py -m forgeos db-activation-status ACTIVE`. When it reports `old_moved`,
+ForgeOS is stopped, the destination is still absent, and the retained rollback
+is trusted, use `py -m forgeos db-activation-rollback ACTIVE --confirm` to
+restore the old database without overwriting an occupied path. A `prepared` or
+`published` marker is inspection-only until its paths are understood. The
+marker is evidence of an interrupted operation, not a guarantee of physical
+power-loss recovery.
 
 ## Security and recovery limitations
 
@@ -144,6 +149,10 @@ refused rather than silently initialized as an empty task database.
 Unrelated SQLite databases cannot be migrated just by running a check or
 backup. The checks use read-only SQLite, without creating Python copies of
 task rows. Database creation for normal first-time ForgeOS use is unchanged.
+When no SQLite sidecar exists, the read-only preflight uses SQLite's immutable
+URI mode so inspection itself does not create a `-shm` file. A present WAL or
+rollback journal uses the normal read-only URI so committed journal state is
+included and the sidecar remains visible to the safety checks.
 
 ## Cross-platform test fixture hardening
 

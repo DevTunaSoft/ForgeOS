@@ -42,6 +42,19 @@ class ActivateBackupTests(unittest.TestCase):
             return [row[0] for row in db.execute(
                 "SELECT description FROM tasks ORDER BY id")]
 
+    def _leave_interrupted_activation(self):
+        real_move = core._move_database_copy
+
+        def fail_active_moves(source, target):
+            if target == self.active:
+                raise OSError("active path unavailable")
+            return real_move(source, target)
+
+        with patch("forgeos.core._move_database_copy", side_effect=fail_active_moves):
+            with self.assertRaisesRegex(OSError, "active path unavailable"):
+                Store.activate_backup_to(
+                    self.backup, self.active, self.rollback, confirm=True)
+
     def test_activation_publishes_backup_and_retains_old_database(self):
         result = Store.activate_backup_to(
             self.backup, self.active, self.rollback, confirm=True)
@@ -51,6 +64,9 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertEqual(self._descriptions(self.rollback), ["old active task"])
         self.assertTrue(self.backup.is_file())
         self.assertFalse(Path(str(self.active) + ".forgeos-activation.json").exists())
+        for database in (self.active, self.rollback):
+            for suffix in ("-wal", "-shm", "-journal"):
+                self.assertFalse(Path(str(database) + suffix).exists())
         self.assertFalse(list(self.root.glob(".forgeos-activate-*")))
         self.assertFalse(list(self.root.glob(".forgeos-restore-*")))
 
@@ -151,17 +167,7 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertFalse(Path(str(self.active) + ".forgeos-activation.json").exists())
 
     def test_failed_rollback_keeps_marker_and_old_database_for_recovery(self):
-        real_move = core._move_database_copy
-
-        def fail_active_moves(source, target):
-            if target == self.active:
-                raise OSError("active path unavailable")
-            return real_move(source, target)
-
-        with patch("forgeos.core._move_database_copy", side_effect=fail_active_moves):
-            with self.assertRaisesRegex(OSError, "active path unavailable"):
-                Store.activate_backup_to(
-                    self.backup, self.active, self.rollback, confirm=True)
+        self._leave_interrupted_activation()
 
         marker = Path(str(self.active) + ".forgeos-activation.json")
         self.assertFalse(self.active.exists())
@@ -169,6 +175,52 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertTrue(marker.is_file())
         self.assertEqual(json.loads(marker.read_text(encoding="utf-8"))["phase"],
                          "old_moved")
+
+    def test_marker_status_is_bounded_and_explicit_rollback_reconciles(self):
+        self._leave_interrupted_activation()
+
+        status = Store.activation_status(self.active)
+        self.assertEqual(status["status"], "pending")
+        self.assertEqual(status["phase"], "old_moved")
+        self.assertFalse(status["destination_exists"])
+        self.assertTrue(status["rollback_exists"])
+        self.assertFalse(status["staged_exists"])
+
+        result = Store.rollback_activation(self.active, confirm=True)
+        self.assertEqual(result, self.active)
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertEqual(Store.activation_status(self.active)["status"], "clear")
+
+    def test_rollback_confirmation_and_occupied_destination_are_fail_closed(self):
+        self._leave_interrupted_activation()
+        with self.assertRaisesRegex(ValueError, "confirmation"):
+            Store.rollback_activation(self.active, confirm=False)
+        self.assertTrue(self.rollback.exists())
+
+        self.active.write_bytes(b"operator-owned destination")
+        with self.assertRaisesRegex(ValueError, "occupied"):
+            Store.rollback_activation(self.active, confirm=True)
+        self.assertEqual(self.active.read_bytes(), b"operator-owned destination")
+        self.assertTrue(self.rollback.exists())
+
+    def test_rollback_refuses_sidecar_beside_retained_database(self):
+        self._leave_interrupted_activation()
+        sidecar = Path(str(self.rollback) + "-wal")
+        sidecar.write_bytes(b"retained journal")
+        try:
+            with self.assertRaisesRegex(RuntimeError, "sidecars"):
+                Store.rollback_activation(self.active, confirm=True)
+        finally:
+            sidecar.unlink()
+        self.assertFalse(self.active.exists())
+        self.assertTrue(self.rollback.exists())
+
+    def test_oversized_marker_is_rejected_without_unbounded_read(self):
+        marker = Path(str(self.active) + ".forgeos-activation.json")
+        marker.write_bytes(b"x" * 4097)
+        with self.assertRaisesRegex(ValueError, "oversized"):
+            Store.activation_status(self.active)
 
 
 if __name__ == "__main__":
