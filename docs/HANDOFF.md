@@ -2167,6 +2167,9 @@ encryption layer, backup bundle or active-database restore mechanism.
 
 **Regression coverage:** tests cover lifecycle ordering, append-only rejection,
 transaction rollback when journaling fails, bounded/filterable reads and the
-CLI page. Full exact-head CI and memory validation for this new branch remain
-pending; physical power-loss and active-database restoration remain
+CLI page. **Verification:** local Python 3.12 ran the full 606-test suite
+with 7 expected skips and the 12 MiB x3 memory benchmark passed. Exact-head
+GitHub Linux/Windows
+Python 3.10/3.12, documentation and Windows packaging checks passed for
+`a173bc1`. Physical power-loss and active-database restoration remain
 unverified.
