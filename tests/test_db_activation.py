@@ -629,6 +629,75 @@ class ActivateBackupTests(unittest.TestCase):
             json.loads(marker.read_text(encoding="utf-8"))["phase"],
             "prepared")
 
+    def test_removing_activation_marker_refuses_hard_linked_marker(self):
+        marker = self.root / "activation-marker.json"
+        outside = self.root / "marker-copy.json"
+        outside.write_text("marker", encoding="utf-8")
+        try:
+            marker.hardlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unavailable")
+        with self.assertRaisesRegex(ValueError, "unlinked"):
+            core._remove_activation_marker(marker)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "marker")
+        self.assertEqual(outside.read_text(encoding="utf-8"), "marker")
+
+    def test_removing_activation_marker_refuses_identity_change(self):
+        marker = self.root / "activation-marker.json"
+        marker.write_text("original", encoding="utf-8")
+        replacement = self.root / "replacement-marker.json"
+        replacement.write_text("replacement", encoding="utf-8")
+        real_info = core._publication_file_info
+        calls = {"count": 0}
+
+        def publication_info(path, description, *args, **kwargs):
+            value = real_info(path, description, *args, **kwargs)
+            if path == marker:
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_publication_file_info", side_effect=publication_info):
+            with self.assertRaisesRegex(
+                    ValueError, "changed before removal"):
+                core._remove_activation_marker(marker)
+        self.assertEqual(calls["count"], 2)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "original")
+        self.assertEqual(
+            replacement.read_text(encoding="utf-8"), "replacement")
+
+    def test_removing_activation_marker_refuses_parent_identity_change(self):
+        marker = self.root / "activation-marker.json"
+        marker.write_text("original", encoding="utf-8")
+        replacement = self.root / "replacement-parent"
+        replacement.mkdir()
+        real_info = core._publication_directory_info
+        calls = {"count": 0}
+
+        def directory_info(path):
+            value = real_info(path)
+            if path == self.root:
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_publication_directory_info", side_effect=directory_info):
+            with self.assertRaisesRegex(
+                    ValueError, "changed before removal"):
+                core._remove_activation_marker(marker)
+        self.assertGreaterEqual(calls["count"], 2)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "original")
+
+    def test_removing_missing_activation_marker_honors_missing_ok(self):
+        marker = self.root / "activation-marker.json"
+        with patch("forgeos.core._sync_publication_directory") as sync:
+            core._remove_activation_marker(marker, missing_ok=True)
+        sync.assert_called_once_with(self.root)
+
     def test_removing_activation_marker_flushes_posix_directory(self):
         marker = self.root / "activation-marker.json"
         marker.write_text("marker", encoding="utf-8")

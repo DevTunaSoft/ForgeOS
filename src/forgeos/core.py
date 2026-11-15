@@ -476,9 +476,58 @@ def _write_activation_marker(marker: Path, payload: dict,
         _cleanup_activation_marker_staging(staging, staging_identity)
 
 
-def _remove_activation_marker(marker: Path, *, missing_ok: bool = False) -> None:
-    """Remove an activation marker and flush its POSIX directory entry."""
-    marker.unlink(missing_ok=missing_ok)
+def _remove_activation_marker(marker: Path, *, missing_ok: bool = False,
+                              expected_info=None) -> None:
+    """Remove one unchanged, unlinked activation marker and flush its parent."""
+    parent_info = _publication_directory_info(marker.parent)
+    if expected_info is None:
+        try:
+            expected_info = _publication_file_info(
+                marker, "Activation marker", require_unlinked=True)
+        except ValueError:
+            try:
+                marker.lstat()
+            except FileNotFoundError:
+                if not missing_ok:
+                    raise
+                current_parent = _publication_directory_info(marker.parent)
+                if not _same_publication_identity(parent_info, current_parent):
+                    raise ValueError(
+                        "Activation marker publication directory changed")
+                _sync_publication_directory(marker.parent)
+                return
+            except OSError as exc:
+                raise ValueError(
+                    "Activation marker could not be inspected") from exc
+            raise
+    current_marker = _publication_file_info(
+        marker, "Activation marker", require_unlinked=True)
+    current_parent = _publication_directory_info(marker.parent)
+    if (not _same_publication_file(expected_info, current_marker)
+            or not _same_publication_identity(parent_info, current_parent)):
+        raise ValueError("Activation marker changed before removal")
+    try:
+        marker.unlink()
+    except FileNotFoundError:
+        if not missing_ok:
+            raise
+        current_parent = _publication_directory_info(marker.parent)
+        if not _same_publication_identity(parent_info, current_parent):
+            raise ValueError(
+                "Activation marker publication directory changed")
+        _sync_publication_directory(marker.parent)
+        return
+    try:
+        marker.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise ValueError("Activation marker removal could not be verified") from exc
+    else:
+        raise ValueError("Activation marker changed during removal")
+    current_parent = _publication_directory_info(marker.parent)
+    if not _same_publication_identity(parent_info, current_parent):
+        raise ValueError("Activation marker publication directory changed")
     _sync_publication_directory(marker.parent)
 
 
@@ -1454,7 +1503,9 @@ class Store:
             published = True
             marker_payload["phase"] = "published"
             _write_activation_marker(marker, marker_payload, replace=True)
-            _remove_activation_marker(marker)
+            marker_info = _publication_file_info(
+                marker, "Activation marker", require_unlinked=True)
+            _remove_activation_marker(marker, expected_info=marker_info)
             return target
         except Exception:
             restored = False
@@ -1468,7 +1519,12 @@ class Store:
             if restored or (not old_moved and not published and target.exists()):
                 # No replacement was left in place, so our marker is no longer
                 # needed and should not block a later operator retry.
-                _remove_activation_marker(marker, missing_ok=True)
+                try:
+                    _remove_activation_marker(marker, missing_ok=True)
+                except (OSError, ValueError):
+                    # Preserve an unexpected marker for manual recovery while
+                    # returning the original activation failure to the caller.
+                    pass
             raise
         finally:
             staged.unlink(missing_ok=True)
@@ -1516,6 +1572,8 @@ class Store:
             raise ValueError("No activation marker is available for rollback")
         payload = _read_activation_marker(marker)
         paths = _validate_activation_marker(marker, payload)
+        marker_info = _publication_file_info(
+            marker, "Activation marker", require_unlinked=True)
         if payload["phase"] not in ("old_moved", "publishing"):
             raise ValueError(
                 "Activation marker is not awaiting rollback from old_moved "
@@ -1547,9 +1605,7 @@ class Store:
             _verify_activation_binding(payload, "staged", staged)
             _discard_activation_staged(staged)
         _move_database_copy(old, target)
-        if marker.is_symlink():
-            raise RuntimeError("Activation marker changed during rollback")
-        _remove_activation_marker(marker)
+        _remove_activation_marker(marker, expected_info=marker_info)
         return target
 
     @staticmethod
@@ -1563,6 +1619,8 @@ class Store:
             raise ValueError("No activation marker is available for finalization")
         payload = _read_activation_marker(marker)
         paths = _validate_activation_marker(marker, payload)
+        marker_info = _publication_file_info(
+            marker, "Activation marker", require_unlinked=True)
         if payload["phase"] not in ("publishing", "published"):
             raise ValueError(
                 "Activation marker is not ready for publishing finalization")
@@ -1587,7 +1645,7 @@ class Store:
         _verify_activation_binding(payload, "staged", target)
         _verify_activation_binding(payload, "rollback", old)
         Store.inspect_existing_database(old)
-        _remove_activation_marker(marker)
+        _remove_activation_marker(marker, expected_info=marker_info)
         return target
 
     @staticmethod
@@ -1604,6 +1662,8 @@ class Store:
             raise ValueError("No activation marker is available for abandonment")
         payload = _read_activation_marker(marker)
         paths = _validate_activation_marker(marker, payload)
+        marker_info = _publication_file_info(
+            marker, "Activation marker", require_unlinked=True)
         if payload["phase"] != "prepared":
             raise ValueError(
                 "Activation marker is not awaiting prepared abandonment")
@@ -1629,7 +1689,7 @@ class Store:
         if staged_present:
             _verify_activation_binding(payload, "staged", staged)
             _discard_activation_staged(staged)
-        _remove_activation_marker(marker)
+        _remove_activation_marker(marker, expected_info=marker_info)
         return target
 
     def add(self, project: str, description: str) -> int:

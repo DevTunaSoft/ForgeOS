@@ -225,6 +225,10 @@ marker and parent afterward. A redirected parent or unexpected staging-file
 identity fails closed, and cleanup does not remove an unrelated path. These
 checks narrow replacement races but do not provide a system-wide writer lock
 or physical power-loss guarantee.
+Marker removal applies the same unlinked-file and parent-identity checks,
+verifies that the path disappeared after unlinking and flushes the directory
+entry. The cleanup-only missing-marker option accepts only an already-absent
+path; it does not remove a hard link, reparse point or substituted file.
 When the active database is still present, the rollback path is absent and
 the staged replacement is no longer wanted, use
 `py -m forgeos db-activation-abandon ACTIVE --confirm --discard-staged`.

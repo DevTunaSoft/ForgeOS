@@ -878,3 +878,26 @@ documentation/link coverage and `git diff --check` passed. The bounded
 tracemalloc peak and a 30,277,632-byte process peak RSS. Exact-head hosted
 checks remain required; Windows ACL review and physical NTFS power-loss
 acceptance remain open.
+
+### 2026-11-15 — activation-marker removal identity
+
+Marker removal now requires the same unlinked real regular-file identity and
+stable parent directory captured after recovery reads. It rechecks both before
+unlinking, verifies that the marker path is absent afterward, and flushes the
+parent entry. Cleanup-only missing-marker handling accepts only an already
+absent path; hard-linked, redirected or substituted markers remain available
+for inspection. Recovery callers pass the captured marker identity so a
+replacement during database validation cannot be cleared as if it were the
+marker that was read. This remains a bounded check-and-use guard rather than a
+system-wide writer lock or physical power-loss guarantee.
+
+Regression coverage adds hard-linked-marker refusal, marker and parent
+identity substitution refusal, and missing-marker cleanup coverage. Focused
+activation/core/CLI recovery tests passed 95 tests. The full isolated suite
+passed 749 tests with 10 expected skips; the known local-model test may emit
+its existing `WinError 10053` server trace while still exiting successfully.
+Compileall, documentation/link coverage and `git diff --check` passed. The
+bounded 12 MiB x 3-cycle memory benchmark reported a 1,982,228-byte Python
+tracemalloc peak and a 29,405,184-byte process peak RSS. Exact-head hosted
+checks remain required; Windows ACL review and physical NTFS power-loss
+acceptance remain open.

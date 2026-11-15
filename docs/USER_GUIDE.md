@@ -805,6 +805,10 @@ temporary marker and parent directory before atomic replacement and verifies
 the new marker afterward. Redirected parents, hard-linked markers and
 unexpected staging substitutions fail closed; this is a bounded race guard,
 not a complete concurrent-writer lock or physical power-loss guarantee.
+When a recovery operation clears a marker, ForgeOS rechecks the same unlinked
+regular-file and parent identity, verifies that the marker path is gone, and
+flushes the directory entry. A missing-marker cleanup only accepts a path that
+was already absent; linked or substituted marker paths remain for inspection.
 
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:
