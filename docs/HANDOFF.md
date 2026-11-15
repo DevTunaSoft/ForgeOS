@@ -3488,24 +3488,6 @@ documentation changes must remain committed and pushed for takeover. Exact-
 head hosted checks, Windows ACL review and physical NTFS power-loss
 acceptance remain open.
 
-## 2026-11-15 — external takeover dossier refresh
-
-**Change:** refreshed `docs/ENGINEERING_TAKEOVER.md` for an external engineer
-who has not seen the repository or prior development conversation. The dossier
-now identifies PR #134 and its feature branch, records the current local test
-and memory evidence plus the four successful exact-head hosted workflows, and
-states the remaining physical-Windows, real-model and clean-room takeover
-boundaries. It also explains how the revision-labelled PDF and recovery ZIP
-relate to the canonical Markdown sources.
-
-**Verification:** documentation/link coverage and the handoff audit remain
-required after this documentation-only update. The next executable step is to
-commit this refresh, generate the PDF and portable recovery package from the
-clean source SHA, render and inspect representative PDF pages, record their
-checksums, and deliver the artifacts with the GitHub PR. The package is not a
-source backup and no artifact publication or independent takeover rehearsal is
-claimed until separately verified.
-
 ## 2026-11-15 — execution snapshot marker publication
 
 **Change:** snapshot creation now encodes its compact ownership marker within
@@ -3621,3 +3603,21 @@ documentation/link coverage, `git diff --check` and the bounded 12 MiB x
 Python tracemalloc peak and a 30,138,368-byte process peak RSS. Exact-head
 hosted checks, Windows ACL review and physical NTFS power-loss acceptance
 remain open.
+
+## 2026-11-15 — external takeover dossier refresh
+
+**Change:** refreshed `docs/ENGINEERING_TAKEOVER.md` for an external engineer
+who has not seen the repository or prior development conversation. The dossier
+now identifies PR #134 and its feature branch, records the current local test
+and memory evidence plus the four successful exact-head hosted workflows, and
+states the remaining physical-Windows, real-model and clean-room takeover
+boundaries. It also explains how the revision-labelled PDF and recovery ZIP
+relate to the canonical Markdown sources.
+
+**Verification:** documentation/link coverage and the handoff audit remain
+required after this documentation-only update. The next executable step is to
+commit this refresh, generate the PDF and portable recovery package from the
+clean source SHA, render and inspect representative PDF pages, record their
+checksums, and deliver the artifacts with the GitHub PR. The package is not a
+source backup and no artifact publication or independent takeover rehearsal is
+claimed until separately verified.
