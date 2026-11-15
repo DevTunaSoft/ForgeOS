@@ -922,3 +922,21 @@ documentation/link coverage and `git diff --check` passed. The bounded
 tracemalloc peak and a 29,933,568-byte process peak RSS. Exact-head hosted
 checks remain required; Windows ACL review and physical NTFS power-loss
 acceptance remain open.
+
+### 2026-11-15 — activation staging cleanup identity
+
+Activation exception cleanup now captures the real parent and restored staged
+file identity, then removes the temporary only if both still match. A staged
+path substituted after marker or publication failure is preserved for
+inspection instead of being deleted. The cleanup stays bounded and does not
+load or copy the database into memory.
+
+Regression coverage adds failure injection that substitutes operator-owned
+staging content before cleanup. Focused activation/core/CLI recovery tests
+passed 99 tests. The full isolated suite passed 753 tests with 10 expected
+skips; the known local-model test may emit its existing `WinError 10053`
+server trace while still exiting successfully. Compileall, documentation/link
+coverage and `git diff --check` passed. The bounded 12 MiB x 3-cycle memory
+benchmark reported a 1,982,228-byte Python tracemalloc peak and a
+29,949,952-byte process peak RSS. Exact-head hosted checks remain required;
+Windows ACL review and physical NTFS power-loss acceptance remain open.

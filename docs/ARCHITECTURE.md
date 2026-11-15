@@ -381,6 +381,9 @@ The discard path captures the staged file and real parent identities before
 inspection, rechecks them before unlinking, verifies that the staged path is
 gone and flushes the parent entry. A hard-linked, redirected or substituted
 staged file is preserved for manual recovery rather than deleted.
+The activation operation's exception cleanup uses the same identity-bound
+staging rule, so a replacement created after a marker or publication failure
+is preserved instead of being unlinked as if it were ForgeOS's temporary.
 
 `Store.finalize_activation()` and `db-activation-finalize` accept the
 `publishing` or `published` phase when the new active database is present and

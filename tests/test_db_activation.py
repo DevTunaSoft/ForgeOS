@@ -280,6 +280,26 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertFalse(self.rollback.exists())
         self.assertFalse(Path(str(self.active) + ".forgeos-activation.json").exists())
 
+    def test_activation_cleanup_preserves_substituted_staging(self):
+        def substitute_staging(marker, payload, *, replace=False):
+            staged = Path(payload["staged"])
+            staged.unlink()
+            staged.write_bytes(b"operator-owned staging")
+            raise OSError("marker unavailable")
+
+        with patch("forgeos.core._write_activation_marker",
+                   side_effect=substitute_staging):
+            with self.assertRaisesRegex(OSError, "marker unavailable"):
+                Store.activate_backup_to(
+                    self.backup, self.active, self.rollback, confirm=True)
+
+        self.assertEqual(self._descriptions(self.active), ["old active task"])
+        self.assertFalse(self.rollback.exists())
+        self.assertFalse(Path(str(self.active) + ".forgeos-activation.json").exists())
+        staging = list(self.root.glob(".forgeos-activate-*.sqlite3"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"operator-owned staging")
+
     def test_enospc_before_publishing_marker_rolls_back_cleanly(self):
         real_write = core._write_activation_marker
 

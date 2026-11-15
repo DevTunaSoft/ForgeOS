@@ -420,16 +420,19 @@ def _replace_activation_marker(staging: Path, marker: Path,
     _sync_publication_directory(marker.parent)
 
 
-def _cleanup_activation_marker_staging(staging: Path, staging_identity) -> None:
-    """Remove only the private marker staging file created by this process."""
+def _cleanup_private_staging(staging: Path, staging_identity,
+                             parent_info, description: str) -> None:
+    """Remove only a private staging file and its unchanged real parent."""
     if staging_identity is None:
         return
     try:
         current = _publication_file_info(
-            staging, "Activation marker staging")
+            staging, description)
+        current_parent = _publication_directory_info(staging.parent)
     except ValueError:
         return
-    if not _same_publication_identity(staging_identity, current):
+    if (not _same_publication_identity(staging_identity, current)
+            or not _same_publication_identity(parent_info, current_parent)):
         return
     try:
         staging.unlink(missing_ok=True)
@@ -473,7 +476,8 @@ def _write_activation_marker(marker: Path, payload: dict,
         else:
             _publish_database_copy(staging, marker)
     finally:
-        _cleanup_activation_marker_staging(staging, staging_identity)
+        _cleanup_private_staging(
+            staging, staging_identity, parent_info, "Activation marker staging")
 
 
 def _remove_publication_file(path: Path, description: str, *,
@@ -1483,16 +1487,24 @@ class Store:
         if target.exists():
             Store.inspect_existing_database(target)
 
+        staged_parent_info = _publication_directory_info(target.parent)
         import tempfile
         fd, name = tempfile.mkstemp(
             prefix=".forgeos-activate-", suffix=".sqlite3", dir=target.parent)
         os.close(fd)
         staged = Path(name)
         staged.unlink()
+        staged_identity = None
         old_moved = False
         published = False
         try:
             Store.restore_backup_to(src, staged, manifest=manifest)
+            current_parent = _publication_directory_info(staged.parent)
+            if not _same_publication_identity(
+                    staged_parent_info, current_parent):
+                raise ValueError("Activation staging directory changed")
+            staged_identity = _publication_file_info(
+                staged, "Activation staging", require_unlinked=True)
             marker_payload = {
                 "format": ACTIVATION_MARKER_FORMAT,
                 "source": str(src),
@@ -1539,7 +1551,9 @@ class Store:
                     pass
             raise
         finally:
-            staged.unlink(missing_ok=True)
+            _cleanup_private_staging(
+                staged, staged_identity, staged_parent_info,
+                "Activation staging")
 
     @staticmethod
     def activation_status(destination: str | Path) -> dict:
