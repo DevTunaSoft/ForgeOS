@@ -219,6 +219,12 @@ Marker reads are bounded to 4 KiB and require an unlinked real regular file;
 ForgeOS rechecks the marker identity after reading it, so a hard-linked,
 reparse-point or substituted marker fails closed before rollback or
 finalization uses its paths.
+Phase-marker replacements recheck the unlinked marker, private temporary file
+and real parent directory before the atomic replace, then verify the new
+marker and parent afterward. A redirected parent or unexpected staging-file
+identity fails closed, and cleanup does not remove an unrelated path. These
+checks narrow replacement races but do not provide a system-wide writer lock
+or physical power-loss guarantee.
 When the active database is still present, the rollback path is absent and
 the staged replacement is no longer wanted, use
 `py -m forgeos db-activation-abandon ACTIVE --confirm --discard-staged`.

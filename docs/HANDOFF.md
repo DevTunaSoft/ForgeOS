@@ -3266,3 +3266,25 @@ passed. The bounded 12 MiB x 3-cycle memory benchmark reported a
 1,982,228-byte Python tracemalloc peak and a 29,417,472-byte process peak RSS.
 Exact-head hosted checks remain required before merge. Windows ACL review and
 physical NTFS power-loss acceptance remain open.
+
+## 2026-11-15 — activation-marker publication identity
+
+**Change:** activation-marker phase updates now capture the real unlinked
+marker, private staging file and parent-directory identities before atomic
+replacement, then recheck the published marker and parent afterward.
+Hard-linked markers, redirected parents and unexpected staging substitutions
+fail closed. Cleanup removes only the private staging identity created by this
+process, preserving unexpected evidence for inspection. This is a bounded
+check-and-use guard, not a system-wide writer lock or physical power-loss
+guarantee.
+
+**Regression coverage:** added hard-linked-marker refusal,
+parent-directory substitution and staging-substitution cleanup tests. Focused
+activation/core/CLI recovery tests passed 91 tests. The full isolated suite
+passed 745 tests with 10 expected skips; the known local-model test may emit
+its existing `WinError 10053` server trace but exits successfully. Compileall,
+documentation/link coverage and `git diff --check` passed. The bounded 12 MiB
+x 3-cycle memory benchmark reported a 1,982,228-byte Python tracemalloc peak
+and a 30,277,632-byte process peak RSS. Exact-head hosted checks remain
+required before merge. Windows ACL review and physical NTFS power-loss
+acceptance remain open.

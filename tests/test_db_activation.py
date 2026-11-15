@@ -541,14 +541,93 @@ class ActivateBackupTests(unittest.TestCase):
                 core._read_activation_marker(marker)
         self.assertEqual(calls["count"], 2)
 
+    def test_replacing_activation_marker_refuses_hard_linked_marker(self):
+        marker = self.root / "activation-marker.json"
+        outside = self.root / "marker-copy.json"
+        outside.write_text("original", encoding="utf-8")
+        try:
+            marker.hardlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unavailable")
+        payload = {"format": core.ACTIVATION_MARKER_FORMAT,
+                   "phase": "prepared"}
+        with patch("forgeos.core.os.replace") as replace:
+            with self.assertRaisesRegex(ValueError, "unlinked"):
+                core._write_activation_marker(marker, payload, replace=True)
+        replace.assert_not_called()
+        self.assertEqual(marker.read_text(encoding="utf-8"), "original")
+        self.assertEqual(outside.read_text(encoding="utf-8"), "original")
+        self.assertFalse(list(self.root.glob(".forgeos-activation-*")))
+
+    def test_replacing_activation_marker_refuses_parent_identity_change(self):
+        marker = self.root / "activation-marker.json"
+        marker.write_text("original", encoding="utf-8")
+        replacement = self.root / "replacement-parent"
+        replacement.mkdir()
+        payload = {"format": core.ACTIVATION_MARKER_FORMAT,
+                   "phase": "prepared"}
+        real_info = core._publication_directory_info
+        calls = {"count": 0}
+
+        def directory_info(path):
+            value = real_info(path)
+            if path == self.root:
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_publication_directory_info", side_effect=directory_info):
+            with self.assertRaisesRegex(
+                    ValueError, "publication inputs changed"):
+                core._write_activation_marker(marker, payload, replace=True)
+        self.assertGreaterEqual(calls["count"], 2)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "original")
+        self.assertFalse(list(self.root.glob(".forgeos-activation-*")))
+
+    def test_marker_staging_substitution_is_preserved_and_not_deleted(self):
+        marker = self.root / "activation-marker.json"
+        marker.write_text("original", encoding="utf-8")
+        replacement = self.root / "replacement-staging.tmp"
+        replacement.write_text("operator evidence", encoding="utf-8")
+        payload = {"format": core.ACTIVATION_MARKER_FORMAT,
+                   "phase": "prepared"}
+        real_info = core._publication_file_info
+        calls = {"staging": 0}
+
+        def publication_info(path, description, *args, **kwargs):
+            value = real_info(path, description, *args, **kwargs)
+            if path.name.startswith(".forgeos-activation-"):
+                calls["staging"] += 1
+                if calls["staging"] == 3:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_publication_file_info", side_effect=publication_info):
+            with self.assertRaisesRegex(
+                    ValueError, "publication inputs changed"):
+                core._write_activation_marker(marker, payload, replace=True)
+        self.assertGreaterEqual(calls["staging"], 4)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "original")
+        self.assertEqual(
+            replacement.read_text(encoding="utf-8"), "operator evidence")
+        self.assertFalse(list(self.root.glob(".forgeos-activation-*")))
+
     def test_replacing_activation_marker_flushes_posix_directory(self):
         marker = self.root / "activation-marker.json"
+        marker.write_text("original", encoding="utf-8")
         payload = {"format": "forgeos-db-activation-v1", "phase": "prepared"}
-        with patch("forgeos.core.os.replace") as replace, \
+        real_replace = os.replace
+        with patch("forgeos.core.os.replace", side_effect=real_replace) as replace, \
                 patch("forgeos.core._sync_publication_directory") as sync:
             core._write_activation_marker(marker, payload, replace=True)
         replace.assert_called_once()
         sync.assert_called_once_with(self.root)
+        self.assertEqual(
+            json.loads(marker.read_text(encoding="utf-8"))["phase"],
+            "prepared")
 
     def test_removing_activation_marker_flushes_posix_directory(self):
         marker = self.root / "activation-marker.json"

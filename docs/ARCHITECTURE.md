@@ -153,6 +153,13 @@ marker must be an unlinked real regular file, its content is capped at 4 KiB,
 and its device/inode/size/modification-time identity is rechecked after the
 read. A replaced, hard-linked or Windows-reparse marker therefore remains
 diagnostic evidence instead of steering rollback through a substituted path.
+Phase updates use a separate atomic-replace boundary: the real marker,
+temporary marker and parent directory are rechecked before replacement, and
+the new marker and parent are checked again afterward. Hard-linked markers,
+redirected parents and unexpected private staging substitutions fail closed;
+staging cleanup removes only the file identity created by this process. This
+is a bounded check-and-use guard, not an operating-system concurrent-writer
+lock or physical power-loss guarantee.
 
 An optional backup manifest is generated with a streamed 64 KiB SHA-256 and
 byte count, capped to a 1 KiB JSON file. Restore-copy can verify that manifest

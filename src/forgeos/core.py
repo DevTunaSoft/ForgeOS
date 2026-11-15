@@ -397,6 +397,46 @@ def _validate_activation_marker(marker: Path, payload: dict) -> dict[str, Path]:
     return paths
 
 
+def _replace_activation_marker(staging: Path, marker: Path,
+                               staging_info, parent_info, marker_info) -> None:
+    """Replace one activation marker only when its inputs stay unchanged."""
+    current_staging = _publication_file_info(
+        staging, "Activation marker staging", require_unlinked=True)
+    current_parent = _publication_directory_info(marker.parent)
+    current_marker = _publication_file_info(
+        marker, "Activation marker", require_unlinked=True)
+    if (not _same_publication_file(staging_info, current_staging)
+            or not _same_publication_identity(parent_info, current_parent)
+            or not _same_publication_file(marker_info, current_marker)):
+        raise ValueError("Activation marker publication inputs changed")
+    os.replace(staging, marker)
+    published_info = _publication_file_info(
+        marker, "Activation marker", require_unlinked=True)
+    if not _same_publication_file(staging_info, published_info):
+        raise ValueError("Activation marker changed during publication")
+    current_parent = _publication_directory_info(marker.parent)
+    if not _same_publication_identity(parent_info, current_parent):
+        raise ValueError("Activation marker publication directory changed")
+    _sync_publication_directory(marker.parent)
+
+
+def _cleanup_activation_marker_staging(staging: Path, staging_identity) -> None:
+    """Remove only the private marker staging file created by this process."""
+    if staging_identity is None:
+        return
+    try:
+        current = _publication_file_info(
+            staging, "Activation marker staging")
+    except ValueError:
+        return
+    if not _same_publication_identity(staging_identity, current):
+        return
+    try:
+        staging.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _write_activation_marker(marker: Path, payload: dict,
                              *, replace: bool = False) -> None:
     """Durably write a small activation phase marker owned by this process."""
@@ -405,23 +445,35 @@ def _write_activation_marker(marker: Path, payload: dict,
                + "\n").encode("utf-8")
     if len(encoded) > ACTIVATION_MARKER_LIMIT:
         raise ValueError("Database activation marker is oversized")
+    parent_info = _publication_directory_info(marker.parent)
+    marker_info = None
+    if replace:
+        marker_info = _publication_file_info(
+            marker, "Activation marker", require_unlinked=True)
     fd, name = tempfile.mkstemp(
         prefix=".forgeos-activation-", suffix=".tmp", dir=marker.parent)
     os.close(fd)
     staging = Path(name)
+    staging_identity = None
     try:
+        staging_identity = _publication_file_info(
+            staging, "Activation marker staging", require_unlinked=True)
         staging.write_bytes(encoded)
         with staging.open("rb+") as stream:
             os.fsync(stream.fileno())
-        if marker.is_symlink():
-            raise ValueError("Activation marker cannot be a symlink")
+        written_staging = _publication_file_info(
+            staging, "Activation marker staging", require_unlinked=True)
+        current_parent = _publication_directory_info(marker.parent)
+        if (not _same_publication_identity(staging_identity, written_staging)
+                or not _same_publication_identity(parent_info, current_parent)):
+            raise ValueError("Activation marker publication inputs changed")
         if replace:
-            os.replace(staging, marker)
-            _sync_publication_directory(marker.parent)
+            _replace_activation_marker(
+                staging, marker, written_staging, parent_info, marker_info)
         else:
             _publish_database_copy(staging, marker)
     finally:
-        staging.unlink(missing_ok=True)
+        _cleanup_activation_marker_staging(staging, staging_identity)
 
 
 def _remove_activation_marker(marker: Path, *, missing_ok: bool = False) -> None:
