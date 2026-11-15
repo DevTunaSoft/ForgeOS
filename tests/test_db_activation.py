@@ -172,6 +172,73 @@ class ActivateBackupTests(unittest.TestCase):
                 finally:
                     alias.unlink()
 
+    def test_move_refuses_redirected_source(self):
+        outside = self.root / "move-outside.sqlite3"
+        outside.write_bytes(b"outside")
+        alias = self.root / "move-alias.sqlite3"
+        try:
+            alias.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlinks unavailable")
+        target = self.root / "move-target.sqlite3"
+        try:
+            with self.assertRaisesRegex(ValueError, "Move source|regular"):
+                core._move_database_copy(alias, target)
+        finally:
+            alias.unlink()
+        self.assertFalse(target.exists())
+        self.assertEqual(outside.read_bytes(), b"outside")
+
+    def test_move_rechecks_source_identity_before_unlink(self):
+        source = self.root / "move-source.sqlite3"
+        source.write_bytes(b"private source")
+        target = self.root / "move-target.sqlite3"
+        replacement = self.source_database
+        real_info = core._publication_file_info
+        calls = {"source": 0}
+
+        def publication_info(path, description, *args, **kwargs):
+            value = real_info(path, description, *args, **kwargs)
+            if path == source:
+                calls["source"] += 1
+                if calls["source"] == 2:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(
+                core, "_publication_file_info", side_effect=publication_info):
+            with self.assertRaisesRegex(ValueError, "Move source changed"):
+                core._move_database_copy(source, target)
+        self.assertGreaterEqual(calls["source"], 2)
+        self.assertTrue(source.exists())
+        self.assertFalse(target.exists())
+
+    def test_move_rechecks_destination_parent_identity(self):
+        source = self.root / "move-source.sqlite3"
+        source.write_bytes(b"private source")
+        target = self.root / "move-target.sqlite3"
+        replacement_parent = self.root / "replacement-parent"
+        replacement_parent.mkdir()
+        real_info = core._publication_directory_info
+        calls = {"target": 0}
+
+        def directory_info(path):
+            value = real_info(path)
+            if path == target.parent:
+                calls["target"] += 1
+                if calls["target"] == 2:
+                    return replacement_parent.lstat()
+            return value
+
+        with patch.object(
+                core, "_publication_directory_info", side_effect=directory_info):
+            with self.assertRaisesRegex(
+                    ValueError, "Move publication directory changed"):
+                core._move_database_copy(source, target)
+        self.assertGreaterEqual(calls["target"], 2)
+        self.assertTrue(source.exists())
+        self.assertFalse(target.exists())
+
     def test_manifest_mismatch_prevents_activation_before_marker(self):
         manifest = self.root / "backup.json"
         manifest_store = Store(self.source_database)

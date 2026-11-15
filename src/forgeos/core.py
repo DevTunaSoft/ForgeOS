@@ -220,7 +220,28 @@ def _publish_database_copy(staging: Path, target: Path) -> None:
 
 
 def _move_database_copy(source: Path, target: Path) -> None:
-    """Move one same-directory database path without replacing its target."""
+    """Move one private regular file without replacing its target.
+
+    POSIX uses a hard link followed by unlink because ``os.rename`` would
+    replace an unexpected destination. Both paths recheck the source and
+    parent identities around the operation so activation and recovery-bundle
+    publication fail closed when a path is substituted.
+    """
+    source_info = _publication_file_info(source, "Move source")
+    source_parent_info = _publication_directory_info(source.parent)
+    target_parent_info = _publication_directory_info(target.parent)
+    _publication_target_info(target)
+    current_source = _publication_file_info(source, "Move source")
+    current_source_parent = _publication_directory_info(source.parent)
+    current_target_parent = _publication_directory_info(target.parent)
+    if not _same_publication_file(source_info, current_source):
+        raise ValueError(f"Move source changed: {source}")
+    if (not _same_publication_identity(source_parent_info,
+                                       current_source_parent)
+            or not _same_publication_identity(target_parent_info,
+                                               current_target_parent)):
+        raise ValueError(f"Move publication directory changed: {target}")
+    _publication_target_info(target)
     if os.name == "nt":
         # Windows rename fails when target exists, preserving the rollback
         # destination under the same no-overwrite contract as publication.
@@ -229,7 +250,36 @@ def _move_database_copy(source: Path, target: Path) -> None:
         # POSIX rename would replace an unexpected target. A hard link followed
         # by unlink is deliberately fail-closed if a concurrent target appears.
         os.link(source, target)
+        published_info = _publication_file_info(target, "Moved artifact")
+        current_source = _publication_file_info(source, "Move source")
+        current_source_parent = _publication_directory_info(source.parent)
+        current_target_parent = _publication_directory_info(target.parent)
+        if not _same_publication_file(source_info, published_info):
+            raise ValueError(f"Moved artifact changed: {target}")
+        if (not _same_publication_file(source_info, current_source)
+                or not _same_publication_identity(
+                    source_parent_info, current_source_parent)
+                or not _same_publication_identity(
+                    target_parent_info, current_target_parent)):
+            raise ValueError(f"Move publication inputs changed: {target}")
         os.unlink(source)
+    published_info = _publication_file_info(target, "Moved artifact")
+    current_source_parent = _publication_directory_info(source.parent)
+    current_target_parent = _publication_directory_info(target.parent)
+    if not _same_publication_file(source_info, published_info):
+        raise ValueError(f"Moved artifact changed: {target}")
+    if (not _same_publication_identity(source_parent_info,
+                                       current_source_parent)
+            or not _same_publication_identity(target_parent_info,
+                                               current_target_parent)):
+        raise ValueError(f"Move publication directory changed: {target.parent}")
+    try:
+        source.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ValueError(f"Move source could not be verified: {source}") from exc
+    raise ValueError(f"Move source remained after publication: {source}")
 
 
 def _activation_marker_path(destination: Path) -> Path:
