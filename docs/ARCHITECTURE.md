@@ -377,6 +377,10 @@ command initializes the active Store or replays journal actions. Read-only
 checks use immutable SQLite URI mode when no sidecars exist, avoiding
 inspection-created `-shm` files; an existing WAL or rollback journal remains
 on the normal read-only path.
+The discard path captures the staged file and real parent identities before
+inspection, rechecks them before unlinking, verifies that the staged path is
+gone and flushes the parent entry. A hard-linked, redirected or substituted
+staged file is preserved for manual recovery rather than deleted.
 
 `Store.finalize_activation()` and `db-activation-finalize` accept the
 `publishing` or `published` phase when the new active database is present and

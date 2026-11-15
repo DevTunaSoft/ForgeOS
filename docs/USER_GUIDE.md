@@ -763,8 +763,11 @@ py -m forgeos db-activation-rollback `
 ```
 
 ForgeOS checks the staged file as a ForgeOS SQLite database before deleting
-only that private path. `prepared` and `published` markers are diagnostic
-states; do not force them into a rollback without inspecting the paths. If a
+only that private path. It also requires the staged file and its real parent
+to retain their identities through inspection, verifies the path is gone and
+flushes the directory entry; a linked or substituted staged file is preserved
+for inspection. `prepared` and `published` markers are diagnostic states; do
+not force them into a rollback without inspecting the paths. If a
 crash occurred after the replacement was published, the marker phase is
 `published`, the active and retained rollback databases both exist, and the
 staged path is absent, finalize the completed operation explicitly:

@@ -436,6 +436,78 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertTrue(staged.exists())
         self.assertTrue(marker.exists())
 
+    def test_discard_staged_refuses_hard_linked_file(self):
+        staged, marker = self._leave_crashed_activation_with_staged_file()
+        outside = self.root / "staged-copy.sqlite3"
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        try:
+            outside.hardlink_to(staged)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links unavailable")
+
+        with self.assertRaisesRegex(ValueError, "unlinked"):
+            Store.rollback_activation(
+                self.active, confirm=True, discard_staged=True)
+        self.assertFalse(self.active.exists())
+        self.assertTrue(self.rollback.exists())
+        self.assertTrue(staged.exists())
+        self.assertTrue(outside.exists())
+        self.assertTrue(marker.exists())
+
+    def test_discard_staged_refuses_identity_change_after_inspection(self):
+        staged, marker = self._leave_crashed_activation_with_staged_file()
+        replacement = self.root / "replacement-staged.sqlite3"
+        replacement.write_bytes(b"operator evidence")
+        real_info = core._publication_file_info
+        calls = {"count": 0}
+
+        def publication_info(path, description, *args, **kwargs):
+            value = real_info(path, description, *args, **kwargs)
+            if path == staged:
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(Store, "inspect_existing_database"), \
+                patch.object(
+                    core, "_publication_file_info",
+                    side_effect=publication_info):
+            with self.assertRaisesRegex(
+                    ValueError, "Staged activation file changed before removal"):
+                core._discard_activation_staged(staged)
+        self.assertEqual(calls["count"], 2)
+        self.assertTrue(staged.exists())
+        self.assertEqual(
+            replacement.read_bytes(), b"operator evidence")
+        self.assertTrue(marker.exists())
+
+    def test_discard_staged_refuses_parent_change_after_inspection(self):
+        staged, marker = self._leave_crashed_activation_with_staged_file()
+        replacement = self.root / "replacement-staged-parent"
+        replacement.mkdir()
+        real_info = core._publication_directory_info
+        calls = {"count": 0}
+
+        def directory_info(path):
+            value = real_info(path)
+            if path == self.root:
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    return replacement.lstat()
+            return value
+
+        with patch.object(Store, "inspect_existing_database"), \
+                patch.object(
+                    core, "_publication_directory_info",
+                    side_effect=directory_info):
+            with self.assertRaisesRegex(
+                    ValueError, "Staged activation file changed before removal"):
+                core._discard_activation_staged(staged)
+        self.assertGreaterEqual(calls["count"], 2)
+        self.assertTrue(staged.exists())
+        self.assertTrue(marker.exists())
+
     def test_published_marker_finalization_validates_both_databases(self):
         marker, staged = self._leave_published_activation_with_marker()
 
