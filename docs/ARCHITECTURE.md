@@ -127,6 +127,13 @@ standard-library path. This is a filesystem compatibility and no-overwrite
 boundary, not a guarantee against non-cooperating external writers or physical
 power loss.
 
+Read-only task-database inspection, streamed backup-manifest hashing and
+restore-copy capture the source's regular-file identity before use and recheck
+device/inode, size and modification time afterward. A link, reparse point or
+source substitution therefore fails closed before a new artifact is published.
+This remains a bounded check-and-use boundary rather than a descriptor-bound
+SQLite read or a lock against a writer that deliberately preserves metadata.
+
 An optional backup manifest is generated with a streamed 64 KiB SHA-256 and
 byte count, capped to a 1 KiB JSON file. Restore-copy can verify that manifest
 before opening the source. It detects accidental transfer or storage

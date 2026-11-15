@@ -164,6 +164,20 @@ def _same_publication_identity(before, after) -> bool:
                for field in ("st_dev", "st_ino"))
 
 
+def _database_source_info(path: Path, description: str):
+    return _publication_file_info(path, description)
+
+
+def _assert_database_source_unchanged(before, path: Path,
+                                      description: str) -> None:
+    try:
+        after = _database_source_info(path, description)
+    except ValueError as exc:
+        raise ValueError(f"{description} changed during use: {path}") from exc
+    if not _same_publication_file(before, after):
+        raise ValueError(f"{description} changed during use: {path}")
+
+
 def _publish_database_copy(staging: Path, target: Path) -> None:
     """Publish a staged SQLite copy without replacing a concurrent destination.
 
@@ -372,15 +386,20 @@ def _utf8_size(value: str) -> int:
 
 def _database_file_digest(path: Path) -> tuple[int, str]:
     """Stream a database digest without loading the file into memory."""
+    before = _database_source_info(path, "Database artifact")
     digest = hashlib.sha256()
     size = 0
-    with path.open("rb") as stream:
-        while True:
-            chunk = stream.read(64 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            digest.update(chunk)
+    try:
+        with path.open("rb") as stream:
+            while True:
+                chunk = stream.read(64 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                digest.update(chunk)
+    except OSError as exc:
+        raise ValueError(f"Database artifact could not be read: {path}") from exc
+    _assert_database_source_unchanged(before, path, "Database artifact")
     return size, digest.hexdigest()
 
 
@@ -1114,8 +1133,11 @@ class Store:
         from contextlib import closing
 
         source = Path(path).expanduser().absolute()
-        if source.is_symlink() or not source.is_file():
-            raise ValueError("Task database must be an existing regular file")
+        try:
+            source_info = _database_source_info(source, "Task database")
+        except ValueError as exc:
+            raise ValueError(
+                "Task database must be an existing regular file") from exc
         # SQLite may create a -shm file merely by opening a sidecar-free
         # WAL-mode database read-only. Immutable mode prevents that mutation
         # when no journal sidecar exists; a present WAL/rollback journal must
@@ -1126,6 +1148,8 @@ class Store:
         with closing(sqlite3.connect(source.as_uri() + query, uri=True)) as db:
             db.execute("PRAGMA query_only=ON")
             _verify_task_database_connection(db)
+        _assert_database_source_unchanged(
+            source_info, source, "Task database")
 
     def backup_to(self, destination: str | Path,
                   manifest: str | Path | None = None) -> Path:
@@ -1182,8 +1206,11 @@ class Store:
 
         src = Path(source).expanduser().absolute()
         target = Path(destination).expanduser().absolute()
-        if src.is_symlink() or not src.is_file():
-            raise ValueError("Restore source must be a regular SQLite database file")
+        try:
+            source_info = _database_source_info(src, "Restore source")
+        except ValueError as exc:
+            raise ValueError(
+                "Restore source must be a regular SQLite database file") from exc
         if manifest is not None:
             _verify_backup_manifest(src, manifest)
         if (src == target or not target.parent.is_dir()
@@ -1206,6 +1233,8 @@ class Store:
                     # Protect against concurrent source-schema changes while
                     # copying, and reject a corrupt or incompatible result.
                     _verify_task_database_connection(restored)
+            _assert_database_source_unchanged(
+                source_info, src, "Restore source")
             with staged.open("rb+") as stream:
                 os.fsync(stream.fileno())
             # No-overwrite publication also protects concurrent users.

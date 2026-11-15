@@ -698,6 +698,10 @@ The shared publication check rejects linked or Windows-reparse staging files
 and parent directories, and rechecks their identities before and after the
 no-overwrite operation. This narrows path-substitution risk but is not a lock
 against a non-cooperating writer or a physical power-loss guarantee.
+Read-only database checks, streamed manifest hashing and restore-copy also
+recheck the source regular-file identity after use; a link, reparse point or
+substituted source fails closed before a destination is published. This is a
+bounded check-and-use guard, not a concurrent-writer lock.
 The optional manifest is a bounded JSON record of the backup size and streamed
 SHA-256; require it during offline inspection with
 `db-restore-copy SOURCE DESTINATION --manifest MANIFEST`. It detects accidental

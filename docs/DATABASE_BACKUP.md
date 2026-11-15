@@ -32,6 +32,13 @@ shared publication boundary also rejects linked/reparse staging files and
 parent directories, then rechecks their identities before and after making
 the new artifact visible.
 
+Read-only inspection, streamed manifest hashing and restore-copy capture the
+source regular-file identity before use and recheck its device/inode, size and
+modification time afterward. A link, Windows reparse point or source
+substitution fails closed without publishing a new destination. This is a
+bounded check-and-use guard, not a lock against a writer that deliberately
+preserves those metadata values.
+
 The source integrity check uses `PRAGMA integrity_check(1)`; the online
 copy is produced using SQLite's `Connection.backup(pages=64)`. The completed
 temporary file is checked independently and flushed before exclusive
