@@ -159,6 +159,14 @@ def main(argv=None):
     recovery_auth_check.add_argument(
         'authentication', help='Existing detached authentication record')
     recovery_auth_check.add_argument('key', help='Existing shared-secret key file')
+    recovery_auth_keygen = sub.add_parser(
+        'recovery-bundle-auth-keygen',
+        help='Create a bounded OS-random key for recovery package authentication')
+    recovery_auth_keygen.add_argument(
+        'destination', help='New shared-secret key file; never overwrites')
+    recovery_auth_keygen.add_argument(
+        '--bytes', dest='key_bytes', type=int, default=32,
+        help='Key size in bytes, from 32 through 4096 (default: 32)')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -476,6 +484,12 @@ def main(argv=None):
             args.source, args.authentication, args.key)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
+    if args.action == 'recovery-bundle-auth-keygen':
+        from .recovery_auth import generate_recovery_bundle_auth_key
+        generated = generate_recovery_bundle_auth_key(
+            args.destination, size=args.key_bytes)
+        print(f'Generated recovery authentication key: {generated}')
+        return 0
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))

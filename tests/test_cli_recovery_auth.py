@@ -14,6 +14,23 @@ from forgeos.worktree_archive import export_worktree_archive
 
 
 class RecoveryBundleAuthCliTests(unittest.TestCase):
+    def test_key_generation_is_database_free_and_does_not_print_secret(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / "generated.key"
+            output = io.StringIO()
+            with patch.object(Store, "__init__", side_effect=AssertionError(
+                    "Recovery key generation must remain database-free")), \
+                    redirect_stdout(output):
+                self.assertEqual(main([
+                    "--db", str(root / "missing.sqlite3"),
+                    "recovery-bundle-auth-keygen", str(destination),
+                    "--bytes", "48"]), 0)
+            generated = destination.read_bytes()
+            self.assertEqual(len(generated), 48)
+            self.assertNotIn(generated.hex(), output.getvalue())
+            self.assertIn("Generated recovery authentication key:", output.getvalue())
+
     def test_auth_and_check_do_not_initialize_task_database(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

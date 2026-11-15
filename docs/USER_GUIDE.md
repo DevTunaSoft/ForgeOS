@@ -842,6 +842,8 @@ py -m forgeos recovery-bundle-auth-check `
   "C:\ForgeOS-backups\task-1-recovery.zip" `
   "C:\ForgeOS-backups\task-1-recovery.auth.json" `
   "C:\ForgeOS-backups\task-1-recovery.key"
+py -m forgeos recovery-bundle-auth-keygen `
+  "C:\ForgeOS-backups\task-1-recovery.key"
 ```
 
 The exporter hashes regular files in 64 KiB blocks under a 4,096-file,
@@ -928,3 +930,10 @@ To enforce that authenticity before a transfer is checked or materialized, add
 fails before extraction staging or resume moves, and the pair must be supplied
 again for a later resume because the durable extraction marker never stores
 the secret or authentication record.
+
+If you do not already have a shared-secret file, create one with
+`recovery-bundle-auth-keygen KEY_FILE`. It uses the operating system random
+source, accepts 32 through 4,096 bytes, refuses an existing destination and
+does not print the key. On POSIX the generated file is mode `0600`; on Windows,
+review the file's account ACL and keep the key in a protected location. Do not
+place the key in the recovery ZIP or publish it with the detached record.

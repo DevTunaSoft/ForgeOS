@@ -476,3 +476,12 @@ wrong or incomplete credentials fail closed while existing unsigned integrity
 flows remain compatible. The extraction marker stores no secret, so the
 operator must supply the pair again for a resumed operation. Encryption,
 public-key identity and physical power-loss acceptance remain future work.
+
+### 2026-11-15 — bounded recovery authentication key provisioning
+
+`recovery-bundle-auth-keygen` now creates a new 32-byte-to-4 KiB shared secret
+from the operating system CSPRNG, writes it through flushed private staging
+and publishes it without overwriting an existing path or printing key bytes.
+The command is database-free and uses the existing Windows rename/POSIX
+hard-link publication split. Operators still own key storage, ACL review,
+rotation and backup; this does not add encryption or public-key identity.

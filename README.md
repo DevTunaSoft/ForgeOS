@@ -341,6 +341,11 @@ To require that authenticity before checking or receiving a package, add
 `--authentication AUTH_RECORD --key KEY` to `recovery-bundle-check`,
 `recovery-bundle-extract`, or `recovery-bundle-extract-resume`; a missing or
 invalid pair fails before materialization.
+To create a new OS-random key without printing it, run
+`py -m forgeos recovery-bundle-auth-keygen KEY_FILE` (optionally
+`--bytes 48`, within the 32-byte-to-4 KiB bound). The new key path must not
+already exist; protect it separately from the package and authentication
+record.
 
 ### Verified task database backups (experimental)
 

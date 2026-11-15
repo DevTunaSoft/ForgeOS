@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 from pathlib import Path
+import secrets
 import stat
 import tempfile
 
@@ -27,6 +28,33 @@ RECOVERY_AUTH_FORMAT = "forgeos-recovery-bundle-auth-v1"
 MAX_RECOVERY_AUTH_BYTES = 4096
 MAX_RECOVERY_AUTH_KEY_BYTES = 4096
 MIN_RECOVERY_AUTH_KEY_BYTES = 32
+
+
+def generate_recovery_bundle_auth_key(destination: str | Path, *,
+                                      size: int = MIN_RECOVERY_AUTH_KEY_BYTES) -> Path:
+    """Create one bounded OS-random shared-secret key without overwriting."""
+    if (type(size) is not int
+            or not MIN_RECOVERY_AUTH_KEY_BYTES <= size <= MAX_RECOVERY_AUTH_KEY_BYTES):
+        raise ValueError(
+            "Recovery authentication key size must be between 32 and 4096 bytes")
+    target = _new_destination(destination, ())
+    key = secrets.token_bytes(size)
+    if len(key) != size:
+        raise RuntimeError("Recovery authentication key generation was incomplete")
+    fd, name = tempfile.mkstemp(
+        prefix=".forgeos-recovery-auth-key-", suffix=".tmp", dir=target.parent)
+    os.close(fd)
+    staging = Path(name)
+    try:
+        os.chmod(staging, 0o600)
+        with staging.open("wb") as output:
+            output.write(key)
+            output.flush()
+            os.fsync(output.fileno())
+        _publish_database_copy(staging, target)
+        return target
+    finally:
+        staging.unlink(missing_ok=True)
 
 
 def _read_bounded_file(source: Path, *, max_bytes: int,

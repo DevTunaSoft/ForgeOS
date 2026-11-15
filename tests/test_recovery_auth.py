@@ -1,6 +1,8 @@
 """Detached recovery-package authentication regressions."""
 import json
+import os
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -9,6 +11,7 @@ import zipfile
 from forgeos.recovery_auth import (
     check_recovery_bundle_auth,
     export_recovery_bundle_auth,
+    generate_recovery_bundle_auth_key,
 )
 from forgeos.recovery_package import export_recovery_bundle
 from forgeos.worktree_archive import export_worktree_archive
@@ -61,6 +64,30 @@ class RecoveryBundleAuthTests(unittest.TestCase):
             self.bundle, self.authentication, self.key)
         self.assertTrue(report["valid"])
         self.assertTrue(report["complete"])
+
+    def test_key_generation_is_bounded_private_and_non_overwriting(self):
+        generated = self.root / "generated.key"
+        self.assertEqual(
+            generate_recovery_bundle_auth_key(generated, size=48), generated)
+        key = generated.read_bytes()
+        self.assertEqual(len(key), 48)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(generated.stat().st_mode), 0o600)
+        with self.assertRaisesRegex(ValueError, "new file"):
+            generate_recovery_bundle_auth_key(generated)
+        with self.assertRaisesRegex(ValueError, "between 32 and 4096"):
+            generate_recovery_bundle_auth_key(self.root / "short.key", size=31)
+        with self.assertRaisesRegex(ValueError, "between 32 and 4096"):
+            generate_recovery_bundle_auth_key(self.root / "large.key", size=4097)
+
+    def test_key_generation_publication_failure_cleans_staging(self):
+        destination = self.root / "generated.key"
+        with patch("forgeos.recovery_auth._publish_database_copy",
+                   side_effect=OSError("disk unavailable")):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                generate_recovery_bundle_auth_key(destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(list(self.root.glob(".forgeos-recovery-auth-key-*")), [])
 
     def test_wrong_key_and_tampered_record_fail_closed(self):
         export_recovery_bundle_auth(self.bundle, self.key, self.authentication)

@@ -347,3 +347,9 @@ authentication record; no ZIP or key-sized collection is added to extraction.
 The gate runs before staging or no-overwrite moves, and an operator must pass
 the pair again when resuming because the durable extraction marker does not
 store secrets or authentication-record contents.
+
+`recovery-bundle-auth-keygen` allocates only the requested 32-byte-to-4 KiB
+key plus one bounded publication buffer; it uses the OS CSPRNG and never
+retains a key-generation collection or prints the secret. The key file is
+flushed before no-overwrite publication. File-system cache, CSPRNG internals
+and process RSS remain outside these application-level allocation limits.
