@@ -415,3 +415,13 @@ promoted to `complete` only after the package digest and copied coherence index
 are revalidated; `recovery-bundle-extract-check` rejects publishing, failed or
 tampered directories. This does not initialize SQLite, execute a task or replay
 actions, and physical power-loss acceptance remains open.
+
+### 2026-11-15 — resumable marked recovery materialization
+
+`recovery-bundle-extract-resume` now resumes only directories marked
+`publishing` or `failed`. It verifies the source package against the durable
+marker, hashes existing entries before preserving them, refuses mismatches or
+links, stages only missing entries and promotes the marker to `complete` after
+the same final index and package checks. This is an explicit single-writer
+operator path with no background retry, task execution, journal replay or
+physical power-loss acceptance.

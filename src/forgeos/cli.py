@@ -119,6 +119,13 @@ def main(argv=None):
     recovery_extract_check.add_argument(
         'source', help='Existing materialized recovery directory')
     recovery_extract_check.add_argument('--max-issues', type=int, default=32)
+    recovery_extract_resume = sub.add_parser(
+        'recovery-bundle-extract-resume',
+        help='Resume a failed or interrupted recovery bundle extraction')
+    recovery_extract_resume.add_argument(
+        'source', help='Existing recovery bundle ZIP path')
+    recovery_extract_resume.add_argument(
+        'destination', help='Existing incomplete recovery directory')
     db_backup=sub.add_parser('db-backup', help='Make a verified non-overwriting SQLite backup')
     db_backup.add_argument('destination', help='New file inside an existing folder')
     db_backup.add_argument('--manifest', default='',
@@ -406,6 +413,12 @@ def main(argv=None):
             args.source, max_issues=args.max_issues)
         print(json.dumps(report, indent=2))
         return 0 if report['valid'] else 1
+    if args.action == 'recovery-bundle-extract-resume':
+        from .recovery_extract import resume_recovery_bundle_extraction
+        resumed = resume_recovery_bundle_extraction(
+            args.source, args.destination)
+        print(f'Resumed recovery bundle extraction: {resumed}')
+        return 0
     if args.action == 'memory':
         from .model_routing import memory_report
         print(json.dumps(memory_report(), indent=2))

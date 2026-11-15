@@ -6,12 +6,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from forgeos.core import JOURNAL_HANDOFF_MANIFEST_FORMAT
+from forgeos.core import JOURNAL_HANDOFF_MANIFEST_FORMAT, _move_database_copy
 from forgeos.diagnostics import EvidenceStore
 from forgeos.recovery_extract import (
     RECOVERY_EXTRACTION_STATE_NAME,
     check_recovery_bundle_extraction,
     extract_recovery_bundle,
+    resume_recovery_bundle_extraction,
 )
 from forgeos.recovery_package import export_recovery_bundle
 from forgeos.worktree_archive import export_worktree_archive
@@ -103,6 +104,47 @@ class RecoveryBundleExtractionTests(unittest.TestCase):
         report = check_recovery_bundle_extraction(destination)
         self.assertFalse(report["valid"])
         self.assertEqual(list(self.root.glob(".forgeos-recovery-extract-*")), [])
+
+    def test_resume_completes_a_partial_publication_without_overwrite(self):
+        destination = self.root / "restored"
+        calls = 0
+
+        def fail_after_two(source, target):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise OSError("interrupted publication")
+            return _move_database_copy(source, target)
+
+        with patch("forgeos.recovery_extract._move_database_copy",
+                   side_effect=fail_after_two):
+            with self.assertRaisesRegex(OSError, "interrupted publication"):
+                extract_recovery_bundle(self.bundle, destination)
+        self.assertFalse(check_recovery_bundle_extraction(destination)["valid"])
+        self.assertEqual(
+            resume_recovery_bundle_extraction(self.bundle, destination),
+            destination)
+        self.assertTrue(check_recovery_bundle_extraction(destination)["valid"])
+
+    def test_resume_refuses_a_tampered_existing_entry(self):
+        destination = self.root / "restored"
+        calls = 0
+
+        def fail_after_two(source, target):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise OSError("interrupted publication")
+            return _move_database_copy(source, target)
+
+        with patch("forgeos.recovery_extract._move_database_copy",
+                   side_effect=fail_after_two):
+            with self.assertRaises(OSError):
+                extract_recovery_bundle(self.bundle, destination)
+        (destination / "recovery-bundle-header.json").write_text("tampered\n")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            resume_recovery_bundle_extraction(self.bundle, destination)
+        self.assertFalse(check_recovery_bundle_extraction(destination)["valid"])
 
 
 if __name__ == "__main__":

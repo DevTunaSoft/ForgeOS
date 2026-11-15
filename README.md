@@ -324,6 +324,12 @@ and marks the directory complete only after rechecking the copied handoff,
 source archive, manifest and evidence. An interrupted or failed materializer
 is left marked incomplete for inspection; it never starts a task, opens SQLite
 or replays actions.
+When an operator confirms that the marked directory is no longer being written,
+`py -m forgeos recovery-bundle-extract-resume PACKAGE NEW_DIRECTORY` verifies
+the marker's package digest, preserves matching files, copies only missing
+entries and refuses mismatched existing entries. It marks the directory
+complete only after the same final checks; the resume command also never
+executes or replays the handoff.
 
 ### Verified task database backups (experimental)
 

@@ -206,6 +206,16 @@ than being mistaken for a usable handoff. The extracted artifacts remain
 passive files: no SQLite initialization, task execution or action replay is
 performed.
 
+`resume_recovery_bundle_extraction()` is an explicit operator-driven recovery
+path for directories whose marker is `publishing` or `failed`. It requires the
+source ZIP to match the marker's streamed size and SHA-256, revalidates the
+package, hashes every existing materialized entry against its corresponding ZIP
+entry, and refuses to overwrite any mismatch. Missing entries are staged and
+moved through the same no-overwrite helper. Only after the full materialized
+index and package digest pass again is the marker promoted to `complete`.
+There is no background retry or concurrent-worker coordination; the operator
+must ensure the previous writer has stopped.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback
