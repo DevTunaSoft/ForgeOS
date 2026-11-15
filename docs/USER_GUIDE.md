@@ -749,6 +749,7 @@ py -m forgeos journal --task-id 1 --limit 20
 py -m forgeos journal-check
 py -m forgeos journal-export "C:\\ForgeOS-backups\\journal.jsonl"
 py -m forgeos journal-handoff "C:\\ForgeOS-backups\\task-1-handoff.jsonl" --task-id 1
+py -m forgeos journal-handoff-check "C:\\ForgeOS-backups\\task-1-handoff.jsonl"
 ```
 
 Journal rows record task, lease and recovery transitions—not full prompts,
@@ -768,3 +769,9 @@ text before loading it, omits prompts, project paths, checkpoints, leases,
 errors and test output, and never executes or imports actions. Run
 `journal-check` first; this file is a non-executing replay plan, not a complete
 database or evidence/worktree bundle.
+`journal-handoff-check` verifies the handoff offline, one bounded JSONL record
+at a time. It detects malformed or oversized records, record-order changes,
+non-increasing event IDs, invalid references, and summary mismatches while
+retaining at most 32 diagnostics. A successful check proves only internal
+format consistency; it does not authenticate the file, recover missing
+evidence, import journal rows, or execute any action.

@@ -157,6 +157,10 @@ class ForgeOSTests(unittest.TestCase):
         self.assertEqual(rows[-1], {
             'record': 'summary', 'task_id': task, 'event_count': 2,
             'last_event_id': events[-1]['id'], 'complete': True})
+        checked = self.store.check_handoff(target)
+        self.assertEqual(checked['valid'], True)
+        self.assertEqual(checked['task_id'], task)
+        self.assertEqual(checked['events'], 2)
         content = target.read_text()
         self.assertNotIn('HIDDEN task prompt', content)
         self.assertNotIn('HIDDEN checkpoint output', content)
@@ -176,6 +180,25 @@ class ForgeOSTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'oversized event details'):
             self.store.export_handoff(target, task_id=task)
         self.assertFalse(target.exists())
+
+    def test_journal_handoff_checker_rejects_tampering_and_caps_diagnostics(self):
+        task = self.store.add(str(self.repo), 'Handoff checker')
+        target = self.root / 'checked-handoff.jsonl'
+        self.store.export_handoff(target, task_id=task)
+        rows = target.read_text().splitlines()
+        event = json.loads(rows[2])
+        event['artifact_ref'] = 'unsafe reference'
+        rows[2] = json.dumps(event, separators=(',', ':'))
+        target.write_text('\n'.join(rows) + '\n')
+        report = self.store.check_handoff(target)
+        self.assertFalse(report['valid'])
+        self.assertTrue(any('artifact reference' in issue['problem']
+                            for issue in report['issues']))
+        target.write_text(('not-json\n') * 40)
+        report = self.store.check_handoff(target)
+        self.assertFalse(report['valid'])
+        self.assertEqual(len(report['issues']), 32)
+        self.assertTrue(report['truncated'])
     def test_task_description_utf8_limit_rejects_invalid_without_db_changes(self):
         from forgeos.core import MAX_TASK_DESCRIPTION_BYTES
         limit = MAX_TASK_DESCRIPTION_BYTES

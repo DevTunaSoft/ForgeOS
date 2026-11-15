@@ -77,6 +77,7 @@ MAX_EVENT_EVIDENCE_BYTES = 64
 EVENT_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]+$")
 MAX_JOURNAL_ISSUES = 32
 JOURNAL_HANDOFF_FORMAT = "forgeos-journal-handoff-v1"
+MAX_JOURNAL_HANDOFF_LINE_BYTES = 16 * 1024
 BACKUP_MANIFEST_FORMAT = "forgeos-sqlite-backup-v1"
 MAX_BACKUP_MANIFEST_BYTES = 1024
 
@@ -560,14 +561,12 @@ class Store:
             (task_id,)).fetchone()
         if task is None:
             raise ValueError('Task not found')
-        if (not isinstance(task['status'], str)
-                or task['status'] not in STATUSES
-                or type(task['attempts']) is not int or task['attempts'] < 0
-                or not isinstance(task['created'], (int, float))
-                or not math.isfinite(task['created'])
-                or not isinstance(task['updated'], (int, float))
-                or not math.isfinite(task['updated'])):
-            raise ValueError('Task state is invalid')
+        task_record = {
+            'record': 'task', 'task_id': task_id,
+            'status': task['status'], 'attempts': task['attempts'],
+            'created': task['created'], 'updated': task['updated'],
+        }
+        self._validate_handoff_task(task_record, task_id)
         import tempfile
         fd, name = tempfile.mkstemp(
             prefix='.forgeos-handoff-', suffix='.tmp', dir=target.parent)
@@ -587,11 +586,7 @@ class Store:
                     'record': 'header', 'format': JOURNAL_HANDOFF_FORMAT,
                     'task_id': task_id,
                 })
-                write_record(output, {
-                    'record': 'task', 'task_id': task_id,
-                    'status': task['status'], 'attempts': task['attempts'],
-                    'created': task['created'], 'updated': task['updated'],
-                })
+                write_record(output, task_record)
                 cursor = self.db.execute(
                     'SELECT id,task_id,'
                     'CASE WHEN length(CAST(event_type AS BLOB))<=? '
@@ -636,6 +631,172 @@ class Store:
         finally:
             staging.unlink(missing_ok=True)
 
+    @staticmethod
+    def _is_finite_handoff_number(value) -> bool:
+        if type(value) not in (int, float):
+            return False
+        try:
+            return math.isfinite(value)
+        except OverflowError:
+            return False
+
+    @staticmethod
+    def _validate_handoff_task(record: dict, task_id: int) -> None:
+        """Validate the scalar task projection used by a handoff artifact."""
+        if (set(record) != {
+                'record', 'task_id', 'status', 'attempts', 'created', 'updated'}
+                or record.get('record') != 'task'
+                or record.get('task_id') != task_id
+                or not isinstance(record.get('status'), str)
+                or record['status'] not in STATUSES
+                or type(record.get('attempts')) is not int
+                or record['attempts'] < 0
+                or not Store._is_finite_handoff_number(record.get('created'))
+                or not Store._is_finite_handoff_number(record.get('updated'))):
+            raise ValueError('Journal handoff contains an invalid task projection')
+
+    @staticmethod
+    def _handoff_issue(issues: list, message: str, line: int,
+                       max_issues: int) -> bool:
+        """Append one bounded handoff diagnostic and report truncation."""
+        if len(issues) < max_issues:
+            issues.append({'line': line, 'problem': message})
+            return False
+        return True
+
+    @classmethod
+    def check_handoff(cls, source: str | Path,
+                      *, max_issues: int = MAX_JOURNAL_ISSUES) -> dict:
+        """Stream-check one exported handoff without opening the task database."""
+        if (type(max_issues) is not int or isinstance(max_issues, bool)
+                or not 1 <= max_issues <= MAX_JOURNAL_ISSUES):
+            raise ValueError('Handoff issue limit must be 1..32')
+        path = Path(source).expanduser().absolute()
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('Journal handoff must be an existing regular file')
+        issues = []
+        truncated = False
+        checked = 0
+        header_task_id = None
+        header_valid = False
+        task_valid = False
+        summary_valid = False
+        phase = 'header'
+        event_count = 0
+        last_event_id = None
+        expected_event_keys = {
+            'record', 'id', 'task_id', 'event_type', 'status', 'actor',
+            'created', 'details', 'action', 'attempt', 'artifact_ref',
+            'evidence_ref'}
+
+        def issue(message, line):
+            nonlocal truncated
+            truncated = cls._handoff_issue(
+                issues, message, line, max_issues) or truncated
+
+        try:
+            stream = path.open('rb')
+        except OSError as exc:
+            raise ValueError('Journal handoff could not be opened') from exc
+        try:
+            while True:
+                raw = stream.readline(MAX_JOURNAL_HANDOFF_LINE_BYTES + 1)
+                if not raw:
+                    break
+                checked += 1
+                if len(raw) > MAX_JOURNAL_HANDOFF_LINE_BYTES:
+                    issue('record exceeds the 16 KiB line limit', checked)
+                    while raw and not raw.endswith(b'\n'):
+                        raw = stream.readline(MAX_JOURNAL_HANDOFF_LINE_BYTES + 1)
+                    continue
+                try:
+                    record = json.loads(raw.decode('utf-8'))
+                except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+                    issue('record is not valid UTF-8 JSON', checked)
+                    continue
+                if not isinstance(record, dict):
+                    issue('record must be a JSON object', checked)
+                    continue
+                kind = record.get('record')
+                if phase == 'header':
+                    if (set(record) != {'record', 'format', 'task_id'}
+                            or kind != 'header'
+                            or record.get('format') != JOURNAL_HANDOFF_FORMAT
+                            or type(record.get('task_id')) is not int
+                            or record['task_id'] < 1):
+                        issue('invalid handoff header', checked)
+                    else:
+                        header_task_id = record['task_id']
+                        header_valid = True
+                    phase = 'task'
+                    continue
+                if phase == 'task':
+                    if kind != 'task':
+                        issue('task projection must follow the header', checked)
+                    else:
+                        try:
+                            cls._validate_handoff_task(
+                                record, header_task_id)
+                        except (TypeError, ValueError):
+                            issue('invalid task projection', checked)
+                        else:
+                            task_valid = True
+                    phase = 'events'
+                    continue
+                if phase == 'events':
+                    if kind == 'event':
+                        if set(record) != expected_event_keys:
+                            issue('event record fields are invalid', checked)
+                            continue
+                        event = {key: record[key] for key in expected_event_keys
+                                 if key != 'record'}
+                        try:
+                            cls._validate_handoff_event(event, header_task_id)
+                        except (TypeError, ValueError) as exc:
+                            issue(str(exc), checked)
+                            continue
+                        if (last_event_id is not None
+                                and event['id'] <= last_event_id):
+                            issue('event IDs are not strictly increasing', checked)
+                        event_count += 1
+                        last_event_id = event['id']
+                        continue
+                    if kind != 'summary':
+                        issue('summary must follow event records', checked)
+                        continue
+                    if set(record) != {
+                            'record', 'task_id', 'event_count',
+                            'last_event_id', 'complete'}:
+                        issue('summary record fields are invalid', checked)
+                    elif (record.get('task_id') != header_task_id
+                          or type(record.get('event_count')) is not int
+                          or record['event_count'] != event_count
+                          or record.get('last_event_id') != last_event_id
+                          or record.get('complete') is not True):
+                        issue('summary does not match streamed events', checked)
+                    else:
+                        summary_valid = True
+                    phase = 'complete'
+                    continue
+                issue('records are present after the completion summary', checked)
+        finally:
+            stream.close()
+        if not header_valid:
+            issue('missing or invalid handoff header', 0)
+        if not task_valid:
+            issue('missing or invalid task projection', 0)
+        if not summary_valid:
+            issue('missing or invalid completion summary', checked)
+        return {
+            'valid': not issues,
+            'format': JOURNAL_HANDOFF_FORMAT if header_valid else '',
+            'task_id': header_task_id,
+            'records': checked,
+            'events': event_count,
+            'issues': issues,
+            'truncated': truncated,
+        }
+
     @classmethod
     def _validate_handoff_event(cls, event: dict, task_id: int) -> None:
         """Reject malformed journal data before it reaches a replay plan."""
@@ -677,7 +838,7 @@ class Store:
                           or not re.fullmatch(r'[0-9a-f]{64}', evidence))):
             raise ValueError('Journal handoff contains an invalid evidence reference')
         created = event.get('created')
-        if (not isinstance(created, (int, float)) or not math.isfinite(created)):
+        if not cls._is_finite_handoff_number(created):
             raise ValueError('Journal handoff contains an invalid event timestamp')
 
     def check_integrity(self) -> None:
