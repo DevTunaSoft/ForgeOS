@@ -243,6 +243,11 @@ mode `0600`; Windows ACLs and backup/rotation storage remain operator
 responsibilities because this standard-library path does not claim a complete
 Windows account-permission policy.
 
+Before use, `_read_key()` also rejects POSIX keys whose group/other mode bits
+are set, preventing a world-readable secret from passing the HMAC boundary.
+Windows retains the explicit ACL-review boundary because portable standard
+library metadata does not provide a complete NTFS DACL equivalence here.
+
 `Store.activate_backup_to()` is a separate, explicit offline boundary. It
 requires caller confirmation, verifies the backup through the existing
 read-only restore path, refuses SQLite sidecars/symlinks and occupied rollback

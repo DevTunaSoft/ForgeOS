@@ -2,6 +2,7 @@
 import io
 import json
 from contextlib import redirect_stdout
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -50,6 +51,8 @@ class RecoveryBundleExtractionCliTests(unittest.TestCase):
                 handoff, archive, bundle, evidence_directory=evidence_root)
             key = root / "recovery.key"
             key.write_bytes(b"k" * 64)
+            if os.name != "nt":
+                key.chmod(0o600)
             authentication = root / "recovery.auth.json"
             export_recovery_bundle_auth(bundle, key, authentication)
             destination = root / "restored"
@@ -68,6 +71,8 @@ class RecoveryBundleExtractionCliTests(unittest.TestCase):
 
             wrong_key = root / "wrong.key"
             wrong_key.write_bytes(b"w" * 64)
+            if os.name != "nt":
+                wrong_key.chmod(0o600)
             output = io.StringIO()
             with patch.object(Store, "__init__", side_effect=AssertionError(
                     "Recovery bundle authentication check must remain database-free")), \

@@ -346,6 +346,8 @@ To create a new OS-random key without printing it, run
 `--bytes 48`, within the 32-byte-to-4 KiB bound). The new key path must not
 already exist; protect it separately from the package and authentication
 record.
+On POSIX, ForgeOS rejects key files with group/other permission bits; on
+Windows, review the key file's account ACL yourself.
 
 ### Verified task database backups (experimental)
 

@@ -937,3 +937,5 @@ source, accepts 32 through 4,096 bytes, refuses an existing destination and
 does not print the key. On POSIX the generated file is mode `0600`; on Windows,
 review the file's account ACL and keep the key in a protected location. Do not
 place the key in the recovery ZIP or publish it with the detached record.
+On POSIX, ForgeOS also refuses an existing key whose group/other permission
+bits are enabled; fix its mode rather than weakening the check.
