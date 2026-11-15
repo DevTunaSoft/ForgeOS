@@ -2994,3 +2994,25 @@ passed 49/49 on Windows. Full isolated tests, documentation/link coverage,
 compileall, bounded memory and exact-head hosted Linux/Windows checks remain
 required for this branch; physical disk-full, reboot and NTFS power-loss
 acceptance remain open.
+
+## 2026-11-15 — activation marker artifact bindings
+
+**Change:** new activation markers carry streamed size/SHA-256 bindings for
+the staged replacement and retained rollback. Explicit rollback, prepared
+abandonment and published/publishing finalization verify those bindings before
+moving or deleting a database. Legacy markers without bindings remain
+readable, but do not claim the newer substitution-detection evidence. The
+digest path streams in bounded chunks and does not load the database into
+Python memory.
+
+**Regression coverage:** activation tests replace the retained rollback with a
+different valid ForgeOS database and replace the published active database
+with a different valid copy; both operations fail closed while preserving the
+marker and recovery files. The Windows open-handle test also covers a binding
+read blocked by an exclusive handle.
+
+**Local verification:** focused activation, bundled recovery and CLI tests
+passed 51/51 on Windows. Full isolated tests, documentation/link coverage,
+compileall, bounded memory and exact-head hosted Linux/Windows checks remain
+required for this branch; signature, encryption, reboot and NTFS power-loss
+acceptance remain open.

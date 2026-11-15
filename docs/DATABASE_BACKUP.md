@@ -193,7 +193,11 @@ A `publishing` marker is the durable boundary around the final database move:
 if the destination is absent, use the rollback command; if the destination is
 present, the rollback is present and staging is absent, use finalization. A
 `prepared` marker remains the pre-move state and can be abandoned after its
-paths are understood.
+paths are understood. New markers bind the staged replacement and retained
+rollback with streamed size/SHA-256 values; recovery refuses a substituted
+regular database when those fields are present. This is integrity evidence,
+not encryption or a public-key signature, and older markers may not contain
+bindings.
 When the active database is still present, the rollback path is absent and
 the staged replacement is no longer wanted, use
 `py -m forgeos db-activation-abandon ACTIVE --confirm --discard-staged`.

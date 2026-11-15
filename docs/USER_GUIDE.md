@@ -777,6 +777,11 @@ Abandonment validates the active and staged databases, deletes only the staged
 path and removes the prepared marker. It never moves the active database and
 does not accept `old_moved` or `published` markers.
 
+Current activation markers also bind the staged replacement and retained
+rollback with streamed size/SHA-256 values. A valid-looking substituted file
+is rejected when that binding is present. This detects accidental or
+same-user replacement; it is not encryption or a public-key signature.
+
 ForgeOS also keeps a bounded-field, append-only lifecycle journal in the task
 database. Inspect the newest entries without loading task result blobs:
 

@@ -258,6 +258,37 @@ class ActivateBackupTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertTrue(self.rollback.exists())
 
+    def test_rollback_refuses_a_substituted_valid_database(self):
+        self._leave_interrupted_activation()
+        self.rollback.write_bytes(self.backup.read_bytes())
+
+        with self.assertRaisesRegex(ValueError, "database changed"):
+            Store.rollback_activation(self.active, confirm=True)
+        self.assertFalse(self.active.exists())
+        self.assertTrue(self.rollback.exists())
+        self.assertTrue(Path(str(self.active) + ".forgeos-activation.json").exists())
+
+    def test_publishing_finalization_refuses_a_substituted_active_database(self):
+        real_write = core._write_activation_marker
+
+        def fail_published_marker(marker, payload, *, replace=False):
+            if replace and payload["phase"] == "published":
+                raise OSError(errno.ENOSPC, "No space left on device")
+            return real_write(marker, payload, replace=replace)
+
+        with patch("forgeos.core._write_activation_marker",
+                   side_effect=fail_published_marker):
+            with self.assertRaisesRegex(OSError, "No space"):
+                Store.activate_backup_to(
+                    self.backup, self.active, self.rollback, confirm=True)
+        self.active.write_bytes(self.rollback.read_bytes())
+
+        with self.assertRaisesRegex(ValueError, "database changed"):
+            Store.finalize_activation(self.active, confirm=True)
+        self.assertTrue(self.active.exists())
+        self.assertTrue(self.rollback.exists())
+        self.assertTrue(Path(str(self.active) + ".forgeos-activation.json").exists())
+
     def test_failed_rollback_keeps_marker_and_old_database_for_recovery(self):
         self._leave_interrupted_activation()
 
@@ -455,7 +486,7 @@ class ActivateBackupTests(unittest.TestCase):
         marker = Path(str(self.active) + ".forgeos-activation.json")
         kernel32, handle = self._open_exclusive_windows_handle(self.rollback)
         try:
-            with self.assertRaises((OSError, sqlite3.DatabaseError)):
+            with self.assertRaises((OSError, ValueError, sqlite3.DatabaseError)):
                 Store.rollback_activation(self.active, confirm=True)
         finally:
             self.assertTrue(kernel32.CloseHandle(handle))

@@ -635,3 +635,12 @@ database back cleanly; simulated `ENOSPC` after publication leaves a bounded
 `publishing` marker that the operator can finalize once the new active file and
 retained rollback are validated. This is fault-injection evidence, not
 physical disk-full, reboot or NTFS power-loss acceptance.
+
+### 2026-11-15 — activation marker artifact bindings
+
+New activation markers bind the staged replacement and retained rollback with
+streamed size/SHA-256 metadata. Rollback, abandonment and finalization reject
+valid-looking substituted database files when those bindings are present;
+legacy markers remain readable without overstating their integrity. The
+bounded streaming digest path is tamper-detection evidence, not encryption,
+signing or physical power-loss acceptance.
