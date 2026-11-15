@@ -100,6 +100,11 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(records["verified_repairs"], 1)
         self.assertEqual(records["failed_repairs"], 0)
         self.assertEqual(self.store.get(self.task)["status"], "passed")
+        events = list(self.store.iter_events(task_id=self.task, limit=20))
+        test_events = [event for event in events if event["action"] == "test"]
+        self.assertEqual(
+            [event["attempt"] for event in reversed(test_events)], [1, 2, 2])
+        self.assertTrue(all(event["evidence_ref"] == "" for event in test_events))
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
 

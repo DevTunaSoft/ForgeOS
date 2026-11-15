@@ -2184,6 +2184,16 @@ identifiers; raw prompts, errors and test output remain excluded. Tests cover
 metadata validation, old-schema migration and linkage. Full replayable
 artifact export and physical interruption acceptance remain unverified.
 
+## 2026-11-15 — autonomous engine journal linkage
+
+The autonomous engine now supplies bounded `edit`, `test` and `recovery`
+action labels to lifecycle transitions and records repair-attempt numbers on
+test checkpoints/results. Existing validated evidence digests may be linked;
+raw runner output remains in its existing bounded result/evidence paths and is
+not copied into the journal. Engine regression coverage verifies attempt
+ordering through a repair loop. Full replayable artifact export and physical
+interruption acceptance remain unverified.
+
 ## 2026-11-14 — streamed backup digest manifests
 
 `Store.backup_to()` now optionally publishes a new bounded JSON manifest with
