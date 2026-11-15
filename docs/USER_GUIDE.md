@@ -940,6 +940,26 @@ and no-overwrite publication. It never replaces the active database or starts
 ForgeOS. Add `--authentication AUTH_RECORD --key KEY` to require a detached
 package HMAC before staging.
 
+For deliberate offline activation from a recovery package, first exit ForgeOS
+and stop every process that can open the active database. Supply a new rollback
+path in the same existing directory as the active database and confirm the
+operation explicitly:
+
+```powershell
+py -m forgeos recovery-bundle-db-restore-activate `
+  "C:\ForgeOS-backups\task-1-recovery.zip" `
+  "$env:USERPROFILE\.forgeos\tasks.sqlite3" `
+  "$env:USERPROFILE\.forgeos\tasks-before-bundle-activation.sqlite3" `
+  --confirm
+```
+
+This validates and stages only the bundled database, then reuses the guarded
+activation boundary that retains the old active file before publishing the
+replacement. Add `--authentication AUTH_RECORD --key KEY` when the package's
+detached HMAC must be required. The command does not merge histories, start
+ForgeOS or perform automatic failover; preserve and inspect any activation
+marker left by an interrupted operation.
+
 `recovery-bundle-auth` creates a detached authenticity record for a valid ZIP
 using a local shared-secret key. The key file must be a regular, unlinked file
 between 32 bytes and 4 KiB. `recovery-bundle-auth-check` requires the same key

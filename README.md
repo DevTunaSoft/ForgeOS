@@ -347,6 +347,14 @@ package is streamed once through HMAC-SHA-256 with the
 same bounded key/file checks; the key is never copied into the record or
 logged. This authenticates possession of the shared secret but is not
 encryption or a public-key signature, so protect and rotate the key separately.
+To deliberately activate the bundled database instead of creating a passive
+copy, stop ForgeOS and every process using its database, then run
+`py -m forgeos recovery-bundle-db-restore-activate PACKAGE ACTIVE ROLLBACK --confirm`.
+The active and new rollback paths must be in the same existing directory;
+the old active file is retained before the verified bundled database is
+published. Add `--authentication AUTH_RECORD --key KEY` to require the
+detached HMAC before any database staging. This is an explicit operator step,
+not automatic failover; inspect any interrupted activation marker before retrying.
 To require that authenticity before checking or receiving a package, add
 `--authentication AUTH_RECORD --key KEY` to `recovery-bundle-check`,
 `recovery-bundle-extract`, or `recovery-bundle-extract-resume`; a missing or

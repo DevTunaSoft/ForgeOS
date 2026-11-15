@@ -14,6 +14,20 @@ from forgeos.worktree_archive import export_worktree_archive
 
 
 class RecoveryBundleDatabaseCliTests(unittest.TestCase):
+    def test_activation_dispatch_requires_confirmation_before_bundle_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, "confirmation"):
+                main([
+                    "--db", str(root / "missing.sqlite3"),
+                    "recovery-bundle-db-restore-activate",
+                    str(root / "missing.zip"),
+                    str(root / "active.sqlite3"),
+                    str(root / "rollback.sqlite3"),
+                ])
+            self.assertFalse((root / "active.sqlite3").exists())
+            self.assertFalse((root / "rollback.sqlite3").exists())
+
     def test_restore_copy_does_not_initialize_active_store(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
