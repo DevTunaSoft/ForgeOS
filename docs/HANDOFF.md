@@ -2823,3 +2823,23 @@ tracemalloc peak and a 29,941,760-byte process peak RSS. These are local
 synthetic/process measurements, not physical Windows or model-memory
 acceptance. Exact-head hosted Linux/Windows, packaging and physical
 interruption evidence remain required for this branch.
+
+## 2026-11-15 — bundled activation fault-injection coverage
+
+**Change:** added a recovery-bundle activation interruption regression. The
+test injects failure whenever the activation boundary tries to publish or
+automatically restore the active path, then verifies the old database remains
+at the rollback path, the durable `old_moved` marker is readable, the wrapper's
+private bundle-staging directory is cleaned, and explicit `Store.rollback_activation`
+can finish recovery. This tests the bundle wrapper's temporary-file lifecycle
+around the existing core boundary; it does not simulate physical power loss or
+Windows NTFS behavior.
+
+**Local verification:** focused recovery database and CLI tests passed 11/11;
+the full isolated suite passed 697 tests with 8 expected skips. Documentation/
+link coverage, compileall and `git diff --check` passed. The bounded memory
+benchmark passed for three 12 MiB cycles with a 1,982,228-byte Python
+tracemalloc peak and a 30,404,608-byte process peak RSS. These remain local
+synthetic/process measurements, not physical Windows or model-memory
+acceptance. Exact-head hosted Linux/Windows, packaging and physical
+interruption evidence remain required for this branch.

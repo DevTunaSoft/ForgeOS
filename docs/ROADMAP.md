@@ -533,3 +533,20 @@ and `git diff --check` passed. The bounded memory benchmark passed for three
 12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
 29,941,760-byte process peak RSS; this remains a synthetic process benchmark,
 not physical Windows or model-memory acceptance.
+
+### 2026-11-15 — bundled activation fault-injection coverage
+
+The recovery-bundle activation bridge now has an interruption regression that
+injects failure at both publication and automatic restoration of the old active
+file. It verifies the durable `old_moved` marker and rollback copy remain
+inspectable, the temporary bundle-staging directory is removed, and the
+operator can complete the explicit `db-activation-rollback` path. This closes
+the wrapper-level fault-injection gap without claiming physical power-loss or
+Windows NTFS interruption acceptance.
+
+Focused recovery database and CLI tests passed 11/11; the full isolated suite
+passed 697 tests with 8 expected skips. Documentation/link coverage and
+`git diff --check` passed. The bounded memory benchmark passed for three
+12 MiB cycles with a 1,982,228-byte Python tracemalloc peak and a
+30,404,608-byte process peak RSS. These remain local synthetic/process
+measurements, not physical Windows or model-memory acceptance.

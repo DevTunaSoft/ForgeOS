@@ -7,7 +7,9 @@ import sqlite3
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
+import forgeos.core as core
 from forgeos.core import Store
 from forgeos.recovery_auth import export_recovery_bundle_auth
 from forgeos.recovery_database import (
@@ -136,6 +138,37 @@ class RecoveryBundleDatabaseTests(unittest.TestCase):
                 self.bundle, active, rollback,
                 authentication=self.authentication, key=wrong_key, confirm=True)
         self.assertFalse(active.exists())
+        self.assertFalse(rollback.exists())
+
+    def test_failed_bundle_activation_preserves_marker_and_cleans_staging(self):
+        active = self._create_active_database()
+        rollback = self.root / "rollback.sqlite3"
+        real_move = core._move_database_copy
+
+        def fail_active_moves(source, target):
+            if target == active:
+                raise OSError("active path unavailable")
+            return real_move(source, target)
+
+        with patch("forgeos.core._move_database_copy",
+                   side_effect=fail_active_moves):
+            with self.assertRaisesRegex(OSError, "active path unavailable"):
+                activate_recovery_bundle_database_to(
+                    self.bundle, active, rollback,
+                    authentication=self.authentication, key=self.key,
+                    confirm=True)
+
+        marker = Path(str(active) + ".forgeos-activation.json")
+        self.assertFalse(active.exists())
+        self.assertEqual(self._descriptions(rollback), ["old active task"])
+        self.assertTrue(marker.is_file())
+        status = Store.activation_status(active)
+        self.assertEqual(status["phase"], "old_moved")
+        self.assertFalse(status["staged_exists"])
+        self.assertFalse(list(self.root.glob(".forgeos-recovery-activate-*")))
+
+        self.assertEqual(Store.rollback_activation(active, confirm=True), active)
+        self.assertEqual(self._descriptions(active), ["old active task"])
         self.assertFalse(rollback.exists())
 
     def test_authentication_gate_rejects_wrong_key_before_copy(self):
