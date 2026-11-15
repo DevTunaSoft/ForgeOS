@@ -199,6 +199,13 @@ class DiagnosticTests(unittest.TestCase):
         self.assertIn("error", preview)
         self.assertIn("\ufffd", preview)
 
+    def test_windows_temporary_file_creation_surfaces_access_failure(self):
+        from unittest.mock import patch
+        with patch("forgeos.diagnostics.os.name", "nt"), \
+                patch("forgeos.diagnostics.os.open", side_effect=PermissionError("denied")):
+            with self.assertRaisesRegex(PermissionError, "denied"):
+                self.store._temporary_file()
+
     def test_gui_preview_detects_tampered_archive(self):
         ref = self.store.put("original")
         self.store._path(ref).write_bytes(gzip.compress(b"tampered"))

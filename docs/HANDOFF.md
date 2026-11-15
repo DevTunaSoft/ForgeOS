@@ -2104,3 +2104,49 @@ were PASS for `79321b8`. Physical Windows deployment, RAM and full
 disaster recovery acceptance remain UNVERIFIED. Next prioritize clean
 cross-platform CI evidence, then fault injection on database backup
 and restore under constrained filesystems.
+
+## 2026-11-14 — bounded Windows evidence allocation
+
+**Finding:** local Windows execution exposed a host-level failure mode in the
+diagnostic archive directory. Python's Windows `tempfile.mkstemp` can retry
+indefinitely when that directory denies enumeration/access, leaving bounded
+test capture stuck while attempting to archive a multi-megabyte result.
+
+**Change:** `EvidenceStore` now uses a bounded, exclusive `os.open` allocation
+loop on Windows and surfaces access/collision failures promptly. POSIX keeps
+the existing `mkstemp` path. This preserves fail-closed evidence semantics,
+prevents an archive fault from becoming an unbounded wait, and adds no cache,
+thread, dependency or model allocation.
+
+**Regression coverage:** added a Windows-mode access-failure test. Focused
+database tests pass (17/17); isolated diagnostics, bounded capture, core and
+engine regressions pass on Python 3.12 (8/8) with an isolated writable
+diagnostics profile. Full exact-head CI, frozen EXE packaging, physical NTFS,
+disk-full and power-loss acceptance remain unverified.
+
+## 2026-11-14 — Windows-compatible SQLite copy publication
+
+**Baseline:** the merged backup/restore-copy implementation used
+`os.link(staging, destination)` for both publication paths. That preserves
+no-overwrite behavior on POSIX, but hard-link availability is not a portable
+Windows assumption and would make a Windows-first recovery feature fail at
+the final publication step.
+
+**Change:** `src/forgeos/core.py` now owns one `_publish_database_copy()` helper.
+Windows uses `os.rename`, whose destination-exists behavior is exclusive on
+Windows; POSIX retains hard-link publication. Backup and restore both reuse
+the helper and still clean only their own staging file. No schema, service,
+dependency, model process or unbounded allocation was added.
+
+**Regression coverage:** backup tests assert Windows selects rename and POSIX
+selects hard-link publication; restore tests assert the shared Windows path
+and staging cleanup. The fault-injection fixtures patch the shared publication
+helper rather than the old POSIX-only `os.link` call.
+
+**Verification:** local Python 3.12 Windows compileall, focused tests, full
+602-test suite and the documented 12 MiB x3 memory benchmark pass. After the
+cross-platform restore-test seam correction, exact-head GitHub checks for
+Linux/Windows Python 3.10/3.12, documentation and Windows packaging all passed
+for `7915299`. Physical Windows NTFS behavior, disk-full fault injection and
+power-loss recovery remain **UNVERIFIED**. Keep issue #4 open; this is a
+compatibility correction, not disaster recovery certification.

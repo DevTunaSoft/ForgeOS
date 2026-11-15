@@ -105,7 +105,6 @@ All outcomes and deduplication concerns are tracked separately in [RTK_ENHANCEME
 
 **Release rule:** Do not classify any milestone as complete or production-ready without evidence beyond existence of code or a green badge. Hosted GitHub Actions checks alone are not proof of real Windows end-to-end behavior.
 
-
 ### 2026-11-08 — Official CPU llama.cpp installation and unified GUI milestone
 
 Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime_installer.py` behind an **explicit opt-in Install** action in the same managed GGUF dialog. The same controller verifies the installed ZIP and all DLLs immediately before launch; manual binary selection remains available. Unit/GUI contract regressions cover the verified start and tampering failure. **Experimental on `main`; real Windows model runtime acceptance is still unverified**. Follow [multi-LLM roadmap](MULTI_LLM_ROADMAP.md) and [user guide](USER_GUIDE.md). Next: real Windows 11 + GGUF inference, secure process identity, memory and crash recovery, issue #53.
@@ -199,3 +198,23 @@ Merged PR #51 added an experimental pinned official **Windows x64 CPU** `runtime
 - Require a fresh full Windows/Linux matrix on the corrected head before
   claiming the backup and restore regressions pass. Real physical Windows
   recovery remains UNVERIFIED.
+
+### 2026-11-14 — bounded Windows evidence allocation
+
+Windows diagnostic archival now allocates temporary evidence files with a
+bounded exclusive `os.open` loop instead of an unbounded `tempfile.mkstemp`
+retry path. Access failures therefore return promptly and preserve the
+existing fail-closed recovery decision. Focused regression coverage passes;
+exact-head Linux/Windows CI, frozen EXE packaging and physical filesystem
+fault-injection acceptance remain required.
+
+### 2026-11-14 — portable database-copy publication
+
+The verified SQLite backup and restore-copy path now shares one publication
+helper. Windows uses an exclusive same-directory rename, while POSIX keeps
+same-volume hard-link publication. This removes the Windows hard-link
+assumption without permitting destination replacement. Regression tests cover
+both publication branches and restore reuses the same helper. The change is
+source-level and requires the exact-head Linux/Windows matrix plus physical
+Windows NTFS fault-injection evidence; encrypted backup, power-loss recovery,
+and active-database replacement remain open.

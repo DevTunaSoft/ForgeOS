@@ -9,6 +9,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import secrets
 import tempfile
 from typing import Any
 
@@ -55,7 +56,7 @@ class EvidenceStore:
 
     def put_stream(self, source) -> str:
         """Atomically archive a byte stream without buffering it all in RAM."""
-        fd, name = tempfile.mkstemp(prefix=".forgeos-", suffix=".tmp", dir=self.root)
+        fd, name = self._temporary_file()
         temporary = Path(name)
         digest = hashlib.sha256()
         count = 0
@@ -86,6 +87,28 @@ class EvidenceStore:
         finally:
             if temporary.exists():
                 temporary.unlink()
+
+    def _temporary_file(self):
+        """Create a private temporary file without unbounded Windows retries.
+
+        Python's Windows ``tempfile.mkstemp`` can repeatedly retry a denied
+        directory instead of surfacing the access failure. Evidence capture
+        must fail closed, but it must also return promptly so a test timeout
+        and recovery decision remain observable.
+        """
+        if os.name != "nt":
+            return tempfile.mkstemp(prefix=".forgeos-", suffix=".tmp",
+                                    dir=self.root)
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        flags |= getattr(os, "O_BINARY", 0)
+        for _ in range(16):
+            name = self.root / f".forgeos-{secrets.token_hex(16)}.tmp"
+            try:
+                fd = os.open(name, flags, 0o600)
+            except FileExistsError:
+                continue
+            return fd, str(name)
+        raise FileExistsError("Unable to allocate a unique evidence temporary file")
 
     def preview(self, reference: str, *, max_chars: int = 240_000) -> str:
         """SHA-verified small GUI excerpt, without decoding entire archive."""

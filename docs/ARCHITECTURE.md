@@ -37,7 +37,7 @@ flowchart TB
 | `src/forgeos/recovery.py` | Eligible checkpoint resumption and safe recovery workflow; bounded reason text and streaming event reporting |
 | `src/forgeos/test_runtime.py` | Disposable runtime snapshots and cleanup |
 | `src/forgeos/secure_runner.py`, `appcontainer.py`, `windows_containment.py`, `sandbox_runner.py` | Frozen Windows execution containment |
-| `src/forgeos/diagnostics.py`, `output_capture.py`, `output_rules.py` | Evidence archive, bounded output, summaries, trusted filters |
+| `src/forgeos/diagnostics.py`, `output_capture.py`, `output_rules.py` | Evidence archive, bounded output, summaries, trusted filters; Windows evidence temp allocation fails fast rather than retrying indefinitely on denied storage |
 | `src/forgeos/error_learning.py`, `optimizer_metrics.py`, `insights.py` | Test-verified repair signatures, efficiency and advisory diagnostic views |
 | `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
@@ -75,6 +75,14 @@ resource governor or native GGUF execution. See
 [MODEL_COMPATIBILITY.md](MODEL_COMPATIBILITY.md).
 
 ## Low-memory SQLite read boundary
+
+Database backup and restore publication uses one shared fail-closed helper:
+Windows uses an exclusive same-directory rename because hard-link publication
+is not a portable Windows contract; POSIX retains the same-volume hard-link
+path. Both paths refuse an existing destination and remove only their own
+staging file after publication or failure. This is a filesystem compatibility
+and no-overwrite boundary, not a guarantee against non-cooperating external
+writers or power loss.
 
 The persistent `Store.get()` API remains available for explicit detailed history and evidence inspection, but **regular development, planning and manual test actions** use the narrower `Store.get_task_inputs()` projection. Its normal path selects only the project, status and bounded UTF-8 task description, without fetching historical result/error data. Direct resumption uses the same bounded projection but requests an existing checkpoint only when at most 64 KiB. Oversized legacy description/checkpoint values are rejected within the SQLite projection before Python materializes them; the original stored rows are not modified.
 

@@ -46,12 +46,36 @@ class OnlineBackupTests(unittest.TestCase):
 
     def test_failed_publication_cleans_temporary_file(self):
         target = self.root / "not-published.sqlite3"
-        with patch("forgeos.core.os.link", side_effect=OSError("disk unavailable")):
+        with patch("forgeos.core._publish_database_copy", side_effect=OSError("disk unavailable")):
             with self.assertRaisesRegex(OSError, "disk unavailable"):
                 self.store.backup_to(target)
         self.assertFalse(target.exists())
         self.assertEqual(list(self.root.glob(".forgeos-backup-*")), [])
         self.assertIsNone(self.store.check_integrity())
+
+    def test_windows_publication_uses_exclusive_rename(self):
+        staging = self.root / "staging.sqlite3"
+        target = self.root / "published.sqlite3"
+        staging.write_bytes(b"snapshot")
+        with patch("forgeos.core.os.name", "nt"), \
+                patch("forgeos.core.os.rename") as rename, \
+                patch("forgeos.core.os.link") as link:
+            from forgeos.core import _publish_database_copy
+            _publish_database_copy(staging, target)
+        rename.assert_called_once_with(staging, target)
+        link.assert_not_called()
+
+    def test_posix_publication_keeps_hard_link_path(self):
+        staging = self.root / "staging.sqlite3"
+        target = self.root / "published.sqlite3"
+        staging.write_bytes(b"snapshot")
+        with patch("forgeos.core.os.name", "posix"), \
+                patch("forgeos.core.os.link") as link, \
+                patch("forgeos.core.os.rename") as rename:
+            from forgeos.core import _publish_database_copy
+            _publish_database_copy(staging, target)
+        link.assert_called_once_with(staging, target)
+        rename.assert_not_called()
 
     def test_active_transaction_is_rejected_without_a_partial_backup(self):
         target = self.root / "not-committed.sqlite3"

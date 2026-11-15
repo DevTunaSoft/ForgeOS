@@ -72,10 +72,21 @@ class RestoreBackupTests(unittest.TestCase):
 
     def test_failed_publication_cleans_staging_file(self):
         target = self.root / "never-published.sqlite3"
-        with patch("forgeos.core.os.link", side_effect=OSError("no disk space")):
+        with patch("forgeos.core._publish_database_copy", side_effect=OSError("no disk space")):
             with self.assertRaisesRegex(OSError, "no disk space"):
                 Store.restore_backup_to(self.backup, target)
         self.assertFalse(target.exists())
+        self.assertFalse(list(self.root.glob(".forgeos-restore-*")))
+
+    def test_windows_publication_path_is_shared_with_restore(self):
+        target = self.root / "windows-restored.sqlite3"
+        with patch("forgeos.core._publish_database_copy") as publish:
+            Store.restore_backup_to(self.backup, target)
+        publish.assert_called_once()
+        staging, published = publish.call_args.args
+        self.assertEqual(published, target)
+        self.assertEqual(staging.parent, self.root)
+        self.assertTrue(staging.name.startswith(".forgeos-restore-"))
         self.assertFalse(list(self.root.glob(".forgeos-restore-*")))
 
     def test_symlinked_restore_source_is_rejected(self):
