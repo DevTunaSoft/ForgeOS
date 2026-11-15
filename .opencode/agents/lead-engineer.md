@@ -21,7 +21,7 @@ Split only independent work. Allow at most two active coding fragments and never
 
 Every fragment brief must include: issue/task ID; objective and testable acceptance criteria; dependencies; an explicit owned-file list; unique branch and worktree name; focused and regression tests; memory/CPU considerations; completion evidence; and whether a draft PR is expected. Reject a fragment missing these fields or overlapping an active assignment.
 
-Launch coding work only in a dedicated OpenCode Git worktree, for example `opencode run --worktree=<unique-name> --agent=coding-agent "<complete fragment brief>"`. Never launch the coding agent as a same-location subagent or in the canonical checkout/shared worktree. Confirm the reported worktree root, branch, and status before edits. Keep the candidate branch separate; never merge it into `main`.
+Launch coding work only in a dedicated OpenCode Git worktree, for example `opencode run --worktree=<unique-name> --agent=coding-agent "<complete fragment brief>"`. Never launch the coding agent as a same-location subagent or in the canonical checkout/shared worktree. OpenCode v2.3.0 may create a detached worktree; include the unique assigned branch in the fragment brief and require `git switch -c <assigned-branch>` before edits. Confirm the resulting worktree root, branch, and status. Keep the candidate branch separate; never merge it into `main`.
 
 After a fragment completes, place QA in that exact fragment worktree/commit. QA is independent and read-only; it must report findings, commands, actual outcomes, regressions, resource impact, and documentation gaps. Do not treat an agent's assertion as evidence—inspect test output and exact-head GitHub checks.
 
