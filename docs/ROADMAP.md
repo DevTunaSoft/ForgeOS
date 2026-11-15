@@ -77,6 +77,35 @@ The [detailed multi-LLM roadmap](MULTI_LLM_ROADMAP.md#active-implementation-issu
 4. **Validate the complete Windows usage path.** Launch installed EXE, connect to local Ollama, run generated edits, test/repair, stop/restart, inspect worktree and archive evidence on a real desktop.
 5. **Improve documentation along with development.** Keep user manual, architecture, README feature matrix, this roadmap, security warnings, Windows build instructions and engineering handoff in sync via the [documentation policy](DOCUMENTATION_POLICY.md) and PR checks.
 
+## Planned: Microtask Development Pipeline for large projects (2026-11-14)
+
+**Status: PLANNED — requirements only.** ForgeOS must be able to transform a large application request or existing repository into small, dependency-aware, independently verifiable engineering tasks suitable for resource-constrained local coding models. This is not a claim that the decomposer, scheduler, or integration gates exist today. Extend the canonical task engine, SQLite store, model routing, worktree, recovery, and evidence systems; do not create a parallel orchestration stack.
+
+### Required behavior
+
+1. **Deterministic inventory first:** inspect repository structure, manifests, tests, interfaces, dependency boundaries, and existing documentation with bounded scans; avoid sending the entire repository to an LLM.
+2. **Requirement traceability:** record project goals, constraints, acceptance criteria, and stable requirement IDs; preserve a compact architecture contract so microtasks do not drift from the original product.
+3. **Dependency DAG:** decompose requested outcomes into atomic, testable tasks with explicit prerequisites, affected interfaces, expected files, and success conditions. Detect cycles, missing prerequisites, and conflicting edits before execution.
+4. **Context budgeting:** assemble minimal relevant source excerpts, interface contracts, prior verified decisions, and test failures; use token budgets and deterministic retrieval. Never silently truncate a critical requirement or pretend incomplete context is sufficient.
+5. **Model-sized snacks:** prefer one focused behavior and roughly 1–2 files per task, with an initial experimental input target of 1–2K tokens and approximately 20–80 changed lines when appropriate. These are tuning hypotheses, not hard limits; permit larger coherent tasks when correctness requires them, and split or escalate oversized work.
+6. **Bounded execution:** run through existing validated edit manifests, isolated Git worktrees, lease-fenced task state, transactional journals, and explicit test-execution safety gates. No unrestricted model-generated shell commands.
+7. **Verification and integration:** require focused tests, relevant regressions, interface/contract checks, and independent review before marking a task verified. Integrate in dependency order with conflict detection; never treat an isolated green test as whole-project acceptance.
+8. **Failure handling:** capture root cause and evidence, attempt a small bounded repair budget (initially 2–3), re-run regression checks, and mark tasks blocked or escalate when progress is unproven; avoid infinite loops and fabricated success.
+9. **Crash-safe orchestration:** persist task graph version, statuses, model/backend identity, context references, file hashes, checkpoints, integration state, and reasons for blocking. Resume only from validated checkpoints and prevent duplicate/concurrent conflicting writes.
+10. **Resource governance:** default to one heavy resident model, bounded queues and logs, CPU/RAM budgets, and backpressure. Optimize end-to-end verified task throughput rather than chat latency alone.
+11. **Human-readable progress:** show which requirement each snack advances, its dependencies, changed files, test evidence, failures, and overall project completion in the existing ForgeOS GUI.
+12. **Final acceptance:** execute project-wide builds, integration/security/regression tests, artifact checks, and complete source/evidence/handoff export before claiming delivery. Preserve explicit approval for publication or external actions.
+
+### Delivery phases and evidence gates
+
+- **P0 — design and baseline:** map existing task/engine/store interfaces; specify versioned task-graph schema, limits, scheduling invariants, and threat model. Benchmark current whole-prompt behavior on the target Windows laptop.
+- **P1 — deterministic decomposition substrate:** bounded inventory, requirement IDs, DAG persistence, cycle/conflict validation, and synthetic large-project fixtures. Verify low-memory operation without a model.
+- **P2 — local-model decomposition and context retrieval:** structured task proposals with strict schema validation, deterministic relevant-context assembly, oversized-task split/escalation, and quality checks against known project requirements.
+- **P3 — safe execution and integration:** reuse worktrees, leases, existing test/repair and checkpoint mechanisms; add dependency-aware scheduling, integration review, conflict handling, and crash/restart fault injection.
+- **P4 — real-hardware acceptance:** compare whole-project prompt versus microtasks on the i5-1135G7/20 GB test laptop and the primary i7-1370P/32 GiB machine. Record end-to-end completion time, prompt/eval latency, peak process-tree RAM, edit validity, regression pass rate, rework, recovery correctness, and final artifact quality. Verify physical Windows restarts and packaging where applicable.
+
+**Exit criteria:** a large representative project can be decomposed, executed, independently tested, integrated, interrupted/restarted, and resumed without losing requirement traceability or corrupting source; resource use stays within measured machine budgets; blocked work is reported honestly. A working prototype is not production readiness.
+
 ## Medium-term priorities
 
 - Extend secure runtime presets and deterministic dependency management without executing arbitrary generated commands on the host.
