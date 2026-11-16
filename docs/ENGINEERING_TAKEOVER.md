@@ -10,8 +10,10 @@ ForgeOS codebase or this development conversation. PR #150, the installed
 official runtime manifest hardening, is merged into `main` at
 `4a6d228838f0e7c81c9db9f9e4ef4fd425c10f68`. The current documentation branch
 is `docs/handoff-runtime-manifest-merge-20261116`, based on that exact merged
-head. It records the final hosted evidence and the next takeover checkpoint.
-Treat the live repository and exact-commit workflow results as authoritative.
+head. Its documentation-only follow-up is [PR #152](https://github.com/DevTunaSoft/ForgeOS/pull/152),
+ready for review at head `225a8e0896221fd8bfdd6ee8fa286d82909adbd2`.
+It records the final hosted evidence and the next takeover checkpoint. Treat
+the live repository and exact-commit workflow results as authoritative.
 The checkout must be clean before packaging or handing it to another agent.
 
 The merged hardening verifies the installed official Windows CPU llama.cpp
