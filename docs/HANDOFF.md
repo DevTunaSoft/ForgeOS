@@ -3650,3 +3650,28 @@ including replacement-during-open preservation, and compileall passed for
 `src` plus the changed test. Full isolated tests, documentation/link checks,
 memory benchmark, exact-head hosted workflows, Windows filesystem review and
 physical Windows acceptance remain pending for the candidate branch.
+
+## 2026-11-16 — GGUF journal and manifest read identity
+
+**Change:** the resumable GGUF downloader now routes existing published
+manifests and partial-download journals through the shared bounded identity
+reader. Each 4 KiB metadata record must remain an unlinked regular file with
+the same identity before and after the descriptor-bound read; no-follow flags
+are used where available. Links, Windows reparse points, replacements,
+malformed JSON and oversized records fail closed while a substituted record is
+preserved for inspection. GGUF weights remain streamed in bounded chunks and
+are not loaded into memory by this change.
+
+**Verification:** the focused GGUF downloader suite passed 24 tests,
+including replacement-during-open preservation for both the published
+manifest and partial-download journal, plus hard-linked manifest refusal.
+The inventory suite passed 10 tests, the managed-runtime suite passed 37
+tests with 4 expected skips, the documentation suite passed 10 tests,
+compileall passed, and the bounded 12 MiB x 3-cycle memory benchmark passed
+with a 1,857,636-byte Python tracemalloc peak and a 25,165,824-byte process
+peak RSS. Full local discovery ran 784 tests with 10 expected skips, 4
+failures and 5 errors: the existing Windows AppContainer ACL probe, local
+evidence-archive retention paths, the unittest preset's diagnostic archive,
+and two native output-capture timing checks remain environment-limited in
+this checkout. Exact-head hosted workflows, Windows filesystem review and
+physical Windows download/recovery acceptance remain required.

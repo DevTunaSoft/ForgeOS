@@ -18,12 +18,14 @@ import uuid
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
+from .file_security import read_bounded_file
 from .huggingface_catalog import REPO_ID, list_gguf_files, model_revision
 
 GIB = 1024 ** 3
 MAX_MODEL_BYTES = 16 * GIB
 CHUNK_BYTES = 1024 * 1024
 RESERVED_DISK_BYTES = GIB
+MAX_METADATA_BYTES = 4096
 SAFE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
 ALLOWED_CDN = ("huggingface.co", "cdn-lfs.huggingface.co",
                "cas-bridge.xethub.hf.co", "cas-server.xethub.hf.co")
@@ -171,6 +173,19 @@ def _gguf_header(path: Path) -> bool:
         return source.read(4) == b"GGUF"
 
 
+def _read_metadata(path: Path, *, description: str, error: str) -> dict:
+    """Read one small download record without following a changing path."""
+    try:
+        value = json.loads(read_bounded_file(
+            path, max_bytes=MAX_METADATA_BYTES, description=description
+        ).decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        raise RuntimeError(error) from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(error)
+    return value
+
+
 def _write_json_atomic(destination: Path, value: dict):
     temporary = destination.with_name(destination.name + ".tmp-" + uuid.uuid4().hex)
     try:
@@ -243,21 +258,15 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
             # Repair the manifest after a crash between the weight rename
             # and its atomic metadata publication, without redownloading.
             if manifest.exists():
-                if not manifest.is_file() or manifest.stat().st_size > 4096:
-                    raise RuntimeError("Existing GGUF manifest is not a valid file")
-                try:
-                    installed = json.loads(manifest.read_text(encoding="utf-8"))
-                except (OSError, UnicodeError, ValueError) as exc:
-                    raise RuntimeError("Corrupt existing GGUF manifest") from exc
+                installed = _read_metadata(
+                    manifest, description="Existing GGUF manifest",
+                    error="Corrupt existing GGUF manifest")
                 if installed != expected:
                     raise RuntimeError("Existing GGUF manifest identity mismatch")
             if metadata.exists():
-                if not metadata.is_file() or metadata.stat().st_size > 4096:
-                    raise RuntimeError("Corrupt published GGUF download journal")
-                try:
-                    prior = json.loads(metadata.read_text(encoding="utf-8"))
-                except (OSError, UnicodeError, ValueError) as exc:
-                    raise RuntimeError("Corrupt published GGUF download journal") from exc
+                prior = _read_metadata(
+                    metadata, description="Published GGUF download journal",
+                    error="Corrupt published GGUF download journal")
                 if prior != expected:
                     raise RuntimeError("Published GGUF journal identifies different weights")
             if partial.exists():
@@ -272,14 +281,9 @@ def download_gguf(repo: str, filename: str, *, directory: Path | str | None = No
         if partial.exists() != metadata.exists():
             raise RuntimeError("Incomplete download journal needs manual inspection")
         if partial.exists():
-            if partial.is_symlink() or metadata.is_symlink():
-                raise ValueError("Model download journal must not be a symlink")
-            if metadata.stat().st_size > 4096:
-                raise RuntimeError("Model download journal is oversized")
-            try:
-                recovered = json.loads(metadata.read_text(encoding="utf-8"))
-            except (OSError, ValueError, UnicodeError) as exc:
-                raise RuntimeError("Corrupt model download journal") from exc
+            recovered = _read_metadata(
+                metadata, description="Model download journal",
+                error="Corrupt model download journal")
             if recovered != expected:
                 raise RuntimeError("Model download journal identifies different weights")
             position = partial.stat().st_size
