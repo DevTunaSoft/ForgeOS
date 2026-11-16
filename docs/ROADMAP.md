@@ -1277,4 +1277,10 @@ ran 788 tests with 10 expected skips, 4 failures and 5 errors: the existing
 unittest diagnostic archive and two native-capture completeness checks remain
 environment-limited in this checkout. Exact-head hosted workflows, Windows
 filesystem review and physical Windows download/recovery acceptance remain
-required for the candidate branch.
+required for the candidate branch. The four required exact-head hosted
+workflows then passed on `b0abf67588b5e9679434cbca9b1b6bd141ef1921`:
+Foundation tests run 1296, Windows EXE run 874, Documentation run 444 and
+Handoff integrity run 509. The earlier draft-triggered runs were skipped by
+policy; this green evidence belongs to the ready-for-review synchronization.
+The documentation-only evidence update must receive its own exact-head checks
+before merge.

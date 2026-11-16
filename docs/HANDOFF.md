@@ -3732,7 +3732,10 @@ failures. These were not caused by the runtime-installer change and remain
 environment-limited; exact-head hosted checks, Windows filesystem review and
 physical Windows download/recovery acceptance remain open. The candidate
 branch is `feat/security-runtime-manifest-read-identity-20261116`. PR #150 is
-now ready for review at the published head; its draft-triggered Foundation,
-Windows EXE and Documentation jobs were skipped by policy, so the required
-ready-for-review synchronization must be observed before merge. No skipped
-draft run is treated as acceptance evidence.
+ready for review at the published head. Its draft-triggered Foundation,
+Windows EXE and Documentation jobs were skipped by policy, but the required
+ready-for-review synchronization passed on
+`b0abf67588b5e9679434cbca9b1b6bd141ef1921`: Foundation tests run 1296,
+Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
+No skipped draft run is treated as acceptance evidence. This documentation-
+only evidence update must receive its own exact-head checks before merge.

@@ -38,8 +38,11 @@ ACL denial, five engine evidence-retention paths, the unittest diagnostic
 archive and two native output-capture completeness checks; they are recorded
 in `docs/HANDOFF.md` and are not presented as a green local matrix. The
 draft-triggered synchronization's Foundation, Windows EXE and Documentation
-jobs were skipped by policy; the ready-for-review synchronization must provide
-the required exact-head acceptance evidence.
+jobs were skipped by policy, but the ready-for-review synchronization passed
+on `b0abf67588b5e9679434cbca9b1b6bd141ef1921`: Foundation tests run 1296,
+Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
+This dossier evidence update will move the branch head and therefore requires
+its own exact-head checks before merge.
 Real Windows GUI/model execution, crash/restart, process-tree resource,
 power-loss and clean-room takeover evidence remain unverified.
 
