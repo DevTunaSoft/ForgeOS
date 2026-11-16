@@ -1253,6 +1253,38 @@ evidence update is documentation-only and must receive its own exact-head
 checks before merge. Windows filesystem review and physical power-loss
 recovery acceptance remain required.
 
+### 2026-11-16 — official runtime manifest read identity
+
+The installed pinned official Windows CPU runtime now reads its
+`runtime.forgeos.json` inventory through the shared bounded identity reader.
+The 256 KiB metadata record must remain an unlinked regular file with the
+same identity before and after the descriptor-bound read; no-follow behavior
+is used where available. Symlinks, Windows reparse points, hard links,
+replacement, growth, malformed JSON and oversized content fail closed while
+the substituted record remains available for inspection. The original pinned
+release ZIP and streamed executable/DLL hashes remain the authenticity
+authority, so this change does not load large runtime files into memory.
+
+Regression coverage adds replacement-during-open preservation and hard-linked
+runtime-manifest refusal; the focused runtime-installer suite passes 10 tests.
+Adjacent managed-runtime, inventory, retirement, recovery, documentation and
+handoff-check suites pass 37 (4 expected skips), 10, 20, 23, 10 and 5 tests.
+Compileall, `git diff --check` and the bounded 12 MiB x 3-cycle memory
+benchmark pass; the benchmark measured a 1,857,636-byte Python
+tracemalloc peak and a 25,714,688-byte process peak RSS. Full local discovery
+ran 788 tests with 10 expected skips, 4 failures and 5 errors: the existing
+`.venv` AppContainer ACL probe, five engine evidence-retention paths, the
+unittest diagnostic archive and two native-capture completeness checks remain
+environment-limited in this checkout. Exact-head hosted workflows, Windows
+filesystem review and physical Windows download/recovery acceptance remain
+required for the candidate branch. The four required exact-head hosted
+workflows then passed on `b0abf67588b5e9679434cbca9b1b6bd141ef1921`:
+Foundation tests run 1296, Windows EXE run 874, Documentation run 444 and
+Handoff integrity run 509. The earlier draft-triggered runs were skipped by
+policy; this green evidence belongs to the ready-for-review synchronization.
+The documentation-only evidence update must receive its own exact-head checks
+before merge.
+
 ### 2026-11-16 — failure publication never masks the triggering error
 
 The autonomous engine's failure path could replace the real model or test failure with a database error. Three bookkeeping steps ran while the original exception was propagating: the optional recovery-detail read, the `blocked` publication and the lease release in `execute_task`'s `finally`. A locked or failing SQLite database therefore surfaced as `sqlite3.OperationalError`, and the cause was lost. The engine's own comments already required that bookkeeping never mask the triggering exception; only `LeaseLostError` was handled.

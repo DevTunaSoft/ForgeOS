@@ -127,6 +127,14 @@ not been independently accepted; use a disposable repository first.
    ForgeOS binds localhost, uses an ephemeral API key and CPU-only settings.
    If the model is too large for conservative available RAM, choose a
    smaller quantized GGUF.
+
+   When an existing official installation is reverified, its local
+   `runtime.forgeos.json` inventory is treated as untrusted metadata. ForgeOS
+   reads at most 256 KiB through an identity-bound file descriptor and refuses
+   symlinks, Windows reparse points, hard links, replacements, growth and
+   malformed records. A failed verification preserves the files for
+   inspection; the pinned archive and its streamed executable/DLL hashes
+   remain the source of truth.
 4. **Manual alternative:** obtain a trusted `llama-server.exe` and its
    dependencies yourself, independently confirm the executable's
    64-character lowercase SHA-256, select your GGUF and click

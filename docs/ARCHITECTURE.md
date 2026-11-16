@@ -650,6 +650,26 @@ Retired weight files are preserved; this is *not* deletion or free-space recover
 
 On POSIX systems, the retirement writer synchronizes the directory containing its durable journal before moving files, then fsyncs source/destination directories after each rename. Journal removal receives the same treatment. Windows has no equivalent portable directory fsync through Python's standard library, so NTFS power-loss resilience remains experimental and requires live recovery testing.
 
+### Official runtime inventory trust boundary (experimental)
+
+The pinned official Windows CPU runtime stores a small
+`runtime.forgeos.json` inventory beside its extracted files. This manifest is
+local metadata, not the authority for executable or DLL authenticity. Runtime
+verification reads it through the shared bounded identity reader with a
+256 KiB maximum: it must remain an unlinked regular file with the same
+pre-open, descriptor and post-read identity, and no-follow flags are used
+where the platform provides them. Symlinks, Windows reparse points, hard
+links, replacements, truncation or growth, oversized content and malformed
+JSON fail closed.
+
+The original downloaded ZIP remains the immutable pinned reference. Every
+runtime executable and DLL is streamed and hashed against that archive, so a
+locally forged inventory cannot authenticate changed code. A failed manifest
+read leaves the installed files and any substituted record available for
+inspection; ForgeOS does not silently delete or repair them. The bounded
+metadata read preserves the low-memory contract without changing the existing
+streaming behavior for large runtime files.
+
 ## Windows AppContainer Python runtime probe (PR #69)
 
 The Windows AppContainer probe starts the active interpreter with `-I -S -c pass` inside a zero-capability AppContainer. A virtual-environment launcher depends on its `pyvenv.cfg` and the underlying base interpreter as well as CPython's DLLs and standard-library paths. The probe's temporary read/execute ACL target list therefore includes the active executable, the virtual-environment configuration file and `sys._base_executable`, alongside existing runtime targets. This is a narrowly scoped compatibility grant, **not** permission to read the project tree or a general sandbox bypass.
