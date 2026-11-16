@@ -28,14 +28,14 @@ This is a navigation aid, not a second source of truth. Check the live branch, s
 ## OpenCode agent setup and task fragments
 
 - [`AGENTS.md`](../AGENTS.md) is the repository-wide policy for the lead, coding, and QA agents. Project agent definitions live under [`.opencode/agents/`](../.opencode/agents/); [`opencode.json`](../opencode.json) preserves token limits and permissions while selecting the lead and worktree parent.
-- Keep each fragment independent and assign non-overlapping owned files. The lead caps the batch at two concurrent coding fragments; OpenCode does not provide a schema-level sibling-concurrency limit, so the cap is procedural and permission-prompted, not a hard runtime quota.
+- Default to one AI agent and one bounded development fragment per task/session. Use additional agents only when requested or materially risk-reducing; reserve independent AI QA for security, concurrency, recovery, and other high-risk changes. If parallel work is justified, keep file ownership disjoint; OpenCode does not provide a schema-level sibling-concurrency limit, so the cap is procedural and permission-prompted, not a hard runtime quota.
 - Fragment brief: **issue/task ID; objective and testable acceptance criteria; dependencies; owned files; unique branch/worktree name; focused and regression tests; memory/CPU considerations; completion evidence; draft PR when appropriate.**
 - OpenCode v2.3.0 `opencode run --worktree` creates a detached worktree. For coding, the lead must pre-create a named branch/worktree (`git worktree add -b <assigned-branch> <path> <base-sha>`) and run `opencode run --agent=coding-agent "<complete fragment brief>"` from that path. Verify root, branch, and status before edits; QA must inspect the same worktree/commit and has file-edit permission denied.
 - Resolve overlap with active PRs before assigning work. At index publication, PR #137 covers issue #136's SQLite journal scan failure; recheck its live GitHub status before assigning fragments.
 
 ## Efficient handoff review
 
-`HANDOFF.md` is the append-only chronological record and is very large. For routine tasks, search it for the relevant subsystem, issue, failure, or latest checkpoint, then read the matching bounded ranges. For an explicitly required full review, read every section sequentially and keep a path/size/line-count ledger; do not describe a partial scan as a full read.
+`HANDOFF.md` is the append-only chronological record and is very large. Never reread it in full for routine work: search for the relevant subsystem, issue, failure, or latest checkpoint, then read matching bounded ranges. For an explicitly required full review, read every section sequentially and keep a path/size/line-count ledger; do not describe a partial scan as a full read.
 
 Architecture and decision rationale is recorded in `ENGINEERING_TAKEOVER.md` (including its foundational decisions and ADR guidance) and dated `HANDOFF.md` entries. Check the live GitHub issue/PR and branch state before relying on old PR numbers or status statements.
 
