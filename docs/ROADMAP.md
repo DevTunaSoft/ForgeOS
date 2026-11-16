@@ -1284,3 +1284,13 @@ Handoff integrity run 509. The earlier draft-triggered runs were skipped by
 policy; this green evidence belongs to the ready-for-review synchronization.
 The documentation-only evidence update must receive its own exact-head checks
 before merge.
+
+### 2026-11-16 — trust-store cleanup does not mask write failures
+
+A failed output-filter trust write keeps its original cause. The temporary trust
+file is removed only on the failure path, and a refused removal no longer
+replaces the write error. A regression test forces both the `fsync` and the
+removal to fail. The focused output-rules suite passes 9 tests, and the full
+discovery suite passes 789 with 23 skips on Python 3.12 under Xvfb. This
+candidate branch, `fix/output-rules-temp-cleanup-20261116`, is not yet on
+`main`, and Windows acceptance is not run.

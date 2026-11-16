@@ -3739,3 +3739,25 @@ ready-for-review synchronization passed on
 Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
 No skipped draft run is treated as acceptance evidence. This documentation-
 only evidence update must receive its own exact-head checks before merge.
+
+## 2026-11-16 — trust-store cleanup must not mask write failures
+
+**Change:** `TrustedOutputRules.trust_config` now removes its unpublished
+`.forgeos-*` temporary trust file only on the failure path, and that removal
+absorbs `OSError`. Before, the removal ran in a `finally` block, so a refused
+`unlink` after a failed `fsync` or `os.replace` replaced the write failure the
+caller needs to see. The original error now propagates unchanged. The trust
+file format, the hash-pinned consent model and the successful write path are
+unchanged.
+
+**Verification:** `tests/test_output_rules.py` adds
+`test_trust_write_failure_is_not_masked_by_temporary_cleanup`, which makes
+`os.fsync` raise `OSError("DISK-FULL")` while `os.unlink` raises
+`PermissionError`. Against the original code the test fails with
+`AssertionError: "DISK-FULL" does not match "file is locked"`; with the change it
+passes. The focused output-rules suite passes 9 tests. Full discovery (`PYTHONPATH=src
+python3.12 -m unittest discover -s tests -v`, run under `xvfb-run -a`) passes 789
+tests with 23 skips, `compileall` passes, and `tools/memory_benchmark.py --mib 12
+--cycles 3 --check` exits 0. Windows and real-model acceptance were not run in this
+environment. The candidate branch `fix/output-rules-temp-cleanup-20261116` is based
+on `origin/main` `4a6d228`.

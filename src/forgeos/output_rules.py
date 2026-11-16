@@ -98,9 +98,15 @@ class TrustedOutputRules:
                 destination.flush()
                 os.fsync(destination.fileno())
             os.replace(temp, self.trust)
-        finally:
-            if os.path.exists(temp):
-                os.unlink(temp)
+        except BaseException:
+            # Removing the unpublished temporary must not replace the failure
+            # that caused it. A lock or permission error here is absorbed.
+            try:
+                if os.path.exists(temp):
+                    os.unlink(temp)
+            except OSError:
+                pass
+            raise
         return digest
 
     def enabled_rules(self) -> tuple[list[dict], str]:
