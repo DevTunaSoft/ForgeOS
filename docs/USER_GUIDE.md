@@ -219,6 +219,8 @@ Not every error can be fixed automatically. A failed model operation, a failed o
 
 **Important:** the label “Build / test / repair” describes an experimental edit/test loop. It is **not** a promise to compile any requested EXE/APK/web app.
 
+**Failures stay visible.** If **Generate plan** or **Run tests only** fails and ForgeOS also cannot save the failed state, for example because the database is locked, the report shows the planning or test failure rather than the database message. The task keeps its last saved status. A task that still shows planning or testing cannot be planned or tested again automatically, so check its saved status and workspace before choosing another action.
+
 ## 4. What to do with the result
 
 A successful task indicates that the chosen test operation reported success for the run; it is not proof that every feature works, that generated code is safe, or that a release has been built. Inspect the files and test coverage yourself. ForgeOS intentionally leaves the isolated Git worktree in place for review. It does not automatically commit, merge, push, deploy or publish changes.
