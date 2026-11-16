@@ -10,7 +10,7 @@ ForgeOS codebase or this development conversation. PR #146, the preceding
 GGUF metadata-read hardening, is merged into `main` at
 `e671055dcedc2f319985daffed95fab0402e454c`. The current implementation branch
 is `feat/security-retirement-journal-reads-20261116` and its candidate change
-is [draft PR #149](https://github.com/DevTunaSoft/ForgeOS/pull/149). Treat the
+is [PR #149](https://github.com/DevTunaSoft/ForgeOS/pull/149). Treat the
 PR's current head as authoritative because the external dossier update is
 committed on that same branch after the initial implementation commit.
 The checkout must be clean before packaging or handing it to another agent.
@@ -34,8 +34,11 @@ checks report incomplete capture. These are not presented as a green local
 matrix; exact-head hosted checks remain required. The current local run's
 failures/errors are recorded in `docs/HANDOFF.md`: the checkout's AppContainer
 ACL probe, evidence retention, diagnostic archiving and native output capture
-remain environment-limited. The draft PR must be reconciled with its four
-required hosted workflows before merge. Real
+remain environment-limited. The candidate dossier head `8edf4ac` passed the
+four required exact-head hosted workflows: Foundation tests run 1285, Windows
+EXE run 863, Documentation run 434 and Handoff integrity run 490. This
+evidence update is documentation-only and its own exact-head checks must be
+observed before merge. Real
 Windows GUI/model, crash/restart, process-tree resource, power-loss and
 clean-room takeover evidence remain unverified.
 

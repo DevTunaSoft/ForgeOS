@@ -1246,6 +1246,9 @@ documentation/link checks, `git diff --check` and the bounded 12 MiB x
 3-cycle memory benchmark pass; the benchmark measured a 1,857,636-byte
 Python tracemalloc peak and a 25,550,848-byte process peak RSS. Full local
 discovery ran 786 tests with 10 expected skips, 4 failures and 5 errors in
-existing checkout-specific environment checks. Hosted checks, Windows
-filesystem review and physical power-loss recovery acceptance remain
-required.
+existing checkout-specific environment checks. The candidate dossier head
+`8edf4ac` passed the required exact-head hosted workflows: Foundation 1285,
+Windows EXE 863, Documentation 434 and Handoff integrity 490. The follow-on
+evidence update is documentation-only and must receive its own exact-head
+checks before merge. Windows filesystem review and physical power-loss
+recovery acceptance remain required.

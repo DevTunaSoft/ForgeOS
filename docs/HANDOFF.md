@@ -3699,6 +3699,9 @@ passed. The bounded 12 MiB x 3-cycle memory benchmark passed with a
 Full local discovery ran 786 tests with 10 expected skips, 4 failures and 5
 errors in the existing checkout-specific AppContainer ACL, evidence-retention,
 diagnostic-archive and native-capture checks; the new retirement and adjacent
-model/recovery suites were green. Exact-head hosted workflows, Windows
-filesystem review and physical power-loss recovery acceptance remain pending
-for the candidate branch.
+model/recovery suites were green. The candidate dossier head `8edf4ac` passed
+the four required exact-head hosted workflows: Foundation tests run 1285,
+Windows EXE run 863, Documentation run 434 and Handoff integrity run 490.
+The follow-on evidence update is documentation-only and must receive its own
+exact-head checks before merge. Windows filesystem review and physical
+power-loss recovery acceptance remain open.
