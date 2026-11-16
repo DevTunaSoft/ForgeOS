@@ -3752,6 +3752,8 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 2. Make the `context_index.py` exclusions and the `.forgeos` and runtime-directory name checks casefold-aware, with one test for each (metadata only).
 3. Microtask pipeline P0 (ROADMAP "Planned: Microtask Development Pipeline"): write the versioned task-graph schema, limits and threat model. Then P1: a deterministic inventory built on `context_index.py`, not a new scanner.
 
+**Overlap with draft PR 68 (checked 2026-11-16).** Three-way merge simulations (`git merge-tree`, with `origin/main` as the common base) against [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) show conflicts in `src/forgeos/worktree_manifest.py`, `tests/test_worktree_manifest.py` and `tests/test_worktree_archive.py`. Those files are absent from #68's older lineage, so a naive merge would delete them. The simulation also conflicts in `tests/test_runtime.py` and in the documentation files. `src/forgeos/engine.py`, `src/forgeos/test_runtime.py` and `tests/test_engine.py` merge automatically. This change should land before #68 is rebased, and whoever rebases #68 must keep these files and the casefold rules.
+
 **Rollback.** Revert the commit. There is no data migration, schema change or stored-format change.
 
 **Next exact command.**
