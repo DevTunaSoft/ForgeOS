@@ -1,6 +1,9 @@
+import os
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+
 from forgeos.context_index import render_context
 
 class ContextIndexTests(unittest.TestCase):
@@ -56,6 +59,26 @@ class ContextIndexTests(unittest.TestCase):
         out = render_context(self.root, "huge")
         self.assertIn("huge.py", out)
         self.assertNotIn("private_signature", out)
+
+    def test_source_replacement_during_open_is_not_indexed(self):
+        source = self.root / "race.py"
+        replacement = self.root / "race.swap"
+        source.write_text("def original_signature():\n pass\n")
+        replacement.write_text("def replacement_signature():\n pass\n")
+
+        def replace_before_open(path, flags):
+            if (Path(path).resolve(strict=False).as_posix().casefold()
+                    == source.resolve(strict=False).as_posix().casefold()):
+                replacement.replace(source)
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open):
+            out = render_context(self.root, "race")
+
+        self.assertIn("race.py", out)
+        self.assertNotIn("original_signature", out)
+        self.assertNotIn("replacement_signature", out)
 
     def test_boundaries(self):
         for index in range(140):

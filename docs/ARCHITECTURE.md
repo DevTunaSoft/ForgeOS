@@ -146,6 +146,19 @@ during the read fails closed to an empty preference set. This protects
 backend, model, endpoint and task-role choices from a path substitution race
 without retaining the settings file in memory beyond its small JSON bound.
 
+## Local context symbol-read boundary
+
+The repository context index is metadata-only: it may list eligible relative
+paths and extract Python class/function signatures, but it never places source
+bodies in the prompt context. Before parsing a selected Python file, the
+symbol extractor uses the shared bounded identity reader. The file must remain
+an unlinked regular file, no-follow opening is used where the platform
+provides it, and the read is capped at the existing 100 KiB source limit plus
+one byte. A symlink, Windows reparse point, hard link, oversized file or
+replacement during the read is ignored for symbol extraction while its path
+metadata remains available. This closes the old size-check-then-`read_text()`
+race and keeps a changing repository from bypassing the local AI memory cap.
+
 ## Low-memory SQLite read boundary
 
 Database backup and restore publication uses one shared fail-closed helper:

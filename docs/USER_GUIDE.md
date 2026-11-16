@@ -739,6 +739,15 @@ still allowed, it then assembles a bounded context for that repair. When the
 final permitted attempt fails, it reports failure without building an unused
 next-repair prompt. Nothing is merged or published automatically.
 
+When ForgeOS does extract Python symbols for a needed context, each selected
+source file is read through the same identity and size boundary used for other
+local untrusted files. The scanner accepts only a real regular file, caps the
+read at 100 KiB plus one byte, and skips symbols if the file is replaced,
+linked, reparse-backed or enlarged while it is being opened. The filename may
+still appear in the metadata list, but source text is not copied into the
+context. This is a fail-closed memory and path-race safeguard, not a lock on a
+repository that another process is editing.
+
 ### Task database integrity and backup (experimental)
 
 Create a trusted folder for backups first, then use these PowerShell commands:
