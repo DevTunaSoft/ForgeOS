@@ -3679,3 +3679,33 @@ run 855, Documentation run 427 and Handoff integrity run 476. The follow-on
 dossier refresh is documentation-only and must receive its own exact-head
 checks before merge. Windows filesystem review and physical Windows
 download/recovery acceptance remain required.
+
+## 2026-11-16 — failure publication never masks the triggering error
+
+**Checkpoint:** `2026-11-16-failure-path-exceptions`. **Branch:** `fix/engine-failure-path-exceptions-20261116`, created from `origin/main` `e671055` as a separate unit from the protected-name branch. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.
+
+**Duplicate-work audit.** The open pull requests were reviewed. The protected-name draft ([PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147)) touches validators, not failure publication. Draft [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) (WIP, safe-resume branch) describes a pre-edit generation retry path in its user-guide text, so it likely changes checkpoint or recovery behavior near this code. Its engine diff was **not** inspected in full here, so overlap is unverified and must be reconciled before either pull request merges. No other open change was found in `engine._execute_task` or `execute_task` failure handling.
+
+**Defect and root cause.** While another exception was propagating, `_execute_task` performed three bookkeeping steps that could raise `sqlite3.Error`: the optional recovery-detail read, the `blocked` publication (only `LeaseLostError` was absorbed) and, in `execute_task`'s `finally`, the lease release. A locked or failing database therefore replaced the model or test failure with `sqlite3.OperationalError`. The code's own comment required that bookkeeping never mask the triggering exception, so this is a defect against the stated contract.
+
+**Change.**
+- `_execute_task`: absorbs `sqlite3.Error` in the recovery-detail read and in the blocked publication, alongside `LeaseLostError`.
+- `execute_task`: releases the lease explicitly. On failure a release error is absorbed and the original exception is re-raised. On success a release error is raised, so a stuck lease is reported rather than hidden.
+- Tests: `test_blocked_publication_error_does_not_mask_engine_failure`, `test_recovery_detail_read_error_does_not_mask_engine_failure`, `test_lease_release_error_does_not_mask_engine_failure` and `test_lease_release_error_is_reported_after_successful_run` in `tests/test_engine.py`. `CheckpointResumeTests` inherits `EngineIntegrationTests`, so each runs twice; this predates the change.
+
+**Commands and results.** Environment: Linux 6.18.44-fc-v470 container, 4 CPUs, 16 GiB RAM, running as root; `/usr/bin/python3.12` 3.12.3 with `python3-tk` installed through apt and Xvfb run via `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| New tests against the unchanged engine (`-k _does_not_mask`, Python 3.12) | FAIL (ERROR): three methods, each in two classes. The traceback shows `RuntimeError: model unavailable` followed by `sqlite3.OperationalError: database is locked`, reproducing the masking. The success-path lease test passes as designed |
+| `test_engine.py` after the change (Python 3.12, standalone) | 101 run, 1 error: `FrozenSecureRoutingTests`, the order-dependent test whose isolation fix is in the separate draft PR #147. It passes in full-suite order |
+| Full suite after the change (Python 3.12, Tk under Xvfb) | OK: 792 run, 23 skipped (Windows-only), exit 0 |
+| `python3 -m compileall -q src tests`; `git diff --check` | PASS |
+
+**Failure semantics and limits.** An unwritable blocked publication leaves the task in its previous durable status (`editing` or `testing`). Start and resume refuse that status, so nothing replays automatically; recovery stays with inspection and the existing commands. This change adds no retry or backoff, does not repair stuck rows, and does not change checkpoint parsing.
+
+**Not verified.** Windows execution; real local-model behavior; hosted CI on the draft head. **Resource impact:** none measured; the change adds exception handling only.
+
+**Next exact command.** `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_engine.py -v`
+
+**Next priorities.** (1) Reconcile with PR #68 before either merges. (2) Consolidate the Windows device-name lists, a follow-up from [PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147). (3) Consider the repeated-identical-repair stop rule, now deferred because generation is stochastic.

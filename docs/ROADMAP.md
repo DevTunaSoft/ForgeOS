@@ -1228,3 +1228,11 @@ workflows: Foundation 1277, Windows EXE 855, Documentation 427 and Handoff
 integrity 476. The follow-on dossier refresh is documentation-only and must
 receive its own exact-head checks before merge. Windows filesystem review and
 physical Windows download/recovery acceptance remain required.
+
+### 2026-11-16 — failure publication never masks the triggering error
+
+The autonomous engine's failure path could replace the real model or test failure with a database error. Three bookkeeping steps ran while the original exception was propagating: the optional recovery-detail read, the `blocked` publication and the lease release in `execute_task`'s `finally`. A locked or failing SQLite database therefore surfaced as `sqlite3.OperationalError`, and the cause was lost. The engine's own comments already required that bookkeeping never mask the triggering exception; only `LeaseLostError` was handled.
+
+The failure path now absorbs `sqlite3.Error` in those steps, so the original exception propagates. On success a lease-release error is still raised, because it would otherwise block new runs until expiry without any report. Regression coverage adds `test_blocked_publication_error_does_not_mask_engine_failure`, `test_recovery_detail_read_error_does_not_mask_engine_failure`, `test_lease_release_error_does_not_mask_engine_failure` and `test_lease_release_error_is_reported_after_successful_run`. The first three reproduced the masking on the unchanged code. `CheckpointResumeTests` inherits `EngineIntegrationTests`, so these run in both classes; that structure predates this change.
+
+Status: **implemented prototype, verified on Linux** with Python 3.12 and Tk under Xvfb. Windows and real-model behavior were not exercised.
