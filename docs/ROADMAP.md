@@ -1285,6 +1285,29 @@ policy; this green evidence belongs to the ready-for-review synchronization.
 The documentation-only evidence update must receive its own exact-head checks
 before merge.
 
+### 2026-11-16 — bounded verification of the AppContainer write marker
+
+The Windows AppContainer runtime probe confirms that a contained child can write its granted workspace by reading back a marker file the child created. The parent read that file with an unbounded `read_text` that followed links. A contained process controls the file, so a large or linked marker could make the parent buffer arbitrary content: a measured 64 MiB file allocated about 134 MB in the parent. A symlink to an outside file containing `ok` also made the check pass when the child had written nothing.
+
+`_verify_probe_marker` now reads the marker through the shared bounded identity reader and accepts only an unlinked regular file containing exactly `ok`, at most 16 bytes. The same 64 MiB file is refused with about 2 KB of Python allocation. Regression coverage adds five tests in `tests/test_appcontainer.py` that run on every platform: exact marker, oversized, trailing bytes, missing and symlink. Status: **implemented prototype, verified on Linux**. The Windows probe that calls the helper was not run and remains **NOT RUN**.
+### 2026-11-16 — evidence archive cleanup does not mask failures
+
+A failed diagnostic archive keeps its original cause. The unpublished temporary
+file is removed only on the failure path, and a refused removal no longer
+replaces the source or write error that blocks test approval. A regression test
+forces the removal to fail. The focused diagnostics suite passes 24 tests, and
+the full discovery suite passes 789 with 23 skips on Python 3.12 under Xvfb.
+This candidate branch, `fix/diagnostics-archive-cleanup-20261116`, is not yet on
+`main`, and Windows acceptance is not run.
+### 2026-11-16 — trust-store cleanup does not mask write failures
+
+A failed output-filter trust write keeps its original cause. The temporary trust
+file is removed only on the failure path, and a refused removal no longer
+replaces the write error. A regression test forces both the `fsync` and the
+removal to fail. The focused output-rules suite passes 9 tests, and the full
+discovery suite passes 789 with 23 skips on Python 3.12 under Xvfb. This
+candidate branch, `fix/output-rules-temp-cleanup-20261116`, is not yet on
+`main`, and Windows acceptance is not run.
 ### 2026-11-16 — failure publication in shared task actions
 
 The planning and manual-test actions shared by the CLI and GUI had the defect fixed in the engine: a database error while recording the blocked state, or while releasing the lease in a `finally` block, could replace the real planning or test failure. `task_actions.py` now records the blocked state through `_block_after_failure`, which absorbs `sqlite3.Error` so the original exception propagates. `_owned_task` releases the lease quietly while a failure propagates and reports a release error after a successful action, so a stuck lease is not hidden.

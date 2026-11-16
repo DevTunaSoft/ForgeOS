@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from forgeos.output_rules import TrustedOutputRules, deduplicate_output
 
 class OutputRuleTests(unittest.TestCase):
@@ -92,6 +93,16 @@ class OutputRuleTests(unittest.TestCase):
         text, removed = deduplicate_output(raw, "python-unittest")
         self.assertEqual(removed, 8)
         self.assertTrue(text.endswith("different\nINFO Ω漢字\nINFO Ω漢字\n"))
+
+    def test_trust_write_failure_is_not_masked_by_temporary_cleanup(self):
+        self.write([])
+        failing_fsync = patch("forgeos.output_rules.os.fsync",
+                              side_effect=OSError("DISK-FULL"))
+        locked_unlink = patch("forgeos.output_rules.os.unlink",
+                              side_effect=PermissionError("file is locked"))
+        with failing_fsync, locked_unlink:
+            with self.assertRaisesRegex(OSError, "DISK-FULL"):
+                self.rules.trust_config()
 
 if __name__ == "__main__":
     unittest.main()

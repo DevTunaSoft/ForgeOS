@@ -27,6 +27,21 @@ _SUMMARY = re.compile(
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
+def _discard_unpublished(path: Path) -> None:
+    """Remove an unpublished evidence temporary without masking the caller's error.
+
+    This runs while another exception is propagating. A lock or permission error
+    here must not replace that cause, so it is absorbed. The temporary is created
+    private (mode 0600); if it cannot be removed it stays in the private evidence
+    directory until an operator removes it.
+    """
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
+
+
 class EvidenceStore:
     """Private SHA-256-addressed gzip files with atomic writes and verification."""
 
@@ -115,9 +130,9 @@ class EvidenceStore:
                 raise ValueError("Refusing to overwrite symlinked evidence")
             os.replace(temporary, target)
             return reference
-        finally:
-            if temporary.exists():
-                temporary.unlink()
+        except BaseException:
+            _discard_unpublished(temporary)
+            raise
 
     def _temporary_file(self):
         """Create a private temporary file without unbounded Windows retries.
