@@ -7,7 +7,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 
 - [x] Intelligent output compression (prototype integrated)
 - [x] Smart test summaries (structured counts plus failure-aware text)
-- [ ] Optimized Git command output (bounded `workspace_diff_summary` prototype exists in `workspace.py`; GUI/CLI integration and end-to-end acceptance remain open)
+- [ ] Optimized Git command output (bounded summary is integrated into engine completion JSON and included in existing GUI/CLI JSON display; hosted CI and end-to-end acceptance remain open)
 - [x] Relevant source code reading (bounded AST metadata prototype)
 - [ ] Optimized project search
 - [ ] Adaptive context budgets

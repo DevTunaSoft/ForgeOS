@@ -18,6 +18,7 @@ DEFAULT_DIFF_SUMMARY_CHARS = 4000
 DEFAULT_DIFF_SUMMARY_FILES = 20
 DEFAULT_DIFF_NUMSTAT_BYTES = 65536
 DEFAULT_DIFF_PATCH_BYTES = 16384
+MIN_DIFF_SUMMARY_CHARS = len("[truncated]")
 
 
 class WorkspaceError(RuntimeError):
@@ -286,9 +287,14 @@ def workspace_diff_summary(
     Preserves workspace_diff() for full output. Any truncation due to max_chars,
     max_files, or Git output byte limits is recorded in ``truncated`` and
     marked visibly in ``text`` so partial diffs are never presented as complete.
+    ``max_chars`` must be at least 11, the length of the readable
+    ``[truncated]`` marker; smaller budgets are rejected rather than clipping
+    the marker into an unreadable fragment.
     """
-    if not isinstance(max_chars, int) or isinstance(max_chars, bool) or max_chars < 1:
-        raise ValueError("max_chars must be a positive integer")
+    if (not isinstance(max_chars, int) or isinstance(max_chars, bool)
+            or max_chars < MIN_DIFF_SUMMARY_CHARS):
+        raise ValueError(
+            f"max_chars must be an integer >= {MIN_DIFF_SUMMARY_CHARS}")
     if not isinstance(max_files, int) or isinstance(max_files, bool) or max_files < 1:
         raise ValueError("max_files must be a positive integer")
 

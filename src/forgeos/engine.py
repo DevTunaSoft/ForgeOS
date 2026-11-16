@@ -13,7 +13,10 @@ import uuid
 from typing import Callable
 
 from .core import LeaseLostError, Ollama, Store, run_test, validate_task_description
-from .workspace import Workspace, create_workspace
+from .workspace import (
+    DEFAULT_DIFF_SUMMARY_CHARS, DEFAULT_DIFF_SUMMARY_FILES, Workspace,
+    create_workspace, workspace_diff_summary,
+)
 from .transactions import apply_transaction, recover_edits, _hash_file
 
 MAX_FILES = 8
@@ -122,6 +125,24 @@ def _require_test_outcome(outcome: object) -> dict:
                 and type(outcome["capture_complete"]) is not bool)):
         raise RuntimeError("Test runner returned an invalid outcome")
     return outcome
+
+
+def _include_workspace_summary(result: dict, workspace: Workspace) -> dict:
+    """Attach bounded workspace context without changing task/test authority."""
+    try:
+        summary = workspace_diff_summary(
+            workspace, max_chars=DEFAULT_DIFF_SUMMARY_CHARS,
+            max_files=DEFAULT_DIFF_SUMMARY_FILES)
+    except Exception as exc:
+        # Summary generation is supplementary: never turn a verified task
+        # outcome into a failure, and never persist an unbounded exception.
+        result["workspace_diff_summary"] = ""
+        result["workspace_diff_truncated"] = False
+        result["workspace_diff_error"] = f"{type(exc).__name__}: {str(exc)[-500:]}"
+        return result
+    result["workspace_diff_summary"] = summary.text
+    result["workspace_diff_truncated"] = summary.truncated
+    return result
 
 
 def _run_workspace_tests(workspace: Path, preset: str) -> dict:
@@ -401,6 +422,7 @@ def _execute_task(
                           "branch": ws.branch, "edited": paths,
                           "iterations": attempt + 1, "test": outcome,
                           "learning": learned, "model": model_name}
+                _include_workspace_summary(result, ws)
                 publish({"testing"}, "passed", result=json.dumps(result),
                         event_action="test", event_attempt=attempt + 1,
                         event_evidence=outcome.get("evidence_reference") or "")
@@ -443,6 +465,7 @@ def _execute_task(
                   "branch": ws.branch, "model": model_name,
                   "iterations": max_repairs + 1,
                   "error": last_output[-4000:]}
+        _include_workspace_summary(result, ws)
         publish({"testing"}, "failed", error=result["error"], result=json.dumps(result),
                 event_action="test", event_attempt=max_repairs + 1,
                 event_evidence=outcome.get("evidence_reference") or "")

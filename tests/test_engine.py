@@ -108,6 +108,63 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
 
+    def test_completion_attaches_bounded_summary_without_full_diff(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        summary = SimpleNamespace(text="No tracked changes.", truncated=False)
+        with (patch("forgeos.engine.workspace_diff_summary", return_value=summary) as bounded,
+              patch("forgeos.engine.workspace_diff", create=True,
+                    side_effect=AssertionError("full diff")) as full,
+              patch("forgeos.engine._run_workspace_tests", return_value={
+                  "passed": True, "output": "verified", "returncode": 0})):
+            result = execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                max_repairs=0, generate=lambda model, prompt: manifest)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["workspace_diff_summary"], "No tracked changes.")
+        self.assertIs(result["workspace_diff_truncated"], False)
+        bounded.assert_called_once()
+        self.assertEqual(bounded.call_args.kwargs, {"max_chars": 4000, "max_files": 20})
+        full.assert_not_called()
+
+    def test_summary_failure_does_not_change_success_result(self):
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 42\n"}]})
+        with (patch("forgeos.engine.workspace_diff_summary",
+                    side_effect=RuntimeError("x" * 5000)),
+              patch("forgeos.engine.workspace_diff", create=True,
+                    side_effect=AssertionError("full diff")),
+              patch("forgeos.engine._run_workspace_tests", return_value={
+                  "passed": True, "output": "verified", "returncode": 0})):
+            result = execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                max_repairs=0, generate=lambda model, prompt: manifest)
+        self.assertTrue(result["passed"])
+        self.assertEqual(len(result["workspace_diff_error"]), 514)
+        self.assertTrue(result["workspace_diff_error"].startswith("RuntimeError: "))
+        self.assertEqual(self.store.get(self.task)["status"], "passed")
+
+    def test_failed_result_keeps_explicit_summary_truncation(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [{
+            "path": "app.py", "content": "def value():\n return 0\n"}]})
+        summary = SimpleNamespace(text="partial [truncated]", truncated=True)
+        with (patch("forgeos.engine.workspace_diff_summary", return_value=summary),
+              patch("forgeos.engine._run_workspace_tests", return_value={
+                  "passed": False, "output": "verified failure", "returncode": 1})):
+            result = execute_task(
+                self.store, self.task, self.root, allow_host_tests=True,
+                max_repairs=0, generate=lambda model, prompt: manifest)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["error"], "verified failure")
+        self.assertEqual(result["workspace_diff_summary"], "partial [truncated]")
+        self.assertIs(result["workspace_diff_truncated"], True)
+        self.assertEqual(self.store.get(self.task)["status"], "failed")
+
     def test_new_run_ignores_oversized_legacy_history_blobs(self):
         from unittest.mock import patch
         prior = "old-history" * 200000
