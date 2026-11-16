@@ -7,6 +7,7 @@ from contextlib import ExitStack
 import hashlib
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -109,6 +110,42 @@ class CPUInstallerTests(unittest.TestCase):
             ri.verify_installed_cpu_runtime(self.directory)
         with self.assertRaisesRegex(RuntimeError, "differs from pinned archive"):
             ri.install_pinned_cpu_runtime(self.directory)
+
+    def test_manifest_replacement_during_open_is_rejected_and_preserved(self):
+        self.install_fixture()
+        result = ri.install_pinned_cpu_runtime(self.directory)
+        manifest = Path(result["path"]).parents[1] / ri.MANIFEST_FILE
+        replacement = manifest.parent.parent / (manifest.name + ".swap")
+        replacement.write_text(json.dumps({"release": "attacker"}))
+
+        def replace_before_open(path, flags):
+            if (Path(path).resolve(strict=False).as_posix().casefold()
+                    == manifest.resolve(strict=False).as_posix().casefold()):
+                replacement.replace(manifest)
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open):
+            with self.assertRaisesRegex(
+                    RuntimeError, "Corrupt official runtime inventory manifest"):
+                ri.verify_installed_cpu_runtime(self.directory)
+        self.assertEqual(json.loads(manifest.read_text()),
+                         {"release": "attacker"})
+
+    def test_hardlinked_runtime_manifest_is_rejected(self):
+        self.install_fixture()
+        result = ri.install_pinned_cpu_runtime(self.directory)
+        manifest = Path(result["path"]).parents[1] / ri.MANIFEST_FILE
+        alias = manifest.parent.parent / (manifest.name + ".alias")
+        try:
+            os.link(manifest, alias)
+        except OSError:
+            self.skipTest("Hard links unavailable")
+        with self.assertRaisesRegex(
+                RuntimeError, "Corrupt official runtime inventory manifest"):
+            ri.verify_installed_cpu_runtime(self.directory)
+        self.assertTrue(manifest.exists())
+        self.assertTrue(alias.exists())
 
     def test_tampered_zip_cannot_authenticate_new_binary(self):
         self.install_fixture()

@@ -6,41 +6,45 @@
 ## Current external-handoff checkpoint — 2026-11-16
 
 This dossier is the entry point for an external engineer who has not seen the
-ForgeOS codebase or this development conversation. PR #146, the preceding
-GGUF metadata-read hardening, is merged into `main` at
-`e671055dcedc2f319985daffed95fab0402e454c`. The current implementation branch
-is `feat/security-retirement-journal-reads-20261116` and its candidate change
-is [PR #149](https://github.com/DevTunaSoft/ForgeOS/pull/149). Treat the
-PR's current head as authoritative because the external dossier update is
-committed on that same branch after the initial implementation commit.
-The checkout must be clean before packaging or handing it to another agent.
+ForgeOS codebase or this development conversation. PR #149, the preceding
+retirement journal/manifest hardening, is merged into `main` at
+`0c5ead0a45e16c94dab0ff8d330a7e987ce8e41e`. The current implementation branch
+is `feat/security-runtime-manifest-read-identity-20261116` and its candidate
+change is [PR #150](https://github.com/DevTunaSoft/ForgeOS/pull/150), currently
+open and ready for review at head
+`ff8bdf6894adb5be13a8918745badd6a6d940ad6`. Treat the PR head
+and exact-commit workflow results as authoritative. The checkout must be
+clean before packaging or handing it to another agent.
 
-The current candidate hardens reversible GGUF retirement and restoration.
-Recovery journals and saved manifests are read through the shared bounded
-identity reader, so replacements, Windows reparse points, hard links,
-malformed JSON and oversized records fail closed while substituted evidence is
-preserved. The focused retirement suite passed 20 tests; model inventory
-passed 10; managed runtime passed 37 with 4 expected skips; recovery passed
-23; documentation passed 10; compileall and `git diff --check` passed; and the
-bounded 12 MiB x 3-cycle memory benchmark passed with a 1,857,636-byte Python
-tracemalloc peak and a 25,550,848-byte process peak RSS.
+The current candidate hardens verification of the installed official Windows
+CPU llama.cpp runtime. Its `runtime.forgeos.json` inventory is read through
+the shared bounded identity reader with a 256 KiB limit, descriptor identity
+checks and no-follow behavior where available. Symlinks, Windows reparse
+points, hard links, replacements, growth, oversized content and malformed JSON
+fail closed while substituted evidence remains available. The pinned release
+ZIP and streamed executable/DLL hashes remain the authority, so the change
+does not add a large allocation or a second runtime trust source.
 
-Full local discovery ran 784 tests with 10 expected skips, 4 failures and 5
-errors. The failures/errors are recorded in `docs/HANDOFF.md`: the checkout's
-AppContainer ACL probe cannot inspect the managed `.venv`, several engine
-tests cannot retain their evidence archive under the local environment, the
-unittest preset cannot archive its diagnostic, and two native output-capture
-checks report incomplete capture. These are not presented as a green local
-matrix; exact-head hosted checks remain required. The current local run's
-failures/errors are recorded in `docs/HANDOFF.md`: the checkout's AppContainer
-ACL probe, evidence retention, diagnostic archiving and native output capture
-remain environment-limited. The candidate dossier head `8edf4ac` passed the
-four required exact-head hosted workflows: Foundation tests run 1285, Windows
-EXE run 863, Documentation run 434 and Handoff integrity run 490. This
-evidence update is documentation-only and its own exact-head checks must be
-observed before merge. Real
-Windows GUI/model, crash/restart, process-tree resource, power-loss and
-clean-room takeover evidence remain unverified.
+The focused runtime-installer suite passed 10 tests; model inventory passed
+10; managed runtime passed 37 with 4 expected skips; retirement passed 20;
+recovery passed 23; documentation passed 10; handoff checker passed 5;
+compileall and `git diff --check` passed. The bounded 12 MiB x 3-cycle memory
+benchmark passed with a 1,857,636-byte Python tracemalloc peak and a
+25,714,688-byte process peak RSS.
+
+Full local discovery ran 788 tests with 10 expected skips, 4 failures and 5
+errors. The failures/errors are the checkout's existing `.venv` AppContainer
+ACL denial, five engine evidence-retention paths, the unittest diagnostic
+archive and two native output-capture completeness checks; they are recorded
+in `docs/HANDOFF.md` and are not presented as a green local matrix. The
+draft-triggered synchronization's Foundation, Windows EXE and Documentation
+jobs were skipped by policy, but the ready-for-review synchronization passed
+on `b0abf67588b5e9679434cbca9b1b6bd141ef1921`: Foundation tests run 1296,
+Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
+This dossier evidence update will move the branch head and therefore requires
+its own exact-head checks before merge.
+Real Windows GUI/model execution, crash/restart, process-tree resource,
+power-loss and clean-room takeover evidence remain unverified.
 
 ## 1. Why ForgeOS is being built
 
