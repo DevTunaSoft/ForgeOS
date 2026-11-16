@@ -3739,3 +3739,32 @@ ready-for-review synchronization passed on
 Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
 No skipped draft run is treated as acceptance evidence. This documentation-
 only evidence update must receive its own exact-head checks before merge.
+
+## 2026-11-16 — bounded verification of the AppContainer write marker
+
+**Checkpoint:** `2026-11-16-appcontainer-marker-read`. **Branch:** `fix/appcontainer-probe-bounded-marker-20261116`, created from `origin/main` `4a6d228`. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.
+
+**Duplicate-work audit.** The open pull requests were reviewed on 2026-11-16. None changes `src/forgeos/appcontainer.py` or `tests/test_appcontainer.py`. [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) does not touch `appcontainer.py`, and [PR #150](https://github.com/DevTunaSoft/ForgeOS/pull/150) touches only `runtime_installer.py` and its tests. A search of untouched modules for unbounded reads found this site as the only one that reads a file written by an untrusted child. The other hits are kernel pseudo-files in `model_routing.py`, which are small and system-controlled.
+
+**Defect and evidence.** The Windows AppContainer runtime probe asks a contained child to write `python-created.txt` in the granted workspace. The parent then read that file with `read_text(encoding="utf-8")`. Measured with the unchanged logic on Linux, a symlink to an outside file containing `ok` was accepted (the check passed when the child had written nothing), and a 64 MiB child-written file allocated 134,223,002 bytes of Python memory in the parent.
+
+**Change.**
+- `_verify_probe_marker` reads the marker through `file_security.read_bounded_file`: an unlinked regular file of at most 16 bytes, exactly `ok`. Any other result raises `OSError`.
+- The probe now calls the helper instead of the unbounded read. The call site sits inside the Windows-only probe and was reviewed by reading, not executed.
+- `tests/test_appcontainer.py`: five tests in `ProbeMarkerVerificationTests` (exact marker, oversized, trailing bytes, missing, symlink) run on every platform.
+
+**Commands and results.** Environment: Linux 6.18.44-fc-v470 container; `/usr/bin/python3.12` 3.12.3 with `python3-tk` and Xvfb through `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_appcontainer.py` before the fix | ERROR: import fails because the helper does not exist yet. The behavioral reproduction is the measurement above |
+| Same command after the fix (`-v`) | OK: 10 run; the five new marker tests and the contract test pass; four Windows-only probe tests skip on Linux |
+| Large-file check after the fix (64 MiB child-written file) | Refused as oversized with 2,040 bytes of Python peak allocation, from 134,223,002 bytes before |
+| Full suite (Python 3.12, Tk under Xvfb) | OK: 793 run, 23 skipped (Windows-only), exit 0 |
+| `python3 -m compileall -q src tests`; `git diff --check` | PASS |
+
+**Verification status.** PASS for the Linux and Python 3.12 gates above. NOT RUN: the Windows AppContainer probe itself, real contained child behavior on Windows, and hosted CI on the draft head. **Resource impact:** the marker check now allocates a few bytes regardless of the file size the child writes.
+
+**Rollback.** Revert the commit that changes `src/forgeos/appcontainer.py`. There is no data migration or stored-format change.
+
+**Next exact command.** `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_appcontainer.py -v`

@@ -1284,3 +1284,9 @@ Handoff integrity run 509. The earlier draft-triggered runs were skipped by
 policy; this green evidence belongs to the ready-for-review synchronization.
 The documentation-only evidence update must receive its own exact-head checks
 before merge.
+
+### 2026-11-16 — bounded verification of the AppContainer write marker
+
+The Windows AppContainer runtime probe confirms that a contained child can write its granted workspace by reading back a marker file the child created. The parent read that file with an unbounded `read_text` that followed links. A contained process controls the file, so a large or linked marker could make the parent buffer arbitrary content: a measured 64 MiB file allocated about 134 MB in the parent. A symlink to an outside file containing `ok` also made the check pass when the child had written nothing.
+
+`_verify_probe_marker` now reads the marker through the shared bounded identity reader and accepts only an unlinked regular file containing exactly `ok`, at most 16 bytes. The same 64 MiB file is refused with about 2 KB of Python allocation. Regression coverage adds five tests in `tests/test_appcontainer.py` that run on every platform: exact marker, oversized, trailing bytes, missing and symlink. Status: **implemented prototype, verified on Linux**. The Windows probe that calls the helper was not run and remains **NOT RUN**.
