@@ -1,37 +1,41 @@
 # ForgeOS — engineering takeover dossier
-**Prepared:** 2026-11-15. **Classification:** operational continuity document, not a production certification.
+**Prepared:** 2026-11-16. **Classification:** operational continuity document, not a production certification.
 
 > **Start here when taking over development.** This is a concise, current-oriented bridge between [the original vision](PRODUCT_VISION.md), [the cumulative engineering history](HANDOFF.md), [the handoff standard](HANDOFF_STANDARD.md), [the architecture](ARCHITECTURE.md), and [the roadmap](ROADMAP.md). It is not a competing source of historical truth. Confirm all current GitHub facts at the time of use.
 
-## Current external-handoff checkpoint — 2026-11-15
+## Current external-handoff checkpoint — 2026-11-16
 
-This dossier is being refreshed for an external engineer who has not seen the
-ForgeOS codebase or this development conversation. The current implementation
-branch is `feat/security-desktop-settings-read-identity-20261115` and its
-candidate change is [PR #134](https://github.com/DevTunaSoft/ForgeOS/pull/134).
-The branch is based on `main` at `e3d4af7980b206a2bf79c70f516034b69e4f8e18`;
-the exact final source revision for the external artifacts is recorded by the
-Git snapshot and recovery-package manifest generated after this dossier is
-committed. The checkout must be clean before packaging.
+This dossier is the entry point for an external engineer who has not seen the
+ForgeOS codebase or this development conversation. PR #135, the preceding
+context-index security change, is merged into `main` at
+`0e1b936fd66f3d51c63658e44ac1f42b91e5ebf4`. The current implementation branch
+is `feat/security-gguf-journal-reads-20261116` and its candidate change is
+[draft PR #146](https://github.com/DevTunaSoft/ForgeOS/pull/146). Treat the
+PR's current head as authoritative because the external dossier update is
+committed on that same branch after the initial implementation commit.
+The checkout must be clean before packaging or handing it to another agent.
 
-The current candidate hardens the GUI's local preference boundary. Desktop
-settings are read through the shared bounded identity reader, so symlinks,
-Windows reparse points, hard links, oversized files and replacements during
-open/read fail closed instead of changing backend, model, endpoint or task-role
-choices. The focused desktop-settings suite passed 5 tests; the isolated full
-suite passed 778 tests with 10 expected skips; compileall, documentation/link
-coverage and `git diff --check` passed; and the bounded 12 MiB x 3-cycle
-memory benchmark measured a 1,982,228-byte Python peak and a 30,306,304-byte
-process peak RSS.
+The current candidate hardens the resumable GGUF downloader's small metadata
+boundary. Existing manifests and partial-download journals are read through
+the shared bounded identity reader, so symlinks, Windows reparse points, hard
+links, replacements during open/read, malformed JSON and oversized records
+fail closed while a substituted record is preserved for inspection. GGUF
+weights remain streamed in bounded chunks. The focused GGUF suite passed 24
+tests; model inventory passed 10; managed runtime passed 37 with 4 expected
+skips; documentation passed 10; compileall and `git diff --check` passed; and
+the bounded 12 MiB x 3-cycle memory benchmark passed with a 1,857,636-byte
+Python tracemalloc peak and a 25,165,824-byte process peak RSS.
 
-The last observed exact-head GitHub workflows for PR #134 reported success:
-Foundation tests run 1252, Handoff integrity run 438, Windows EXE run 830 and
-Documentation run 405. Those results belong to the preceding code head; this
-dossier refresh creates a new documentation head, so the external recipient
-must reconcile the PR, branch head and workflow results again before editing.
-These hosted checks are not physical-device acceptance. Real Windows
-GUI/model, crash/restart, process-tree resource and clean-room takeover
-evidence remain unverified.
+Full local discovery ran 784 tests with 10 expected skips, 4 failures and 5
+errors. The failures/errors are recorded in `docs/HANDOFF.md`: the checkout's
+AppContainer ACL probe cannot inspect the managed `.venv`, several engine
+tests cannot retain their evidence archive under the local environment, the
+unittest preset cannot archive its diagnostic, and two native output-capture
+checks report incomplete capture. These are not presented as a green local
+matrix; exact-head hosted checks remain required. The draft PR must be
+reconciled with its four required hosted workflows before merge, and real
+Windows GUI/model, crash/restart, process-tree resource, power-loss and
+clean-room takeover evidence remain unverified.
 
 ## 1. Why ForgeOS is being built
 
@@ -65,7 +69,7 @@ AI development sessions end, assistants change, branches diverge, CI artifacts e
 
 ## 3. Current source-backed prototype map
 
-The following mapping is drawn from the repository's architecture and roadmap as inspected on 2026-11-15. Treat module names as starting points, not proof that every described behavior has been independently tested.
+The following mapping is drawn from the repository's architecture and roadmap as inspected on 2026-11-16. Treat module names as starting points, not proof that every described behavior has been independently tested.
 
 | Subsystem | Canonical location | Why it exists | Present limitation |
 | --- | --- | --- | --- |
