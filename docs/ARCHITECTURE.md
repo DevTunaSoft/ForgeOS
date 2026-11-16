@@ -32,7 +32,7 @@ flowchart TB
 | `src/forgeos/core.py` | SQLite task state, leases, local Ollama connector, test orchestration primitives |
 | `src/forgeos/engine.py` | Edit constraints, structured prompt/edit manifest, bounded local task cycle, checkpoint validation and chosen test-runtime routing |
 | `src/forgeos/task_actions.py` | Canonical lease-fenced planning and manual-test operations reused by CLI and GUI; requires explicit trust opt-in for tests |
-| `src/forgeos/workspace.py` | Git repository/worktree setup and ownership |
+| `src/forgeos/workspace.py` | Git repository/worktree setup, ownership, full `workspace_diff`, and hard-bounded `workspace_diff_summary` (`shell=False`) |
 | `src/forgeos/transactions.py` | Transactional edit journal, streamed bounded original-file backups (8 MiB/file), failure/rollback/recovery boundaries |
 | `src/forgeos/recovery.py` | Eligible checkpoint resumption and safe recovery workflow; bounded reason text and streaming event reporting |
 | `src/forgeos/test_runtime.py` | Disposable runtime snapshots and cleanup |

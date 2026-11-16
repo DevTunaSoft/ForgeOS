@@ -1191,3 +1191,15 @@ Python tracemalloc peak and a 30,306,304-byte process peak RSS. The work is
 on `feat/security-desktop-settings-read-identity-20261115` for takeover.
 Exact-head hosted checks, Windows ACL review and physical NTFS power-loss
 acceptance remain open.
+
+### 2026-11-15 — bounded Git diff summary prototype
+
+The existing `workspace.py` Git wrapper now exposes a bounded
+`workspace_diff_summary()` API with explicit file/byte/character limits and
+visible truncation status; the original full-diff helper remains unchanged.
+This is the initial source-level increment for RTK enhancement #3, not complete
+or user-visible Git-output optimization: current GUI/CLI callers do not use the
+summary API. Focused workspace and engine integration tests passed on the
+fragment worktree; the full isolated suite passed 786 tests with 10 expected
+skips. GUI/CLI integration, exact-head hosted CI, and physical Windows
+acceptance remain open.

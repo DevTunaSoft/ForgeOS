@@ -4,7 +4,7 @@
 
 **Purpose:** avoid reimplementing what ForgeOS already has. The number 52 describes requested **outcomes**, **not 52 independent systems**, modules, or tickets. An existing basic implementation is not a claim that the production acceptance criteria are complete.
 
-**Disposition summary:** 22 existing baselines, 13 extend-in-place items, 12 genuinely new capability gaps, 5 Phase 3 additions under review. **52 total, 52 mapped, zero omitted.** "Existing" means source exists; "extend" means an acceptance gap remains. PR31 capabilities are not in released main until merged.
+**Disposition summary:** 22 existing baselines, 14 extend-in-place items, 11 genuinely new capability gaps, 5 Phase 3 additions under review. **52 total, 52 mapped, zero omitted.** "Existing" means source exists; "extend" means an acceptance gap remains. PR31 capabilities are not in released main until merged.
 
 ## One owner per capability, without duplicate infrastructure
 
@@ -32,7 +32,7 @@ Dispositions: **EXISTING** = code already provides this baseline; **EXTEND** = r
 |---:|---|---|---|---|
 | 1 | Intelligent output compression | **EXISTING** · A | `src/forgeos/diagnostics.py` | Existing lossless-by-recall output pipeline. Do not build another compressor. |
 | 2 | Smart test summaries | **EXISTING** · A | `src/forgeos/diagnostics.py` | Already parses test counts and prioritizes error lines; #28 supplies parser. Add fixtures, not a second summarizer. |
-| 3 | Optimized Git command output | **NEW** · B | `src/forgeos/workspace.py` | Extend the existing shell=False Git wrapper for bounded status/diff views; not a second Git client. |
+| 3 | Optimized Git command output | **EXTEND** · B | `src/forgeos/workspace.py` | A bounded `workspace_diff_summary()` prototype now exists in the shell=False Git wrapper; wire it to a user workflow and validate full acceptance without creating a second Git client. |
 | 4 | Relevant source code reading | **EXISTING** · B | `src/forgeos/context_index.py` | AST-based bounded file inventory already exists; add useful precision tests rather than a new index. |
 | 5 | Optimized project search | **EXTEND** · B | `src/forgeos/context_index.py` | Existing ranked file/symbol inventory is not full code search. Extend context_index; do not introduce another scanner. |
 | 6 | Adaptive context budgets | **NEW** · C | `src/forgeos/diagnostics.py` | Current 12k budget is fixed. Add validated per-model sizing in the existing diagnostics pipeline. |
