@@ -26,6 +26,7 @@ import zipfile
 from .gguf_download import (
     _exclusive_download_lock, _reject_existing_link, _safe_storage_root,
 )
+from .file_security import read_bounded_file
 
 MIB = 1024 * 1024
 ZIP_LIMIT = 64 * MIB
@@ -256,11 +257,11 @@ def _verify_files(target: Path):
             if amount != info.file_size:
                 raise RuntimeError("Modified runtime file size")
             checksums["/".join(parts)] = digest.hexdigest()
-        if not manifest.is_file() or manifest.stat().st_size > 256 * 1024:
-            raise RuntimeError("Missing official runtime inventory manifest")
         try:
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, ValueError) as exc:
+            data = json.loads(read_bounded_file(
+                manifest, max_bytes=MAX_METADATA_BYTES,
+                description="Official runtime inventory manifest").decode("utf-8"))
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
             raise RuntimeError("Corrupt official runtime inventory manifest") from exc
         if (not isinstance(data, dict)
                 or data.get("release") != RELEASE_TAG
