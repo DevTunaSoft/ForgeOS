@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/cloud-supervisor.yml'
+      - 'scripts/cloud_supervisor.py'
+      - 'tests/test_cloud_supervisor.py'
 
 permissions:
   contents: read
@@ -14,7 +19,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  supervisor-tests:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run offline supervisor tests
+        run: python -m unittest tests.test_cloud_supervisor -v
+
   audit:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
