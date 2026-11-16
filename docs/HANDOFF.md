@@ -3739,3 +3739,27 @@ ready-for-review synchronization passed on
 Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
 No skipped draft run is treated as acceptance evidence. This documentation-
 only evidence update must receive its own exact-head checks before merge.
+
+## 2026-11-16 — PR #150 merged and hosted acceptance recorded
+
+**Change:** PR #150 merged the installed official runtime manifest read
+hardening into `main` at
+`4a6d228838f0e7c81c9db9f9e4ef4fd425c10f68`. The shared bounded identity reader
+now protects the 256 KiB `runtime.forgeos.json` inventory from links,
+replacements, growth, oversized content and malformed records while preserving
+the pinned ZIP as the executable/DLL authority. The merged implementation
+remains traceable through PR #150 and the exact source heads recorded below.
+
+**Verification:** the final implementation documentation head
+`6902e08e6bccdfa01c763ed74bb84363c0153f19` passed all four required hosted
+workflows: Foundation tests run 1297, Windows EXE run 875, Documentation run
+445 and Handoff integrity run 511. The focused runtime-installer suite passed
+10 tests; adjacent managed runtime passed 37 with 4 expected skips, inventory
+10, retirement 20, recovery 23, documentation 10 and handoff checker 5;
+compileall, `git diff --check` and the bounded memory benchmark passed. The
+full local discovery result remains 788 tests with 10 expected skips, 4
+failures and 5 errors from the documented checkout-specific ACL,
+evidence-retention, diagnostic-archive and native-capture limitations. Real
+Windows filesystem review, power-loss recovery, model execution and
+clean-room takeover remain open. This post-merge documentation update must
+receive its own exact-head checks before publication.

@@ -1284,3 +1284,16 @@ Handoff integrity run 509. The earlier draft-triggered runs were skipped by
 policy; this green evidence belongs to the ready-for-review synchronization.
 The documentation-only evidence update must receive its own exact-head checks
 before merge.
+
+### 2026-11-16 — PR #150 merged and hosted runtime evidence recorded
+
+The official runtime inventory read-identity hardening is now merged into
+`main` at `4a6d228838f0e7c81c9db9f9e4ef4fd425c10f68`. Its final implementation
+head `6902e08e6bccdfa01c763ed74bb84363c0153f19` passed the required hosted
+Foundation tests (run 1297), Windows EXE (run 875), Documentation (run 445)
+and Handoff integrity (run 511) workflows. The local focused, adjacent and
+memory evidence is recorded in the preceding entry; the known host-limited
+full-suite results remain explicit rather than being converted into a green
+claim. Next: reconcile the open roadmap priorities and select the next
+nonduplicative recovery, security or Windows acceptance task from the live
+source and issues.
