@@ -69,7 +69,7 @@ The intended application is a single local-first ForgeOS Windows app; no Docker,
 - [ ] Containment regression tests
 - [ ] Licensing and attribution audit
 - [ ] Real Windows GUI and packaged acceptance
-- [ ] Structured parser golden-fixture tests
+- [x] Structured parser golden-fixture tests (standalone golden fixtures in tests/fixtures/diagnostics/)
 - [ ] Cross-platform optimization tests
 - [ ] End-to-end recovery exercise
 

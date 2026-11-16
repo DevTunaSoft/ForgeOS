@@ -1,0 +1,4 @@
+test_alpha (tests.test_sample.SampleTests.test_alpha) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.050s

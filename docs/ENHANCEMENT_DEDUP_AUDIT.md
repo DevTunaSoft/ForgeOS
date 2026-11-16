@@ -4,7 +4,7 @@
 
 **Purpose:** avoid reimplementing what ForgeOS already has. The number 52 describes requested **outcomes**, **not 52 independent systems**, modules, or tickets. An existing basic implementation is not a claim that the production acceptance criteria are complete.
 
-**Disposition summary:** 22 existing baselines, 14 extend-in-place items, 11 genuinely new capability gaps, 5 Phase 3 additions under review. **52 total, 52 mapped, zero omitted.** "Existing" means source exists; "extend" means an acceptance gap remains. PR31 capabilities are not in released main until merged.
+**Disposition summary:** 23 existing baselines, 13 extend-in-place items, 11 genuinely new capability gaps, 5 Phase 3 additions under review. **52 total, 52 mapped, zero omitted.** "Existing" means source exists; "extend" means an acceptance gap remains. PR31 capabilities are not in released main until merged.
 
 ## One owner per capability, without duplicate infrastructure
 
@@ -79,7 +79,7 @@ Dispositions: **EXISTING** = code already provides this baseline; **EXTEND** = r
 | 47 | Containment regression tests | **EXISTING** · L | `src/forgeos/secure_smoke.py` | AppContainer boundary smoke and security tests already exist, including Windows packaged run. |
 | 48 | Licensing and attribution audit | **NEW** · M | `pyproject.toml` | License policy review still outstanding; inspect dependencies and attribution, do not copy restricted RTK code. |
 | 49 | Real Windows GUI and packaged acceptance | **NEW** · L | `.github/workflows/windows-exe.yml` | Packaged headless smoke exists; real user-installed GUI and Ollama integration remain unverified. |
-| 50 | Structured parser golden-fixture tests | **EXTEND** · A | `tests/test_diagnostics.py` | Several inline parser examples exist; add standalone golden fixtures rather than another parser. |
+| 50 | Structured parser golden-fixture tests | **EXISTING** · A | `tests/test_diagnostics.py` | Standalone golden fixtures in `tests/fixtures/diagnostics/` cover JSON, `python-unittest` text, generic runner text, degraded, and raw fallback. |
 | 51 | Cross-platform optimization tests | **EXISTING** · L | `.github/workflows/ci.yml` | Existing CI matrix runs optimizer tests on Linux and Windows. Expand specific platform edge cases. |
 | 52 | End-to-end recovery exercise | **EXTEND** · J | `src/forgeos/recovery.py` | Resume-safe and recovery tests exist. Add actual process-crash rehearsal with checkpoint/evidence continuity. |
 

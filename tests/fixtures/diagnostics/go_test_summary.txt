@@ -1,0 +1,7 @@
+=== RUN   TestAlpha
+--- PASS: TestAlpha (0.00s)
+=== RUN   TestBeta
+--- PASS: TestBeta (0.01s)
+PASS
+ok      example.com/pkg 0.032s
+Summary: 24 passed, 0 failed

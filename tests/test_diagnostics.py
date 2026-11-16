@@ -241,5 +241,34 @@ class DiagnosticTests(unittest.TestCase):
             self.store.put("hello")
         self.assertEqual(outside.read_text(), "safe")
 
+    def test_parse_test_summary_golden_fixtures(self):
+        import json
+        from forgeos.diagnostics import parse_test_summary
+
+        fixtures_dir = Path(__file__).resolve().parent / "fixtures" / "diagnostics"
+        manifest = json.loads((fixtures_dir / "manifest.json").read_text(encoding="utf-8"))
+        cases = manifest["cases"]
+        self.assertGreaterEqual(len(cases), 17)
+
+        referenced = {case["file"] for case in cases}
+        actual_files = {
+            path.name for path in fixtures_dir.iterdir()
+            if path.is_file() and path.name != "manifest.json"
+        }
+        self.assertEqual(referenced, actual_files)
+
+        tiers_seen = set()
+        for case in cases:
+            with self.subTest(fixture=case["name"], preset=case["preset"]):
+                text = (fixtures_dir / case["file"]).read_text(encoding="utf-8")
+                expected = case["expected"]
+                self.assertIn("tier", expected)
+                self.assertIn("counts", expected)
+                actual = parse_test_summary(text, case["preset"])
+                self.assertEqual(actual, expected)
+                tiers_seen.add(actual["tier"])
+
+        self.assertEqual(tiers_seen, {"json", "text", "degraded", "raw"})
+
 if __name__ == "__main__":
     unittest.main()

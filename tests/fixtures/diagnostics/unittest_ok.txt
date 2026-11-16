@@ -1,0 +1,7 @@
+test_alpha (tests.test_sample.SampleTests.test_alpha) ... ok
+test_beta (tests.test_sample.SampleTests.test_beta) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.128s
+
+OK

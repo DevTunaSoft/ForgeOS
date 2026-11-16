@@ -1,0 +1,7 @@
+test_one (tests.test_sample.SampleTests.test_one) ... ok
+test_two (tests.test_sample.SampleTests.test_two) ... skipped 'optional'
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.019s
+
+OK (skipped=1)
