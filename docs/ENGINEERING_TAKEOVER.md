@@ -10,7 +10,7 @@ ForgeOS codebase or this development conversation. PR #135, the preceding
 context-index security change, is merged into `main` at
 `0e1b936fd66f3d51c63658e44ac1f42b91e5ebf4`. The current implementation branch
 is `feat/security-gguf-journal-reads-20261116` and its candidate change is
-[draft PR #146](https://github.com/DevTunaSoft/ForgeOS/pull/146). Treat the
+[PR #146](https://github.com/DevTunaSoft/ForgeOS/pull/146). Treat the
 PR's current head as authoritative because the external dossier update is
 committed on that same branch after the initial implementation commit.
 The checkout must be clean before packaging or handing it to another agent.
@@ -32,8 +32,11 @@ AppContainer ACL probe cannot inspect the managed `.venv`, several engine
 tests cannot retain their evidence archive under the local environment, the
 unittest preset cannot archive its diagnostic, and two native output-capture
 checks report incomplete capture. These are not presented as a green local
-matrix; exact-head hosted checks remain required. The draft PR must be
-reconciled with its four required hosted workflows before merge, and real
+matrix; exact-head hosted checks remain required. The source implementation
+head `d7e512d` passed the four required exact-head hosted workflows: Foundation
+tests run 1277, Windows EXE run 855, Documentation run 427 and Handoff
+integrity run 476. This dossier refresh is documentation-only and its own
+exact-head checks must be observed before merge. Real
 Windows GUI/model, crash/restart, process-tree resource, power-loss and
 clean-room takeover evidence remain unverified.
 

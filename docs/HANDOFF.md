@@ -3673,5 +3673,9 @@ peak RSS. Full local discovery ran 784 tests with 10 expected skips, 4
 failures and 5 errors: the existing Windows AppContainer ACL probe, local
 evidence-archive retention paths, the unittest preset's diagnostic archive,
 and two native output-capture timing checks remain environment-limited in
-this checkout. Exact-head hosted workflows, Windows filesystem review and
-physical Windows download/recovery acceptance remain required.
+this checkout. The source implementation head `d7e512d` then passed the four
+required exact-head hosted workflows: Foundation tests run 1277, Windows EXE
+run 855, Documentation run 427 and Handoff integrity run 476. The follow-on
+dossier refresh is documentation-only and must receive its own exact-head
+checks before merge. Windows filesystem review and physical Windows
+download/recovery acceptance remain required.

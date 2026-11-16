@@ -1222,6 +1222,9 @@ tests. The inventory, managed-runtime and documentation suites pass 10, 37
 (4 expected skips) and 10 tests respectively; compileall and the bounded
 12 MiB x 3-cycle memory benchmark pass. Full local discovery ran 784 tests
 with 10 expected skips, 4 failures and 5 errors in existing environment-
-limited AppContainer ACL, evidence-retention and native-capture checks.
-Exact-head hosted checks, Windows filesystem review and physical Windows
-download/recovery acceptance remain required.
+limited AppContainer ACL, evidence-retention and native-capture checks. The
+source implementation head `d7e512d` passed the required exact-head hosted
+workflows: Foundation 1277, Windows EXE 855, Documentation 427 and Handoff
+integrity 476. The follow-on dossier refresh is documentation-only and must
+receive its own exact-head checks before merge. Windows filesystem review and
+physical Windows download/recovery acceptance remain required.
