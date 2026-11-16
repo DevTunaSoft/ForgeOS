@@ -359,6 +359,8 @@ remain available for inspection.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.
 
+**Failures are reported as the original cause.** If a model or test failure is followed by a database problem while ForgeOS records the failed state, such as a locked database, ForgeOS reports the original failure rather than the database message. The task keeps its last saved status. A task that still shows editing or testing cannot be started or resumed automatically, so inspect its workspace and last error before choosing a recovery action. If a test run succeeds but ForgeOS cannot release the task's lease, the saved result is kept and the command reports the database error; the lease then expires on its own.
+
 **Use resume commands only for trusted workspaces.** Recovery checks are strict; the CLI should reject ineligible or changed checkpoints rather than overwrite unverified edits. Actual supported resume phases are `test_pending` and `repair_pending`; not every interruption can be resumed. Supplying `auto` for resumption is subject to the engine's saved model/contract checks. If an exact resume fails, inspect the recorded checkpoint and avoid deleting any data.
 
 ## 7. Commands at a glance

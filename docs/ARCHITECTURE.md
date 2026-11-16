@@ -523,6 +523,8 @@ marker is cleared; the active database is never moved.
 7. Bounded output capture feeds original evidence and a smaller AI-facing summary into a limited repair loop.
 8. A result or blocked checkpoint preserves the workspace so a person can inspect it. Automatic commit/push/merge/deploy is **not** enabled.
 
+Failure publication never masks the triggering error. When generation, testing or repair fails, the engine tries to record a `blocked` checkpoint and then re-raises the original exception. A database error while reading optional recovery detail, while recording the blocked state, or while releasing the lease is absorbed on that path. The task keeps its last durable status, which start and resume both refuse while it is `editing` or `testing`, so nothing replays automatically; recovery goes through the existing checkpoint rules. On a successful run a lease-release failure is raised, because it would otherwise block new runs until the lease expires.
+
 The task engine does not hold an operating-system filesystem lock while generating/editing: a lease may expire during a long-running external call. Lease fencing prevents stale *database publications*, but a worktree touched before detecting the expired lease still requires careful inspection; recovery must not silently overwrite it.
 
 Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, branch and saved execution parameters must match. Not all interrupted phases can resume. `resume-safe` reads only blocked checkpoint fields through SQLite keyset pages of 16 records; any checkpoint over 64 KiB is reported as skipped without loading its payload into Python. It does not scan completed-task test output or bypass execution leases.

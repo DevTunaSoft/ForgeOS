@@ -3842,3 +3842,35 @@ on `origin/main` `4a6d228`.
 **Rollback.** Revert the commit that changes `src/forgeos/task_actions.py`. No data migration or schema change is involved.
 
 **Next exact command.** `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_task_actions.py -v`
+
+## 2026-11-16 — failure publication never masks the triggering error
+
+**Checkpoint:** `2026-11-16-failure-path-exceptions`. **Branch:** `fix/engine-failure-path-exceptions-20261116`, created from `origin/main` `e671055` as a separate unit from the protected-name branch. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.
+
+**Duplicate-work audit.** The open pull requests were reviewed. The protected-name draft ([PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147)) touches validators, not failure publication. Draft [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) (WIP, safe-resume branch) is a cumulative work-in-progress branch: 185 commits, 142 changed files by GitHub's count, and no merge base with `origin/main` (its recorded base commit is not an ancestor of `main`). It changes `src/forgeos/engine.py` in twelve hunks, including the exception handler this change edits. Its description says "Draft only for visibility and CI" and proposes no merge. Three-way merge simulations were run locally with `git merge-tree`. Against this change alone, the simulated merge has two conflict regions in `src/forgeos/engine.py`. The first is the recovery-detail `except` clause, which #68 extends with `RecursionError` and a new phase while this change adds `sqlite3.Error`. The second is the blocked-state publication: #68's lineage lacks the `event_action="recovery"` label that `main` added, so a rebase that keeps #68's side would silently drop that label from the event journal. Documentation files also conflict, and `tests/test_engine.py` merges automatically. Against current `main`, #68 conflicts in `engine.py`, `core.py`, `cli.py`, `test_runtime.py`, `gguf_download.py` and several model modules, so its owner must rebase it before it can merge. An earlier note in this entry said its file list omitted `engine.py`; that was wrong, because the first GitHub file page was incomplete. No other open change was found in `engine._execute_task` or `execute_task` failure handling.
+
+**Defect and root cause.** While another exception was propagating, `_execute_task` performed three bookkeeping steps that could raise `sqlite3.Error`: the optional recovery-detail read, the `blocked` publication (only `LeaseLostError` was absorbed) and, in `execute_task`'s `finally`, the lease release. A locked or failing database therefore replaced the model or test failure with `sqlite3.OperationalError`. The code's own comment required that bookkeeping never mask the triggering exception, so this is a defect against the stated contract.
+
+**Change.**
+- `_execute_task`: absorbs `sqlite3.Error` in the recovery-detail read and in the blocked publication, alongside `LeaseLostError`.
+- `execute_task`: releases the lease explicitly. On failure a release error is absorbed and the original exception is re-raised. On success a release error is raised, so a stuck lease is reported rather than hidden.
+- Tests: `test_blocked_publication_error_does_not_mask_engine_failure`, `test_recovery_detail_read_error_does_not_mask_engine_failure`, `test_lease_release_error_does_not_mask_engine_failure` and `test_lease_release_error_is_reported_after_successful_run` in `tests/test_engine.py`. `CheckpointResumeTests` inherits `EngineIntegrationTests`, so each runs twice; this predates the change.
+
+**Commands and results.** Environment: Linux 6.18.44-fc-v470 container, 4 CPUs, 16 GiB RAM, running as root; `/usr/bin/python3.12` 3.12.3 with `python3-tk` installed through apt and Xvfb run via `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| New tests against the unchanged engine (`-k _does_not_mask`, Python 3.12) | FAIL (ERROR): three methods, each in two classes. The traceback shows `RuntimeError: model unavailable` followed by `sqlite3.OperationalError: database is locked`, reproducing the masking. The success-path lease test passes as designed |
+| `test_engine.py` after the change (Python 3.12, standalone) | 101 run, 1 error: `FrozenSecureRoutingTests`, the order-dependent test whose isolation fix is in the separate draft PR #147. It passes in full-suite order |
+| Full suite after the change (Python 3.12, Tk under Xvfb) | OK: 792 run, 23 skipped (Windows-only), exit 0 |
+| `python3 -m compileall -q src tests`; `git diff --check` | PASS |
+
+**Failure semantics and limits.** An unwritable blocked publication leaves the task in its previous durable status (`editing` or `testing`). Start and resume refuse that status, so nothing replays automatically; recovery stays with inspection and the existing commands. This change adds no retry or backoff, does not repair stuck rows, and does not change checkpoint parsing.
+
+**Not verified.** Windows execution; real local-model behavior; hosted CI on the draft head. **Resource impact:** none measured; the change adds exception handling only.
+
+**Next exact command.** `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_engine.py -v`
+
+**Next priorities.** (1) Reconcile with PR #68 before either merges. (2) Consolidate the Windows device-name lists, a follow-up from [PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147). (3) Consider the repeated-identical-repair stop rule, now deferred because generation is stochastic.
+
+**Decision record (2026-11-16).** Each development unit gets its own feature branch cut from current `origin/main` and its own draft pull request, as the directive requires. The designated branch keeps only the protected-name unit. This session watches each open pull request for review and CI events. Until draft [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) is rebased, units that edit its shared files (`engine.py`, `test_engine.py`, `test_runtime.py`, `recovery.py`, `workspace.py`, `transactions.py`, `core.py`, `cli.py`, `context_index.py`, `gguf_download.py` and `runtime_installer.py`) wait until [PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147) and this change have landed, or avoid those files.
