@@ -63,6 +63,59 @@ class EditManifestTests(unittest.TestCase):
         self.assertEqual((self.root / "src/hello.py").read_text(), "print('ok')\n")
 
 
+class ProtectedPathPolicyTests(unittest.TestCase):
+    """Edit manifests must not reach protected locations through platform aliases.
+
+    ForgeOS targets Windows, which is case-insensitive, removes trailing dots
+    and spaces from path components, and reserves device names such as CON or
+    COM1 even with an extension. These rules are enforced on every platform so
+    Linux CI rejects the same manifests a Windows checkout would be exposed to.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def _assert_rejected(self, name):
+        with self.subTest(name=name), self.assertRaises(EditError):
+            parse_edits(self.root, json.dumps({"files": [{"path": name, "content": "x"}]}))
+
+    def test_protected_directories_are_case_insensitive(self):
+        for name in (".GIT/config.json", ".Github/workflows/ci.yml",
+                     "src/.GITHUB/ci.yml", "NODE_MODULES/pkg/index.js",
+                     "Src/.VENV/site.py", ".ENV.json"):
+            self._assert_rejected(name)
+
+    def test_trailing_dot_or_space_components_are_rejected(self):
+        # Windows strips these characters, so ".github./x.yml" addresses .github.
+        for name in (".github./workflows/ci.yml", ".github /workflows/ci.yml",
+                     "docs /note.md", "docs./note.md"):
+            self._assert_rejected(name)
+
+    def test_windows_device_names_are_rejected_on_all_platforms(self):
+        for name in ("CON.py", "nul.txt", "Com1.json", "lpt9.md", "aux.py",
+                     "PRN.txt", "COM¹.py", "conin$.txt", "CON .txt"):
+            self._assert_rejected(name)
+
+    def test_symlinked_directory_cannot_reach_protected_path(self):
+        (self.root / ".github" / "workflows").mkdir(parents=True)
+        try:
+            (self.root / "docs").symlink_to(self.root / ".github", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlinks unavailable")
+        self._assert_rejected("docs/workflows/ci.yml")
+
+    def test_ordinary_paths_remain_accepted(self):
+        paths = parse_edits(self.root, json.dumps({"files": [
+            {"path": "src/app.py", "content": "x"},
+            {"path": "docs/notes.md", "content": "y"},
+            {"path": "console_tools/aux_helpers.py", "content": "z"},
+            {"path": "tools/COM10.py", "content": "w"},
+        ]}))
+        self.assertEqual(len(paths), 4)
+
+
 @unittest.skipUnless(shutil.which("git"), "Git required")
 class EngineIntegrationTests(unittest.TestCase):
     def setUp(self):
@@ -592,6 +645,11 @@ class FrozenSecureRoutingTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
         from forgeos.engine import _run_workspace_tests
+        # The patched os.name is process-global. Import the patch targets first
+        # so their import-time platform checks see the real host, regardless of
+        # which test module ran earlier.
+        import forgeos.secure_runner  # noqa: F401
+        import forgeos.test_runtime  # noqa: F401
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             runtime = SimpleNamespace(path=root, env={"FORGEOS_EXECUTION_SNAPSHOT": "1"})

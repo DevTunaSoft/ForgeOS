@@ -1,6 +1,8 @@
 # ForgeOS cumulative engineering handoff — v0.1.0
 
 ## Current state
+**Current operational snapshot:** see the newest dated section at the end of this ledger (2026-11-16). The text below this heading describes the v0.1.0 foundation and is retained as history, not as current status.
+
 Initial foundation only. Python standard-library runtime, Tkinter desktop prototype, SQLite task store and recovery, Ollama planning, explicit allowlisted tests, CLI. This is **not** an autonomous software builder or production release.
 
 ## Architecture
@@ -3874,3 +3876,93 @@ on `origin/main` `4a6d228`.
 **Next priorities.** (1) Reconcile with PR #68 before either merges. (2) Consolidate the Windows device-name lists, a follow-up from [PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147). (3) Consider the repeated-identical-repair stop rule, now deferred because generation is stochastic.
 
 **Decision record (2026-11-16).** Each development unit gets its own feature branch cut from current `origin/main` and its own draft pull request, as the directive requires. The designated branch keeps only the protected-name unit. This session watches each open pull request for review and CI events. Until draft [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) is rebased, units that edit its shared files (`engine.py`, `test_engine.py`, `test_runtime.py`, `recovery.py`, `workspace.py`, `transactions.py`, `core.py`, `cli.py`, `context_index.py`, `gguf_download.py` and `runtime_installer.py`) wait until [PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147) and this change have landed, or avoid those files.
+## 2026-11-16 — protected-name and portable-path policy for edits, exports and snapshots
+
+**Checkpoint:** `2026-11-16-protected-name-policy`. **UTC:** the documentation gates ran at 2026-11-16T17:22Z; the final suites ran later the same day. **Repository / branch:** DevTunaSoft/ForgeOS, designated development branch `claude/exciting-bohr-wr08bs`. **Base SHA:** `0e1b936fd66f3d51c63658e44ac1f42b91e5ebf4` (equal to `origin/main` at session start). **Resulting SHA:** the head of `claude/exciting-bohr-wr08bs` after this checkpoint. A ledger entry cannot name its own commit, so the draft pull request records the exact head.
+
+**Starting state and duplicate-work audit.** The working tree was clean and `git fetch origin --prune` succeeded. Open pull requests at inspection: #145 (draft, cloud-agent dispatch gate, issue #144), #139, #140 and #142 (bounded workspace diff summary and diagnostics fixtures), #141 (OpenCode credit configuration), #138 (draft, agent-instruction index with `AGENTS.md`, `opencode.json` and `.opencode/agents/*`; not on `main`), #137 (journal SQLite scan failures, issue #136), #68 (draft WIP reliability), #67 (draft Copilot bootstrap), #66 (browser observation, issue #65) and #29 (older pytest proposal). Open issues: #144, #136, #65, #56, #55, #54, #53, #41, #4, #3 and #2. None covers edit-manifest path validation, archive exclusions or snapshot exclusions. Source search found no microtask, DAG or decomposition code. Reserved-name lists exist in `gguf_download.py` and `runtime_installer.py`, and `.env` prefix rules exist in `context_index.py`, `worktree_manifest.py` and `test_runtime.py`. Before this change those matched case-sensitively, and `engine.py` had no device-name rule.
+
+**Why it matters.** `engine.py` is the only automated write path for model-proposed files. The documented invariant "never edit `.git`, `.github`, secrets, dependencies or build scripts" was enforced by case-sensitive matching of raw path components. The Windows target is case-insensitive and removes trailing dots and spaces from path components, and a directory symlink inside a workspace could redirect an ordinary path into a protected folder. Recovery manifests, source-only archives and test snapshots excluded only the exact lowercase `.env` prefix, so `.ENV.local` or `.Env` could be listed in an exported manifest, included in an archive or copied into a snapshot on Linux and macOS. ForgeOS does not publish automatically, but a source-only archive is an export artifact, so the leak was treated as priority 1.
+
+**Root causes.**
+1. `engine._validate_path` compared raw components against `FORBIDDEN` without casefolding, did not reject trailing dots or spaces, had no Windows device-stem rule, and applied the protected check only to the unresolved path.
+2. `worktree_manifest._excluded` and `test_runtime._ignore_runtime_metadata` matched `.env` case-sensitively.
+3. `FrozenSecureRoutingTests` patched the process-wide `os.name` before importing its patch targets. It passed in full-suite order only because another module imported `forgeos.secure_runner` first, and it errored when run alone. The same error occurs on an unchanged `git archive HEAD` export, so the defect predates this change.
+
+**Acceptance criteria.** The new regression tests fail on the unchanged code and pass after the fix. Existing engine, manifest, archive, runtime and recovery suites keep passing. The full suite passes on Python 3.12 with Tk under Xvfb. No dependency is added, and validation adds only string checks plus the `resolve()` call that already existed.
+
+**Changed paths.**
+- `src/forgeos/engine.py`: `_WINDOWS_DEVICE_STEMS`, `_WINDOWS_NUMBERED_DEVICE` (named superscript escapes), `_PROTECTED_FOLDED`, `_is_protected_part`, `_check_portable_parts` and `_validate_path`.
+- `src/forgeos/worktree_manifest.py`: `_EXCLUDED_FOLDED` and casefolded `_excluded`.
+- `src/forgeos/test_runtime.py`: casefolded `.env` prefix in `_ignore_runtime_metadata`.
+- `tests/test_engine.py`: `ProtectedPathPolicyTests` (five tests) and the isolation import in `FrozenSecureRoutingTests`.
+- `tests/test_worktree_manifest.py`: `test_secret_name_case_variants_are_excluded_from_manifest`.
+- `tests/test_worktree_archive.py`: `test_case_variant_secret_files_never_enter_the_archive`.
+- `tests/test_runtime.py`: `test_snapshot_excludes_case_variant_environment_files`.
+- Documentation: `ARCHITECTURE.md` ("Protected-name and portable-path boundary"), `USER_GUIDE.md` ("Edit path limits"), `ROADMAP.md` (2026-11-16 entry), `ENGINEERING_TAKEOVER.md` is taken unchanged from `main` (commit `d7e512d`, which already refreshed the checkpoint and no longer presents PR #134 as the candidate; the dated correction from the first draft of this checkpoint was superseded and is not carried forward), and this ledger.
+
+**Implementation summary.**
+- Path components ending in a dot or a space are rejected. Windows device stems (`con`, `prn`, `aux`, `nul`, `conin$`, `conout$`, and `com`/`lpt` followed by 0–9 or superscript 1–3, with or without an extension) are rejected. Protected names are matched after `casefold()`, including the `.env` prefix rule.
+- The same checks run on the workspace-relative path after `resolve()`, so a symlinked directory cannot reach a protected location.
+- Violations raise `EditError`. `parse_edits` validates the whole manifest before any write, so a violating manifest changes no file. Autonomous tasks block with the rejection reason and keep their workspace.
+- Manifest, archive and snapshot exclusions match casefolded names. Matching for `.env` is unchanged apart from case.
+- Ordinary names remain accepted, including `console_tools/aux_helpers.py` and `tools/COM10.py`; the tests assert this.
+
+**Commands and results.** Environment: Linux 6.18.44-fc-v470 container, 4 CPUs, 16 GiB RAM per `free`, running as root. Interpreters: `/usr/local/bin/python3` 3.13.18 (no `tkinter`, no `pytest`) and `/usr/bin/python3.12` 3.12.3, with `python3-tk` installed through `apt-get update && apt-get install -y python3-tk` and Xvfb run through `xvfb-run -a`. No Ollama, llama.cpp, GGUF model or Windows host was available.
+
+| Command | Result |
+| --- | --- |
+| `ProtectedPathPolicyTests` against the unchanged validator (Python 3.13, `-k ProtectedPathPolicyTests`) | FAIL: 4 methods and 20 failing subtests; the ordinary-path test passed |
+| Manifest and runtime case-variant tests against the unchanged code (Python 3.13) | FAIL: `.ENV.local`, `.Env` and `.ENV.production` were present in the output |
+| Archive case-variant test against the pristine `git archive HEAD` export (Python 3.12) | FAIL: the secret name reached the archive |
+| `test_engine.py` after the fix (Python 3.13) | OK: 98 run, 1 Windows-only skip |
+| Manifest, archive, runtime and engine suites after the fix (Python 3.12) | OK |
+| Pristine `git archive HEAD` full suite (Python 3.12, Xvfb) | OK: 781 run, 23 skipped |
+| Changed tree full suite, final (Python 3.12, Xvfb) | OK: **789 run**, 23 skipped (8 new tests) |
+| Changed tree full suite, final (Python 3.13, no Tk) | FAILED: 756 run, 10 errors, 23 skipped. All 10 errors are the tkinter-only errors seen in the pristine Python 3.13 baseline (748 run, same 10 errors). The 8 new tests pass |
+| `python3 -m compileall -q src tests`; `git diff --check` | PASS |
+| `python3 tools/check_documentation.py --links` | PASS |
+| `python3 scripts/check_handoff.py --json` | PASS (source SHA `0e1b936`) |
+| Handoff, snapshot, takeover and documentation unit suites (Python 3.12) | PASS |
+| `python3.12 tools/memory_benchmark.py --mib 12 --cycles 3 --check` | PASS: tracemalloc peak 1,883,501 bytes; process peak RSS 25,370,624 bytes; 3 cycles; scope is this Python process only |
+
+The 3.13 runs were executed before the final regex-escape rewrite was verified by the 3.12 run. The rewrite is functionally identical, and the protected-path tests pass on the final tree. The base/head documentation gate (`tools/check_documentation.py --base origin/main --head HEAD`) runs on the pushed commit and is recorded in the pull request.
+
+**Verification status.** PASS for the Linux and Python 3.12 gates above. NOT RUN: any test on Windows; hosted GitHub Actions on this head (the pull request is a draft, and CI policy runs full validation only when it is ready for review); real local-model acceptance; PDF export and page count. UNVERIFIED: that Windows normalizes trailing dots and spaces and treats device stems as devices exactly as the rules assume. The rules follow documented Win32 behavior but were not reproduced on Windows hardware.
+
+**Security and privacy.** Narrows writable paths and secret-file exports, and adds no credential, network or evidence handling. A saved checkpoint that names a path now rejected will fail `_validate_path` on resume. This is fail-closed and needs no migration, but an operator should inspect such a resume failure before treating it as a defect in the saved work.
+
+**Resource impact.** A few string operations per proposed path (at most eight paths per manifest) and one casefold per exported name. No measured runtime change. Process RSS was measured only by the bounded benchmark above.
+
+**Rejected attempts and remaining defects.**
+- The first baseline attempt used `-t .` and failed at import. It was replaced by the CI command, and its output is not used.
+- Repeat-attempt (stagnation) detection in `engine._execute_task` was considered and deferred. The engine sets no temperature or seed, so Ollama's default stochastic sampling makes exact manifest repeats uncommon. Its value is unmeasured, and the ENGINEERING anti-loop requirement remains open.
+- Three reserved-name lists now exist: `engine.py`, `gguf_download.py` (`WINDOWS_RESERVED_NAMES`) and `runtime_installer.py` (inline set). One canonical helper is the correct end state; this change does not refactor the two download modules.
+- The `context_index.py` `EXCLUDE` set (metadata-only inventory) and the `.forgeos` and runtime-directory name checks remain case-sensitive. They do not write files; the exposure would be names shown to the local model. Not changed here.
+- Stale v0.1.0 headings ("Architecture", "Run and recover", "Next autonomous work") remain as history. The pointer at the top names the current snapshot.
+
+**Next highest-priority unblocked tasks.**
+1. Consolidate the reserved-name and portable-name policies into one helper used by `engine.py`, `gguf_download.py` and `runtime_installer.py`, leaving the existing download and installer tests unchanged. Files: `src/forgeos/engine.py`, `src/forgeos/gguf_download.py`, `src/forgeos/runtime_installer.py`.
+2. Make the `context_index.py` exclusions and the `.forgeos` and runtime-directory name checks casefold-aware, with one test for each (metadata only).
+3. Microtask pipeline P0 (ROADMAP "Planned: Microtask Development Pipeline"): write the versioned task-graph schema, limits and threat model. Then P1: a deterministic inventory built on `context_index.py`, not a new scanner.
+
+**Overlap with draft PR 68 (checked 2026-11-16).** Three-way merge simulations (`git merge-tree`, with `origin/main` as the common base) against [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) show conflicts in `src/forgeos/worktree_manifest.py`, `tests/test_worktree_manifest.py` and `tests/test_worktree_archive.py`. Those files are absent from #68's older lineage, so a naive merge would delete them. The simulation also conflicts in `tests/test_runtime.py` and in the documentation files. `src/forgeos/engine.py`, `src/forgeos/test_runtime.py` and `tests/test_engine.py` merge automatically. This change should land before #68 is rebased, and whoever rebases #68 must keep these files and the casefold rules.
+
+**Rollback.** Revert the commit. There is no data migration, schema change or stored-format change.
+
+**Next exact command.**
+`PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p 'test_engine.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-16 (documentation gates at 17:22Z; final suites afterward).
+- Repository / branch / HEAD: DevTunaSoft/ForgeOS; `claude/exciting-bohr-wr08bs` based on `origin/main` `0e1b936`. HEAD is this checkpoint's commit (see the pull request).
+- Product status: experimental prototype, unchanged in maturity. The protected-name policy is implemented and verified on Linux.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 789 tests OK, 23 Windows-only skips. Windows and frozen EXE: NOT RUN in this session.
+- Real Windows and local-model acceptance: NOT RUN.
+- Implemented / experimental / planned differences: path and exclusion policy implemented and tested on Linux; Windows behavior unverified on hardware; microtask pipeline planned, not started.
+- Active issue / PR / owner: the draft pull request from `claude/exciting-bohr-wr08bs`. Other open PRs and issues are listed in the audit above and were not modified.
+- P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
+- Highest-priority unblocked task: item 1 above.
+- Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
+- Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.

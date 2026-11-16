@@ -1321,3 +1321,33 @@ The autonomous engine's failure path could replace the real model or test failur
 The failure path now absorbs `sqlite3.Error` in those steps, so the original exception propagates. On success a lease-release error is still raised, because it would otherwise block new runs until expiry without any report. Regression coverage adds `test_blocked_publication_error_does_not_mask_engine_failure`, `test_recovery_detail_read_error_does_not_mask_engine_failure`, `test_lease_release_error_does_not_mask_engine_failure` and `test_lease_release_error_is_reported_after_successful_run`. The first three reproduced the masking on the unchanged code. `CheckpointResumeTests` inherits `EngineIntegrationTests`, so these run in both classes; that structure predates this change.
 
 Status: **implemented prototype, verified on Linux** with Python 3.12 and Tk under Xvfb. Windows and real-model behavior were not exercised.
+### 2026-11-16 — protected-name and portable-path policy
+
+The autonomous edit path now refuses model-proposed file names that Windows
+would alias onto a protected or device location. Before this change
+`engine._validate_path` compared raw, case-sensitive path components. Names such
+as `.GIT/config.json`, `.github./workflows/ci.yml`, `NUL.txt` or `COM1.py` were
+accepted on every platform, and a directory symlink inside a workspace could
+redirect `docs/workflows/ci.yml` into `.github`. The validator now casefolds
+protected-name matching, rejects trailing dot or space components and Windows
+device stems, and reapplies the protected-name policy to the symlink-resolved
+location. These checks run before any write, and a violating manifest is refused
+as a whole.
+
+The same casefold rule now governs recovery manifests, source-only archives and
+disposable test snapshots, which previously excluded only the exact `.env` prefix:
+`.ENV.local` and `.Env` could be listed or copied on Linux. Regression coverage
+adds `test_secret_name_case_variants_are_excluded_from_manifest`,
+`test_case_variant_secret_files_never_enter_the_archive` and
+`test_snapshot_excludes_case_variant_environment_files`; each reproduced as a
+failure on the unchanged code.
+
+Regression coverage is `ProtectedPathPolicyTests` in `tests/test_engine.py`.
+All four rejection tests reproduced as failures on the unchanged validator
+before the fix. Status: **implemented prototype, Linux-verified**. The Windows
+behavior follows documented Win32 name normalization and is not yet reproduced
+on Windows hardware. The same change fixes an order-dependent engine test that
+patched the process-wide `os.name` before importing its patch targets. The
+three Windows device-name lists in the engine, the GGUF downloader and the
+runtime installer should be consolidated into one canonical helper; that is a
+follow-up, not part of this change.

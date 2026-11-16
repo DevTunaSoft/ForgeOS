@@ -30,6 +30,36 @@ class EditError(ValueError):
     """A model response violates the edit contract."""
 
 
+# Win32 reserves these stems as devices even when an extension is present
+# (for example "NUL.txt"). COM and LPT also reserve superscript-digit forms.
+_WINDOWS_DEVICE_STEMS = frozenset({"con", "prn", "aux", "nul", "conin$", "conout$"})
+_WINDOWS_NUMBERED_DEVICE = re.compile(
+    "(?:com|lpt)[0-9\N{SUPERSCRIPT ONE}\N{SUPERSCRIPT TWO}\N{SUPERSCRIPT THREE}]")
+_PROTECTED_FOLDED = frozenset(name.casefold() for name in FORBIDDEN)
+
+
+def _is_protected_part(part: str) -> bool:
+    key = part.casefold()
+    return key in _PROTECTED_FOLDED or key.startswith(".env")
+
+
+def _check_portable_parts(parts) -> None:
+    """Reject names that Windows would alias onto another or a protected path.
+
+    Windows is case-insensitive, strips trailing dots and spaces from path
+    components and treats device stems as devices. These aliases are rejected
+    on every platform so that model manifests remain portable to the product.
+    """
+    for part in parts:
+        if part != part.rstrip(" ."):
+            raise EditError("Non-portable trailing dot or space")
+        stem = part.split(".", 1)[0].rstrip(" ").casefold()
+        if stem in _WINDOWS_DEVICE_STEMS or _WINDOWS_NUMBERED_DEVICE.fullmatch(stem):
+            raise EditError("Windows device name")
+        if _is_protected_part(part):
+            raise EditError("Protected path")
+
+
 def _validate_path(root: Path, name: str) -> Path:
     if not isinstance(name, str) or not name or len(name) > 240:
         raise EditError("Invalid file name")
@@ -38,15 +68,19 @@ def _validate_path(root: Path, name: str) -> Path:
     pure = PurePosixPath(name)
     if pure.is_absolute() or any(p in ("", ".", "..") for p in name.split("/")):
         raise EditError("Path traversal or absolute path")
-    if any(p in FORBIDDEN or p.startswith(".env") for p in pure.parts):
-        raise EditError("Protected path")
+    _check_portable_parts(pure.parts)
     if pure.suffix.lower() not in EXTENSIONS:
         raise EditError("Unsupported file extension")
     target = root.joinpath(*pure.parts)
     # Resolve all existing symlink ancestors, even for a not-yet-existing file.
+    workspace = root.resolve()
     resolved = target.resolve()
-    if not resolved.is_relative_to(root.resolve()):
+    if not resolved.is_relative_to(workspace):
         raise EditError("Path escapes workspace")
+    # A symlinked directory can redirect an ordinary-looking path into .git,
+    # .github or a secret file, so the protected-name policy also applies to
+    # the location that would actually be written.
+    _check_portable_parts(resolved.relative_to(workspace).parts)
     if target.is_symlink() or (target.exists() and not target.is_file()):
         raise EditError("Cannot edit links or non-files")
     return target

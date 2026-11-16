@@ -48,6 +48,20 @@ class WorktreeManifestTests(unittest.TestCase):
         self.assertEqual(report["files_checked"], 2)
         self.assertEqual(report["manifest_files"], 2)
 
+    def test_secret_name_case_variants_are_excluded_from_manifest(self):
+        # Windows and default macOS volumes resolve .ENV and .env to one file,
+        # so a case variant of a secret name must not reach an exported manifest.
+        (self.worktree / ".ENV.local").write_text("TOKEN=case-variant\n")
+        (self.worktree / ".Env").write_text("PASSWORD=mixed-case\n")
+        export_worktree_manifest(self.worktree, self.manifest)
+        rows = [json.loads(line) for line in self.manifest.read_text().splitlines()]
+        self.assertEqual(
+            {row["path"] for row in rows if row["record"] == "file"},
+            {"README.md", "src/app.py"})
+        content = self.manifest.read_text()
+        self.assertNotIn(".ENV.local", content)
+        self.assertNotIn(".Env", content)
+
     def test_checker_detects_changed_missing_and_extra_files(self):
         export_worktree_manifest(self.worktree, self.manifest)
         (self.worktree / "src" / "app.py").write_text("changed\n")
