@@ -154,7 +154,7 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIn("max_chars=400", summary.text)
 
         # Very small bounds still respect max_chars and mark truncation.
-        for tiny in (40, 12, 5):
+        for tiny in (40, 12):
             with self.subTest(tiny=tiny):
                 small = workspace_diff_summary(ws, max_chars=tiny)
                 self.assertTrue(small.truncated)
@@ -166,6 +166,18 @@ class WorkspaceTests(unittest.TestCase):
         self.assertGreater(len(full), DEFAULT_DIFF_PATCH_BYTES)
         self.assertIn("line-0399-", full)
         self.assertEqual((self.repo / "app.txt").read_text(), "baseline\n")
+
+    def test_diff_summary_minimum_char_bound_preserves_full_truncation_marker(self):
+        ws = create_workspace(self.repo, 18, self.root / "w_min_chars")
+        (ws.path / "app.txt").write_text("changed\n")
+        with self.assertRaisesRegex(ValueError, r"max_chars must be an integer >= 11"):
+            workspace_diff_summary(ws, max_chars=10)
+
+        summary = workspace_diff_summary(ws, max_chars=11)
+        self.assertTrue(summary.truncated)
+        self.assertEqual(summary.text, "[truncated]")
+        self.assertEqual(len(summary.text), 11)
+        self.assertLessEqual(len(summary.text), summary.max_chars)
 
     def test_diff_summary_max_files_limit_is_explicitly_marked(self):
         for name in ("b.txt", "c.txt"):
@@ -187,6 +199,18 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIn("max_files=2", summary.text)
         self.assertIn("truncated", summary.text)
 
+    def test_diff_summary_unusual_unicode_and_spaced_path(self):
+        name = "café [draft] notes.txt"
+        (self.repo / name).write_text("before\n")
+        self.git("add", name)
+        self.git("commit", "-qm", "add unusual path")
+        ws = create_workspace(self.repo, 17, self.root / "w_unusual_path")
+        (ws.path / name).write_text("before\nafter\n")
+        summary = workspace_diff_summary(ws)
+        self.assertIn(r'caf\303\251 [draft] notes.txt', summary.text)
+        self.assertIn("(+1/-0)", summary.text)
+        self.assertFalse(summary.truncated)
+
     def test_diff_summary_rejects_invalid_limits(self):
         ws = create_workspace(self.repo, 14, self.root / "w_invalid")
         for bad in (0, -5, True, False, "100", None):
@@ -195,6 +219,9 @@ class WorkspaceTests(unittest.TestCase):
                     workspace_diff_summary(ws, max_chars=bad)
                 with self.assertRaises(ValueError):
                     workspace_diff_summary(ws, max_files=bad)
+        for bad in (1, 10):
+            with self.subTest(max_chars=bad), self.assertRaises(ValueError):
+                workspace_diff_summary(ws, max_chars=bad)
 
     def test_diff_summary_patch_bytes_marker_distinct_from_max_chars(self):
         ws = create_workspace(self.repo, 15, self.root / "w_patch_marker")

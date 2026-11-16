@@ -1194,12 +1194,19 @@ acceptance remain open.
 
 ### 2026-11-15 — bounded Git diff summary prototype
 
-The existing `workspace.py` Git wrapper now exposes a bounded
+The existing `workspace.py` Git wrapper exposes a bounded
 `workspace_diff_summary()` API with explicit file/byte/character limits and
 visible truncation status; the original full-diff helper remains unchanged.
-This is the initial source-level increment for RTK enhancement #3, not complete
-or user-visible Git-output optimization: current GUI/CLI callers do not use the
-summary API. Focused workspace and engine integration tests passed on the
-fragment worktree; the full isolated suite passed 786 tests with 10 expected
-skips. GUI/CLI integration, exact-head hosted CI, and physical Windows
+The task engine now adds summary text and an explicit truncation boolean to
+completion JSON, while preserving the authoritative test result if summary
+generation fails. Focused integration tests cover passing/failing results,
+empty changes, errors, truncation, explicit limits, and full-diff non-use.
+Windows local engine tests have five environment failures on both the fragment
+and clean base: evidence archive PermissionError under the restricted test
+runner; fail-closed behavior is unchanged. See HANDOFF for commands and actual
+outcomes. A local `tracemalloc` sample of a roughly 15.36 MB diff observed
+58,661 bytes peak Python allocation while returning a 4,000-character
+truncated summary; this is not process RAM. The existing GUI and CLI
+serialize/print the completion result as JSON and thus
+receive these fields. Dedicated presentation and hosted/physical Windows
 acceptance remain open.
