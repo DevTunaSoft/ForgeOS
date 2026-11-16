@@ -3812,3 +3812,33 @@ tests with 23 skips, `compileall` passes, and `tools/memory_benchmark.py --mib 1
 --cycles 3 --check` exits 0. Windows and real-model acceptance were not run in this
 environment. The candidate branch `fix/output-rules-temp-cleanup-20261116` is based
 on `origin/main` `4a6d228`.
+
+## 2026-11-16 — failure publication in shared task actions never masks the triggering error
+
+**Checkpoint:** `2026-11-16-task-actions-failure-path`. **Branch:** `fix/task-actions-failure-publication-20261116`, created from `origin/main` `0c5ead0`. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.
+
+**Duplicate-work audit.** Open pull requests were reviewed on 2026-11-16, including [PR #150](https://github.com/DevTunaSoft/ForgeOS/pull/150) (installed-runtime manifest identity; it touches `runtime_installer.py` and its tests), [PR #148](https://github.com/DevTunaSoft/ForgeOS/pull/148) (engine failure path), [PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147) (protected-name policy) and [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) (cumulative WIP). None changes `src/forgeos/task_actions.py` or `tests/test_task_actions.py`. Documentation ledgers overlap as usual.
+
+**Defect and root cause.** `plan_task` and `test_task`, the planning and manual-test operations shared by the CLI and GUI, record the `blocked` state in an unguarded `except` block. `_owned_task` releases the lease in an unguarded `finally`. A database error in either step replaces the planning or test failure. This is the defect class fixed in the engine by [PR #148](https://github.com/DevTunaSoft/ForgeOS/pull/148).
+
+**Change.**
+- `_block_after_failure` records the blocked state and absorbs `sqlite3.Error`, so the original exception propagates. The task keeps its last durable status. Planning and manual-test actions refuse a task still in planning or testing, so nothing replays automatically.
+- `_owned_task` releases the lease quietly while a failure propagates. On success a release error is raised, so a stuck lease is reported rather than hidden.
+- `tests/test_task_actions.py`: four regressions (planning and manual-test blocked publication; lease release on planning and manual-test failure) and one guard (a release error after a successful plan is still raised).
+
+**Commands and results.** Environment: Linux 6.18.44-fc-v470 container; `/usr/bin/python3.12` 3.12.3 with `python3-tk` and Xvfb through `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_task_actions.py -k _does_not_mask` on the unchanged module | FAIL (ERROR): four methods. Tracebacks show `RuntimeError: PLAN-FAILED` or `RUNNER-FAILED` replaced by `sqlite3.OperationalError: database is locked` |
+| Same command after the fix | OK: four methods pass |
+| Guard `test_lease_release_error_is_reported_after_successful_plan` | OK before and after the fix, as designed |
+| `test_task_actions.py` module after the fix | OK: 30 run |
+| Full suite after the fix (Python 3.12, Tk under Xvfb) | OK: 791 run, 23 skipped (Windows-only), exit 0 |
+| `python3 -m compileall -q src tests`; `git diff --check` | PASS |
+
+**Verification status.** PASS for the Linux and Python 3.12 gates above. NOT RUN: Windows execution, real local-model behavior, and hosted CI on the draft head (the CI policy runs the full jobs at ready-for-review). **Resource impact:** none measured; the change adds exception handling only.
+
+**Rollback.** Revert the commit that changes `src/forgeos/task_actions.py`. No data migration or schema change is involved.
+
+**Next exact command.** `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_task_actions.py -v`

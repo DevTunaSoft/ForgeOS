@@ -1308,3 +1308,8 @@ removal to fail. The focused output-rules suite passes 9 tests, and the full
 discovery suite passes 789 with 23 skips on Python 3.12 under Xvfb. This
 candidate branch, `fix/output-rules-temp-cleanup-20261116`, is not yet on
 `main`, and Windows acceptance is not run.
+### 2026-11-16 — failure publication in shared task actions
+
+The planning and manual-test actions shared by the CLI and GUI had the defect fixed in the engine: a database error while recording the blocked state, or while releasing the lease in a `finally` block, could replace the real planning or test failure. `task_actions.py` now records the blocked state through `_block_after_failure`, which absorbs `sqlite3.Error` so the original exception propagates. `_owned_task` releases the lease quietly while a failure propagates and reports a release error after a successful action, so a stuck lease is not hidden.
+
+Regression coverage: four tests in `tests/test_task_actions.py` reproduced the masking on the unchanged code (planning and manual-test blocked publication; lease release on planning and manual-test failure). One guard test confirms that a release error after a successful plan is still reported. Status: **implemented prototype, verified on Linux** with Python 3.12 and Tk under Xvfb. Windows and real-model behavior were not exercised.
