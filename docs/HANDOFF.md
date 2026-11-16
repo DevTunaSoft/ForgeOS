@@ -3739,3 +3739,27 @@ ready-for-review synchronization passed on
 Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
 No skipped draft run is treated as acceptance evidence. This documentation-
 only evidence update must receive its own exact-head checks before merge.
+
+## 2026-11-16 — evidence archive cleanup must not mask archive failures
+
+**Change:** `EvidenceStore.put_stream` now removes its unpublished `.forgeos-*.tmp`
+file only on the failure path, through `_discard_unpublished`, which absorbs
+`OSError` from that removal. Before, the removal ran in a `finally` block, so a
+lock or permission error during cleanup replaced the original archive failure.
+Callers rely on that failure to block test approval, so the original error now
+propagates unchanged. The publication path, the gzip format and the SHA-256
+addressing are unchanged. A temporary that cannot be removed stays in the
+private evidence directory.
+
+**Verification:** `tests/test_diagnostics.py` adds
+`test_temporary_cleanup_never_masks_the_archive_failure`, which makes the source
+read raise `ValueError("ARCHIVE-SOURCE-FAILED")` while `Path.unlink` raises
+`PermissionError`. Against the original code the test fails with
+`PermissionError: file is locked`; with the change it passes. The focused
+diagnostics suite passes 24 tests. Full discovery (`PYTHONPATH=src python3.12 -m
+unittest discover -s tests -v`, run under `xvfb-run -a`) passes 789 tests with 23
+skips, `compileall` passes, and `tools/memory_benchmark.py --mib 12 --cycles 3
+--check` exits 0. Windows and real-model acceptance were not run in this
+environment; the Windows CI matrix is the first Windows evidence. The candidate
+branch `fix/diagnostics-archive-cleanup-20261116` is based on `origin/main`
+`4a6d228`.

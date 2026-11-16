@@ -1284,3 +1284,13 @@ Handoff integrity run 509. The earlier draft-triggered runs were skipped by
 policy; this green evidence belongs to the ready-for-review synchronization.
 The documentation-only evidence update must receive its own exact-head checks
 before merge.
+
+### 2026-11-16 — evidence archive cleanup does not mask failures
+
+A failed diagnostic archive keeps its original cause. The unpublished temporary
+file is removed only on the failure path, and a refused removal no longer
+replaces the source or write error that blocks test approval. A regression test
+forces the removal to fail. The focused diagnostics suite passes 24 tests, and
+the full discovery suite passes 789 with 23 skips on Python 3.12 under Xvfb.
+This candidate branch, `fix/diagnostics-archive-cleanup-20261116`, is not yet on
+`main`, and Windows acceptance is not run.
