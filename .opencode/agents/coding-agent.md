@@ -1,6 +1,7 @@
 ---
 description: Implements one assigned ForgeOS fragment in an isolated worktree
 mode: all
+model: github-copilot/gpt-6-luna#low
 permissions:
   - action: subagent
     resource: "*"

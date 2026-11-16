@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "github-copilot/gpt-6-luna",
   "default_agent": "lead-engineer",
   "compaction": {
     "auto": true,
@@ -8,8 +9,8 @@
     }
   },
   "tool_output": {
-    "max_lines": 1000,
-    "max_bytes": 24576
+    "max_lines": 400,
+    "max_bytes": 12288
   },
   "worktree": {
     "directory": "../ForgeOS-worktrees"
