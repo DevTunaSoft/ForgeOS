@@ -11,7 +11,8 @@ retirement journal/manifest hardening, is merged into `main` at
 `0c5ead0a45e16c94dab0ff8d330a7e987ce8e41e`. The current implementation branch
 is `feat/security-runtime-manifest-read-identity-20261116` and its candidate
 change is [PR #150](https://github.com/DevTunaSoft/ForgeOS/pull/150), currently
-a draft at head `efb6204be9fe91a2e46cfc0633ea8d2c9d3e1391`. Treat the PR head
+open and ready for review at head
+`ff8bdf6894adb5be13a8918745badd6a6d940ad6`. Treat the PR head
 and exact-commit workflow results as authoritative. The checkout must be
 clean before packaging or handing it to another agent.
 
@@ -35,8 +36,10 @@ Full local discovery ran 788 tests with 10 expected skips, 4 failures and 5
 errors. The failures/errors are the checkout's existing `.venv` AppContainer
 ACL denial, five engine evidence-retention paths, the unittest diagnostic
 archive and two native output-capture completeness checks; they are recorded
-in `docs/HANDOFF.md` and are not presented as a green local matrix. Hosted
-required workflows have not yet been claimed for PR #150's exact head.
+in `docs/HANDOFF.md` and are not presented as a green local matrix. The
+draft-triggered synchronization's Foundation, Windows EXE and Documentation
+jobs were skipped by policy; the ready-for-review synchronization must provide
+the required exact-head acceptance evidence.
 Real Windows GUI/model execution, crash/restart, process-tree resource,
 power-loss and clean-room takeover evidence remain unverified.
 

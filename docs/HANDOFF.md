@@ -3731,5 +3731,8 @@ unittest diagnostic-archive failure and two native output-capture completeness
 failures. These were not caused by the runtime-installer change and remain
 environment-limited; exact-head hosted checks, Windows filesystem review and
 physical Windows download/recovery acceptance remain open. The candidate
-branch is `feat/security-runtime-manifest-read-identity-20261116`; no hosted
-workflow result is claimed until its committed head is published.
+branch is `feat/security-runtime-manifest-read-identity-20261116`. PR #150 is
+now ready for review at the published head; its draft-triggered Foundation,
+Windows EXE and Documentation jobs were skipped by policy, so the required
+ready-for-review synchronization must be observed before merge. No skipped
+draft run is treated as acceptance evidence.
