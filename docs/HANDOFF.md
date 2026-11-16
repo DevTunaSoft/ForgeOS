@@ -3682,6 +3682,32 @@ dossier refresh is documentation-only and must receive its own exact-head
 checks before merge. Windows filesystem review and physical Windows
 download/recovery acceptance remain required.
 
+## 2026-11-16 — retirement journal and manifest read identity
+
+**Change:** reversible GGUF retirement and restoration now route the recovery
+journal and saved manifest through the shared bounded identity reader. Each
+4 KiB JSON record must remain an unlinked regular file with the same identity
+before and after parsing. Replacements, Windows reparse points, hard links,
+malformed records and growth fail closed while the retirement entry remains
+available for inspection. The pre-read hard-link check remains so existing
+shared recovery journals keep their explicit diagnostic; the descriptor-bound
+reader is the security authority for the actual parse.
+
+**Verification:** the focused model-retirement suite passed 20 tests,
+including replacement-during-open preservation for both the recovery journal
+and saved manifest. Compileall, documentation/link checks and `git diff --check`
+passed. The bounded 12 MiB x 3-cycle memory benchmark passed with a
+1,857,636-byte Python tracemalloc peak and a 25,550,848-byte process peak RSS.
+Full local discovery ran 786 tests with 10 expected skips, 4 failures and 5
+errors in the existing checkout-specific AppContainer ACL, evidence-retention,
+diagnostic-archive and native-capture checks; the new retirement and adjacent
+model/recovery suites were green. The candidate dossier head `8edf4ac` passed
+the four required exact-head hosted workflows: Foundation tests run 1285,
+Windows EXE run 863, Documentation run 434 and Handoff integrity run 490.
+The follow-on evidence update is documentation-only and must receive its own
+exact-head checks before merge. Windows filesystem review and physical
+power-loss recovery acceptance remain open.
+
 ## 2026-11-16 — protected-name and portable-path policy for edits, exports and snapshots
 
 **Checkpoint:** `2026-11-16-protected-name-policy`. **UTC:** the documentation gates ran at 2026-11-16T17:22Z; the final suites ran later the same day. **Repository / branch:** DevTunaSoft/ForgeOS, designated development branch `claude/exciting-bohr-wr08bs`. **Base SHA:** `0e1b936fd66f3d51c63658e44ac1f42b91e5ebf4` (equal to `origin/main` at session start). **Resulting SHA:** the head of `claude/exciting-bohr-wr08bs` after this checkpoint. A ledger entry cannot name its own commit, so the draft pull request records the exact head.
