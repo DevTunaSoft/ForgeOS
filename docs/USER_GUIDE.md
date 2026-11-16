@@ -490,6 +490,14 @@ Choose Browse Hugging Face and select the same repository and GGUF file. ForgeOS
 
 If ForgeOS reports a conflicting manifest, an inconsistent download journal or a stray partial file, do not delete anything blindly: preserve the model directory for inspection. Correctly hashed files that are not actually GGUF are quarantined. This is experimental until tested using real multi-gigabyte files on Windows.
 
+The small manifest and download journal are read through an identity and size
+check before ForgeOS trusts their repository, revision, byte-count or digest
+fields. If another process replaces, links, redirects or enlarges either
+record while it is being opened, the download fails closed and leaves the
+record available for inspection. This protects the recovery decision without
+loading model weights into memory; it is not a lock against non-cooperating
+processes.
+
 
 ### Pause or resume a large GGUF download
 

@@ -159,6 +159,19 @@ replacement during the read is ignored for symbol extraction while its path
 metadata remains available. This closes the old size-check-then-`read_text()`
 race and keeps a changing repository from bypassing the local AI memory cap.
 
+## GGUF download metadata read boundary
+
+The resumable GGUF downloader treats its published manifest and partial
+download journal as user-controlled model-storage metadata. When either file
+already exists, ForgeOS reads it through the shared bounded identity reader:
+the descriptor must identify the same unlinked regular file before and after
+the read, no-follow opening is used where available, and the JSON allocation
+is capped at 4 KiB plus one byte. A symlink, Windows reparse point, hard link,
+replacement, malformed record or oversized record fails closed while the
+substituted file remains available for inspection. The downloader still
+streams model bytes in bounded chunks; this boundary protects only the small
+metadata records and does not buffer GGUF weights in memory.
+
 ## Low-memory SQLite read boundary
 
 Database backup and restore publication uses one shared fail-closed helper:

@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import os
 from types import SimpleNamespace
 from pathlib import Path
 from threading import Event
@@ -199,6 +200,48 @@ class GGUFDownloadTests(unittest.TestCase):
         self.assertEqual(model.read_bytes(), BODY)
         self.assertFalse(manifest.exists())
 
+    def test_manifest_replacement_during_open_is_rejected_and_preserved(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        manifest = model.with_name(FILE + ".forgeos.json")
+        replacement = manifest.with_name(manifest.name + ".swap")
+        replacement.write_text(json.dumps({"repo": "attacker"}))
+
+        def replace_before_open(path, flags):
+            if (Path(path).resolve(strict=False).as_posix().casefold()
+                    == manifest.resolve(strict=False).as_posix().casefold()):
+                replacement.replace(manifest)
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open), \
+             patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError,
+                                        "Corrupt existing GGUF manifest"):
+                self.download()
+            network.assert_not_called()
+        self.assertEqual(json.loads(manifest.read_text()),
+                         {"repo": "attacker"})
+
+    def test_hardlinked_manifest_fails_closed_without_network(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY)):
+            model = Path(self.download()["path"])
+        manifest = model.with_name(FILE + ".forgeos.json")
+        alias = manifest.with_name(manifest.name + ".alias")
+        try:
+            os.link(manifest, alias)
+        except OSError:
+            self.skipTest("Hard links unavailable")
+        with patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError,
+                                        "Corrupt existing GGUF manifest"):
+                self.download()
+            network.assert_not_called()
+        self.assertTrue(manifest.exists())
+        self.assertTrue(alias.exists())
+
     def test_cache_refuses_ambiguous_orphan_partial(self):
         with patch("forgeos.gguf_download._open_weight",
                    return_value=Response(BODY)):
@@ -252,6 +295,33 @@ class GGUFDownloadTests(unittest.TestCase):
             result = self.download()
         self.assertEqual(Path(result["path"]).read_bytes(), BODY)
         self.assertEqual(opened.call_args.args[0].get_header("Range"), "bytes=13-")
+
+    def test_journal_replacement_during_open_is_rejected_and_preserved(self):
+        with patch("forgeos.gguf_download._open_weight",
+                   return_value=Response(BODY[:13], headers={
+                       "Content-Length": str(len(BODY))})):
+            with self.assertRaisesRegex(RuntimeError, "interrupted"):
+                self.download()
+        partial = next(self.root.rglob("*.part"))
+        journal = partial.with_name(partial.name + ".json")
+        replacement = journal.with_name(journal.name + ".swap")
+        replacement.write_text(json.dumps({"repo": "attacker"}))
+
+        def replace_before_open(path, flags):
+            if (Path(path).resolve(strict=False).as_posix().casefold()
+                    == journal.resolve(strict=False).as_posix().casefold()):
+                replacement.replace(journal)
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open), \
+             patch("forgeos.gguf_download._open_weight") as network:
+            with self.assertRaisesRegex(RuntimeError,
+                                        "Corrupt model download journal"):
+                self.download()
+            network.assert_not_called()
+        self.assertEqual(json.loads(journal.read_text()),
+                         {"repo": "attacker"})
 
     def test_resume_refuses_server_ignoring_range(self):
         with patch("forgeos.gguf_download._open_weight",

@@ -3653,6 +3653,35 @@ including replacement-during-open preservation, and compileall passed for
 memory benchmark, exact-head hosted workflows, Windows filesystem review and
 physical Windows acceptance remain pending for the candidate branch.
 
+## 2026-11-16 — GGUF journal and manifest read identity
+
+**Change:** the resumable GGUF downloader now routes existing published
+manifests and partial-download journals through the shared bounded identity
+reader. Each 4 KiB metadata record must remain an unlinked regular file with
+the same identity before and after the descriptor-bound read; no-follow flags
+are used where available. Links, Windows reparse points, replacements,
+malformed JSON and oversized records fail closed while a substituted record is
+preserved for inspection. GGUF weights remain streamed in bounded chunks and
+are not loaded into memory by this change.
+
+**Verification:** the focused GGUF downloader suite passed 24 tests,
+including replacement-during-open preservation for both the published
+manifest and partial-download journal, plus hard-linked manifest refusal.
+The inventory suite passed 10 tests, the managed-runtime suite passed 37
+tests with 4 expected skips, the documentation suite passed 10 tests,
+compileall passed, and the bounded 12 MiB x 3-cycle memory benchmark passed
+with a 1,857,636-byte Python tracemalloc peak and a 25,165,824-byte process
+peak RSS. Full local discovery ran 784 tests with 10 expected skips, 4
+failures and 5 errors: the existing Windows AppContainer ACL probe, local
+evidence-archive retention paths, the unittest preset's diagnostic archive,
+and two native output-capture timing checks remain environment-limited in
+this checkout. The source implementation head `d7e512d` then passed the four
+required exact-head hosted workflows: Foundation tests run 1277, Windows EXE
+run 855, Documentation run 427 and Handoff integrity run 476. The follow-on
+dossier refresh is documentation-only and must receive its own exact-head
+checks before merge. Windows filesystem review and physical Windows
+download/recovery acceptance remain required.
+
 ## 2026-11-16 — protected-name and portable-path policy for edits, exports and snapshots
 
 **Checkpoint:** `2026-11-16-protected-name-policy`. **UTC:** the documentation gates ran at 2026-11-16T17:22Z; the final suites ran later the same day. **Repository / branch:** DevTunaSoft/ForgeOS, designated development branch `claude/exciting-bohr-wr08bs`. **Base SHA:** `0e1b936fd66f3d51c63658e44ac1f42b91e5ebf4` (equal to `origin/main` at session start). **Resulting SHA:** the head of `claude/exciting-bohr-wr08bs` after this checkpoint. A ledger entry cannot name its own commit, so the draft pull request records the exact head.
@@ -3676,7 +3705,7 @@ physical Windows acceptance remain pending for the candidate branch.
 - `tests/test_worktree_manifest.py`: `test_secret_name_case_variants_are_excluded_from_manifest`.
 - `tests/test_worktree_archive.py`: `test_case_variant_secret_files_never_enter_the_archive`.
 - `tests/test_runtime.py`: `test_snapshot_excludes_case_variant_environment_files`.
-- Documentation: `ARCHITECTURE.md` ("Protected-name and portable-path boundary"), `USER_GUIDE.md` ("Edit path limits"), `ROADMAP.md` (2026-11-16 entry), `ENGINEERING_TAKEOVER.md` (dated correction for PR #134) and this ledger.
+- Documentation: `ARCHITECTURE.md` ("Protected-name and portable-path boundary"), `USER_GUIDE.md` ("Edit path limits"), `ROADMAP.md` (2026-11-16 entry), `ENGINEERING_TAKEOVER.md` is taken unchanged from `main` (commit `d7e512d`, which already refreshed the checkpoint and no longer presents PR #134 as the candidate; the dated correction from the first draft of this checkpoint was superseded and is not carried forward), and this ledger.
 
 **Implementation summary.**
 - Path components ending in a dot or a space are rejected. Windows device stems (`con`, `prn`, `aux`, `nul`, `conin$`, `conout$`, and `com`/`lpt` followed by 0–9 or superscript 1–3, with or without an extension) are rejected. Protected names are matched after `casefold()`, including the `.env` prefix rule.
