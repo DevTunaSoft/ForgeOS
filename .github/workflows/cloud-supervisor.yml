@@ -8,6 +8,8 @@ on:
       - '.github/workflows/cloud-supervisor.yml'
       - 'scripts/cloud_supervisor.py'
       - 'tests/test_cloud_supervisor.py'
+      - 'scripts/cloud_dispatch_gate.py'
+      - 'tests/test_cloud_dispatch_gate.py'
 
 permissions:
   contents: read
@@ -29,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run offline supervisor tests
-        run: python -m unittest tests.test_cloud_supervisor -v
+        run: python -m unittest tests.test_cloud_supervisor tests.test_cloud_dispatch_gate -v
 
   audit:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
