@@ -9,6 +9,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 from pathlib import Path
+import sqlite3
 from uuid import uuid4
 
 from .core import (
@@ -48,8 +49,32 @@ def _owned_task(store: Store, task_id: int):
         raise ValueError("Task already has an active execution lease")
     try:
         yield owner
-    finally:
-        store.release_lease(task_id, owner)
+    except BaseException:
+        # Releasing is best-effort while a failure is already propagating; a
+        # database error here must not replace that failure.
+        try:
+            store.release_lease(task_id, owner)
+        except sqlite3.Error:
+            pass
+        raise
+    # On success a release failure is reported: a stuck lease would block the
+    # next run until it expires.
+    store.release_lease(task_id, owner)
+
+
+def _block_after_failure(store: Store, task_id: int, expected, owner: str,
+                         exc: BaseException) -> None:
+    """Record the blocked state without letting bookkeeping replace ``exc``.
+
+    If the database cannot record the state, the task keeps its last durable
+    status. Planning and manual-test actions refuse a task that is still
+    planning or testing, so nothing replays automatically.
+    """
+    try:
+        store.transition(task_id, expected, "blocked",
+                         error=str(exc)[-4000:], result="", lease_owner=owner)
+    except sqlite3.Error:
+        pass
 
 
 def _publish(store: Store, task_id: int, owner: str, expected, status, **changes):
@@ -94,8 +119,7 @@ def plan_task(store: Store, task_id: int, *, model: Ollama | None = None,
             return output
         except Exception as exc:
             # Stale workers and changed statuses fail closed.
-            store.transition(task_id, {"planning"}, "blocked",
-                             error=str(exc)[-4000:], result="", lease_owner=owner)
+            _block_after_failure(store, task_id, {"planning"}, owner, exc)
             raise
 
 
@@ -151,6 +175,5 @@ def test_task(store: Store, task_id: int, preset: str, *,
             )
             return outcome
         except Exception as exc:
-            store.transition(task_id, {"testing"}, "blocked",
-                             error=str(exc)[-4000:], result="", lease_owner=owner)
+            _block_after_failure(store, task_id, {"testing"}, owner, exc)
             raise

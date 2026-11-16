@@ -3740,6 +3740,109 @@ Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
 No skipped draft run is treated as acceptance evidence. This documentation-
 only evidence update must receive its own exact-head checks before merge.
 
+## 2026-11-16 — bounded verification of the AppContainer write marker
+
+**Checkpoint:** `2026-11-16-appcontainer-marker-read`. **Branch:** `fix/appcontainer-probe-bounded-marker-20261116`, created from `origin/main` `4a6d228`. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.
+
+**Duplicate-work audit.** The open pull requests were reviewed on 2026-11-16. None changes `src/forgeos/appcontainer.py` or `tests/test_appcontainer.py`. [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) does not touch `appcontainer.py`, and [PR #150](https://github.com/DevTunaSoft/ForgeOS/pull/150) touches only `runtime_installer.py` and its tests. A search of untouched modules for unbounded reads found this site as the only one that reads a file written by an untrusted child. The other hits are kernel pseudo-files in `model_routing.py`, which are small and system-controlled.
+
+**Defect and evidence.** The Windows AppContainer runtime probe asks a contained child to write `python-created.txt` in the granted workspace. The parent then read that file with `read_text(encoding="utf-8")`. Measured with the unchanged logic on Linux, a symlink to an outside file containing `ok` was accepted (the check passed when the child had written nothing), and a 64 MiB child-written file allocated 134,223,002 bytes of Python memory in the parent.
+
+**Change.**
+- `_verify_probe_marker` reads the marker through `file_security.read_bounded_file`: an unlinked regular file of at most 16 bytes, exactly `ok`. Any other result raises `OSError`.
+- The probe now calls the helper instead of the unbounded read. The call site sits inside the Windows-only probe and was reviewed by reading, not executed.
+- `tests/test_appcontainer.py`: five tests in `ProbeMarkerVerificationTests` (exact marker, oversized, trailing bytes, missing, symlink) run on every platform.
+
+**Commands and results.** Environment: Linux 6.18.44-fc-v470 container; `/usr/bin/python3.12` 3.12.3 with `python3-tk` and Xvfb through `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_appcontainer.py` before the fix | ERROR: import fails because the helper does not exist yet. The behavioral reproduction is the measurement above |
+| Same command after the fix (`-v`) | OK: 10 run; the five new marker tests and the contract test pass; four Windows-only probe tests skip on Linux |
+| Large-file check after the fix (64 MiB child-written file) | Refused as oversized with 2,040 bytes of Python peak allocation, from 134,223,002 bytes before |
+| Full suite (Python 3.12, Tk under Xvfb) | OK: 793 run, 23 skipped (Windows-only), exit 0 |
+| `python3 -m compileall -q src tests`; `git diff --check` | PASS |
+
+**Verification status.** PASS for the Linux and Python 3.12 gates above. NOT RUN: the Windows AppContainer probe itself, real contained child behavior on Windows, and hosted CI on the draft head. **Resource impact:** the marker check now allocates a few bytes regardless of the file size the child writes.
+
+**Rollback.** Revert the commit that changes `src/forgeos/appcontainer.py`. There is no data migration or stored-format change.
+
+**Next exact command.** `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_appcontainer.py -v`
+## 2026-11-16 — evidence archive cleanup must not mask archive failures
+
+**Change:** `EvidenceStore.put_stream` now removes its unpublished `.forgeos-*.tmp`
+file only on the failure path, through `_discard_unpublished`, which absorbs
+`OSError` from that removal. Before, the removal ran in a `finally` block, so a
+lock or permission error during cleanup replaced the original archive failure.
+Callers rely on that failure to block test approval, so the original error now
+propagates unchanged. The publication path, the gzip format and the SHA-256
+addressing are unchanged. A temporary that cannot be removed stays in the
+private evidence directory.
+
+**Verification:** `tests/test_diagnostics.py` adds
+`test_temporary_cleanup_never_masks_the_archive_failure`, which makes the source
+read raise `ValueError("ARCHIVE-SOURCE-FAILED")` while `Path.unlink` raises
+`PermissionError`. Against the original code the test fails with
+`PermissionError: file is locked`; with the change it passes. The focused
+diagnostics suite passes 24 tests. Full discovery (`PYTHONPATH=src python3.12 -m
+unittest discover -s tests -v`, run under `xvfb-run -a`) passes 789 tests with 23
+skips, `compileall` passes, and `tools/memory_benchmark.py --mib 12 --cycles 3
+--check` exits 0. Windows and real-model acceptance were not run in this
+environment; the Windows CI matrix is the first Windows evidence. The candidate
+branch `fix/diagnostics-archive-cleanup-20261116` is based on `origin/main`
+`4a6d228`.
+## 2026-11-16 — trust-store cleanup must not mask write failures
+
+**Change:** `TrustedOutputRules.trust_config` now removes its unpublished
+`.forgeos-*` temporary trust file only on the failure path, and that removal
+absorbs `OSError`. Before, the removal ran in a `finally` block, so a refused
+`unlink` after a failed `fsync` or `os.replace` replaced the write failure the
+caller needs to see. The original error now propagates unchanged. The trust
+file format, the hash-pinned consent model and the successful write path are
+unchanged.
+
+**Verification:** `tests/test_output_rules.py` adds
+`test_trust_write_failure_is_not_masked_by_temporary_cleanup`, which makes
+`os.fsync` raise `OSError("DISK-FULL")` while `os.unlink` raises
+`PermissionError`. Against the original code the test fails with
+`AssertionError: "DISK-FULL" does not match "file is locked"`; with the change it
+passes. The focused output-rules suite passes 9 tests. Full discovery (`PYTHONPATH=src
+python3.12 -m unittest discover -s tests -v`, run under `xvfb-run -a`) passes 789
+tests with 23 skips, `compileall` passes, and `tools/memory_benchmark.py --mib 12
+--cycles 3 --check` exits 0. Windows and real-model acceptance were not run in this
+environment. The candidate branch `fix/output-rules-temp-cleanup-20261116` is based
+on `origin/main` `4a6d228`.
+
+## 2026-11-16 — failure publication in shared task actions never masks the triggering error
+
+**Checkpoint:** `2026-11-16-task-actions-failure-path`. **Branch:** `fix/task-actions-failure-publication-20261116`, created from `origin/main` `0c5ead0`. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.
+
+**Duplicate-work audit.** Open pull requests were reviewed on 2026-11-16, including [PR #150](https://github.com/DevTunaSoft/ForgeOS/pull/150) (installed-runtime manifest identity; it touches `runtime_installer.py` and its tests), [PR #148](https://github.com/DevTunaSoft/ForgeOS/pull/148) (engine failure path), [PR #147](https://github.com/DevTunaSoft/ForgeOS/pull/147) (protected-name policy) and [PR #68](https://github.com/DevTunaSoft/ForgeOS/pull/68) (cumulative WIP). None changes `src/forgeos/task_actions.py` or `tests/test_task_actions.py`. Documentation ledgers overlap as usual.
+
+**Defect and root cause.** `plan_task` and `test_task`, the planning and manual-test operations shared by the CLI and GUI, record the `blocked` state in an unguarded `except` block. `_owned_task` releases the lease in an unguarded `finally`. A database error in either step replaces the planning or test failure. This is the defect class fixed in the engine by [PR #148](https://github.com/DevTunaSoft/ForgeOS/pull/148).
+
+**Change.**
+- `_block_after_failure` records the blocked state and absorbs `sqlite3.Error`, so the original exception propagates. The task keeps its last durable status. Planning and manual-test actions refuse a task still in planning or testing, so nothing replays automatically.
+- `_owned_task` releases the lease quietly while a failure propagates. On success a release error is raised, so a stuck lease is reported rather than hidden.
+- `tests/test_task_actions.py`: four regressions (planning and manual-test blocked publication; lease release on planning and manual-test failure) and one guard (a release error after a successful plan is still raised).
+
+**Commands and results.** Environment: Linux 6.18.44-fc-v470 container; `/usr/bin/python3.12` 3.12.3 with `python3-tk` and Xvfb through `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_task_actions.py -k _does_not_mask` on the unchanged module | FAIL (ERROR): four methods. Tracebacks show `RuntimeError: PLAN-FAILED` or `RUNNER-FAILED` replaced by `sqlite3.OperationalError: database is locked` |
+| Same command after the fix | OK: four methods pass |
+| Guard `test_lease_release_error_is_reported_after_successful_plan` | OK before and after the fix, as designed |
+| `test_task_actions.py` module after the fix | OK: 30 run |
+| Full suite after the fix (Python 3.12, Tk under Xvfb) | OK: 791 run, 23 skipped (Windows-only), exit 0 |
+| `python3 -m compileall -q src tests`; `git diff --check` | PASS |
+
+**Verification status.** PASS for the Linux and Python 3.12 gates above. NOT RUN: Windows execution, real local-model behavior, and hosted CI on the draft head (the CI policy runs the full jobs at ready-for-review). **Resource impact:** none measured; the change adds exception handling only.
+
+**Rollback.** Revert the commit that changes `src/forgeos/task_actions.py`. No data migration or schema change is involved.
+
+**Next exact command.** `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_task_actions.py -v`
+
 ## 2026-11-16 — failure publication never masks the triggering error
 
 **Checkpoint:** `2026-11-16-failure-path-exceptions`. **Branch:** `fix/engine-failure-path-exceptions-20261116`, created from `origin/main` `e671055` as a separate unit from the protected-name branch. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.

@@ -1,6 +1,7 @@
 """Shared CLI/GUI task actions: leases, safe state, and frozen routing."""
 import json
 from pathlib import Path
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -380,6 +381,59 @@ class TaskActionsTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.task)["status"], "editing")
         self.assertEqual(self.store.get(self.task)["result"], "new checkpoint")
         self.assertTrue(other.release_lease(self.task, "replacement"))
+
+    def test_planning_blocked_publication_error_does_not_mask_planning_failure(self):
+        original_transition = self.store.transition
+
+        def flaky_transition(task_id, expected, status, **changes):
+            if status == "blocked":
+                raise sqlite3.OperationalError("database is locked")
+            return original_transition(task_id, expected, status, **changes)
+
+        with patch.object(self.store, "transition", side_effect=flaky_transition):
+            with self.assertRaisesRegex(RuntimeError, "PLAN-FAILED"):
+                plan_task(self.store, self.task,
+                          model=Mock(plan=Mock(side_effect=RuntimeError("PLAN-FAILED"))))
+        self.assertEqual(self.store.get(self.task)["status"], "planning")
+
+    def test_manual_test_blocked_publication_error_does_not_mask_runner_failure(self):
+        original_transition = self.store.transition
+
+        def flaky_transition(task_id, expected, status, **changes):
+            if status == "blocked":
+                raise sqlite3.OperationalError("database is locked")
+            return original_transition(task_id, expected, status, **changes)
+
+        with patch.object(self.store, "transition", side_effect=flaky_transition), \
+             patch("forgeos.task_actions._run_workspace_tests",
+                   side_effect=RuntimeError("RUNNER-FAILED")):
+            with self.assertRaisesRegex(RuntimeError, "RUNNER-FAILED"):
+                run_task_tests(self.store, self.task, "python-unittest",
+                               allow_host_tests=True)
+        self.assertEqual(self.store.get(self.task)["status"], "testing")
+
+    def test_lease_release_error_does_not_mask_planning_failure(self):
+        with patch.object(self.store, "release_lease",
+                          side_effect=sqlite3.OperationalError("database is locked")):
+            with self.assertRaisesRegex(RuntimeError, "PLAN-FAILED"):
+                plan_task(self.store, self.task,
+                          model=Mock(plan=Mock(side_effect=RuntimeError("PLAN-FAILED"))))
+
+    def test_lease_release_error_does_not_mask_manual_test_failure(self):
+        with patch.object(self.store, "release_lease",
+                          side_effect=sqlite3.OperationalError("database is locked")), \
+             patch("forgeos.task_actions._run_workspace_tests",
+                   side_effect=RuntimeError("RUNNER-FAILED")):
+            with self.assertRaisesRegex(RuntimeError, "RUNNER-FAILED"):
+                run_task_tests(self.store, self.task, "python-unittest",
+                               allow_host_tests=True)
+
+    def test_lease_release_error_is_reported_after_successful_plan(self):
+        with patch.object(self.store, "release_lease",
+                          side_effect=sqlite3.OperationalError("database is locked")):
+            with self.assertRaises(sqlite3.OperationalError):
+                plan_task(self.store, self.task,
+                          model=Mock(plan=Mock(return_value="PLAN-OK")))
 
     def test_cli_test_refuses_implicit_host_execution(self):
         with patch("forgeos.task_actions._run_workspace_tests") as tests:
