@@ -1,0 +1,14 @@
+   Compiling sample_crate v0.1.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.85s
+     Running unittests src/lib.rs
+
+running 9 tests
+test tests::it_works ... ok
+test tests::it_fails ... FAILED
+
+failures:
+
+---- tests::it_fails stdout ----
+thread 'tests::it_fails' panicked at 'assertion failed: false'
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s

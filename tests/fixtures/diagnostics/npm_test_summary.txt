@@ -1,0 +1,6 @@
+> sample-app@1.0.0 test
+> vitest run
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed, 2 skipped, 9 passed, 12 total
+   Duration  1.15s

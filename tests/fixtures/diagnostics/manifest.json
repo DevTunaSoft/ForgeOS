@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "description": "Standalone golden fixtures for forgeos.diagnostics.parse_test_summary.",
+  "cases": [
+    {
+      "name": "json_summary_nested",
+      "file": "json_summary_nested.json",
+      "preset": "python-pytest",
+      "expected": {
+        "tier": "json",
+        "counts": {"passed": 7, "failed": 2, "skipped": 1, "total": 10}
+      }
+    },
+    {
+      "name": "json_jest_flat",
+      "file": "json_jest_flat.json",
+      "preset": "npm-test",
+      "expected": {
+        "tier": "json",
+        "counts": {"passed": 9, "failed": 1, "skipped": 2, "total": 12}
+      }
+    },
+    {
+      "name": "json_zero_counts",
+      "file": "json_zero_counts.json",
+      "preset": "python-pytest",
+      "expected": {
+        "tier": "json",
+        "counts": {"passed": 0, "failed": 0, "skipped": 0, "total": 0}
+      }
+    },
+    {
+      "name": "unittest_ok",
+      "file": "unittest_ok.txt",
+      "preset": "python-unittest",
+      "expected": {
+        "tier": "text",
+        "counts": {"total": 14}
+      }
+    },
+    {
+      "name": "unittest_ok_skipped",
+      "file": "unittest_ok_skipped.txt",
+      "preset": "python-unittest",
+      "expected": {
+        "tier": "text",
+        "counts": {"total": 4}
+      }
+    },
+    {
+      "name": "unittest_failed_all_fields",
+      "file": "unittest_failed_all_fields.txt",
+      "preset": "python-unittest",
+      "expected": {
+        "tier": "text",
+        "counts": {"total": 18, "failed": 2, "errors": 1, "skipped": 3}
+      }
+    },
+    {
+      "name": "pytest_summary",
+      "file": "pytest_summary.txt",
+      "preset": "python-pytest",
+      "expected": {
+        "tier": "text",
+        "counts": {"passed": 15, "failed": 2, "skipped": 1}
+      }
+    },
+    {
+      "name": "cargo_test_summary",
+      "file": "cargo_test_summary.txt",
+      "preset": "cargo-test",
+      "expected": {
+        "tier": "text",
+        "counts": {"passed": 8, "failed": 1}
+      }
+    },
+    {
+      "name": "npm_test_summary",
+      "file": "npm_test_summary.txt",
+      "preset": "npm-test",
+      "expected": {
+        "tier": "text",
+        "counts": {"failed": 1, "skipped": 2, "passed": 9}
+      }
+    },
+    {
+      "name": "go_test_summary",
+      "file": "go_test_summary.txt",
+      "preset": "go-test",
+      "expected": {
+        "tier": "text",
+        "counts": {"passed": 24, "failed": 0}
+      }
+    },
+    {
+      "name": "unittest_degraded_no_verdict",
+      "file": "unittest_degraded_no_verdict.txt",
+      "preset": "python-unittest",
+      "expected": {
+        "tier": "degraded",
+        "counts": {"total": 7}
+      }
+    },
+    {
+      "name": "unittest_degraded_no_ran",
+      "file": "unittest_degraded_no_ran.txt",
+      "preset": "python-unittest",
+      "expected": {
+        "tier": "degraded",
+        "counts": {"failed": 2, "errors": 1}
+      }
+    },
+    {
+      "name": "raw_malformed_json",
+      "file": "raw_malformed_json.txt",
+      "preset": "python-pytest",
+      "expected": {
+        "tier": "raw",
+        "counts": {}
+      }
+    },
+    {
+      "name": "raw_json_invalid_types",
+      "file": "raw_json_invalid_types.json",
+      "preset": "python-pytest",
+      "expected": {
+        "tier": "raw",
+        "counts": {}
+      }
+    },
+    {
+      "name": "raw_unstructured_log",
+      "file": "raw_unstructured_log.txt",
+      "preset": "npm-test",
+      "expected": {
+        "tier": "raw",
+        "counts": {}
+      }
+    },
+    {
+      "name": "raw_unknown_preset",
+      "file": "raw_unknown_preset.txt",
+      "preset": "custom-runner",
+      "expected": {
+        "tier": "raw",
+        "counts": {}
+      }
+    },
+    {
+      "name": "raw_pytest_outside_tail_window",
+      "file": "raw_pytest_outside_tail_window.txt",
+      "preset": "python-pytest",
+      "expected": {
+        "tier": "raw",
+        "counts": {}
+      }
+    }
+  ]
+}

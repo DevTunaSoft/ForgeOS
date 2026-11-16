@@ -1,0 +1,16 @@
+test_a (tests.test_sample.SampleTests.test_a) ... FAIL
+test_b (tests.test_sample.SampleTests.test_b) ... ERROR
+test_c (tests.test_sample.SampleTests.test_c) ... skipped 'not applicable'
+
+======================================================================
+FAIL: test_a (tests.test_sample.SampleTests.test_a)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "tests/test_sample.py", line 12, in test_a
+    self.assertEqual(1, 2)
+AssertionError: 1 != 2
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.412s
+
+FAILED (failures=2, errors=1, skipped=3)

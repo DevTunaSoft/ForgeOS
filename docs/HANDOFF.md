@@ -3711,3 +3711,43 @@ no GUI/CLI caller uses it yet. RTK outcome #3 remains incomplete until caller
 wiring and workflow acceptance. No hosted CI or physical Windows user
 acceptance has run for this fragment; the output summary is not a full diff or
 a measured process-RAM improvement.
+
+## 2026-11-15 — RTK-50 structured test-summary parser golden fixtures
+
+**Fragment:** `fragment/rtk50-diagnostics-golden` (based on
+`fragment/rtk3-bounded-git-output` at SHA
+`853de811a526b520fdd578c84a675517634b93cf`).
+
+**Changes:**
+- `tests/fixtures/diagnostics/manifest.json` and 17 standalone synthetic
+  fixture files (`json_summary_nested.json`, `json_jest_flat.json`,
+  `json_zero_counts.json`, `unittest_ok.txt`, `unittest_ok_skipped.txt`,
+  `unittest_failed_all_fields.txt`, `pytest_summary.txt`,
+  `cargo_test_summary.txt`, `npm_test_summary.txt`, `go_test_summary.txt`,
+  `unittest_degraded_no_verdict.txt`, `unittest_degraded_no_ran.txt`,
+  `raw_malformed_json.txt`, `raw_json_invalid_types.json`,
+  `raw_unstructured_log.txt`, `raw_unknown_preset.txt`,
+  `raw_pytest_outside_tail_window.txt`): cover JSON, `python-unittest` text,
+  generic runner text (`python-pytest`, `cargo-test`, `npm-test`, `go-test`),
+  `degraded`, and `raw` fallback tiers with explicit expected `tier` and
+  `counts`.
+- `tests/test_diagnostics.py`: added `test_parse_test_summary_golden_fixtures`
+  validating all 17 manifest-tracked fixtures against
+  `forgeos.diagnostics.parse_test_summary`, verifying no orphan fixture files,
+  and asserting coverage of `{"json", "text", "degraded", "raw"}`. Production
+  parser code in `src/forgeos/diagnostics.py` was not modified.
+- `docs/RTK_ENHANCEMENTS.md` and `docs/ENHANCEMENT_DEDUP_AUDIT.md`: marked
+  RTK-50 complete (`EXISTING` · A) and updated the disposition summary counts
+  to `23 existing baselines, 13 extend-in-place items, 11 genuinely new
+  capability gaps, 5 Phase 3 additions under review`.
+
+**Verification (win32, Python 3.14, base SHA `853de811a526b520fdd578c84a675517634b93cf`):**
+- `$env:PYTHONPATH='src'; py -m unittest tests.test_diagnostics tests.test_enhancement_audit tests.test_documentation -v`:
+  PASS (40 tests, 0.663s).
+- `py tools/check_documentation.py --links`: PASS (exit 0).
+- `py scripts/check_handoff.py --json`: PASS (exit 0).
+- `git diff --check`: PASS (exit 0).
+
+**Limitations:** Full repository test suite, hosted CI, and physical Windows
+GUI/model acceptance were not run in this fragment. Tests use synthetic
+offline fixtures only.
