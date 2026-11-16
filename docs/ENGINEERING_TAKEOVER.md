@@ -6,25 +6,24 @@
 ## Current external-handoff checkpoint — 2026-11-16
 
 This dossier is the entry point for an external engineer who has not seen the
-ForgeOS codebase or this development conversation. PR #135, the preceding
-context-index security change, is merged into `main` at
-`0e1b936fd66f3d51c63658e44ac1f42b91e5ebf4`. The current implementation branch
-is `feat/security-gguf-journal-reads-20261116` and its candidate change is
-[PR #146](https://github.com/DevTunaSoft/ForgeOS/pull/146). Treat the
+ForgeOS codebase or this development conversation. PR #146, the preceding
+GGUF metadata-read hardening, is merged into `main` at
+`e671055dcedc2f319985daffed95fab0402e454c`. The current implementation branch
+is `feat/security-retirement-journal-reads-20261116` and its candidate change
+is [draft PR #149](https://github.com/DevTunaSoft/ForgeOS/pull/149). Treat the
 PR's current head as authoritative because the external dossier update is
 committed on that same branch after the initial implementation commit.
 The checkout must be clean before packaging or handing it to another agent.
 
-The current candidate hardens the resumable GGUF downloader's small metadata
-boundary. Existing manifests and partial-download journals are read through
-the shared bounded identity reader, so symlinks, Windows reparse points, hard
-links, replacements during open/read, malformed JSON and oversized records
-fail closed while a substituted record is preserved for inspection. GGUF
-weights remain streamed in bounded chunks. The focused GGUF suite passed 24
-tests; model inventory passed 10; managed runtime passed 37 with 4 expected
-skips; documentation passed 10; compileall and `git diff --check` passed; and
-the bounded 12 MiB x 3-cycle memory benchmark passed with a 1,857,636-byte
-Python tracemalloc peak and a 25,165,824-byte process peak RSS.
+The current candidate hardens reversible GGUF retirement and restoration.
+Recovery journals and saved manifests are read through the shared bounded
+identity reader, so replacements, Windows reparse points, hard links,
+malformed JSON and oversized records fail closed while substituted evidence is
+preserved. The focused retirement suite passed 20 tests; model inventory
+passed 10; managed runtime passed 37 with 4 expected skips; recovery passed
+23; documentation passed 10; compileall and `git diff --check` passed; and the
+bounded 12 MiB x 3-cycle memory benchmark passed with a 1,857,636-byte Python
+tracemalloc peak and a 25,550,848-byte process peak RSS.
 
 Full local discovery ran 784 tests with 10 expected skips, 4 failures and 5
 errors. The failures/errors are recorded in `docs/HANDOFF.md`: the checkout's
@@ -32,11 +31,11 @@ AppContainer ACL probe cannot inspect the managed `.venv`, several engine
 tests cannot retain their evidence archive under the local environment, the
 unittest preset cannot archive its diagnostic, and two native output-capture
 checks report incomplete capture. These are not presented as a green local
-matrix; exact-head hosted checks remain required. The source implementation
-head `d7e512d` passed the four required exact-head hosted workflows: Foundation
-tests run 1277, Windows EXE run 855, Documentation run 427 and Handoff
-integrity run 476. This dossier refresh is documentation-only and its own
-exact-head checks must be observed before merge. Real
+matrix; exact-head hosted checks remain required. The current local run's
+failures/errors are recorded in `docs/HANDOFF.md`: the checkout's AppContainer
+ACL probe, evidence retention, diagnostic archiving and native output capture
+remain environment-limited. The draft PR must be reconciled with its four
+required hosted workflows before merge. Real
 Windows GUI/model, crash/restart, process-tree resource, power-loss and
 clean-room takeover evidence remain unverified.
 
