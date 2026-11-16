@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path, PurePosixPath
 import re
+import sqlite3
 import uuid
 from typing import Callable
 
@@ -496,7 +497,9 @@ def _execute_task(
                         "test_pending", "repair_pending", "manual_review_required"
                     }):
                 details = saved
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, sqlite3.Error):
+            # Recovery detail is optional. A database error while reading it
+            # must not replace the failure that is being reported.
             pass
         if incomplete_test_evidence:
             # Keep workspace/branch and edit hashes for manual inspection but
@@ -509,9 +512,12 @@ def _execute_task(
             publish({"editing", "testing"}, "blocked",
                     error=failure, result=json.dumps(details),
                     event_action="recovery")
-        except LeaseLostError:
-            # The old worker no longer owns this task. Preserve whatever the
-            # replacement worker wrote; never mask the triggering exception.
+        except (LeaseLostError, sqlite3.Error):
+            # The old worker no longer owns this task, or the database could
+            # not record the blocked state. Either way the task keeps its last
+            # durable status, which start and resume both refuse while it is
+            # editing or testing. This bookkeeping must never replace the
+            # triggering exception.
             pass
         raise
 
@@ -534,12 +540,22 @@ def execute_task(
     if not store.acquire_lease(task_id, owner):
         raise ValueError("Task already has an active execution lease")
     try:
-        return _execute_task(
+        result = _execute_task(
             store, task_id, workspace_parent, preset=preset, model=model,
             max_repairs=max_repairs, allow_host_tests=allow_host_tests,
             generate=generate, resume=resume, lease_owner=owner,
             role=role, qualification_directory=qualification_directory,
             qualification_evidence_sha256=qualification_evidence_sha256,
         )
-    finally:
-        store.release_lease(task_id, owner)
+    except BaseException:
+        # Releasing the lease is best-effort while a failure is already
+        # propagating. A database error here must not replace that failure.
+        try:
+            store.release_lease(task_id, owner)
+        except sqlite3.Error:
+            pass
+        raise
+    # On success a release failure is reported: it would leave the task
+    # refusing new runs until the lease expires.
+    store.release_lease(task_id, owner)
+    return result

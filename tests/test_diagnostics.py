@@ -5,7 +5,7 @@ from pathlib import Path
 import random
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from forgeos.diagnostics import EvidenceStore, optimize_test_result
 
 class DiagnosticTests(unittest.TestCase):
@@ -13,6 +13,15 @@ class DiagnosticTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.store = EvidenceStore(Path(self.temp.name) / "evidence")
+
+    def test_temporary_cleanup_never_masks_the_archive_failure(self):
+        class FailingSource:
+            def read(self, size=-1):
+                raise ValueError("ARCHIVE-SOURCE-FAILED")
+
+        with patch.object(Path, "unlink", side_effect=PermissionError("file is locked")):
+            with self.assertRaisesRegex(ValueError, "ARCHIVE-SOURCE-FAILED"):
+                self.store.put_stream(FailingSource())
 
     def test_roundtrip_and_deduplicate(self):
         raw = "FAIL: test_example\nAssertionError: 2 != 42\nΩ漢字\n"

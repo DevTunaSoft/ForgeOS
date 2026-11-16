@@ -2,9 +2,11 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from forgeos.core import Store
 from forgeos.engine import EditError, apply_edits, execute_task, parse_edits
@@ -579,6 +581,50 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.task)["result"], "manual intervention")
         self.assertEqual((self.repo / "app.py").read_text(),
                          "def value():\n return 42\n")
+
+    def _failing_generate(self, model, prompt):
+        raise RuntimeError("model unavailable")
+
+    def test_blocked_publication_error_does_not_mask_engine_failure(self):
+        original_transition = self.store.transition
+
+        def flaky_transition(task_id, expected, status, **changes):
+            if status == "blocked":
+                raise sqlite3.OperationalError("database is locked")
+            return original_transition(task_id, expected, status, **changes)
+
+        with patch.object(self.store, "transition", side_effect=flaky_transition):
+            with self.assertRaisesRegex(RuntimeError, "model unavailable"):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=self._failing_generate)
+
+    def test_recovery_detail_read_error_does_not_mask_engine_failure(self):
+        original_inputs = self.store.get_task_inputs
+
+        def flaky_inputs(task_id, *, resume=False):
+            if resume:
+                raise sqlite3.OperationalError("database is locked")
+            return original_inputs(task_id, resume=resume)
+
+        with patch.object(self.store, "get_task_inputs", side_effect=flaky_inputs):
+            with self.assertRaisesRegex(RuntimeError, "model unavailable"):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=self._failing_generate)
+
+    def test_lease_release_error_does_not_mask_engine_failure(self):
+        with patch.object(self.store, "release_lease",
+                          side_effect=sqlite3.OperationalError("database is locked")):
+            with self.assertRaisesRegex(RuntimeError, "model unavailable"):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=self._failing_generate)
+
+    def test_lease_release_error_is_reported_after_successful_run(self):
+        response = json.dumps({"files": [{"path": "app.py", "content": "def value():\n return 42\n"}]})
+        with patch.object(self.store, "release_lease",
+                          side_effect=sqlite3.OperationalError("database is locked")):
+            with self.assertRaises(sqlite3.OperationalError):
+                execute_task(self.store, self.task, self.root, allow_host_tests=True,
+                             generate=lambda model, prompt: response)
 
     def test_exhausted_repairs(self):
         response = json.dumps({"files": [{"path": "app.py", "content": "def value():\n return -1\n"}]})

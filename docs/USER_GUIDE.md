@@ -227,6 +227,8 @@ Not every error can be fixed automatically. A failed model operation, a failed o
 
 **Important:** the label “Build / test / repair” describes an experimental edit/test loop. It is **not** a promise to compile any requested EXE/APK/web app.
 
+**Failures stay visible.** If **Generate plan** or **Run tests only** fails and ForgeOS also cannot save the failed state, for example because the database is locked, the report shows the planning or test failure rather than the database message. The task keeps its last saved status. A task that still shows planning or testing cannot be planned or tested again automatically, so check its saved status and workspace before choosing another action.
+
 ## 4. What to do with the result
 
 A successful task indicates that the chosen test operation reported success for the run; it is not proof that every feature works, that generated code is safe, or that a release has been built. Inspect the files and test coverage yourself. ForgeOS intentionally leaves the isolated Git worktree in place for review. It does not automatically commit, merge, push, deploy or publish changes.
@@ -358,6 +360,8 @@ remain available for inspection.
 **Expired or replaced worker:** ForgeOS now rejects a stale worker's attempt to publish a test result, checkpoint or failure after its task lease expires or is reclaimed. The workspace may still contain edits from the interrupted run. Inspect it and any journal before using guarded recovery; do not delete or automatically overwrite files just because the status says Blocked.
 
 **Large or corrupted recovery records:** `resume-safe` skips blocked checkpoints larger than 64 KiB, with a reason in the report. It does not truncate or delete them. Review the affected workspace and journal manually; do not force a resume of unknown data. This limit applies to checkpoint recovery, not ordinary archived test output.
+
+**Failures are reported as the original cause.** If a model or test failure is followed by a database problem while ForgeOS records the failed state, such as a locked database, ForgeOS reports the original failure rather than the database message. The task keeps its last saved status. A task that still shows editing or testing cannot be started or resumed automatically, so inspect its workspace and last error before choosing a recovery action. If a test run succeeds but ForgeOS cannot release the task's lease, the saved result is kept and the command reports the database error; the lease then expires on its own.
 
 **Use resume commands only for trusted workspaces.** Recovery checks are strict; the CLI should reject ineligible or changed checkpoints rather than overwrite unverified edits. Actual supported resume phases are `test_pending` and `repair_pending`; not every interruption can be resumed. Supplying `auto` for resumption is subject to the engine's saved model/contract checks. If an exact resume fails, inspect the recorded checkpoint and avoid deleting any data.
 
