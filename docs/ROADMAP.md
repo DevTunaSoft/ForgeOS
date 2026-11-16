@@ -1229,6 +1229,30 @@ integrity 476. The follow-on dossier refresh is documentation-only and must
 receive its own exact-head checks before merge. Windows filesystem review and
 physical Windows download/recovery acceptance remain required.
 
+### 2026-11-16 — retirement journal and manifest read identity
+
+Reversible GGUF retirement and restoration now read their recovery journal
+and saved manifest through the shared bounded identity reader. Each 4 KiB JSON
+record must remain the same unlinked regular file before and after parsing;
+replacement, reparse-point, hard-link, malformed and oversized records fail
+closed while the recovery entry remains available for inspection. The
+existing explicit hard-link diagnostic is preserved for already shared
+journals, and model weights continue to be streamed and hashed without a
+large metadata or weight allocation.
+
+Regression coverage adds journal and saved-manifest replacement-during-open
+tests; the focused retirement suite passes 20 tests. Compileall,
+documentation/link checks, `git diff --check` and the bounded 12 MiB x
+3-cycle memory benchmark pass; the benchmark measured a 1,857,636-byte
+Python tracemalloc peak and a 25,550,848-byte process peak RSS. Full local
+discovery ran 786 tests with 10 expected skips, 4 failures and 5 errors in
+existing checkout-specific environment checks. The candidate dossier head
+`8edf4ac` passed the required exact-head hosted workflows: Foundation 1285,
+Windows EXE 863, Documentation 434 and Handoff integrity 490. The follow-on
+evidence update is documentation-only and must receive its own exact-head
+checks before merge. Windows filesystem review and physical power-loss
+recovery acceptance remain required.
+
 ### 2026-11-16 — failure publication never masks the triggering error
 
 The autonomous engine's failure path could replace the real model or test failure with a database error. Three bookkeeping steps ran while the original exception was propagating: the optional recovery-detail read, the `blocked` publication and the lease release in `execute_task`'s `finally`. A locked or failing SQLite database therefore surfaced as `sqlite3.OperationalError`, and the cause was lost. The engine's own comments already required that bookkeeping never mask the triggering exception; only `LeaseLostError` was handled.

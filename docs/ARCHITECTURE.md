@@ -172,6 +172,20 @@ substituted file remains available for inspection. The downloader still
 streams model bytes in bounded chunks; this boundary protects only the small
 metadata records and does not buffer GGUF weights in memory.
 
+## Reversible retirement metadata read boundary
+
+Retirement journals and saved manifests live in the same model-storage tree,
+but they are recovery authority rather than downloadable model metadata. The
+retirement and restore paths use the same bounded identity reader for each
+4 KiB JSON record. A journal's explicit single-link check preserves the
+diagnostic for an already hard-linked recovery record; the descriptor-bound
+read then rechecks regular-file type, link count and identity before and after
+parsing. A replacement, reparse point, hard link, malformed record or growth
+during the read fails closed, leaving the recovery entry and any substituted
+record available for manual inspection. This protects the recovery decision
+without buffering model weights or treating the cooperative lock as an
+isolation boundary.
+
 ## Low-memory SQLite read boundary
 
 Database backup and restore publication uses one shared fail-closed helper:
