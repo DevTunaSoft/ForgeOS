@@ -359,7 +359,8 @@ def _ignore_runtime_metadata(_directory, names):
         ignored.add(".forgeos")
     if RUNTIME_DIR in names:
         ignored.add(RUNTIME_DIR)
-    ignored.update(name for name in names if name.startswith(".env"))
+    # Casefold: .ENV.local must not be copied into a snapshot on case-insensitive volumes.
+    ignored.update(name for name in names if name.casefold().startswith(".env"))
     return ignored
 
 

@@ -500,6 +500,47 @@ The task engine does not hold an operating-system filesystem lock while generati
 
 Checkpoint recovery is deliberately narrow; file hashes, workspace ownership, branch and saved execution parameters must match. Not all interrupted phases can resume. `resume-safe` reads only blocked checkpoint fields through SQLite keyset pages of 16 records; any checkpoint over 64 KiB is reported as skipped without loading its payload into Python. It does not scan completed-task test output or bypass execution leases.
 
+## Protected-name and portable-path boundary (2026-11-16)
+
+Model-proposed edit paths are untrusted input. `engine._validate_path` applies
+the protected-path policy to names that must mean the same thing on Linux, macOS
+and Windows, because the product targets Windows:
+
+- Protected names (`.git`, `.github`, `.env*`, `node_modules`, `.venv`, `venv`,
+  `__pycache__` and `.forgeos`) match **case-insensitively** after Unicode
+  casefolding. Windows and default macOS volumes are case-insensitive, so
+  `.GIT/config.json` or `.Github/workflows/ci.yml` would otherwise address a
+  protected directory.
+- Path components that end in a dot or a space are rejected. Win32 strips those
+  characters during name resolution, so `.github./workflows/ci.yml` would
+  otherwise address `.github/workflows/ci.yml`.
+- Windows device stems (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, and
+  `COM` or `LPT` followed by 0–9 or superscript 1–3) are rejected with or
+  without an extension, because such names address devices rather than files.
+- The protected-name and device rules are then reapplied to the **resolved**
+  location inside the workspace. A directory symlink such as `docs -> .github`
+  therefore cannot redirect `docs/workflows/ci.yml` into a protected folder.
+
+All of these checks run before the extension allowlist and before any write.
+`parse_edits` validates the whole manifest first and raises `EditError`, so a
+rejected manifest changes no file. In autonomous execution the task is blocked
+with the rejection reason and its workspace is preserved for inspection.
+
+The same casefold rule governs the places where ForgeOS copies or lists a
+worktree: the source-only archive and recovery manifest (`worktree_manifest._excluded`)
+and the disposable test snapshot (`test_runtime._ignore_runtime_metadata`). Those
+exporters previously excluded only the exact lowercase `.env` prefix, so `.ENV.local`
+or `.Env` could be listed in a manifest or copied into a snapshot on Linux and macOS.
+Their exclusions now match case-insensitively as well.
+
+**Verification boundary:** Linux regression tests (`ProtectedPathPolicyTests` in
+`tests/test_engine.py`) cover these rules on every platform. The Windows behavior
+follows documented Win32 name normalization and has **not** been reproduced on
+Windows hardware. This is a validation boundary, not a sandbox: enabled host
+tests still run with host privileges. The GGUF downloader and the runtime
+installer keep their own reserved-name checks; the three device-name lists are a
+consolidation candidate recorded in HANDOFF.
+
 ## Execution security: differentiate the environments
 
 | Environment | Present behavior | Security implication |

@@ -5,6 +5,12 @@
 
 ## Current external-handoff checkpoint — 2026-11-15
 
+> **Correction (2026-11-16):** PR #134 has since merged into `main` as commit
+> `4347514` (`fix(security): bind desktop settings reads (#134)`). The branch
+> and PR references in this checkpoint describe the pre-merge state and are kept
+> as history. The current development state, including the latest engine policy
+> change, is recorded at the end of [HANDOFF.md](HANDOFF.md).
+
 This dossier is being refreshed for an external engineer who has not seen the
 ForgeOS codebase or this development conversation. The current implementation
 branch is `feat/security-desktop-settings-read-identity-20261115` and its

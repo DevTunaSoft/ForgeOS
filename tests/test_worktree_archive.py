@@ -48,6 +48,18 @@ class WorktreeArchiveTests(unittest.TestCase):
         self.assertEqual(report["archive_entries"], 2)
         self.assertEqual(report["files_checked"], 2)
 
+    def test_case_variant_secret_files_never_enter_the_archive(self):
+        (self.worktree / ".ENV.local").write_text("TOKEN=case-variant-secret\n")
+        (self.worktree / ".Env").write_text("PASSWORD=mixed-case-secret\n")
+        export_worktree_archive(self.worktree, self.archive)
+        with zipfile.ZipFile(self.archive) as archive:
+            names = set(archive.namelist())
+            payload = b"".join(archive.read(name) for name in names)
+        self.assertEqual(
+            names, {"README.md", "src/app.py", WORKTREE_ARCHIVE_MANIFEST})
+        self.assertNotIn(b"case-variant-secret", payload)
+        self.assertNotIn(b"mixed-case-secret", payload)
+
     def test_checker_detects_changed_content_with_original_manifest(self):
         export_worktree_archive(self.worktree, self.archive)
         tampered = self.root / "tampered.zip"

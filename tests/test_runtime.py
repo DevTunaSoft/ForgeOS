@@ -27,6 +27,15 @@ class TestRuntimeTests(unittest.TestCase):
         internal.mkdir()
         (internal / "secret-journal").write_text("do-not-copy")
 
+    def test_snapshot_excludes_case_variant_environment_files(self):
+        (self.workspace / ".ENV.production").write_text("TOKEN=case-variant")
+        (self.workspace / ".Env").write_text("SECRET=mixed-case")
+        runtime = create_test_snapshot(self.workspace)
+        self.addCleanup(remove_test_snapshot, self.workspace)
+        self.assertFalse((runtime.path / ".ENV.production").exists())
+        self.assertFalse((runtime.path / ".Env").exists())
+        self.assertEqual((runtime.path / "app.py").read_text(), "print('source')\n")
+
     def test_snapshot_is_outside_workspace_and_excludes_internal_journal(self):
         runtime = create_test_snapshot(self.workspace)
         self.assertFalse(runtime.path.is_relative_to(self.workspace))

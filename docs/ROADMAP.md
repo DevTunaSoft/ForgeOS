@@ -1204,3 +1204,34 @@ Python tracemalloc peak and a 30,306,304-byte process peak RSS. The work is
 on `feat/security-desktop-settings-read-identity-20261115` for takeover.
 Exact-head hosted checks, Windows ACL review and physical NTFS power-loss
 acceptance remain open.
+
+### 2026-11-16 — protected-name and portable-path policy
+
+The autonomous edit path now refuses model-proposed file names that Windows
+would alias onto a protected or device location. Before this change
+`engine._validate_path` compared raw, case-sensitive path components. Names such
+as `.GIT/config.json`, `.github./workflows/ci.yml`, `NUL.txt` or `COM1.py` were
+accepted on every platform, and a directory symlink inside a workspace could
+redirect `docs/workflows/ci.yml` into `.github`. The validator now casefolds
+protected-name matching, rejects trailing dot or space components and Windows
+device stems, and reapplies the protected-name policy to the symlink-resolved
+location. These checks run before any write, and a violating manifest is refused
+as a whole.
+
+The same casefold rule now governs recovery manifests, source-only archives and
+disposable test snapshots, which previously excluded only the exact `.env` prefix:
+`.ENV.local` and `.Env` could be listed or copied on Linux. Regression coverage
+adds `test_secret_name_case_variants_are_excluded_from_manifest`,
+`test_case_variant_secret_files_never_enter_the_archive` and
+`test_snapshot_excludes_case_variant_environment_files`; each reproduced as a
+failure on the unchanged code.
+
+Regression coverage is `ProtectedPathPolicyTests` in `tests/test_engine.py`.
+All four rejection tests reproduced as failures on the unchanged validator
+before the fix. Status: **implemented prototype, Linux-verified**. The Windows
+behavior follows documented Win32 name normalization and is not yet reproduced
+on Windows hardware. The same change fixes an order-dependent engine test that
+patched the process-wide `os.name` before importing its patch targets. The
+three Windows device-name lists in the engine, the GGUF downloader and the
+runtime installer should be consolidated into one canonical helper; that is a
+follow-up, not part of this change.

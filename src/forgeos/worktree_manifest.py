@@ -68,8 +68,14 @@ def _root(path: str | Path) -> Path:
     return root
 
 
+_EXCLUDED_FOLDED = frozenset(name.casefold() for name in _EXCLUDED_NAMES)
+
+
 def _excluded(name: str) -> bool:
-    return name in _EXCLUDED_NAMES or name.startswith(".env")
+    # Windows and default macOS volumes are case-insensitive: .ENV and .env, or
+    # NODE_MODULES and node_modules, address the same entry, so match casefolded.
+    folded = name.casefold()
+    return folded in _EXCLUDED_FOLDED or folded.startswith(".env")
 
 
 def _relative(value: str) -> str:
