@@ -1,8 +1,11 @@
 """Classic Windows AppContainer capability probe tests."""
 import os
+from pathlib import Path
+import tempfile
 import unittest
 
-from forgeos.appcontainer import (probe_appcontainer, probe_appcontainer_filesystem,
+from forgeos.appcontainer import (_verify_probe_marker, probe_appcontainer,
+                                  probe_appcontainer_filesystem,
                                   probe_appcontainer_network,
                                   probe_appcontainer_python_runtime)
 
@@ -14,6 +17,45 @@ class AppContainerProbeContractTests(unittest.TestCase):
         result = probe_appcontainer()
         self.assertFalse(result["available"])
         self.assertFalse(result["verified"])
+
+
+class ProbeMarkerVerificationTests(unittest.TestCase):
+    """The contained child's write marker is untrusted input to the parent."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.marker = self.root / "python-created.txt"
+
+    def test_exact_marker_is_accepted(self):
+        self.marker.write_bytes(b"ok")
+        _verify_probe_marker(self.marker)
+
+    def test_oversized_marker_is_refused_before_it_is_buffered(self):
+        self.marker.write_bytes(b"x" * (5 * 1024 * 1024))
+        with self.assertRaisesRegex(OSError, "oversized"):
+            _verify_probe_marker(self.marker)
+
+    def test_marker_with_trailing_bytes_is_refused(self):
+        self.marker.write_bytes(b"ok\n")
+        with self.assertRaises(OSError):
+            _verify_probe_marker(self.marker)
+
+    def test_missing_marker_is_refused(self):
+        with self.assertRaises(OSError):
+            _verify_probe_marker(self.marker)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "Symlinks unavailable")
+    def test_symlink_to_an_outside_marker_is_refused(self):
+        outside = self.root / "outside.txt"
+        outside.write_bytes(b"ok")
+        try:
+            os.symlink(outside, self.marker)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlinks unavailable")
+        with self.assertRaises(OSError):
+            _verify_probe_marker(self.marker)
 
 
 @unittest.skipUnless(os.name == "nt", "Windows-only AppContainer probe")
