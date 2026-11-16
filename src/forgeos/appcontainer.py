@@ -18,6 +18,8 @@ import subprocess
 import tempfile
 import uuid
 
+from .file_security import read_bounded_file
+
 if os.name == "nt":
     from . import windows_containment as wc
 
@@ -489,6 +491,29 @@ def probe_appcontainer_network(timeout: int = 15) -> dict:
         listener.close()
 
 
+PROBE_MARKER_TEXT = b"ok"
+PROBE_MARKER_LIMIT_BYTES = 16
+
+
+def _verify_probe_marker(marker: Path) -> None:
+    """Confirm that the contained child wrote the expected marker.
+
+    The child controls this file. It is read through the shared bounded
+    identity reader, so it must be an unlinked regular file no larger than a
+    few bytes. A symlink, hard link, reparse point or oversized file fails
+    closed before any of its content is buffered or trusted.
+    """
+    try:
+        content = read_bounded_file(
+            marker, max_bytes=PROBE_MARKER_LIMIT_BYTES,
+            description="AppContainer write marker")
+    except ValueError as exc:
+        raise OSError(
+            f"Python AppContainer write verification failed: {exc}") from exc
+    if content != PROBE_MARKER_TEXT:
+        raise OSError("Python AppContainer write verification failed")
+
+
 def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
     """Prove Python works only after narrow read/execute runtime grants.
 
@@ -553,9 +578,7 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
                         raise OSError(
                             "Python could not write explicitly granted "
                             f"AppContainer workspace (exit {writer['returncode']})")
-                    if created.read_text(encoding="utf-8") != "ok":
-                        raise OSError(
-                            "Python AppContainer write verification failed")
+                    _verify_probe_marker(created)
                 finally:
                     cleanup_errors = []
                     for target in reversed(granted):
