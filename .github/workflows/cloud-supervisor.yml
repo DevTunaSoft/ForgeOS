@@ -1,0 +1,55 @@
+name: ForgeOS Cloud Supervisor (read-only)
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/cloud-supervisor.yml'
+      - 'scripts/cloud_supervisor.py'
+      - 'tests/test_cloud_supervisor.py'
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: forgeos-cloud-supervisor
+  cancel-in-progress: false
+
+jobs:
+  supervisor-tests:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run offline supervisor tests
+        run: python -m unittest tests.test_cloud_supervisor -v
+
+  audit:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Audit task queue and active PRs
+        run: python scripts/cloud_supervisor.py --output cloud-supervisor-report.json
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-supervisor-report
+          path: cloud-supervisor-report.json
+          if-no-files-found: warn
+          retention-days: 7
