@@ -3706,6 +3706,40 @@ The follow-on evidence update is documentation-only and must receive its own
 exact-head checks before merge. Windows filesystem review and physical
 power-loss recovery acceptance remain open.
 
+## 2026-11-16 — official runtime manifest read identity
+
+**Change:** the installed pinned official Windows CPU runtime now routes its
+`runtime.forgeos.json` inventory through the shared bounded identity reader.
+The 256 KiB record must remain an unlinked regular file with the same identity
+before and after the descriptor-bound read, with no-follow flags where
+available. Symlinks, Windows reparse points, hard links, replacement, growth,
+malformed JSON and oversized content fail closed while the substituted record
+remains available for inspection. The original pinned release ZIP remains the
+authority: every executable and DLL is still streamed and hashed against it,
+and no large runtime allocation was added.
+
+**Verification:** the focused runtime-installer suite passed 10 tests. The
+adjacent managed-runtime, inventory, retirement, recovery, documentation and
+handoff-check suites passed 37 tests with 4 expected skips, 10, 20, 23, 10
+and 5 tests respectively. Compileall, `git diff --check` and the bounded
+12 MiB x 3-cycle memory benchmark passed; the benchmark measured a
+1,857,636-byte Python tracemalloc peak and a 25,714,688-byte process peak RSS.
+Full local discovery ran 788 tests with 10 expected skips, 4 failures and 5
+errors. The failures/errors are the existing checkout-specific `.venv`
+AppContainer ACL denial, five engine evidence-retention failures, the
+unittest diagnostic-archive failure and two native output-capture completeness
+failures. These were not caused by the runtime-installer change and remain
+environment-limited; exact-head hosted checks, Windows filesystem review and
+physical Windows download/recovery acceptance remain open. The candidate
+branch is `feat/security-runtime-manifest-read-identity-20261116`. PR #150 is
+ready for review at the published head. Its draft-triggered Foundation,
+Windows EXE and Documentation jobs were skipped by policy, but the required
+ready-for-review synchronization passed on
+`b0abf67588b5e9679434cbca9b1b6bd141ef1921`: Foundation tests run 1296,
+Windows EXE run 874, Documentation run 444 and Handoff integrity run 509.
+No skipped draft run is treated as acceptance evidence. This documentation-
+only evidence update must receive its own exact-head checks before merge.
+
 ## 2026-11-16 — failure publication in shared task actions never masks the triggering error
 
 **Checkpoint:** `2026-11-16-task-actions-failure-path`. **Branch:** `fix/task-actions-failure-publication-20261116`, created from `origin/main` `0c5ead0`. **Resulting SHA:** the branch head named in its draft pull request; a ledger entry cannot name its own commit.
