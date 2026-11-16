@@ -3679,3 +3679,29 @@ run 855, Documentation run 427 and Handoff integrity run 476. The follow-on
 dossier refresh is documentation-only and must receive its own exact-head
 checks before merge. Windows filesystem review and physical Windows
 download/recovery acceptance remain required.
+
+## 2026-11-16 — retirement journal and manifest read identity
+
+**Change:** reversible GGUF retirement and restoration now route the recovery
+journal and saved manifest through the shared bounded identity reader. Each
+4 KiB JSON record must remain an unlinked regular file with the same identity
+before and after parsing. Replacements, Windows reparse points, hard links,
+malformed records and growth fail closed while the retirement entry remains
+available for inspection. The pre-read hard-link check remains so existing
+shared recovery journals keep their explicit diagnostic; the descriptor-bound
+reader is the security authority for the actual parse.
+
+**Verification:** the focused model-retirement suite passed 20 tests,
+including replacement-during-open preservation for both the recovery journal
+and saved manifest. Compileall, documentation/link checks and `git diff --check`
+passed. The bounded 12 MiB x 3-cycle memory benchmark passed with a
+1,857,636-byte Python tracemalloc peak and a 25,550,848-byte process peak RSS.
+Full local discovery ran 786 tests with 10 expected skips, 4 failures and 5
+errors in the existing checkout-specific AppContainer ACL, evidence-retention,
+diagnostic-archive and native-capture checks; the new retirement and adjacent
+model/recovery suites were green. The candidate dossier head `8edf4ac` passed
+the four required exact-head hosted workflows: Foundation tests run 1285,
+Windows EXE run 863, Documentation run 434 and Handoff integrity run 490.
+The follow-on evidence update is documentation-only and must receive its own
+exact-head checks before merge. Windows filesystem review and physical
+power-loss recovery acceptance remain open.

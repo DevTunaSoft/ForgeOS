@@ -11,6 +11,7 @@ from .gguf_download import (
     MAX_MODEL_BYTES, _digest, _exclusive_download_lock, _gguf_header,
     _reject_existing_link, _safe_name, _safe_storage_root, _write_json_atomic,
 )
+from .file_security import read_bounded_file
 from .huggingface_catalog import REPO_ID
 from .model_inventory import MAX_SCAN_ENTRIES, _manifest_model_file, verify_download
 
@@ -19,6 +20,7 @@ TOKEN = re.compile(r"[a-f0-9]{32}\Z")
 REVISION = re.compile(r"[a-f0-9]{40}\Z")
 SHA = re.compile(r"[a-f0-9]{64}\Z")
 FIELDS = frozenset({"repo", "revision", "file", "bytes", "sha256"})
+MAX_RETIREMENT_METADATA_BYTES = 4096
 
 
 def _sync_directory(directory: Path) -> None:
@@ -63,15 +65,21 @@ def _entry(root: Path, identifier: str) -> Path:
 def _record(root: Path, entry: Path) -> tuple[Path, dict]:
     journal = entry / "journal.json"
     _reject_existing_link(journal, root)
-    if not entry.is_dir() or not journal.is_file() or journal.stat().st_size > 4096:
+    if not entry.is_dir():
         raise ValueError("Retirement journal missing or oversized")
     # A journal shared through a hard link could be mutated outside the
     # managed storage tree after validation. Do not trust or delete it.
-    if journal.stat().st_nlink != 1:
+    try:
+        link_count = journal.stat().st_nlink
+    except OSError as exc:
+        raise ValueError("Retirement journal missing or oversized") from exc
+    if link_count != 1:
         raise ValueError("Hard-linked retirement journal is not trusted")
     try:
-        data = json.loads(journal.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError) as exc:
+        data = json.loads(read_bounded_file(
+            journal, max_bytes=MAX_RETIREMENT_METADATA_BYTES,
+            description="Retirement journal").decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
         raise ValueError("Unreadable retirement journal") from exc
     if not isinstance(data, dict) or set(data) != {"version", "path", "identity"} \
             or type(data["version"]) is not int or data["version"] != 1 \
@@ -125,11 +133,11 @@ def _validate_bytes(path: Path, root: Path, info: dict) -> None:
 def _validate_manifest(path: Path, root: Path, info: dict) -> None:
     _reject_existing_link(path, root)
     _single_link(path)
-    if not path.is_file() or path.stat().st_size > 4096:
-        raise RuntimeError("Retired model manifest missing or oversized")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError) as exc:
+        data = json.loads(read_bounded_file(
+            path, max_bytes=MAX_RETIREMENT_METADATA_BYTES,
+            description="Retired GGUF manifest").decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
         raise RuntimeError("Invalid retired GGUF manifest") from exc
     if data != info:
         raise RuntimeError("Retired GGUF manifest identity mismatch")

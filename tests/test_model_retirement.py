@@ -1,6 +1,7 @@
 """Crash injection and security regressions for reversible local model retirement."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -153,6 +154,49 @@ class ModelRetirementTests(unittest.TestCase):
                 self.restore(ticket["id"])
         self.assertFalse(self.model.exists())
         self.assertTrue(journal.exists())
+
+    def test_retirement_journal_replacement_during_open_is_preserved(self):
+        ticket = self.retire()
+        journal = (self.root / ".forgeos-retired" /
+                   ticket["id"] / "journal.json")
+        replacement = journal.with_name(journal.name + ".swap")
+        replacement.write_text(json.dumps({"attacker": True}))
+
+        def replace_before_open(path, flags):
+            if (Path(path).resolve(strict=False).as_posix().casefold()
+                    == journal.resolve(strict=False).as_posix().casefold()):
+                replacement.replace(journal)
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open):
+            with self.assertRaisesRegex(ValueError,
+                                        "Unreadable retirement journal"):
+                self.restore(ticket["id"])
+        self.assertEqual(json.loads(journal.read_text()), {"attacker": True})
+        self.assertFalse(self.model.exists())
+
+    def test_retired_manifest_replacement_during_open_is_preserved(self):
+        ticket = self.retire()
+        manifest = (self.root / ".forgeos-retired" /
+                    ticket["id"] / "manifest.json")
+        replacement = manifest.with_name(manifest.name + ".swap")
+        replacement.write_text(json.dumps({"repo": "attacker"}))
+
+        def replace_before_open(path, flags):
+            if (Path(path).resolve(strict=False).as_posix().casefold()
+                    == manifest.resolve(strict=False).as_posix().casefold()):
+                replacement.replace(manifest)
+            return os.open(path, flags)
+
+        with patch("forgeos.file_security._open_bounded_file",
+                   side_effect=replace_before_open):
+            with self.assertRaisesRegex(RuntimeError,
+                                        "Invalid retired GGUF manifest"):
+                self.restore(ticket["id"])
+        self.assertEqual(json.loads(manifest.read_text()),
+                         {"repo": "attacker"})
+        self.assertFalse(self.model.exists())
 
     def test_restore_detects_destination_created_during_hash(self):
         from forgeos import model_retirement as retirement
