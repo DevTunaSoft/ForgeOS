@@ -59,12 +59,13 @@ jobs:
             -Exe (Join-Path $env:GITHUB_WORKSPACE 'exe\ForgeOS.exe') `
             -OutDir (Join-Path $env:GITHUB_WORKSPACE 'capture')
 
-      - name: Upload the capture
+      - name: Upload the capture and the app output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: window-capture
           path: capture
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
   publish:

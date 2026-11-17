@@ -3,7 +3,8 @@
 # Starts the EXE with the job's isolated profile, waits for its window, and captures
 # only that window with PrintWindow. It refuses to run while any ForgeOS process is
 # already open, so it cannot capture the user's own app, and it refuses to fall back
-# to a screen copy, which could include other windows. Output: OutDir\forgeos-window.png
+# to a screen copy, which could include other windows. The app's output is saved
+# next to the image. Output: OutDir\forgeos-window.png, app-stdout.txt, app-stderr.txt
 param(
     [Parameter(Mandatory = $true)][string] $Exe,
     [Parameter(Mandatory = $true)][string] $OutDir
@@ -32,15 +33,36 @@ public static class ForgeWindow {
 }
 '@
 
-$null = Start-Process -FilePath $Exe -PassThru
+$stdoutPath = Join-Path $OutDir 'app-stdout.txt'
+$stderrPath = Join-Path $OutDir 'app-stderr.txt'
+$app = Start-Process -FilePath $Exe -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+
+function Show-AppState([string] $Reason) {
+    Write-Output $Reason
+    Write-Output ("launcher exited: {0}" -f $app.HasExited)
+    if ($app.HasExited) { Write-Output ("launcher exit code: {0}" -f $app.ExitCode) }
+    Get-Process -Name 'ForgeOS' -ErrorAction SilentlyContinue |
+        Select-Object Id, Responding, MainWindowTitle, MainWindowHandle |
+        Format-Table -AutoSize | Out-String | Write-Output
+    foreach ($path in @($stdoutPath, $stderrPath)) {
+        if (Test-Path $path) {
+            Write-Output ("--- {0} (last 40 lines)" -f (Split-Path $path -Leaf))
+            Get-Content -Path $path -Tail 40 | Write-Output
+        }
+    }
+}
+
 try {
     $hwnd = [IntPtr]::Zero
-    $deadline = (Get-Date).AddSeconds(90)
-    while ($hwnd -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline) {
+    $deadline = (Get-Date).AddSeconds(150)
+    while ($hwnd -eq [IntPtr]::Zero -and -not $app.HasExited -and (Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 1
         $hwnd = [ForgeWindow]::FindWindow($null, $title)
     }
-    if ($hwnd -eq [IntPtr]::Zero) { throw 'the ForgeOS window did not appear within 90 seconds' }
+    if ($hwnd -eq [IntPtr]::Zero) {
+        Show-AppState 'the ForgeOS window was not found'
+        throw 'the ForgeOS window did not appear'
+    }
     Start-Sleep -Seconds 4
 
     $rect = New-Object ForgeRect
