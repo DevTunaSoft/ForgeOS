@@ -311,8 +311,12 @@ if ($killMatch.Success) {
         if ($probe -and ([string]$probe.status -eq 'planning')) { $sawPlanning = $true } else { Start-Sleep -Milliseconds 500 }
     }
     if ($sawPlanning -and -not $planProc.HasExited) {
-        Stop-Process -Id $planProc.Id -Force -ErrorAction SilentlyContinue
+        # PyInstaller one-file builds run the app in a child process, so kill the whole tree.
+        $tree = Invoke-Logged -Exe 'taskkill.exe' -Arguments @('/PID', [string]$planProc.Id, '/T', '/F')
         Start-Sleep -Seconds 2
+        $leftover = @(Get-Process -Name 'ForgeOS' -ErrorAction SilentlyContinue).Count
+        $treeOk = ($tree.Code -eq 0) -and ($leftover -eq 0)
+        Add-Step 'process tree killed while planning' $treeOk ("taskkill exit {0}; ForgeOS processes left: {1}" -f $tree.Code, $leftover)
         # 1. Right after the kill, the abandoned lease must keep recover away from the task.
         $early = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'recover')
         $leaseHeld = ([string](Read-Task $killId).status -eq 'planning')
@@ -330,7 +334,7 @@ if ($killMatch.Success) {
         $completed = ([string](Read-Task $killId).status -eq 'passed')
         # 5. Unrelated work in the project must be untouched.
         $projectUntouched = ((Get-FileHash -Path $notes -Algorithm SHA256).Hash -eq $notesSha) -and ((Get-FileHash -Path (Join-Path $demo 'calc.py') -Algorithm SHA256).Hash -eq $calcSeedSha)
-        $killOk = $sawPlanning -and $leaseHeld -and $secondRefused -and ($late.Code -eq 0) -and $recoveredQueued -and ($replan.Code -eq 0) -and ($killRun.Code -eq 0) -and $completed -and $projectUntouched
+        $killOk = $treeOk -and $sawPlanning -and $leaseHeld -and $secondRefused -and ($late.Code -eq 0) -and $recoveredQueued -and ($replan.Code -eq 0) -and ($killRun.Code -eq 0) -and $completed -and $projectUntouched
         $killDetail = "planning seen: {0}; live lease held: {1}; second planner refused: {2}; recover exit after lease horizon: {3}; re-queued: {4}; replan exit: {5}; run exit: {6}; passed: {7}; project untouched: {8}" -f $sawPlanning, $leaseHeld, $secondRefused, $late.Code, $recoveredQueued, $replan.Code, $killRun.Code, $completed, $projectUntouched
     } else {
         $killDetail = "planning was not observed before the process ended (planning seen: {0})" -f $sawPlanning
