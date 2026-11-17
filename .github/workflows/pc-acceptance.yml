@@ -1,0 +1,70 @@
+name: PC acceptance
+run-name: PC acceptance - ${{ github.ref_name }}
+
+# Runs the acceptance on the self-hosted PC runner. The tested EXE comes from the
+# acceptance-latest release. Everything runs in an isolated profile, so the
+# user's real ForgeOS data is not touched. The logs are public, so this workflow
+# prints no personal paths or account names.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/pc-acceptance.yml"
+      - "pc/windows-pc-acceptance.ps1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pc-acceptance
+  cancel-in-progress: false
+
+jobs:
+  pc:
+    name: acceptance on the PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+    steps:
+      - name: Check out the harness from the designated branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out the code under test (planning fix)
+        uses: actions/checkout@v4
+        with:
+          ref: fix/planning-socket-timeout-20261117
+          path: under-test
+          persist-credentials: false
+
+      - name: Download the tested EXE from the release
+        shell: powershell
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'ForgeOS-acceptance-planning-fix.exe'
+          Invoke-WebRequest -Uri 'https://github.com/DevTunaSoft/ForgeOS/releases/download/acceptance-latest/ForgeOS-acceptance-planning-fix.exe' -OutFile $exe -UseBasicParsing
+          "exe bytes: $((Get-Item $exe).Length)"
+
+      - name: Run the acceptance on the PC
+        shell: powershell
+        run: |
+          $isoProfile = Join-Path $env:RUNNER_TEMP 'isolated-profile'
+          New-Item -ItemType Directory -Force -Path $isoProfile | Out-Null
+          $env:USERPROFILE = $isoProfile
+          $env:HOME = $isoProfile
+          & "$env:GITHUB_WORKSPACE\pc\windows-pc-acceptance.ps1" `
+            -Exe (Join-Path $env:RUNNER_TEMP 'ForgeOS-acceptance-planning-fix.exe') `
+            -UnderTest "$env:GITHUB_WORKSPACE\under-test" `
+            -ResultsDir (Join-Path $env:RUNNER_TEMP 'pc-results') `
+            -Label pc -TestRef planning-fix `
+            -PyLauncher py -PyArgs @('-3.12') `
+            -UnderTestSha d99472de9c51e8965002ff9565581129f3d13a14 `
+            -OllamaPreinstalled
+
+      - name: Summary
+        if: always()
+        shell: powershell
+        run: |
+          $doc = Get-Content (Join-Path $env:RUNNER_TEMP 'pc-results\pc.json') -Raw | ConvertFrom-Json
+          $doc.steps | ForEach-Object { '{0,-8} {1}' -f $(if ($_.ok) { 'ok' } else { 'FAILED' }), $_.name }
+          "VERDICT: $($doc.verdict)"
