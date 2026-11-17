@@ -230,6 +230,11 @@ if (-not $idMatch.Success) { Stop-Run "add printed no task id: $($add.Tail)" }
 $taskId = $idMatch.Groups[1].Value
 Add-Step 'exe --cli add' ($add.Code -eq 0) "created task #$taskId"
 
+# A separate process must see the task that the first process just added.
+$afterAdd = Read-Task $taskId
+$persistOk = [bool]($afterAdd -and ([string]$afterAdd.status -eq 'queued'))
+Add-Step 'task visible to a fresh process after add' $persistOk ("status {0}" -f $afterAdd.status)
+
 $plan = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'plan', $taskId, '--model', $Model)
 $facts['plan_seconds'] = $plan.Seconds
 Add-Step 'exe --cli plan' ($plan.Code -eq 0) ("exit {0} in {1}s. tail: {2}" -f $plan.Code, $plan.Seconds, $plan.Tail)
@@ -273,7 +278,20 @@ $facts['worktree_diff'] = $worktreeDiff.Text
 Add-Step 'worktree evidence' ($addFixed -and $testUnchanged) ("calc.py returns a + b: {0}; test_calc.py unchanged per git: {1}" -f $addFixed, $testUnchanged)
 
 # ---- verdict --------------------------------------------------------------
-$pass = $frozenOk -and ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged
+# ---- an unsupported frozen preset must fail closed (no host fallback) -----
+$refusalOk = $false
+$refusalDetail = 'no second task was created'
+$refusalAdd = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'add', $demo, 'Second task used only for the unsupported-preset refusal check.')
+$refusalMatch = [regex]::Match($refusalAdd.Text, 'Created task #(\d+)')
+if ($refusalMatch.Success) {
+    $refusalId = $refusalMatch.Groups[1].Value
+    $refusal = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'run', $refusalId, '--workspace-parent', $wsParent, '--preset', 'npm-test', '--model', $Model, '--allow-host-tests')
+    $refusalOk = ($refusal.Code -ne 0) -and ($refusal.Text -match 'does not yet support preset')
+    $refusalDetail = "npm-test exit {0}; refused with the expected message: {1}; tail: {2}" -f $refusal.Code, $refusalOk, $refusal.Tail
+}
+Add-Step 'exe refuses unsupported frozen preset' $refusalOk $refusalDetail
+
+$pass = $frozenOk -and ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged -and $persistOk -and $refusalOk
 $verdict = if ($pass) { 'PASS' } else { 'FAIL' }
 Save-Summary $verdict
 Write-Log "RESULT $verdict for ${Label} (test ref $TestRef at $($facts['under_test_sha']), exe sha256 $($facts['exe_sha256']))"
