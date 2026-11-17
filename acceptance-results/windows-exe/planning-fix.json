@@ -4,18 +4,18 @@
   "model": "qwen2.5-coder:3b",
   "test_ref": "fix/planning-socket-timeout-20261117",
   "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
-  "designated_sha": "a598e6f48a64f5f0fb245fa6b467c5938f418093",
-  "run_id": "44008540596",
+  "designated_sha": "1cc6edd30440c1ac4140c44c9e78a0077064933a",
+  "run_id": "44009105906",
   "run_attempt": "1",
-  "started_utc": "2026-11-17T03:13:28.0422320Z",
-  "updated_utc": "2026-11-17T03:15:23.7341578Z",
+  "started_utc": "2026-11-17T03:18:11.2194606Z",
+  "updated_utc": "2026-11-17T03:20:47.1177183Z",
   "facts": {
     "runner_os": "Microsoft Windows Server 2025 Datacenter",
     "python": "Python 3.12.10",
     "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
-    "exe_bytes": 18784233,
-    "exe_sha256": "9194a9cc7c357d61e7c0e198ef74f51ab664bf5ffcfb65c4e4b478d4a3cbbfe8",
-    "secure_smoke_report": "ForgeOS secure AppContainer smoke OK\r\n......\r\n6 passed in 1.01s\r\n",
+    "exe_bytes": 18782700,
+    "exe_sha256": "ce84f5ea5852be89407c63b6e620c28abdb0c57038f89ecac0e6814f1c85e94b",
+    "secure_smoke_report": "ForgeOS secure AppContainer smoke OK\r\n......\r\n6 passed in 1.02s\r\n",
     "gui_report": {
       "gui_started": true,
       "closed_cleanly": true,
@@ -28,23 +28,23 @@
       ],
       "paginated_history_ok": true,
       "offline_user_guide_available": true,
-      "ram_after_paging_bytes": 52805632,
-      "rss_growth_during_paging_bytes": 28672,
+      "ram_after_paging_bytes": 52867072,
+      "rss_growth_during_paging_bytes": 106496,
       "tabs": [
         "Development",
         "Activity & diagnostics"
       ],
       "queue_initialized": true,
-      "ram_after_gui_startup_bytes": 52776960,
-      "startup_elapsed_seconds": 0.78,
+      "ram_after_gui_startup_bytes": 52760576,
+      "startup_elapsed_seconds": 0.812,
       "scope": "Frozen Tk widgets and event loop; not Ollama/user hardware"
     },
     "ollama": "0.40.16",
     "ollama_list": "NAME                ID              SIZE      MODIFIED               \nqwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    ",
-    "plan_seconds": 42.4,
-    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"passed\", \"attempts\": 2, \"created\": 1794885269.9884114, \"updated\": 1794885321.2272372, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-1\\\", \\\"branch\\\": \\\"forgeos/task-1\\\", \\\"edited\\\": [\\\"calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\"test_add (test_calc.AddTests.test_add) ... ok\\\\n\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 149, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"containment\\\": \\\"windows-zero-capability-appcontainer+job-object\\\", \\\"token_is_appcontainer\\\": true, \\\"capability_count\\\": 0, \\\"network_capabilities_granted\\\": false, \\\"handle_allowlist\\\": true, \\\"ui_restrictions\\\": 255, \\\"profile_deleted\\\": true, \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487\\\", \\\"source_bytes\\\": 149, \\\"context_bytes\\\": 143, \\\"saved_bytes\\\": 6, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"}\n]",
+    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"passed\", \"attempts\": 2, \"created\": 1794885565.7477386, \"updated\": 1794885613.012595, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-1\\\", \\\"branch\\\": \\\"forgeos/task-1\\\", \\\"edited\\\": [\\\"calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\"test_add (test_calc.AddTests.test_add) ... ok\\\\n\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 149, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"containment\\\": \\\"windows-zero-capability-appcontainer+job-object\\\", \\\"token_is_appcontainer\\\": true, \\\"capability_count\\\": 0, \\\"network_capabilities_granted\\\": false, \\\"handle_allowlist\\\": true, \\\"ui_restrictions\\\": 255, \\\"profile_deleted\\\": true, \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487\\\", \\\"source_bytes\\\": 149, \\\"context_bytes\\\": 143, \\\"saved_bytes\\\": 6, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"}\n]",
+    "plan_seconds": 24.6,
     "worktree_status": " M calc.py",
-    "worktree_diff": "warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it\ndiff --git a/calc.py b/calc.py\nindex 12ee743..19cf2a0 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n\\ No newline at end of file"
+    "worktree_diff": "warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it\ndiff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b"
   },
   "steps": [
     {
@@ -85,7 +85,7 @@
     {
       "name": "model pull",
       "ok": true,
-      "detail": "exit 0 in 17.2s"
+      "detail": "exit 0 in 16.1s"
     },
     {
       "name": "demo project",
@@ -103,14 +103,19 @@
       "detail": "created task #1"
     },
     {
+      "name": "task visible to a fresh process after add",
+      "ok": true,
+      "detail": "status queued"
+    },
+    {
       "name": "exe --cli plan",
       "ok": true,
-      "detail": "exit 0 in 42.4s. tail:         self.assertEqual(add(-1, -1), -2)\n        self.assertEqual(add(0, 0), 0)\n        self.assertEqual(add(1.5, 2.5), 4.0)\n        self.assertEqual(add(-1.5, 2.5), 1.0)\n\nif __name__ == '__main__':\n    unittest.main()\n```\n\n**Acceptance Tests:**\n1. Running `test_calc.py` should pass without any errors.\n2. The `add()` function should return the correct sum for various inputs, including positive, negative, and zero values, as well as floating-point numbers."
+      "detail": "exit 0 in 24.6s. tail:    - **Test Case 2**: Verify that `add(-1, -1)` returns `-2`.\n   - **Test Case 3**: Ensure that `add(0, 0)` returns `0`.\n   - **Test Case 4**: Test `add(1.5, 2.5)` to ensure it returns `4.0`.\n\n4. **Risk Assessment**:\n   - **Risk**: Failure to update the `add()` function properly could lead to incorrect results when calling `add()`.\n   - **Mitigation**: Regular code reviews and thorough testing will help catch such errors early.\n\n5. **Acceptance Tests**:\n   - Execute the test cases listed above to ensure that the `add()` function behaves as expected.\n\nBy following this plan, the change to `calc.py` will be verified through the execution of these test cases."
     },
     {
       "name": "exe --cli run (edit, test, repair)",
       "ok": true,
-      "detail": "exit 0 in 8.8s. tail:       \"saved_bytes\": 6,\n      \"optimized\": false,\n      \"preset\": \"python-unittest\",\n      \"deduplicated_lines\": 0,\n      \"filter_status\": \"not-configured\",\n      \"capture_complete\": true,\n      \"source_prearchived\": false\n    }\n  },\n  \"learning\": null,\n  \"model\": \"qwen2.5-coder:3b\"\n}"
+      "detail": "exit 0 in 21.7s. tail:       \"saved_bytes\": 6,\n      \"optimized\": false,\n      \"preset\": \"python-unittest\",\n      \"deduplicated_lines\": 0,\n      \"filter_status\": \"not-configured\",\n      \"capture_complete\": true,\n      \"source_prearchived\": false\n    }\n  },\n  \"learning\": null,\n  \"model\": \"qwen2.5-coder:3b\"\n}"
     },
     {
       "name": "task status",
@@ -126,6 +131,11 @@
       "name": "worktree evidence",
       "ok": true,
       "detail": "calc.py returns a + b: True; test_calc.py unchanged per git: True"
+    },
+    {
+      "name": "exe refuses unsupported frozen preset",
+      "ok": true,
+      "detail": "npm-test exit 1; refused with the expected message: True; tail: Traceback (most recent call last):\n  File \"acceptance_entry.py\", line 20, in <module>\n  File \"acceptance_entry.py\", line 14, in main\n  File \"forgeos\\cli.py\", line 665, in main\n  File \"forgeos\\engine.py\", line 543, in execute_task\n  File \"forgeos\\engine.py\", line 396, in _execute_task\n  File \"forgeos\\engine.py\", line 178, in _run_workspace_tests\n  File \"forgeos\\secure_runner.py\", line 57, in run_secure_windows_test\nRuntimeError: Secure Windows runner does not yet support preset: npm-test\n[PYI-10128:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!"
     }
   ]
 }
