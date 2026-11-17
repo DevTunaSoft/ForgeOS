@@ -1,0 +1,106 @@
+name: PC window capture
+run-name: PC window capture - run ${{ inputs.run_id || '44185985671' }}
+
+# Captures only the ForgeOS window on the self-hosted PC runner, from the branding EXE of
+# an earlier run, then publishes the image for a visual check. The app runs in an isolated
+# profile, and the capture refuses to run while another ForgeOS process is open.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Run whose branding-exe artifact to capture
+        required: true
+        default: '44185985671'
+        type: string
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/pc-window-capture.yml"
+      - "pc/window-capture.ps1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pc-acceptance
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    name: capture the ForgeOS window on the PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out the harness from the designated branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download the branding EXE from the run
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-exe
+          path: exe
+          run-id: ${{ inputs.run_id || '44185985671' }}
+          github-token: ${{ github.token }}
+
+      - name: Capture the window
+        shell: powershell
+        run: |
+          $isoProfile = Join-Path $env:RUNNER_TEMP 'isolated-profile'
+          New-Item -ItemType Directory -Force -Path $isoProfile | Out-Null
+          $env:USERPROFILE = $isoProfile
+          $env:HOME = $isoProfile
+          & "$env:GITHUB_WORKSPACE\pc\window-capture.ps1" `
+            -Exe (Join-Path $env:GITHUB_WORKSPACE 'exe\ForgeOS.exe') `
+            -OutDir (Join-Path $env:GITHUB_WORKSPACE 'capture')
+
+      - name: Upload the capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: window-capture
+          path: capture
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish the capture
+    needs: capture
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the designated branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Download the capture
+        uses: actions/download-artifact@v4
+        with:
+          name: window-capture
+          path: incoming
+
+      - name: Commit the capture to the designated branch
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          dest=acceptance-results/windows-gui
+          mkdir -p "$dest"
+          cp incoming/forgeos-window.png "$dest"/
+          git add -f -- "$dest"
+          if git diff --cached --quiet; then
+            echo "No change to publish."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "ci: publish the ForgeOS window capture from run ${GITHUB_RUN_ID}"
+          git pull -q --no-rebase --no-edit origin "$BRANCH"
+          git push -q origin "HEAD:refs/heads/$BRANCH"
