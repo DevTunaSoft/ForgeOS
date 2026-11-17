@@ -1,0 +1,106 @@
+
+[01:32:55] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; main at 5107d467db96e7512f5d7126af745fb9c5c1bcdf
+[01:33:23] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
+[01:33:27] STEP ollama server: ok. version 0.40.16
+[01:33:27] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
+[01:33:39] STEP model pull: ok. exit 0 in 12.2s
+[01:33:39] $ D:\a\_temp\ollama\ollama.exe list
+NAME                ID              SIZE      MODIFIED               
+qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    
+[01:33:39] $ python -m forgeos models
+[
+  {
+    "name": "qwen2.5-coder:3b",
+    "model": "qwen2.5-coder:3b",
+    "modified_at": "2026-11-17T01:33:39.3018538Z",
+    "size": 1929912626,
+    "digest": "f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "qwen2",
+      "families": [
+        "qwen2"
+      ],
+      "parameter_size": "3.1B",
+      "quantization_level": "Q4_K_M",
+      "context_length": 32768,
+      "embedding_length": 2048,
+      "runner": "ggml"
+    },
+    "capabilities": [
+      "completion",
+      "tools",
+      "insert"
+    ]
+  }
+]
+[01:33:41] STEP forgeos models: ok. exit 0; output lists qwen2.5-coder:3b: True
+[01:33:41] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-main\demo-project
+[01:33:41] $ python -m forgeos add D:\a\_temp\acceptance-main\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
+Created task #1
+[01:33:41] STEP add task: ok. created task #1
+[01:33:41] $ python -m forgeos plan 1 --model qwen2.5-coder:3b
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\a\ForgeOS\ForgeOS\under-test\src\forgeos\__main__.py", line 2, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "D:\a\ForgeOS\ForgeOS\under-test\src\forgeos\cli.py", line 642, in main
+    output = plan_task(store, args.id,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\ForgeOS\ForgeOS\under-test\src\forgeos\task_actions.py", line 115, in plan_task
+    output = _bounded_result_text(chosen_model.plan(description))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\ForgeOS\ForgeOS\under-test\src\forgeos\core.py", line 2213, in plan
+    return self._complete(prompt)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\ForgeOS\ForgeOS\under-test\src\forgeos\core.py", line 2177, in _complete
+    with urlopen(req, timeout=30) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\urllib\request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\urllib\request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\urllib\request.py", line 1373, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\urllib\request.py", line 1348, in do_open
+    r = h.getresponse()
+        ^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\http\client.py", line 1430, in getresponse
+    response.begin()
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\http\client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\http\client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+[01:34:12] STEP plan: FAILED. exit 1 in 30.4s. tail:   File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\http\client.py", line 1430, in getresponse
+    response.begin()
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\http\client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\http\client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+[01:34:12] $ python -m forgeos list
+[01:34:12] STEP abort: FAILED. plan exited 1; task status blocked; last_error timed out
+[01:34:12] RESULT FAIL for main: plan exited 1; task status blocked; last_error timed out
