@@ -4,17 +4,17 @@
   "model": "qwen2.5-coder:3b",
   "test_ref": "main",
   "under_test_sha": "5107d467db96e7512f5d7126af745fb9c5c1bcdf",
-  "designated_sha": "54d4a7af97c8a1a9c350c92ace4c701763c9f921",
-  "run_id": "44036832180",
+  "designated_sha": "5ec13aa1bea6c86933713751c54388cea0d669f6",
+  "run_id": "44039064225",
   "run_attempt": "1",
-  "started_utc": "2026-11-17T07:12:59.6595103Z",
-  "updated_utc": "2026-11-17T07:14:44.0578915Z",
+  "started_utc": "2026-11-17T07:30:11.8516032Z",
+  "updated_utc": "2026-11-17T07:31:53.7222739Z",
   "facts": {
     "runner_os": "Microsoft Windows Server 2025 Datacenter",
     "python": "Python 3.12.10",
     "under_test_sha": "5107d467db96e7512f5d7126af745fb9c5c1bcdf",
-    "exe_bytes": 18784008,
-    "exe_sha256": "e35ef34826254aa3ff965a3fcf929aa977e34eaa82977263eabe1f07ba6f748f",
+    "exe_bytes": 18783911,
+    "exe_sha256": "6c4aeef59d1713ff667b9e969b15102ee5b8a945a5ce4effe683fb4fa0a1603b",
     "secure_smoke_report": "ForgeOS secure AppContainer smoke OK\r\n......\r\n6 passed in 1.02s\r\n",
     "gui_report": {
       "gui_started": true,
@@ -28,21 +28,21 @@
       ],
       "paginated_history_ok": true,
       "offline_user_guide_available": true,
-      "ram_after_paging_bytes": 52740096,
-      "rss_growth_during_paging_bytes": 36864,
+      "ram_after_paging_bytes": 52707328,
+      "rss_growth_during_paging_bytes": 32768,
       "tabs": [
         "Development",
         "Activity & diagnostics"
       ],
       "queue_initialized": true,
-      "ram_after_gui_startup_bytes": 52703232,
-      "startup_elapsed_seconds": 0.836,
+      "ram_after_gui_startup_bytes": 52674560,
+      "startup_elapsed_seconds": 0.76,
       "scope": "Frozen Tk widgets and event loop; not Ollama/user hardware"
     },
     "ollama": "0.40.16",
     "ollama_list": "NAME                ID              SIZE      MODIFIED               \nqwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    ",
-    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-main\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"blocked\", \"attempts\": 1, \"created\": 1794899645.576149, \"updated\": 1794899681.0683382, \"last_error\": \"timed out\", \"result\": \"\"}\n]",
-    "plan_seconds": 32.5
+    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-main\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"blocked\", \"attempts\": 1, \"created\": 1794900676.8093376, \"updated\": 1794900711.1431296, \"last_error\": \"timed out\", \"result\": \"\"}\n]",
+    "plan_seconds": 32.3
   },
   "steps": [
     {
@@ -83,7 +83,7 @@
     {
       "name": "model pull",
       "ok": true,
-      "detail": "exit 0 in 17.3s"
+      "detail": "exit 0 in 16.9s"
     },
     {
       "name": "demo project",
@@ -108,7 +108,7 @@
     {
       "name": "exe --cli plan",
       "ok": false,
-      "detail": "exit 1 in 32.5s. tail:   File \"urllib\\request.py\", line 215, in urlopen\n  File \"urllib\\request.py\", line 515, in open\n  File \"urllib\\request.py\", line 532, in _open\n  File \"urllib\\request.py\", line 492, in _call_chain\n  File \"urllib\\request.py\", line 1373, in http_open\n  File \"urllib\\request.py\", line 1348, in do_open\n  File \"http\\client.py\", line 1430, in getresponse\n  File \"http\\client.py\", line 331, in begin\n  File \"http\\client.py\", line 292, in _read_status\n  File \"socket.py\", line 720, in readinto\nTimeoutError: timed out\n[PYI-4112:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!"
+      "detail": "exit 1 in 32.3s. tail:   File \"urllib\\request.py\", line 215, in urlopen\n  File \"urllib\\request.py\", line 515, in open\n  File \"urllib\\request.py\", line 532, in _open\n  File \"urllib\\request.py\", line 492, in _call_chain\n  File \"urllib\\request.py\", line 1373, in http_open\n  File \"urllib\\request.py\", line 1348, in do_open\n  File \"http\\client.py\", line 1430, in getresponse\n  File \"http\\client.py\", line 331, in begin\n  File \"http\\client.py\", line 292, in _read_status\n  File \"socket.py\", line 720, in readinto\nTimeoutError: timed out\n[PYI-9420:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!"
     },
     {
       "name": "abort",
