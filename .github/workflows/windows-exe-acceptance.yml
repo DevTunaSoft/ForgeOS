@@ -168,3 +168,60 @@ jobs:
               -m "Run ${GITHUB_RUN_ID}: main=$(verdict main), planning-fix=$(verdict planning-fix)."
           git pull -q --no-rebase --no-edit origin "$BRANCH"
           git push -q origin "HEAD:refs/heads/$BRANCH"
+
+  release:
+    name: publish the passing test EXE
+    needs: exe-acceptance
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the planning-fix results
+        uses: actions/download-artifact@v4
+        with:
+          name: results-planning-fix
+          path: results
+
+      - name: Decide whether this run passed
+        id: verdict
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          verdict=$(jq -r '.verdict // "missing"' results/planning-fix.json 2>/dev/null || echo missing)
+          designated=$(jq -r '.designated_sha // ""' results/planning-fix.json 2>/dev/null || echo "")
+          if [ "$verdict" = "PASS" ] && [ "$designated" = "$EXPECTED_SHA" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "planning-fix passed for $EXPECTED_SHA; publishing"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "planning-fix verdict is $verdict for $designated; not publishing"
+          fi
+
+      - name: Download the planning-fix EXE
+        if: steps.verdict.outputs.publish == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: exe-planning-fix
+          path: exe
+
+      - name: Publish the pre-release
+        if: steps.verdict.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          exe_sha=$(sha256sum exe/ForgeOS.exe | cut -d' ' -f1)
+          under_sha=$(jq -r '.under_test_sha' results/planning-fix.json)
+          cp exe/ForgeOS.exe ForgeOS-acceptance-planning-fix.exe
+          cat > notes.md <<EOF
+          Acceptance TEST build of ForgeOS (planning fix), built and checked by GitHub Actions.
+
+          - Source under test: \`${under_sha}\` (branch \`fix/planning-socket-timeout-20261117\`)
+          - ForgeOS.exe SHA-256: \`${exe_sha}\`
+          - Result: PASS on a hosted Windows runner, run ${GITHUB_RUN_ID}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          This is a test build, not a signed release. It is a console build with an extra hidden \`--cli\` route that the acceptance tests use.
+          EOF
+          gh release delete acceptance-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create acceptance-latest ForgeOS-acceptance-planning-fix.exe --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Acceptance test build (planning fix)" --notes-file notes.md
