@@ -1,0 +1,131 @@
+{
+  "label": "planning-fix",
+  "verdict": "FAIL",
+  "model": "qwen2.5-coder:3b",
+  "test_ref": "fix/planning-socket-timeout-20261117",
+  "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
+  "designated_sha": "9379cca15ad185458c65c48f4ed7f08a226f989c",
+  "run_id": "44007913886",
+  "run_attempt": "1",
+  "started_utc": "2026-11-17T03:08:37.3952257Z",
+  "updated_utc": "2026-11-17T03:10:32.6039824Z",
+  "facts": {
+    "runner_os": "Microsoft Windows Server 2025 Datacenter",
+    "python": "Python 3.12.10",
+    "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
+    "exe_bytes": 18783049,
+    "exe_sha256": "bc0294a9a503994055e5d35c1f0440eff059f49408c3f525ce7be0b375594c20",
+    "secure_smoke_report": "ForgeOS secure AppContainer smoke OK\r\n......\r\n6 passed in 1.02s\r\n",
+    "gui_report": {
+      "gui_started": true,
+      "closed_cleanly": true,
+      "tasks_verified": 520,
+      "page_sizes": [
+        150,
+        150,
+        150,
+        70
+      ],
+      "paginated_history_ok": true,
+      "offline_user_guide_available": true,
+      "ram_after_paging_bytes": 52523008,
+      "rss_growth_during_paging_bytes": 49152,
+      "tabs": [
+        "Development",
+        "Activity & diagnostics"
+      ],
+      "queue_initialized": true,
+      "ram_after_gui_startup_bytes": 52473856,
+      "startup_elapsed_seconds": 0.845,
+      "scope": "Frozen Tk widgets and event loop; not Ollama/user hardware"
+    },
+    "ollama": "0.40.16",
+    "ollama_list": "NAME                ID              SIZE      MODIFIED               \nqwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    ",
+    "plan_seconds": 42.7,
+    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"planned\", \"attempts\": 1, \"created\": 1794884984.8911045, \"updated\": 1794885027.52262, \"last_error\": \"\", \"result\": \"### Plan: Update calc.py\\n\\n#### Objective:\\n- Modify the `add` function in `calc.py` to return the sum of its two parameters.\\n- Ensure that `test_calc.py` remains unaffected.\\n\\n#### Steps:\\n\\n1. **Locate `calc.py`:**\\n   - Open the `calc.py` file in a text editor.\\n\\n2. **Edit the `add` function:**\\n   - Change the `add` function from:\\n     ```python\\n     def add(a, b):\\n         return a\\n     ```\\n   - To:\\n     ```python\\n     def add(a, b):\\n         return a + b\\n     ```\\n\\n3. **Save the changes to `calc.py`:**\\n\\n#### Risks:\\n- **Syntax errors:** Incorrect syntax can cause the file to fail to run or raise runtime errors.\\n- **Code dependencies:** If `test_calc.py` relies on the `add` function's behavior, it might need to be updated to reflect the new implementation.\\n- **Testing environment:** The test file should be checked for any errors or failures that may arise from the change to `calc.py`.\\n\\n#### Acceptance Tests:\\n\\n1. **Basic functionality test:**\\n   - Create a new Python script, e.g., `test_add.py`, and write the following code:\\n     ```python\\n     from calc import add\\n\\n     def test_add():\\n         assert add(2, 3) == 5, \\\"2 + 3 should equal 5\\\"\\n         assert add(-1, 1) == 0, \\\"-1 + 1 should equal 0\\\"\\n         assert add(0, 0) == 0, \\\"0 + 0 should equal 0\\\"\\n\\n     test_add()\\n     ```\\n   - Run this script to ensure it passes without errors. If it fails, there are issues with `calc.py`.\\n\\n2. **Edge case test:**\\n   - Modify `test_add.py` to include a test case for `add(0, 1)`.\\n   - Run the script again to ensure that the updated `add` function handles zero correctly.\\n\\n3. **Dependence test:**\\n   - Create a dependency on `add` in `test_calc.py` and test that it works correctly. This is more about ensuring that the change to `calc.py` did not break the existing logic.\\n\\n#### Conclusion:\\nThis plan outlines a straightforward modification to `calc.py` to enhance its functionality, along with necessary tests to ensure its reliability.\"}\n]",
+    "worktree_status": "fatal: cannot change to 'D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-1': No such file or directory",
+    "worktree_diff": "fatal: cannot change to 'D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-1': No such file or directory"
+  },
+  "steps": [
+    {
+      "name": "exe --smoke",
+      "ok": true,
+      "detail": "exit 0"
+    },
+    {
+      "name": "exe acceptance identity",
+      "ok": true,
+      "detail": "exit 0; source commit and exe sha256 match: True"
+    },
+    {
+      "name": "exe --secure-sandbox-smoke",
+      "ok": true,
+      "detail": "exit 0"
+    },
+    {
+      "name": "exe --gui-acceptance-report",
+      "ok": true,
+      "detail": "exit 0"
+    },
+    {
+      "name": "exe gui report",
+      "ok": true,
+      "detail": "gui started, queue, clean close, 520 tasks: True"
+    },
+    {
+      "name": "ollama installed",
+      "ok": true,
+      "detail": "D:\\a\\_temp\\ollama\\ollama.exe"
+    },
+    {
+      "name": "ollama server",
+      "ok": true,
+      "detail": "version 0.40.16"
+    },
+    {
+      "name": "model pull",
+      "ok": true,
+      "detail": "exit 0 in 14.7s"
+    },
+    {
+      "name": "demo project",
+      "ok": true,
+      "detail": "git repo with failing add() at D:\\a\\_temp\\acceptance-planning-fix\\demo-project"
+    },
+    {
+      "name": "exe --cli models",
+      "ok": true,
+      "detail": "exit 0; lists qwen2.5-coder:3b: True"
+    },
+    {
+      "name": "exe --cli add",
+      "ok": true,
+      "detail": "created task #1"
+    },
+    {
+      "name": "exe --cli plan",
+      "ok": true,
+      "detail": "exit 0 in 42.7s. tail:      ```\n   - Run this script to ensure it passes without errors. If it fails, there are issues with `calc.py`.\n\n2. **Edge case test:**\n   - Modify `test_add.py` to include a test case for `add(0, 1)`.\n   - Run the script again to ensure that the updated `add` function handles zero correctly.\n\n3. **Dependence test:**\n   - Create a dependency on `add` in `test_calc.py` and test that it works correctly. This is more about ensuring that the change to `calc.py` did not break the existing logic.\n\n#### Conclusion:\nThis plan outlines a straightforward modification to `calc.py` to enhance its functionality, along with necessary tests to ensure its reliability."
+    },
+    {
+      "name": "exe --cli run (edit, test, repair)",
+      "ok": false,
+      "detail": "exit 1 in 2.2s. tail: Traceback (most recent call last):\n  File \"acceptance_entry.py\", line 20, in <module>\n  File \"acceptance_entry.py\", line 14, in main\n  File \"forgeos\\cli.py\", line 665, in main\n  File \"forgeos\\engine.py\", line 536, in execute_task\nValueError: Host test execution requires explicit --allow-host-tests\n[PYI-8096:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!"
+    },
+    {
+      "name": "task status",
+      "ok": false,
+      "detail": "status planned; edited: ; last_error: "
+    },
+    {
+      "name": "test evidence",
+      "ok": false,
+      "detail": "test passed: False; last lines: "
+    },
+    {
+      "name": "worktree evidence",
+      "ok": false,
+      "detail": "calc.py returns a + b: False; test_calc.py unchanged per git: False"
+    }
+  ]
+}
