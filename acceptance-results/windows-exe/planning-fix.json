@@ -1,21 +1,21 @@
 {
   "label": "planning-fix",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "model": "qwen2.5-coder:3b",
   "test_ref": "fix/planning-socket-timeout-20261117",
   "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
-  "designated_sha": "9379cca15ad185458c65c48f4ed7f08a226f989c",
-  "run_id": "44007913886",
+  "designated_sha": "a598e6f48a64f5f0fb245fa6b467c5938f418093",
+  "run_id": "44008540596",
   "run_attempt": "1",
-  "started_utc": "2026-11-17T03:08:37.3952257Z",
-  "updated_utc": "2026-11-17T03:10:32.6039824Z",
+  "started_utc": "2026-11-17T03:13:28.0422320Z",
+  "updated_utc": "2026-11-17T03:15:23.7341578Z",
   "facts": {
     "runner_os": "Microsoft Windows Server 2025 Datacenter",
     "python": "Python 3.12.10",
     "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
-    "exe_bytes": 18783049,
-    "exe_sha256": "bc0294a9a503994055e5d35c1f0440eff059f49408c3f525ce7be0b375594c20",
-    "secure_smoke_report": "ForgeOS secure AppContainer smoke OK\r\n......\r\n6 passed in 1.02s\r\n",
+    "exe_bytes": 18784233,
+    "exe_sha256": "9194a9cc7c357d61e7c0e198ef74f51ab664bf5ffcfb65c4e4b478d4a3cbbfe8",
+    "secure_smoke_report": "ForgeOS secure AppContainer smoke OK\r\n......\r\n6 passed in 1.01s\r\n",
     "gui_report": {
       "gui_started": true,
       "closed_cleanly": true,
@@ -28,23 +28,23 @@
       ],
       "paginated_history_ok": true,
       "offline_user_guide_available": true,
-      "ram_after_paging_bytes": 52523008,
-      "rss_growth_during_paging_bytes": 49152,
+      "ram_after_paging_bytes": 52805632,
+      "rss_growth_during_paging_bytes": 28672,
       "tabs": [
         "Development",
         "Activity & diagnostics"
       ],
       "queue_initialized": true,
-      "ram_after_gui_startup_bytes": 52473856,
-      "startup_elapsed_seconds": 0.845,
+      "ram_after_gui_startup_bytes": 52776960,
+      "startup_elapsed_seconds": 0.78,
       "scope": "Frozen Tk widgets and event loop; not Ollama/user hardware"
     },
     "ollama": "0.40.16",
     "ollama_list": "NAME                ID              SIZE      MODIFIED               \nqwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    ",
-    "plan_seconds": 42.7,
-    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"planned\", \"attempts\": 1, \"created\": 1794884984.8911045, \"updated\": 1794885027.52262, \"last_error\": \"\", \"result\": \"### Plan: Update calc.py\\n\\n#### Objective:\\n- Modify the `add` function in `calc.py` to return the sum of its two parameters.\\n- Ensure that `test_calc.py` remains unaffected.\\n\\n#### Steps:\\n\\n1. **Locate `calc.py`:**\\n   - Open the `calc.py` file in a text editor.\\n\\n2. **Edit the `add` function:**\\n   - Change the `add` function from:\\n     ```python\\n     def add(a, b):\\n         return a\\n     ```\\n   - To:\\n     ```python\\n     def add(a, b):\\n         return a + b\\n     ```\\n\\n3. **Save the changes to `calc.py`:**\\n\\n#### Risks:\\n- **Syntax errors:** Incorrect syntax can cause the file to fail to run or raise runtime errors.\\n- **Code dependencies:** If `test_calc.py` relies on the `add` function's behavior, it might need to be updated to reflect the new implementation.\\n- **Testing environment:** The test file should be checked for any errors or failures that may arise from the change to `calc.py`.\\n\\n#### Acceptance Tests:\\n\\n1. **Basic functionality test:**\\n   - Create a new Python script, e.g., `test_add.py`, and write the following code:\\n     ```python\\n     from calc import add\\n\\n     def test_add():\\n         assert add(2, 3) == 5, \\\"2 + 3 should equal 5\\\"\\n         assert add(-1, 1) == 0, \\\"-1 + 1 should equal 0\\\"\\n         assert add(0, 0) == 0, \\\"0 + 0 should equal 0\\\"\\n\\n     test_add()\\n     ```\\n   - Run this script to ensure it passes without errors. If it fails, there are issues with `calc.py`.\\n\\n2. **Edge case test:**\\n   - Modify `test_add.py` to include a test case for `add(0, 1)`.\\n   - Run the script again to ensure that the updated `add` function handles zero correctly.\\n\\n3. **Dependence test:**\\n   - Create a dependency on `add` in `test_calc.py` and test that it works correctly. This is more about ensuring that the change to `calc.py` did not break the existing logic.\\n\\n#### Conclusion:\\nThis plan outlines a straightforward modification to `calc.py` to enhance its functionality, along with necessary tests to ensure its reliability.\"}\n]",
-    "worktree_status": "fatal: cannot change to 'D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-1': No such file or directory",
-    "worktree_diff": "fatal: cannot change to 'D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-1': No such file or directory"
+    "plan_seconds": 42.4,
+    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"passed\", \"attempts\": 2, \"created\": 1794885269.9884114, \"updated\": 1794885321.2272372, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-1\\\", \\\"branch\\\": \\\"forgeos/task-1\\\", \\\"edited\\\": [\\\"calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\"test_add (test_calc.AddTests.test_add) ... ok\\\\n\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 149, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"containment\\\": \\\"windows-zero-capability-appcontainer+job-object\\\", \\\"token_is_appcontainer\\\": true, \\\"capability_count\\\": 0, \\\"network_capabilities_granted\\\": false, \\\"handle_allowlist\\\": true, \\\"ui_restrictions\\\": 255, \\\"profile_deleted\\\": true, \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487\\\", \\\"source_bytes\\\": 149, \\\"context_bytes\\\": 143, \\\"saved_bytes\\\": 6, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"}\n]",
+    "worktree_status": " M calc.py",
+    "worktree_diff": "warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it\ndiff --git a/calc.py b/calc.py\nindex 12ee743..19cf2a0 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n\\ No newline at end of file"
   },
   "steps": [
     {
@@ -85,7 +85,7 @@
     {
       "name": "model pull",
       "ok": true,
-      "detail": "exit 0 in 14.7s"
+      "detail": "exit 0 in 17.2s"
     },
     {
       "name": "demo project",
@@ -105,27 +105,27 @@
     {
       "name": "exe --cli plan",
       "ok": true,
-      "detail": "exit 0 in 42.7s. tail:      ```\n   - Run this script to ensure it passes without errors. If it fails, there are issues with `calc.py`.\n\n2. **Edge case test:**\n   - Modify `test_add.py` to include a test case for `add(0, 1)`.\n   - Run the script again to ensure that the updated `add` function handles zero correctly.\n\n3. **Dependence test:**\n   - Create a dependency on `add` in `test_calc.py` and test that it works correctly. This is more about ensuring that the change to `calc.py` did not break the existing logic.\n\n#### Conclusion:\nThis plan outlines a straightforward modification to `calc.py` to enhance its functionality, along with necessary tests to ensure its reliability."
+      "detail": "exit 0 in 42.4s. tail:         self.assertEqual(add(-1, -1), -2)\n        self.assertEqual(add(0, 0), 0)\n        self.assertEqual(add(1.5, 2.5), 4.0)\n        self.assertEqual(add(-1.5, 2.5), 1.0)\n\nif __name__ == '__main__':\n    unittest.main()\n```\n\n**Acceptance Tests:**\n1. Running `test_calc.py` should pass without any errors.\n2. The `add()` function should return the correct sum for various inputs, including positive, negative, and zero values, as well as floating-point numbers."
     },
     {
       "name": "exe --cli run (edit, test, repair)",
-      "ok": false,
-      "detail": "exit 1 in 2.2s. tail: Traceback (most recent call last):\n  File \"acceptance_entry.py\", line 20, in <module>\n  File \"acceptance_entry.py\", line 14, in main\n  File \"forgeos\\cli.py\", line 665, in main\n  File \"forgeos\\engine.py\", line 536, in execute_task\nValueError: Host test execution requires explicit --allow-host-tests\n[PYI-8096:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!"
+      "ok": true,
+      "detail": "exit 0 in 8.8s. tail:       \"saved_bytes\": 6,\n      \"optimized\": false,\n      \"preset\": \"python-unittest\",\n      \"deduplicated_lines\": 0,\n      \"filter_status\": \"not-configured\",\n      \"capture_complete\": true,\n      \"source_prearchived\": false\n    }\n  },\n  \"learning\": null,\n  \"model\": \"qwen2.5-coder:3b\"\n}"
     },
     {
       "name": "task status",
-      "ok": false,
-      "detail": "status planned; edited: ; last_error: "
+      "ok": true,
+      "detail": "status passed; edited: calc.py; last_error: "
     },
     {
       "name": "test evidence",
-      "ok": false,
-      "detail": "test passed: False; last lines: "
+      "ok": true,
+      "detail": "test passed: True; last lines: ---------------------------------------------------------------------- | Ran 1 test in 0.000s | OK"
     },
     {
       "name": "worktree evidence",
-      "ok": false,
-      "detail": "calc.py returns a + b: False; test_calc.py unchanged per git: False"
+      "ok": true,
+      "detail": "calc.py returns a + b: True; test_calc.py unchanged per git: True"
     }
   ]
 }

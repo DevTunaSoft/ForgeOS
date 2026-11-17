@@ -1,31 +1,31 @@
 
-[03:08:37] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; under test fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14
-[03:08:37] EXE: 18783049 bytes, sha256 bc0294a9a503994055e5d35c1f0440eff059f49408c3f525ce7be0b375594c20
-[03:08:37] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --smoke
+[03:13:28] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; under test fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14
+[03:13:28] EXE: 18784233 bytes, sha256 9194a9cc7c357d61e7c0e198ef74f51ab664bf5ffcfb65c4e4b478d4a3cbbfe8
+[03:13:28] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --smoke
 ForgeOS packaged imports OK
-[03:08:39] STEP exe --smoke: ok. exit 0
-[03:08:39] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --acceptance-snapshot-report D:\a\_temp\acceptance-planning-fix\acceptance-snapshot.json
+[03:13:30] STEP exe --smoke: ok. exit 0
+[03:13:30] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --acceptance-snapshot-report D:\a\_temp\acceptance-planning-fix\acceptance-snapshot.json
 
-[03:08:42] STEP exe acceptance identity: ok. exit 0; source commit and exe sha256 match: True
-[03:08:42] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --secure-sandbox-smoke
-[03:08:51] STEP exe --secure-sandbox-smoke: ok. exit 0
-[03:08:51] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --gui-acceptance-report "D:\a\_temp\acceptance-planning-fix\gui-report.json"
-[03:08:55] STEP exe --gui-acceptance-report: ok. exit 0
-[03:08:55] STEP exe gui report: ok. gui started, queue, clean close, 520 tasks: True
-[03:09:23] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
-[03:09:25] STEP ollama server: ok. version 0.40.16
-[03:09:25] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
-[03:09:40] STEP model pull: ok. exit 0 in 14.7s
-[03:09:40] $ D:\a\_temp\ollama\ollama.exe list
+[03:13:31] STEP exe acceptance identity: ok. exit 0; source commit and exe sha256 match: True
+[03:13:31] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --secure-sandbox-smoke
+[03:13:40] STEP exe --secure-sandbox-smoke: ok. exit 0
+[03:13:40] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --gui-acceptance-report "D:\a\_temp\acceptance-planning-fix\gui-report.json"
+[03:13:44] STEP exe --gui-acceptance-report: ok. exit 0
+[03:13:44] STEP exe gui report: ok. gui started, queue, clean close, 520 tasks: True
+[03:14:05] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
+[03:14:08] STEP ollama server: ok. version 0.40.16
+[03:14:08] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
+[03:14:26] STEP model pull: ok. exit 0 in 17.2s
+[03:14:26] $ D:\a\_temp\ollama\ollama.exe list
 NAME                ID              SIZE      MODIFIED               
 qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    
-[03:09:40] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-planning-fix\demo-project
-[03:09:40] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli models
+[03:14:26] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-planning-fix\demo-project
+[03:14:26] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli models
 [
   {
     "name": "qwen2.5-coder:3b",
     "model": "qwen2.5-coder:3b",
-    "modified_at": "2026-11-17T03:09:40.6739033Z",
+    "modified_at": "2026-11-17T03:14:26.0778358Z",
     "size": 1929912626,
     "digest": "f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225",
     "details": {
@@ -48,99 +48,181 @@ qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago
     ]
   }
 ]
-[03:09:43] STEP exe --cli models: ok. exit 0; lists qwen2.5-coder:3b: True
-[03:09:43] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
+[03:14:28] STEP exe --cli models: ok. exit 0; lists qwen2.5-coder:3b: True
+[03:14:28] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
 Created task #1
-[03:09:45] STEP exe --cli add: ok. created task #1
-[03:09:45] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 1 --model qwen2.5-coder:3b
-### Plan: Update calc.py
+[03:14:30] STEP exe --cli add: ok. created task #1
+[03:14:30] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 1 --model qwen2.5-coder:3b
+### Software Planning and Implementation Plan
 
-#### Objective:
-- Modify the `add` function in `calc.py` to return the sum of its two parameters.
-- Ensure that `test_calc.py` remains unaffected.
+#### Task: Modify the `add()` function in `calc.py` to return `a + b`
 
-#### Steps:
+**Overview:**
+The task involves updating the `add()` function within the `calc.py` module to perform the addition of two numbers and return the result.
 
-1. **Locate `calc.py`:**
-   - Open the `calc.py` file in a text editor.
+**Plan:**
+1. **Task Decomposition:**
+   - Understand the current functionality of `add()`.
+   - Modify the function to include the addition operation.
+   - Ensure that the function's return type is appropriate.
 
-2. **Edit the `add` function:**
-   - Change the `add` function from:
-     ```python
-     def add(a, b):
-         return a
-     ```
-   - To:
-     ```python
-     def add(a, b):
-         return a + b
-     ```
+2. **Test Plan:**
+   - Create a new test function to verify that the `add()` function works correctly.
+   - Use assertions to check the expected outcomes.
 
-3. **Save the changes to `calc.py`:**
+3. **Risk Analysis:**
+   - Ensure that the modification does not affect the existing functionality of `calc.py`.
+   - Test the function with various inputs, including edge cases.
 
-#### Risks:
-- **Syntax errors:** Incorrect syntax can cause the file to fail to run or raise runtime errors.
-- **Code dependencies:** If `test_calc.py` relies on the `add` function's behavior, it might need to be updated to reflect the new implementation.
-- **Testing environment:** The test file should be checked for any errors or failures that may arise from the change to `calc.py`.
+4. **Implementation:**
+   - Open `calc.py` in a text editor.
+   - Locate the `add()` function.
+   - Modify the function to return `a + b`.
+   - Ensure the function is properly indented and follows Python style conventions.
 
-#### Acceptance Tests:
+5. **Documentation:**
+   - Update the docstring for `add()` to reflect the new behavior.
 
-1. **Basic functionality test:**
-   - Create a new Python script, e.g., `test_add.py`, and write the following code:
-     ```python
-     from calc import add
+6. **Verification:**
+   - Run the test function to ensure that the `add()` function now correctly returns the sum of two numbers.
+   - Run the existing test cases in `test_calc.py` to confirm that there are no regressions.
 
-     def test_add():
-         assert add(2, 3) == 5, "2 + 3 should equal 5"
-         assert add(-1, 1) == 0, "-1 + 1 should equal 0"
-         assert add(0, 0) == 0, "0 + 0 should equal 0"
+7. **Acceptance Criteria:**
+   - The `add()` function should accept two parameters, `a` and `b`.
+   - The function should return `a + b`.
+   - The test function should pass without errors.
 
-     test_add()
-     ```
-   - Run this script to ensure it passes without errors. If it fails, there are issues with `calc.py`.
+**Implementation:**
+```python
+# calc.py
+def add(a, b):
+    """
+    Return the sum of a and b.
 
-2. **Edge case test:**
-   - Modify `test_add.py` to include a test case for `add(0, 1)`.
-   - Run the script again to ensure that the updated `add` function handles zero correctly.
+    Parameters:
+    a (int or float): The first number to add.
+    b (int or float): The second number to add.
 
-3. **Dependence test:**
-   - Create a dependency on `add` in `test_calc.py` and test that it works correctly. This is more about ensuring that the change to `calc.py` did not break the existing logic.
+    Returns:
+    int or float: The sum of a and b.
+    """
+    return a + b
+```
 
-#### Conclusion:
-This plan outlines a straightforward modification to `calc.py` to enhance its functionality, along with necessary tests to ensure its reliability.
-[03:10:28] STEP exe --cli plan: ok. exit 0 in 42.7s. tail:      ```
-   - Run this script to ensure it passes without errors. If it fails, there are issues with `calc.py`.
+**Test Function:**
+```python
+# test_calc.py
+import unittest
+from calc import add
 
-2. **Edge case test:**
-   - Modify `test_add.py` to include a test case for `add(0, 1)`.
-   - Run the script again to ensure that the updated `add` function handles zero correctly.
+class TestCalc(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(add(1, 2), 3)
+        self.assertEqual(add(-1, -1), -2)
+        self.assertEqual(add(0, 0), 0)
+        self.assertEqual(add(1.5, 2.5), 4.0)
+        self.assertEqual(add(-1.5, 2.5), 1.0)
 
-3. **Dependence test:**
-   - Create a dependency on `add` in `test_calc.py` and test that it works correctly. This is more about ensuring that the change to `calc.py` did not break the existing logic.
+if __name__ == '__main__':
+    unittest.main()
+```
 
-#### Conclusion:
-This plan outlines a straightforward modification to `calc.py` to enhance its functionality, along with necessary tests to ensure its reliability.
-[03:10:28] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli run 1 --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --model qwen2.5-coder:3b
-Traceback (most recent call last):
-  File "acceptance_entry.py", line 20, in <module>
-  File "acceptance_entry.py", line 14, in main
-  File "forgeos\cli.py", line 665, in main
-  File "forgeos\engine.py", line 536, in execute_task
-ValueError: Host test execution requires explicit --allow-host-tests
-[PYI-8096:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
-[03:10:30] STEP exe --cli run (edit, test, repair): FAILED. exit 1 in 2.2s. tail: Traceback (most recent call last):
-  File "acceptance_entry.py", line 20, in <module>
-  File "acceptance_entry.py", line 14, in main
-  File "forgeos\cli.py", line 665, in main
-  File "forgeos\engine.py", line 536, in execute_task
-ValueError: Host test execution requires explicit --allow-host-tests
-[PYI-8096:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
-[03:10:30] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[03:10:32] STEP task status: FAILED. status planned; edited: ; last_error: 
-[03:10:32] STEP test evidence: FAILED. test passed: False; last lines: 
-[03:10:32] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
-fatal: cannot change to 'D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1': No such file or directory
-[03:10:32] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 diff HEAD
-fatal: cannot change to 'D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1': No such file or directory
-[03:10:32] STEP worktree evidence: FAILED. calc.py returns a + b: False; test_calc.py unchanged per git: False
-[03:10:32] RESULT FAIL for planning-fix (test ref fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14, exe sha256 bc0294a9a503994055e5d35c1f0440eff059f49408c3f525ce7be0b375594c20)
+**Acceptance Tests:**
+1. Running `test_calc.py` should pass without any errors.
+2. The `add()` function should return the correct sum for various inputs, including positive, negative, and zero values, as well as floating-point numbers.
+[03:15:12] STEP exe --cli plan: ok. exit 0 in 42.4s. tail:         self.assertEqual(add(-1, -1), -2)
+        self.assertEqual(add(0, 0), 0)
+        self.assertEqual(add(1.5, 2.5), 4.0)
+        self.assertEqual(add(-1.5, 2.5), 1.0)
+
+if __name__ == '__main__':
+    unittest.main()
+```
+
+**Acceptance Tests:**
+1. Running `test_calc.py` should pass without any errors.
+2. The `add()` function should return the correct sum for various inputs, including positive, negative, and zero values, as well as floating-point numbers.
+[03:15:12] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli run 1 --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --model qwen2.5-coder:3b --allow-host-tests
+{
+  "passed": true,
+  "workspace": "D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-1",
+  "branch": "forgeos/task-1",
+  "edited": [
+    "calc.py"
+  ],
+  "iterations": 1,
+  "test": {
+    "passed": true,
+    "returncode": 0,
+    "output": "test_add (test_calc.AddTests.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+    "capture_source_bytes": 149,
+    "capture_complete": true,
+    "output_preview_only": false,
+    "evidence_reference": null,
+    "capture_error": null,
+    "containment": "windows-zero-capability-appcontainer+job-object",
+    "token_is_appcontainer": true,
+    "capability_count": 0,
+    "network_capabilities_granted": false,
+    "handle_allowlist": true,
+    "ui_restrictions": 255,
+    "profile_deleted": true,
+    "parsed_test": {
+      "tier": "text",
+      "counts": {
+        "total": 1
+      }
+    },
+    "failure_type": {
+      "category": "none",
+      "signals": [],
+      "method": "test-status"
+    },
+    "optimization": {
+      "archived": true,
+      "reference": "4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487",
+      "source_bytes": 149,
+      "context_bytes": 143,
+      "saved_bytes": 6,
+      "optimized": false,
+      "preset": "python-unittest",
+      "deduplicated_lines": 0,
+      "filter_status": "not-configured",
+      "capture_complete": true,
+      "source_prearchived": false
+    }
+  },
+  "learning": null,
+  "model": "qwen2.5-coder:3b"
+}
+[03:15:21] STEP exe --cli run (edit, test, repair): ok. exit 0 in 8.8s. tail:       "saved_bytes": 6,
+      "optimized": false,
+      "preset": "python-unittest",
+      "deduplicated_lines": 0,
+      "filter_status": "not-configured",
+      "capture_complete": true,
+      "source_prearchived": false
+    }
+  },
+  "learning": null,
+  "model": "qwen2.5-coder:3b"
+}
+[03:15:21] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[03:15:23] STEP task status: ok. status passed; edited: calc.py; last_error: 
+[03:15:23] STEP test evidence: ok. test passed: True; last lines: ---------------------------------------------------------------------- | Ran 1 test in 0.000s | OK
+[03:15:23] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
+[03:15:23] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
+ M calc.py
+[03:15:23] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 diff HEAD
+warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it
+diff --git a/calc.py b/calc.py
+index 12ee743..19cf2a0 100644
+--- a/calc.py
++++ b/calc.py
+@@ -1,2 +1,2 @@
+ def add(a, b):
+-    return a - b
++    return a + b
+\ No newline at end of file
+[03:15:23] STEP worktree evidence: ok. calc.py returns a + b: True; test_calc.py unchanged per git: True
+[03:15:23] RESULT PASS for planning-fix (test ref fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14, exe sha256 9194a9cc7c357d61e7c0e198ef74f51ab664bf5ffcfb65c4e4b478d4a3cbbfe8)
