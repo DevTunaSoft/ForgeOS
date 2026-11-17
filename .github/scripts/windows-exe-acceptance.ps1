@@ -285,7 +285,7 @@ $refusalAdd = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'add', $demo, 'Secon
 $refusalMatch = [regex]::Match($refusalAdd.Text, 'Created task #(\d+)')
 if ($refusalMatch.Success) {
     $refusalId = $refusalMatch.Groups[1].Value
-    $refusal = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'run', $refusalId, '--workspace-parent', $wsParent, '--preset', 'npm-test', '--model', $Model, '--allow-host-tests')
+    $refusal = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'test', $refusalId, '--preset', 'npm-test', '--allow-host-tests')
     $refusalOk = ($refusal.Code -ne 0) -and ($refusal.Text -match 'does not yet support preset')
     $refusalDetail = "npm-test exit {0}; refused with the expected message: {1}; tail: {2}" -f $refusal.Code, $refusalOk, $refusal.Tail
 }
