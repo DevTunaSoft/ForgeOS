@@ -1,0 +1,34 @@
+name: PC label probe
+run-name: PC label probe - ${{ github.ref_name }}
+
+# Read-only diagnostic for the self-hosted PC runner. It checks whether a folder the
+# runner creates can take the Low integrity label that ForgeOS's sandbox needs.
+# It prints no user name, profile path or SID. It creates and removes folders only
+# under the runner temp tree and the drive root.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/pc-label-probe.yml"
+      - "pc/label-probe.ps1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: label probe on the PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out the harness from the designated branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run the label probe
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\pc\label-probe.ps1"
