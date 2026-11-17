@@ -67,6 +67,25 @@ jobs:
             -Label "${{ matrix.label }}" `
             -TestRef "${{ matrix.ref }}"
 
+      - name: Record a verdict if the harness wrote no summary
+        if: always()
+        shell: pwsh
+        run: |
+          $dir = "$env:GITHUB_WORKSPACE/results"
+          $path = "$dir/${{ matrix.label }}.json"
+          if (-not (Test-Path $path)) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            $doc = [ordered]@{
+              label          = "${{ matrix.label }}"
+              verdict        = "NO_RESULT"
+              test_ref       = "${{ matrix.ref }}"
+              designated_sha = "${{ github.sha }}"
+              run_id         = "${{ github.run_id }}"
+              detail         = "the harness wrote no summary; see the job log"
+            }
+            $doc | ConvertTo-Json | Set-Content -Path $path -Encoding utf8
+          }
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
