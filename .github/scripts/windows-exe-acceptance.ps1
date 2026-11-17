@@ -291,7 +291,54 @@ if ($refusalMatch.Success) {
 }
 Add-Step 'exe refuses unsupported frozen preset' $refusalOk $refusalDetail
 
-$pass = $frozenOk -and ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged -and $persistOk -and $refusalOk
+# ---- kill during planning, then recover (acceptance item 5: process termination) ----
+$killOk = $false
+$killDetail = 'no third task was created'
+$notes = Join-Path $demo 'notes.txt'
+Set-Content -Path $notes -Value 'keep me: unrelated work' -Encoding utf8
+& git -C $demo add -A
+& git -C $demo $identity commit -q -m 'Unrelated work that recovery must not touch'
+$notesSha = (Get-FileHash -Path $notes -Algorithm SHA256).Hash
+$calcSeedSha = (Get-FileHash -Path (Join-Path $demo 'calc.py') -Algorithm SHA256).Hash
+$killAdd = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'add', $demo, 'Third task used only for the kill-and-recover check.')
+$killMatch = [regex]::Match($killAdd.Text, 'Created task #(\d+)')
+if ($killMatch.Success) {
+    $killId = $killMatch.Groups[1].Value
+    $planProc = Start-Process -FilePath $Exe -ArgumentList ('--cli plan ' + $killId + ' --model ' + $Model) -WindowStyle Hidden -PassThru
+    $sawPlanning = $false
+    for ($i = 0; $i -lt 120 -and -not $sawPlanning; $i++) {
+        $probe = Read-Task $killId
+        if ($probe -and ([string]$probe.status -eq 'planning')) { $sawPlanning = $true } else { Start-Sleep -Milliseconds 500 }
+    }
+    if ($sawPlanning -and -not $planProc.HasExited) {
+        Stop-Process -Id $planProc.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        # 1. Right after the kill, the abandoned lease must keep recover away from the task.
+        $early = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'recover')
+        $leaseHeld = ([string](Read-Task $killId).status -eq 'planning')
+        # 2. A second planner must be refused while the task is in flight.
+        $second = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'plan', $killId, '--model', $Model)
+        $secondRefused = ($second.Code -ne 0) -and ($second.Text -match 'not eligible for planning|active execution lease')
+        # 3. Wait past the 600-second lease horizon, measured from the kill.
+        Write-Log 'waiting 620 seconds for the abandoned lease to go stale'
+        Start-Sleep -Seconds 620
+        $late = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'recover')
+        $recoveredQueued = ([string](Read-Task $killId).status -eq 'queued')
+        # 4. The recovered task must be usable: plan, run, pass.
+        $replan = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'plan', $killId, '--model', $Model)
+        $killRun = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'run', $killId, '--workspace-parent', $wsParent, '--preset', 'python-unittest', '--model', $Model, '--allow-host-tests')
+        $completed = ([string](Read-Task $killId).status -eq 'passed')
+        # 5. Unrelated work in the project must be untouched.
+        $projectUntouched = ((Get-FileHash -Path $notes -Algorithm SHA256).Hash -eq $notesSha) -and ((Get-FileHash -Path (Join-Path $demo 'calc.py') -Algorithm SHA256).Hash -eq $calcSeedSha)
+        $killOk = $sawPlanning -and $leaseHeld -and $secondRefused -and ($late.Code -eq 0) -and $recoveredQueued -and ($replan.Code -eq 0) -and ($killRun.Code -eq 0) -and $completed -and $projectUntouched
+        $killDetail = "planning seen: {0}; live lease held: {1}; second planner refused: {2}; recover exit after lease horizon: {3}; re-queued: {4}; replan exit: {5}; run exit: {6}; passed: {7}; project untouched: {8}" -f $sawPlanning, $leaseHeld, $secondRefused, $late.Code, $recoveredQueued, $replan.Code, $killRun.Code, $completed, $projectUntouched
+    } else {
+        $killDetail = "planning was not observed before the process ended (planning seen: {0})" -f $sawPlanning
+    }
+}
+Add-Step 'kill during planning, then recover' $killOk $killDetail
+
+$pass = $frozenOk -and ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged -and $persistOk -and $refusalOk -and $killOk
 $verdict = if ($pass) { 'PASS' } else { 'FAIL' }
 Save-Summary $verdict
 Write-Log "RESULT $verdict for ${Label} (test ref $TestRef at $($facts['under_test_sha']), exe sha256 $($facts['exe_sha256']))"
