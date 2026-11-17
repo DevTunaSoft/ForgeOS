@@ -164,11 +164,14 @@ Remove-Item Env:FORGEOS_SECURE_SMOKE_REPORT -ErrorAction SilentlyContinue
 $guiReport = Join-Path $work 'gui-report.json'
 $guiExitOk = Invoke-Watched -Name 'exe --gui-acceptance-report' -ArgString ('--gui-acceptance-report "' + $guiReport + '"') -TimeoutMs 90000
 $guiReportOk = $false
+# Windows PowerShell 5.1 stalled on ConvertFrom-Json for this file on the PC, so
+# the checks read the raw text instead of parsing it.
+Write-Log 'reading the GUI report'
 if (Test-Path $guiReport) {
     try {
-        $gui = Get-Content -Raw -Path $guiReport | ConvertFrom-Json -ErrorAction Stop
-        $facts['gui_report'] = $gui
-        $guiReportOk = [bool]($gui.gui_started -and $gui.queue_initialized -and $gui.closed_cleanly -and ($gui.tasks_verified -eq 520))
+        $guiRaw = [System.IO.File]::ReadAllText($guiReport)
+        Write-Log ("GUI report read: {0} characters" -f $guiRaw.Length)
+        $guiReportOk = ($guiRaw -match '"gui_started":\s*true') -and ($guiRaw -match '"queue_initialized":\s*true') -and ($guiRaw -match '"closed_cleanly":\s*true') -and ($guiRaw -match '"tasks_verified":\s*520')
     } catch {
         Write-Log "gui report unreadable: $($_.Exception.Message)"
     }
