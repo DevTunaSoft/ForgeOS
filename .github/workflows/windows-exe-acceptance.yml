@@ -1,22 +1,29 @@
-name: Windows real-model acceptance
-run-name: Windows real-model acceptance - ${{ github.ref_name }}
+name: Windows EXE acceptance
+run-name: Windows EXE acceptance - ${{ github.ref_name }}
 
-# Hosted Windows evidence for the path that hosted packaging does not cover:
-# Ollama serving a coder model, then ForgeOS add -> plan -> run against a
-# disposable Python project. Runs on windows-latest, NOT on a physical PC.
+# Hosted Windows acceptance of a packaged ForgeOS.exe, run from this branch.
 #
-# The "main" job is the control: main still has the 30-second planning socket
-# timeout. The "planning-fix" job tests the branch with the 180-second deadline.
+# Each matrix job builds ForgeOS.exe from its code under test, runs the EXE's
+# frozen acceptance modes, then drives the same EXE through add -> plan -> run
+# with Ollama and qwen2.5-coder:3b against a disposable Python project.
+# It runs on windows-latest, NOT on a physical PC.
 #
-# Results are committed to acceptance-results/windows-real-model/ on this
-# branch with [skip ci], so they can be read from git without the Actions UI.
+# "main" is the control: main still has the 30-second planning socket timeout.
+# "planning-fix" is the branch under review, with the 180-second deadline.
+#
+# The EXE is a test build: the product launcher plus a hidden --cli route
+# (.github/scripts/acceptance_entry.py). It is built with --console so the CLI
+# output is visible; the product build uses --windowed. Verdicts, transcripts
+# and the EXE hash are committed to acceptance-results/windows-exe/ on this
+# branch. The EXE itself is uploaded as a workflow artifact.
 
 on:
   push:
     branches: [claude/exciting-bohr-wr08bs]
     paths:
-      - ".github/workflows/windows-real-model-acceptance.yml"
-      - ".github/scripts/windows-real-model-acceptance.ps1"
+      - ".github/workflows/windows-exe-acceptance.yml"
+      - ".github/scripts/windows-exe-acceptance.ps1"
+      - ".github/scripts/acceptance_entry.py"
   workflow_dispatch:
 
 permissions:
@@ -27,8 +34,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  real-model:
-    name: real model (${{ matrix.label }})
+  exe-acceptance:
+    name: exe acceptance (${{ matrix.label }})
     runs-on: windows-latest
     timeout-minutes: 60
     strategy:
@@ -58,10 +65,25 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Ollama plan and run cycle
+      - name: Install PyInstaller and test extras
+        working-directory: under-test
+        run: python -m pip install --upgrade pip "pyinstaller>=6.0,<7" ".[secure-pytest]"
+
+      - name: Build the acceptance EXE
+        working-directory: under-test
         shell: pwsh
         run: |
-          & "$env:GITHUB_WORKSPACE/ci-harness/.github/scripts/windows-real-model-acceptance.ps1" `
+          $sha = (git rev-parse HEAD).Trim()
+          python forgeos_build/write_build_info.py --sha $sha
+          python -m PyInstaller --noconfirm --clean --onefile --console --name ForgeOS --paths src --paths . --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" "$env:GITHUB_WORKSPACE/ci-harness/.github/scripts/acceptance_entry.py"
+          if (-not (Test-Path dist/ForgeOS.exe)) { throw "PyInstaller produced no dist/ForgeOS.exe" }
+          Get-Item dist/ForgeOS.exe | Format-List Name, Length
+
+      - name: Run the EXE through frozen checks, add, plan and run
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE/ci-harness/.github/scripts/windows-exe-acceptance.ps1" `
+            -Exe "$env:GITHUB_WORKSPACE/under-test/dist/ForgeOS.exe" `
             -UnderTest "$env:GITHUB_WORKSPACE/under-test" `
             -ResultsDir "$env:GITHUB_WORKSPACE/results" `
             -Label "${{ matrix.label }}" `
@@ -81,7 +103,7 @@ jobs:
               test_ref       = "${{ matrix.ref }}"
               designated_sha = "${{ github.sha }}"
               run_id         = "${{ github.run_id }}"
-              detail         = "the harness wrote no summary; see the job log"
+              detail         = "the build or harness wrote no summary; see the job log"
             }
             $doc | ConvertTo-Json | Set-Content -Path $path -Encoding utf8
           }
@@ -95,9 +117,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Upload the acceptance EXE
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-${{ matrix.label }}
+          path: under-test/dist/ForgeOS.exe
+          if-no-files-found: warn
+          retention-days: 14
+
   publish:
     name: commit results
-    needs: real-model
+    needs: exe-acceptance
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -120,7 +151,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          dest=acceptance-results/windows-real-model
+          dest=acceptance-results/windows-exe
           mkdir -p "$dest"
           shopt -s nullglob
           files=(incoming/*.json incoming/*.log)
@@ -133,7 +164,7 @@ jobs:
           verdict() { jq -r '.verdict // "missing"' "$dest/$1.json" 2>/dev/null || echo missing; }
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -q -m "ci: record Windows real-model acceptance results [skip ci]" \
+              commit -q -m "ci: record Windows EXE acceptance results [skip ci]" \
               -m "Run ${GITHUB_RUN_ID}: main=$(verdict main), planning-fix=$(verdict planning-fix)."
           git pull -q --no-rebase --no-edit origin "$BRANCH"
           git push -q origin "HEAD:refs/heads/$BRANCH"
