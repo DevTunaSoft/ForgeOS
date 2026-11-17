@@ -1,31 +1,31 @@
 
-[03:18:05] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; under test main at 5107d467db96e7512f5d7126af745fb9c5c1bcdf
-[03:18:05] EXE: 18781842 bytes, sha256 f90e143e64417f8ef15dc66bcfac3ea74636b72a06b8e02020a39ec250591565
-[03:18:05] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --smoke
+[06:38:33] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; under test main at 5107d467db96e7512f5d7126af745fb9c5c1bcdf
+[06:38:33] EXE: 18780703 bytes, sha256 7cdca6870b5b03ddcae1f38e0f76fab9059d21e42c45f3e4958d6001f9702d6c
+[06:38:33] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --smoke
 ForgeOS packaged imports OK
-[03:18:07] STEP exe --smoke: ok. exit 0
-[03:18:07] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --acceptance-snapshot-report D:\a\_temp\acceptance-main\acceptance-snapshot.json
+[06:38:35] STEP exe --smoke: ok. exit 0
+[06:38:35] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --acceptance-snapshot-report D:\a\_temp\acceptance-main\acceptance-snapshot.json
 
-[03:18:09] STEP exe acceptance identity: ok. exit 0; source commit and exe sha256 match: True
-[03:18:09] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --secure-sandbox-smoke
-[03:18:18] STEP exe --secure-sandbox-smoke: ok. exit 0
-[03:18:18] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --gui-acceptance-report "D:\a\_temp\acceptance-main\gui-report.json"
-[03:18:22] STEP exe --gui-acceptance-report: ok. exit 0
-[03:18:22] STEP exe gui report: ok. gui started, queue, clean close, 520 tasks: True
-[03:18:39] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
-[03:18:41] STEP ollama server: ok. version 0.40.16
-[03:18:41] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
-[03:18:53] STEP model pull: ok. exit 0 in 12.3s
-[03:18:53] $ D:\a\_temp\ollama\ollama.exe list
+[06:38:37] STEP exe acceptance identity: ok. exit 0; source commit and exe sha256 match: True
+[06:38:37] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --secure-sandbox-smoke
+[06:38:47] STEP exe --secure-sandbox-smoke: ok. exit 0
+[06:38:47] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --gui-acceptance-report "D:\a\_temp\acceptance-main\gui-report.json"
+[06:38:50] STEP exe --gui-acceptance-report: ok. exit 0
+[06:38:50] STEP exe gui report: ok. gui started, queue, clean close, 520 tasks: True
+[06:39:04] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
+[06:39:08] STEP ollama server: ok. version 0.40.16
+[06:39:08] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
+[06:39:22] STEP model pull: ok. exit 0 in 14.1s
+[06:39:22] $ D:\a\_temp\ollama\ollama.exe list
 NAME                ID              SIZE      MODIFIED               
 qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    
-[03:18:55] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-main\demo-project
-[03:18:55] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli models
+[06:39:22] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-main\demo-project
+[06:39:22] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli models
 [
   {
     "name": "qwen2.5-coder:3b",
     "model": "qwen2.5-coder:3b",
-    "modified_at": "2026-11-17T03:18:53.5937463Z",
+    "modified_at": "2026-11-17T06:39:22.2377064Z",
     "size": 1929912626,
     "digest": "f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225",
     "details": {
@@ -48,13 +48,13 @@ qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago
     ]
   }
 ]
-[03:18:57] STEP exe --cli models: ok. exit 0; lists qwen2.5-coder:3b: True
-[03:18:57] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-main\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
+[06:39:24] STEP exe --cli models: ok. exit 0; lists qwen2.5-coder:3b: True
+[06:39:24] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-main\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
 Created task #1
-[03:19:00] STEP exe --cli add: ok. created task #1
-[03:19:00] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[03:19:03] STEP task visible to a fresh process after add: ok. status queued
-[03:19:03] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 1 --model qwen2.5-coder:3b
+[06:39:27] STEP exe --cli add: ok. created task #1
+[06:39:27] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[06:39:29] STEP task visible to a fresh process after add: ok. status queued
+[06:39:29] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 1 --model qwen2.5-coder:3b
 Traceback (most recent call last):
   File "acceptance_entry.py", line 20, in <module>
   File "acceptance_entry.py", line 14, in main
@@ -73,8 +73,8 @@ Traceback (most recent call last):
   File "http\client.py", line 292, in _read_status
   File "socket.py", line 720, in readinto
 TimeoutError: timed out
-[PYI-1400:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
-[03:19:35] STEP exe --cli plan: FAILED. exit 1 in 32.4s. tail:   File "urllib\request.py", line 215, in urlopen
+[PYI-5468:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
+[06:40:01] STEP exe --cli plan: FAILED. exit 1 in 32.5s. tail:   File "urllib\request.py", line 215, in urlopen
   File "urllib\request.py", line 515, in open
   File "urllib\request.py", line 532, in _open
   File "urllib\request.py", line 492, in _call_chain
@@ -85,7 +85,7 @@ TimeoutError: timed out
   File "http\client.py", line 292, in _read_status
   File "socket.py", line 720, in readinto
 TimeoutError: timed out
-[PYI-1400:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
-[03:19:35] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[03:19:37] STEP abort: FAILED. plan exited 1; task status blocked; last_error timed out
-[03:19:37] RESULT FAIL for main: plan exited 1; task status blocked; last_error timed out
+[PYI-5468:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
+[06:40:01] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[06:40:03] STEP abort: FAILED. plan exited 1; task status blocked; last_error timed out
+[06:40:03] RESULT FAIL for main: plan exited 1; task status blocked; last_error timed out
