@@ -44,7 +44,17 @@ function Write-Log([string] $Message) {
     Write-Host $line
 }
 
+function Get-ShortText($value) {
+    if ($value -is [string] -and $value.Length -gt 400) { return ($value.Substring(0, 400) + ' ...(full text in the transcript)') }
+    return $value
+}
+
 function Save-Summary([string] $Verdict) {
+    # Windows PowerShell 5.1 ConvertTo-Json stalls on long strings with escapes,
+    # so the summary keeps short copies. The full text stays in the transcript.
+    $shortFacts = [ordered]@{}
+    foreach ($key in @($facts.Keys)) { $shortFacts[$key] = Get-ShortText $facts[$key] }
+    $shortSteps = @($steps | ForEach-Object { [ordered]@{ name = $_.name; ok = $_.ok; detail = (Get-ShortText $_.detail) } })
     $document = [ordered]@{
         label          = $Label
         verdict        = $Verdict
@@ -56,10 +66,10 @@ function Save-Summary([string] $Verdict) {
         run_attempt    = $env:GITHUB_RUN_ATTEMPT
         started_utc    = $startedUtc
         updated_utc    = [DateTime]::UtcNow.ToString('o')
-        facts          = $facts
-        steps          = $steps
+        facts          = $shortFacts
+        steps          = $shortSteps
     }
-    $document | ConvertTo-Json -Depth 12 | Set-Content -Path $summaryPath -Encoding utf8
+    $document | ConvertTo-Json -Depth 6 | Set-Content -Path $summaryPath -Encoding utf8
 }
 
 function Add-Step([string] $Name, [bool] $Ok, [string] $Detail) {
@@ -158,7 +168,7 @@ Add-Step 'exe acceptance identity' $identityOk ("exit {0}; source commit and exe
 
 $env:FORGEOS_SECURE_SMOKE_REPORT = Join-Path $work 'secure-smoke.txt'
 $secureExitOk = Invoke-Watched -Name 'exe --secure-sandbox-smoke' -ArgString '--secure-sandbox-smoke' -TimeoutMs 120000
-if (Test-Path $env:FORGEOS_SECURE_SMOKE_REPORT) { $facts['secure_smoke_report'] = Get-Content -Raw -Path $env:FORGEOS_SECURE_SMOKE_REPORT }
+if (Test-Path $env:FORGEOS_SECURE_SMOKE_REPORT) { Write-Log ("secure smoke report: {0} bytes" -f (Get-Item $env:FORGEOS_SECURE_SMOKE_REPORT).Length) }
 Remove-Item Env:FORGEOS_SECURE_SMOKE_REPORT -ErrorAction SilentlyContinue
 
 $guiReport = Join-Path $work 'gui-report.json'
