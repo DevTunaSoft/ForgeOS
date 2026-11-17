@@ -86,6 +86,26 @@ function Stop-Run([string] $Reason) {
     exit 1
 }
 
+# Labelling a test copy Low integrity needs WRITE_OWNER on its folder. The permissions
+# this runner's folders inherit do not give this account that right on this PC: probe
+# run 44149273094 got Access is denied under the runner temp folder and the drive root,
+# but succeeded once the account had an explicit grant on the parent. The account owns
+# the acceptance folder, so it can grant itself full control there. Folders created
+# under it later inherit the grant, the same way they do under the user's profile.
+$currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$null = (& icacls.exe $work '/grant:r' ('*' + $currentSid + ':(OI)(CI)F') 2>&1 | Out-String)
+$grantCode = $LASTEXITCODE
+Add-Step 'acceptance folder grants this account full control' ($grantCode -eq 0) "icacls exit $grantCode"
+
+# Preflight: the same Low-integrity label that ForgeOS applies to its test copies.
+$labelFolder = Join-Path $work 'label-preflight'
+New-Item -ItemType Directory -Force -Path $labelFolder | Out-Null
+$labelText = (& icacls.exe $labelFolder '/setintegritylevel' '(OI)(CI)L' '/T' '/L' '/Q' 2>&1 | Out-String)
+$labelCode = $LASTEXITCODE
+Add-Content -Path $logPath -Value $labelText -Encoding utf8
+Remove-Item -LiteralPath $labelFolder -Recurse -Force -ErrorAction SilentlyContinue
+Add-Step 'low-integrity label works under the acceptance folder' ($labelCode -eq 0) "icacls exit $labelCode"
+
 function Invoke-Logged {
     param(
         [Parameter(Mandatory = $true)][string] $Exe,
@@ -447,7 +467,11 @@ $skippedIds = if ($resumeReport) { @($resumeReport.skipped | ForEach-Object { [s
 $resumedCount = if ($resumeReport) { @($resumeReport.resumed).Count } else { -1 }
 $bothRefused = ($skippedIds -contains $dmgId1) -and ($skippedIds -contains $dmgId2)
 $dmgOk = ($damage.Code -eq 0) -and ($resume.Code -eq 0) -and ($resumedCount -eq 0) -and $bothRefused
-Add-Step 'damaged checkpoints are refused by resume-safe' $dmgOk ("tasks {0} and {1} damaged: damage exit {2}; resume-safe exit {3}; resumed {4}; both refused: {5}" -f $dmgId1, $dmgId2, $damage.Code, $resume.Code, $resumedCount, $bothRefused)
+# resume-safe exits 1 whenever a blocked, resumable task fails again. Name those tasks in the summary.
+$failedEntries = if ($resumeReport) { @($resumeReport.failed) } else { @() }
+$failedIds = (@($failedEntries | ForEach-Object { [string]$_.id }) -join ',')
+$failedReasons = (@($failedEntries | ForEach-Object { $r = [string]$_.reason; if ($r.Length -gt 160) { $r.Substring(0, 160) } else { $r } }) -join ' | ')
+Add-Step 'damaged checkpoints are refused by resume-safe' $dmgOk ("tasks {0} and {1} damaged: damage exit {2}; resume-safe exit {3}; resumed {4}; both refused: {5}; failed tasks [{6}] {7}" -f $dmgId1, $dmgId2, $damage.Code, $resume.Code, $resumedCount, $bothRefused, $failedIds, $failedReasons)
 
 $pass = $frozenOk -and ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged -and $persistOk -and $refusalOk -and $killOk -and $iwOk -and $dmgOk
 $verdict = if ($pass) { 'PASS' } else { 'FAIL' }
