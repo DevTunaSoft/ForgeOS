@@ -240,7 +240,7 @@ if ($plan.Code -ne 0) {
 
 $wsParent = Join-Path $work 'ForgeOS-work'
 New-Item -ItemType Directory -Force -Path $wsParent | Out-Null
-$run = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'run', $taskId, '--workspace-parent', $wsParent, '--preset', 'python-unittest', '--model', $Model)
+$run = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'run', $taskId, '--workspace-parent', $wsParent, '--preset', 'python-unittest', '--model', $Model, '--allow-host-tests')
 Add-Step 'exe --cli run (edit, test, repair)' ($run.Code -eq 0) ("exit {0} in {1}s. tail: {2}" -f $run.Code, $run.Seconds, $run.Tail)
 
 $task = Read-Task $taskId
