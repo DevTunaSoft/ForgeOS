@@ -108,6 +108,13 @@ def launch(db_path, *, acceptance: bool = False):
     root.title("ForgeOS | Autonomous Development Dashboard")
     root.geometry("1160x790")
     root.minsize(880, 620)
+    from .brand import ICON_FILE, PALETTE, WORDMARK_DARK_FILE, brand_asset_path
+    icon_file = brand_asset_path(ICON_FILE)
+    if icon_file is not None and sys.platform == "win32":
+        try:
+            root.iconbitmap(str(icon_file))
+        except tk.TclError:
+            pass
 
     style = ttk.Style(root)
     if "clam" in style.theme_names():
@@ -117,6 +124,12 @@ def launch(db_path, *, acceptance: bool = False):
     style.configure("Treeview", rowheight=29)
     style.configure("Accent.TButton", padding=(12, 8))
     style.configure("TButton", padding=(9, 6))
+    style.configure("Header.TFrame", background=PALETTE["midnight"])
+    style.configure("Header.TLabel", background=PALETTE["midnight"], foreground=PALETTE["steel"])
+    style.configure("HeaderTitle.TLabel", background=PALETTE["midnight"],
+                    foreground=PALETTE["steel"], font=("Segoe UI", 21, "bold"))
+    style.configure("HeaderStatus.TLabel", background=PALETTE["midnight"],
+                    foreground=PALETTE["ember"], font=("Segoe UI", 10, "bold"))
 
     # Persist only user-selected nonsecret preferences. Never persist runtime
     # credentials, generated code, or task descriptions in this file.
@@ -152,10 +165,23 @@ def launch(db_path, *, acceptance: bool = False):
 
     shell = ttk.Frame(root, padding=16)
     shell.pack(fill="both", expand=True)
-    header = ttk.Frame(shell)
+    header = ttk.Frame(shell, style="Header.TFrame", padding=(14, 10))
     header.pack(fill="x")
-    ttk.Label(header, text="ForgeOS", style="Title.TLabel").pack(side="left")
-    ttk.Label(header, textvariable=status).pack(side="right")
+    wordmark_file = brand_asset_path(WORDMARK_DARK_FILE)
+    wordmark = None
+    if wordmark_file is not None:
+        try:
+            wordmark = tk.PhotoImage(master=root, file=str(wordmark_file))
+        except tk.TclError:
+            wordmark = None
+    if wordmark is not None:
+        # The dark wordmark's background is the Midnight palette colour, so it sits
+        # flush in the header. Whole-number subsampling keeps it about 70 px tall.
+        root.brand_wordmark = wordmark.subsample(7, 7)
+        ttk.Label(header, image=root.brand_wordmark, style="Header.TLabel").pack(side="left")
+    else:
+        ttk.Label(header, text="ForgeOS", style="HeaderTitle.TLabel").pack(side="left")
+    ttk.Label(header, textvariable=status, style="HeaderStatus.TLabel").pack(side="right")
     ttk.Label(shell, text="Local AI development | Isolated Git workspaces | Test and repair",
               foreground="#52647b").pack(anchor="w", pady=(0, 10))
 
