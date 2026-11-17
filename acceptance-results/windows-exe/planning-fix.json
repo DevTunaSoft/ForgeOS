@@ -4,17 +4,17 @@
   "model": "qwen2.5-coder:3b",
   "test_ref": "fix/planning-socket-timeout-20261117",
   "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
-  "designated_sha": "5ec13aa1bea6c86933713751c54388cea0d669f6",
-  "run_id": "44039064225",
+  "designated_sha": "109e01a8add068d848bc2cf3c75c34157fd098d8",
+  "run_id": "44122673600",
   "run_attempt": "1",
-  "started_utc": "2026-11-17T07:30:15.9725279Z",
-  "updated_utc": "2026-11-17T07:45:25.2504407Z",
+  "started_utc": "2026-11-17T16:11:27.1366211Z",
+  "updated_utc": "2026-11-17T16:25:00.2778637Z",
   "facts": {
     "runner_os": "Microsoft Windows Server 2025 Datacenter",
     "python": "Python 3.12.10",
     "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
-    "exe_bytes": 18783840,
-    "exe_sha256": "1c2e90731c2ec3ff02c3d35340127f23f72ec99af31afb0c2d8de8f60339ec0d",
+    "exe_bytes": 18784111,
+    "exe_sha256": "bd8bdf6165aa8aedbdcf0e36500c1af6ac22a60ffada662efc09caaf04e68d29",
     "secure_smoke_report": "ForgeOS secure AppContainer smoke OK\r\n......\r\n6 passed in 1.02s\r\n",
     "gui_report": {
       "gui_started": true,
@@ -28,21 +28,21 @@
       ],
       "paginated_history_ok": true,
       "offline_user_guide_available": true,
-      "ram_after_paging_bytes": 52731904,
-      "rss_growth_during_paging_bytes": 45056,
+      "ram_after_paging_bytes": 52920320,
+      "rss_growth_during_paging_bytes": 49152,
       "tabs": [
         "Development",
         "Activity & diagnostics"
       ],
       "queue_initialized": true,
-      "ram_after_gui_startup_bytes": 52686848,
-      "startup_elapsed_seconds": 0.837,
+      "ram_after_gui_startup_bytes": 52871168,
+      "startup_elapsed_seconds": 0.833,
       "scope": "Frozen Tk widgets and event loop; not Ollama/user hardware"
     },
     "ollama": "0.40.16",
     "ollama_list": "NAME                ID              SIZE      MODIFIED               \nqwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    ",
-    "forgeos_list": "[\n{\"id\": 3, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"Third task used only for the kill-and-recover check.\", \"status\": \"passed\", \"attempts\": 3, \"created\": 1794900793.6754951, \"updated\": 1794901511.588568, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-3\\\", \\\"branch\\\": \\\"forgeos/task-3\\\", \\\"edited\\\": [\\\"calc.py\\\", \\\"test_calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\"\\\\n----------------------------------------------------------------------\\\\nRan 0 tests in 0.000s\\\\n\\\\nNO TESTS RAN\\\\n\\\", \\\"capture_source_bytes\\\": 113, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"containment\\\": \\\"windows-zero-capability-appcontainer+job-object\\\", \\\"token_is_appcontainer\\\": true, \\\"capability_count\\\": 0, \\\"network_capabilities_granted\\\": false, \\\"handle_allowlist\\\": true, \\\"ui_restrictions\\\": 255, \\\"profile_deleted\\\": true, \\\"parsed_test\\\": {\\\"tier\\\": \\\"degraded\\\", \\\"counts\\\": {\\\"total\\\": 0}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"e70fec2825d9bf206d27463a792768195039599cb39bcca66339f47283f84cce\\\", \\\"source_bytes\\\": 113, \\\"context_bytes\\\": 108, \\\"saved_bytes\\\": 5, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"},\n{\"id\": 2, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"Second task used only for the unsupported-preset refusal check.\", \"status\": \"blocked\", \"attempts\": 1, \"created\": 1794900789.314397, \"updated\": 1794900791.5320048, \"last_error\": \"Secure Windows runner does not yet support preset: npm-test\", \"result\": \"\"},\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"passed\", \"attempts\": 2, \"created\": 1794900672.5595875, \"updated\": 1794900785.2919178, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-1\\\", \\\"branch\\\": \\\"forgeos/task-1\\\", \\\"edited\\\": [\\\"calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\"test_add (test_calc.AddTests.test_add) ... ok\\\\n\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 149, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"containment\\\": \\\"windows-zero-capability-appcontainer+job-object\\\", \\\"token_is_appcontainer\\\": true, \\\"capability_count\\\": 0, \\\"network_capabilities_granted\\\": false, \\\"handle_allowlist\\\": true, \\\"ui_restrictions\\\": 255, \\\"profile_deleted\\\": true, \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487\\\", \\\"source_bytes\\\": 149, \\\"context_bytes\\\": 143, \\\"saved_bytes\\\": 6, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"}\n]",
-    "plan_seconds": 91.5,
+    "forgeos_list": "[\n{\"id\": 3, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"Third task used only for the kill-and-recover check.\", \"status\": \"passed\", \"attempts\": 3, \"created\": 1794931993.7937143, \"updated\": 1794932684.7452857, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-3\\\", \\\"branch\\\": \\\"forgeos/task-3\\\", \\\"edited\\\": [\\\"calc.py\\\", \\\"test_calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\"test_add (test_calc.AddTests.test_add) ... ok\\\\n\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 149, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"containment\\\": \\\"windows-zero-capability-appcontainer+job-object\\\", \\\"token_is_appcontainer\\\": true, \\\"capability_count\\\": 0, \\\"network_capabilities_granted\\\": false, \\\"handle_allowlist\\\": true, \\\"ui_restrictions\\\": 255, \\\"profile_deleted\\\": true, \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487\\\", \\\"source_bytes\\\": 149, \\\"context_bytes\\\": 143, \\\"saved_bytes\\\": 6, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"},\n{\"id\": 2, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"Second task used only for the unsupported-preset refusal check.\", \"status\": \"blocked\", \"attempts\": 1, \"created\": 1794931990.075725, \"updated\": 1794931992.029993, \"last_error\": \"Secure Windows runner does not yet support preset: npm-test\", \"result\": \"\"},\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"passed\", \"attempts\": 2, \"created\": 1794931941.4151902, \"updated\": 1794931986.0169246, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-1\\\", \\\"branch\\\": \\\"forgeos/task-1\\\", \\\"edited\\\": [\\\"calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\"test_add (test_calc.AddTests.test_add) ... ok\\\\n\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 149, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"containment\\\": \\\"windows-zero-capability-appcontainer+job-object\\\", \\\"token_is_appcontainer\\\": true, \\\"capability_count\\\": 0, \\\"network_capabilities_granted\\\": false, \\\"handle_allowlist\\\": true, \\\"ui_restrictions\\\": 255, \\\"profile_deleted\\\": true, \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487\\\", \\\"source_bytes\\\": 149, \\\"context_bytes\\\": 143, \\\"saved_bytes\\\": 6, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"}\n]",
+    "plan_seconds": 33.1,
     "worktree_status": " M calc.py",
     "worktree_diff": "warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it\ndiff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b"
   },
@@ -85,7 +85,7 @@
     {
       "name": "model pull",
       "ok": true,
-      "detail": "exit 0 in 12s"
+      "detail": "exit 0 in 13.6s"
     },
     {
       "name": "demo project",
@@ -110,12 +110,12 @@
     {
       "name": "exe --cli plan",
       "ok": true,
-      "detail": "exit 0 in 91.5s. tail: \n- **Test Case 4**: Verify that `add(-5, 10)` returns `5`.\n  - Expected Output: `5`\n  - Actual Output: `add(-5, 10)`\n  - If `add(-5, 10)` returns `5`, the test passes.\n\n- **Test Case 5**: Verify that `add(10, 0)` returns `10`.\n  - Expected Output: `10`\n  - Actual Output: `add(10, 0)`\n  - If `add(10, 0)` returns `10`, the test passes.\n\nBy following this plan, you can ensure that the `add()` function in `calc.py` is correctly updated to return `a + b` without breaking any existing tests."
+      "detail": "exit 0 in 33.1s. tail: 6. **Review and Validate**:\n   - Review the changes to ensure that they meet the requirements and have been implemented correctly.\n   - Validate the functionality of the `add()` function using additional test cases if necessary.\n\n**Risks**:\n- Incorrect implementation of the `add()` function could lead to unexpected behavior or errors in the application.\n- The changes in `calc.py` might not be reflected in `test_calc.py` if the test is not updated accordingly.\n\n**Acceptance Tests**:\n- Execute `test_calc.py` to ensure that the `add()` function returns the sum of `a` and `b` as expected.\n- Verify that the test passes without any errors or failures.\n- Ensure that the updated `calc.py` is reviewed and validated for correctness."
     },
     {
       "name": "exe --cli run (edit, test, repair)",
       "ok": true,
-      "detail": "exit 0 in 11.2s. tail:       \"saved_bytes\": 6,\n      \"optimized\": false,\n      \"preset\": \"python-unittest\",\n      \"deduplicated_lines\": 0,\n      \"filter_status\": \"not-configured\",\n      \"capture_complete\": true,\n      \"source_prearchived\": false\n    }\n  },\n  \"learning\": null,\n  \"model\": \"qwen2.5-coder:3b\"\n}"
+      "detail": "exit 0 in 8.9s. tail:       \"saved_bytes\": 6,\n      \"optimized\": false,\n      \"preset\": \"python-unittest\",\n      \"deduplicated_lines\": 0,\n      \"filter_status\": \"not-configured\",\n      \"capture_complete\": true,\n      \"source_prearchived\": false\n    }\n  },\n  \"learning\": null,\n  \"model\": \"qwen2.5-coder:3b\"\n}"
     },
     {
       "name": "task status",
@@ -135,7 +135,7 @@
     {
       "name": "exe refuses unsupported frozen preset",
       "ok": true,
-      "detail": "npm-test exit 1; refused with the expected message: True; tail: Traceback (most recent call last):\n  File \"acceptance_entry.py\", line 20, in <module>\n  File \"acceptance_entry.py\", line 14, in main\n  File \"forgeos\\cli.py\", line 677, in main\n  File \"forgeos\\task_actions.py\", line 143, in test_task\n  File \"forgeos\\engine.py\", line 178, in _run_workspace_tests\n  File \"forgeos\\secure_runner.py\", line 57, in run_secure_windows_test\nRuntimeError: Secure Windows runner does not yet support preset: npm-test\n[PYI-7280:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!"
+      "detail": "npm-test exit 1; refused with the expected message: True; tail: Traceback (most recent call last):\n  File \"acceptance_entry.py\", line 20, in <module>\n  File \"acceptance_entry.py\", line 14, in main\n  File \"forgeos\\cli.py\", line 677, in main\n  File \"forgeos\\task_actions.py\", line 143, in test_task\n  File \"forgeos\\engine.py\", line 178, in _run_workspace_tests\n  File \"forgeos\\secure_runner.py\", line 57, in run_secure_windows_test\nRuntimeError: Secure Windows runner does not yet support preset: npm-test\n[PYI-5964:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!"
     },
     {
       "name": "process tree killed while planning",

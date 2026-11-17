@@ -1,31 +1,31 @@
 
-[07:30:16] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; under test fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14
-[07:30:16] EXE: 18783840 bytes, sha256 1c2e90731c2ec3ff02c3d35340127f23f72ec99af31afb0c2d8de8f60339ec0d
-[07:30:16] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --smoke
+[16:11:27] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; under test fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14
+[16:11:27] EXE: 18784111 bytes, sha256 bd8bdf6165aa8aedbdcf0e36500c1af6ac22a60ffada662efc09caaf04e68d29
+[16:11:27] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --smoke
 ForgeOS packaged imports OK
-[07:30:18] STEP exe --smoke: ok. exit 0
-[07:30:18] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --acceptance-snapshot-report D:\a\_temp\acceptance-planning-fix\acceptance-snapshot.json
+[16:11:29] STEP exe --smoke: ok. exit 0
+[16:11:29] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --acceptance-snapshot-report D:\a\_temp\acceptance-planning-fix\acceptance-snapshot.json
 
-[07:30:20] STEP exe acceptance identity: ok. exit 0; source commit and exe sha256 match: True
-[07:30:20] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --secure-sandbox-smoke
-[07:30:30] STEP exe --secure-sandbox-smoke: ok. exit 0
-[07:30:30] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --gui-acceptance-report "D:\a\_temp\acceptance-planning-fix\gui-report.json"
-[07:30:34] STEP exe --gui-acceptance-report: ok. exit 0
-[07:30:34] STEP exe gui report: ok. gui started, queue, clean close, 520 tasks: True
-[07:30:51] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
-[07:30:53] STEP ollama server: ok. version 0.40.16
-[07:30:53] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
-[07:31:05] STEP model pull: ok. exit 0 in 12s
-[07:31:05] $ D:\a\_temp\ollama\ollama.exe list
+[16:11:31] STEP exe acceptance identity: ok. exit 0; source commit and exe sha256 match: True
+[16:11:31] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --secure-sandbox-smoke
+[16:11:41] STEP exe --secure-sandbox-smoke: ok. exit 0
+[16:11:41] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --gui-acceptance-report "D:\a\_temp\acceptance-planning-fix\gui-report.json"
+[16:11:45] STEP exe --gui-acceptance-report: ok. exit 0
+[16:11:45] STEP exe gui report: ok. gui started, queue, clean close, 520 tasks: True
+[16:11:59] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
+[16:12:02] STEP ollama server: ok. version 0.40.16
+[16:12:02] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
+[16:12:16] STEP model pull: ok. exit 0 in 13.6s
+[16:12:16] $ D:\a\_temp\ollama\ollama.exe list
 NAME                ID              SIZE      MODIFIED               
 qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    
-[07:31:05] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-planning-fix\demo-project
-[07:31:05] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli models
+[16:12:16] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-planning-fix\demo-project
+[16:12:16] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli models
 [
   {
     "name": "qwen2.5-coder:3b",
     "model": "qwen2.5-coder:3b",
-    "modified_at": "2026-11-17T07:31:05.3446301Z",
+    "modified_at": "2026-11-17T16:12:16.4726451Z",
     "size": 1929912626,
     "digest": "f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225",
     "details": {
@@ -48,93 +48,62 @@ qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago
     ]
   }
 ]
-[07:31:09] STEP exe --cli models: ok. exit 0; lists qwen2.5-coder:3b: True
-[07:31:09] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
+[16:12:19] STEP exe --cli models: ok. exit 0; lists qwen2.5-coder:3b: True
+[16:12:19] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
 Created task #1
-[07:31:14] STEP exe --cli add: ok. created task #1
-[07:31:14] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[07:31:23] STEP task visible to a fresh process after add: ok. status queued
-[07:31:23] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 1 --model qwen2.5-coder:3b
-### Plan: Change `add()` in `calc.py` to Return `a + b`
+[16:12:21] STEP exe --cli add: ok. created task #1
+[16:12:21] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[16:12:24] STEP task visible to a fresh process after add: ok. status queued
+[16:12:24] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 1 --model qwen2.5-coder:3b
+**Task Description**: Modify the `add()` function in the `calc.py` script to return the sum of two numbers, `a` and `b`. Ensure that this change is reflected in the behavior of the test in `test_calc.py`.
 
-#### 1. Risk Analysis
+**Concise Testable Plan**:
 
-- **Risk 1**: The function `add()` in `calc.py` is not currently defined.
-  - **Mitigation**: Ensure that `add()` is defined before making any changes.
-- **Risk 2**: Changing `add()` to return `a + b` could break existing tests in `test_calc.py`.
-  - **Mitigation**: Test the updated function thoroughly to ensure it behaves as expected.
-- **Risk 3**: There might be other parts of the codebase that rely on the current implementation of `add()`.
-  - **Mitigation**: Review the codebase for any dependencies on `add()` and update them accordingly.
+1. **Define the Requirements**:
+   - The function `add()` should accept two arguments, `a` and `b`.
+   - It should return the sum of `a` and `b`.
+   - The test in `test_calc.py` should ensure that the function works as expected.
 
-#### 2. Steps to Implement the Change
+2. **Identify the Current State**:
+   - Check the current implementation of `add()` to ensure it does not return the sum of `a` and `b`.
 
-1. **Ensure `add()` is Defined**: If `add()` is not already defined, add it to `calc.py`.
-2. **Update `add()` Function**: Change the implementation of `add()` to return `a + b`.
-3. **Test the Update**: Run the existing tests in `test_calc.py` to ensure the function behaves as expected.
+3. **Modify `calc.py`**:
+   - Open the `calc.py` file and locate the `add()` function.
+   - Change the `return` statement to return `a + b`.
+   - Save the changes to `calc.py`.
 
-#### 3. Testable Plan
+4. **Run the Test**:
+   - Execute the test in `test_calc.py` to verify that the function behaves as expected.
+   - Ensure that the test passes without any errors or failures.
 
-1. **Step 1: Ensure `add()` is Defined**
-   - Check if `add()` is defined in `calc.py`.
-   - If not, add the following line to `calc.py`:
-     ```python
-     def add(a, b):
-         return a + b
-     ```
+5. **Document the Changes**:
+   - Add a comment in the `calc.py` file indicating that the `add()` function now returns the sum of `a` and `b`.
 
-2. **Step 2: Update `add()` Function**
-   - Open `calc.py` and change the existing implementation of `add()` to:
-     ```python
-     def add(a, b):
-         return a + b
-     ```
+6. **Review and Validate**:
+   - Review the changes to ensure that they meet the requirements and have been implemented correctly.
+   - Validate the functionality of the `add()` function using additional test cases if necessary.
 
-3. **Step 3: Test the Update**
-   - Run the tests in `test_calc.py` to ensure the function behaves as expected.
-   - Create a new test case in `test_calc.py` to verify that `add(2, 3)` returns `5`.
-   - Run the test suite to ensure all tests pass.
+**Risks**:
+- Incorrect implementation of the `add()` function could lead to unexpected behavior or errors in the application.
+- The changes in `calc.py` might not be reflected in `test_calc.py` if the test is not updated accordingly.
 
-#### 4. Acceptance Tests
+**Acceptance Tests**:
+- Execute `test_calc.py` to ensure that the `add()` function returns the sum of `a` and `b` as expected.
+- Verify that the test passes without any errors or failures.
+- Ensure that the updated `calc.py` is reviewed and validated for correctness.
+[16:12:57] STEP exe --cli plan: ok. exit 0 in 33.1s. tail: 6. **Review and Validate**:
+   - Review the changes to ensure that they meet the requirements and have been implemented correctly.
+   - Validate the functionality of the `add()` function using additional test cases if necessary.
 
-- **Test Case 1**: Verify that `add(2, 3)` returns `5`.
-  - Expected Output: `5`
-  - Actual Output: `add(2, 3)`
-  - If `add(2, 3)` returns `5`, the test passes.
+**Risks**:
+- Incorrect implementation of the `add()` function could lead to unexpected behavior or errors in the application.
+- The changes in `calc.py` might not be reflected in `test_calc.py` if the test is not updated accordingly.
 
-- **Test Case 2**: Verify that `add(0, 0)` returns `0`.
-  - Expected Output: `0`
-  - Actual Output: `add(0, 0)`
-  - If `add(0, 0)` returns `0`, the test passes.
-
-- **Test Case 3**: Verify that `add(-1, -1)` returns `-2`.
-  - Expected Output: `-2`
-  - Actual Output: `add(-1, -1)`
-  - If `add(-1, -1)` returns `-2`, the test passes.
-
-- **Test Case 4**: Verify that `add(-5, 10)` returns `5`.
-  - Expected Output: `5`
-  - Actual Output: `add(-5, 10)`
-  - If `add(-5, 10)` returns `5`, the test passes.
-
-- **Test Case 5**: Verify that `add(10, 0)` returns `10`.
-  - Expected Output: `10`
-  - Actual Output: `add(10, 0)`
-  - If `add(10, 0)` returns `10`, the test passes.
-
-By following this plan, you can ensure that the `add()` function in `calc.py` is correctly updated to return `a + b` without breaking any existing tests.
-[07:32:54] STEP exe --cli plan: ok. exit 0 in 91.5s. tail: 
-- **Test Case 4**: Verify that `add(-5, 10)` returns `5`.
-  - Expected Output: `5`
-  - Actual Output: `add(-5, 10)`
-  - If `add(-5, 10)` returns `5`, the test passes.
-
-- **Test Case 5**: Verify that `add(10, 0)` returns `10`.
-  - Expected Output: `10`
-  - Actual Output: `add(10, 0)`
-  - If `add(10, 0)` returns `10`, the test passes.
-
-By following this plan, you can ensure that the `add()` function in `calc.py` is correctly updated to return `a + b` without breaking any existing tests.
-[07:32:54] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli run 1 --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --model qwen2.5-coder:3b --allow-host-tests
+**Acceptance Tests**:
+- Execute `test_calc.py` to ensure that the `add()` function returns the sum of `a` and `b` as expected.
+- Verify that the test passes without any errors or failures.
+- Ensure that the updated `calc.py` is reviewed and validated for correctness.
+[16:12:57] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli run 1 --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --model qwen2.5-coder:3b --allow-host-tests
 {
   "passed": true,
   "workspace": "D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-1",
@@ -187,7 +156,7 @@ By following this plan, you can ensure that the `add()` function in `calc.py` is
   "learning": null,
   "model": "qwen2.5-coder:3b"
 }
-[07:33:05] STEP exe --cli run (edit, test, repair): ok. exit 0 in 11.2s. tail:       "saved_bytes": 6,
+[16:13:06] STEP exe --cli run (edit, test, repair): ok. exit 0 in 8.9s. tail:       "saved_bytes": 6,
       "optimized": false,
       "preset": "python-unittest",
       "deduplicated_lines": 0,
@@ -199,13 +168,13 @@ By following this plan, you can ensure that the `add()` function in `calc.py` is
   "learning": null,
   "model": "qwen2.5-coder:3b"
 }
-[07:33:05] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[07:33:07] STEP task status: ok. status passed; edited: calc.py; last_error: 
-[07:33:07] STEP test evidence: ok. test passed: True; last lines: ---------------------------------------------------------------------- | Ran 1 test in 0.000s | OK
-[07:33:07] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
-[07:33:07] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
+[16:13:06] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[16:13:08] STEP task status: ok. status passed; edited: calc.py; last_error: 
+[16:13:08] STEP test evidence: ok. test passed: True; last lines: ---------------------------------------------------------------------- | Ran 1 test in 0.000s | OK
+[16:13:08] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
+[16:13:08] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
  M calc.py
-[07:33:07] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 diff HEAD
+[16:13:08] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 diff HEAD
 warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it
 diff --git a/calc.py b/calc.py
 index 12ee743..4693ad3 100644
@@ -215,10 +184,10 @@ index 12ee743..4693ad3 100644
  def add(a, b):
 -    return a - b
 +    return a + b
-[07:33:08] STEP worktree evidence: ok. calc.py returns a + b: True; test_calc.py unchanged per git: True
-[07:33:08] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Second task used only for the unsupported-preset refusal check.
+[16:13:08] STEP worktree evidence: ok. calc.py returns a + b: True; test_calc.py unchanged per git: True
+[16:13:08] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Second task used only for the unsupported-preset refusal check.
 Created task #2
-[07:33:09] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli test 2 --preset npm-test --allow-host-tests
+[16:13:10] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli test 2 --preset npm-test --allow-host-tests
 Traceback (most recent call last):
   File "acceptance_entry.py", line 20, in <module>
   File "acceptance_entry.py", line 14, in main
@@ -227,8 +196,8 @@ Traceback (most recent call last):
   File "forgeos\engine.py", line 178, in _run_workspace_tests
   File "forgeos\secure_runner.py", line 57, in run_secure_windows_test
 RuntimeError: Secure Windows runner does not yet support preset: npm-test
-[PYI-7280:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
-[07:33:12] STEP exe refuses unsupported frozen preset: ok. npm-test exit 1; refused with the expected message: True; tail: Traceback (most recent call last):
+[PYI-5964:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
+[16:13:12] STEP exe refuses unsupported frozen preset: ok. npm-test exit 1; refused with the expected message: True; tail: Traceback (most recent call last):
   File "acceptance_entry.py", line 20, in <module>
   File "acceptance_entry.py", line 14, in main
   File "forgeos\cli.py", line 677, in main
@@ -236,82 +205,85 @@ RuntimeError: Secure Windows runner does not yet support preset: npm-test
   File "forgeos\engine.py", line 178, in _run_workspace_tests
   File "forgeos\secure_runner.py", line 57, in run_secure_windows_test
 RuntimeError: Secure Windows runner does not yet support preset: npm-test
-[PYI-7280:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
-[07:33:12] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Third task used only for the kill-and-recover check.
+[PYI-5964:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
+[16:13:12] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Third task used only for the kill-and-recover check.
 Created task #3
-[07:33:14] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[07:33:18] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[07:33:23] $ taskkill.exe /PID 4540 /T /F
-SUCCESS: The process with PID 4404 (child process of PID 4540) has been terminated.
-SUCCESS: The process with PID 8604 (child process of PID 4540) has been terminated.
-SUCCESS: The process with PID 4540 (child process of PID 6820) has been terminated.
-[07:33:25] STEP process tree killed while planning: ok. taskkill exit 0; ForgeOS processes left: 0
-[07:33:25] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover
+[16:13:14] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[16:13:17] $ taskkill.exe /PID 800 /T /F
+SUCCESS: The process with PID 4668 (child process of PID 800) has been terminated.
+SUCCESS: The process with PID 3588 (child process of PID 800) has been terminated.
+SUCCESS: The process with PID 800 (child process of PID 8240) has been terminated.
+[16:13:19] STEP process tree killed while planning: ok. taskkill exit 0; ForgeOS processes left: 0
+[16:13:19] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover
 Inspected 0 interrupted tasks; editing/testing tasks blocked for inspection
-[07:33:28] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[07:33:30] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 3 --model qwen2.5-coder:3b
+[16:13:21] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[16:13:23] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 3 --model qwen2.5-coder:3b
 Traceback (most recent call last):
   File "acceptance_entry.py", line 20, in <module>
   File "acceptance_entry.py", line 14, in main
   File "forgeos\cli.py", line 642, in main
   File "forgeos\task_actions.py", line 101, in plan_task
 ValueError: Task is not eligible for planning
-[PYI-4940:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
-[07:33:32] waiting 620 seconds for the abandoned lease to go stale
-[07:43:52] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover
+[PYI-7032:ERROR] Failed to execute script 'acceptance_entry' due to unhandled exception!
+[16:13:25] waiting 620 seconds for the abandoned lease to go stale
+[16:23:45] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover
 Inspected 1 interrupted tasks; editing/testing tasks blocked for inspection
-[07:43:54] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[07:43:56] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 3 --model qwen2.5-coder:3b
-### Plan for Third Task: Kill-and-Recover Check
+[16:23:47] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[16:23:50] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli plan 3 --model qwen2.5-coder:3b
+**Task: Kill-and-Recover Check**
 
-#### Overview
-The goal of the third task is to ensure that the system can recover from a kill signal gracefully. This involves monitoring the system's behavior after it has been terminated and verifying that it can start back up without data loss or corruption.
+**Objective:**
+To ensure that the system can recover from a simulated shutdown and maintain its functionality without interruption.
 
-#### Step-by-Step Plan
+**Preconditions:**
+1. The system is running smoothly and is functioning as expected.
+2. A backup of the system data is available.
 
-1. **Setup Environment**
-   - Create a clean and isolated environment for the testing.
-   - Install necessary dependencies and configurations.
+**Timeline:**
+- **Start Date:** [Insert Date]
+- **End Date:** [Insert Date]
 
-2. **Prepare Test Data**
-   - Generate a dataset that is representative of the application's data requirements.
-   - Ensure the dataset is stored in a reliable and accessible location.
+**Tasks:**
 
-3. **Start the System**
-   - Boot the system and load the necessary components.
-   - Ensure that the system starts up without any errors or warnings.
+1. **Simulate Shutdown:**
+   - **Objective:** Test the system's ability to shut down gracefully.
+   - **Action:** Reboot the system and wait for it to reach a safe state.
+   - **Risk:** Failure to shut down smoothly could result in data loss or system instability.
+   - **Acceptance Test:** Confirm that the system has reached a stable shutdown state and can be restarted without issues.
 
-4. **Perform the Kill Signal**
-   - Send a kill signal to the system (e.g., using a script or command).
-   - Monitor the system's response and ensure it terminates gracefully.
+2. **Reboot System:**
+   - **Objective:** Restart the system after simulating the shutdown.
+   - **Action:** Power cycle the system.
+   - **Risk:** Failure to restart properly could lead to data corruption or system instability.
+   - **Acceptance Test:** Verify that the system has restarted successfully and is functioning as expected.
 
-5. **Verify Recovery**
-   - Restart the system after the kill signal.
-   - Verify that the system starts up without any issues.
-   - Check the dataset to ensure that it has not been corrupted or lost.
+3. **Run System Checks:**
+   - **Objective:** Ensure that all system components are operational and that the system is still working correctly.
+   - **Action:** Perform routine health checks and verify that all services are running without errors.
+   - **Risk:** Missing critical components or service failures could lead to data loss or system instability.
+   - **Acceptance Test:** Confirm that all services are running correctly and that the system is responsive.
 
-6. **Additional Checks**
-   - Execute any additional checks or tests that are relevant to the system's functionality.
-   - Confirm that all logs are recorded and that there are no errors or warnings.
-
-7. **Documentation**
-   - Document the steps taken, any issues encountered, and the resolution process.
-   - Provide a summary of the results and any lessons learned.
-
-#### Risks and Acceptance Tests
+**Post-Task Actions:**
+1. **Review Logs:** Examine system logs for any unexpected errors or warnings.
+2. **Backup System:** Perform a full backup of the system data to ensure it has not been corrupted during the shutdown-recovery process.
+3. **Update Documentation:** Document the results of this test for future reference and troubleshooting.
 
 **Risks:**
-1. **System Crash:** The system might crash unexpectedly after the kill signal, leading to data loss or corruption.
-2. **Data Integrity:** The dataset might be corrupted or lost after the recovery process.
-3. **Recovery Time:** The recovery process might take too long, affecting the overall performance of the system.
+- **Hardware Failure:** Failure to simulate a shutdown or restart could result in hardware failure or data loss.
+- **Software Bugs:** Errors in the shutdown-recovery process could lead to system instability or data corruption.
 
-**Acceptance Tests:**
-1. **System Start-up Verification:** Confirm that the system starts up without errors after the kill signal.
-2. **Dataset Integrity Check:** Verify that the dataset is not corrupted or lost after the recovery process.
-3. **Recovery Time Test:** Ensure that the recovery process completes within an acceptable time frame.
+**Acceptance Criteria:**
+- The system can simulate a shutdown and restart without interruption.
+- All system components are operational and functioning as expected after the restart.
+- The system can be rebooted multiple times without issues.
+- No unexpected errors or warnings are logged during the shutdown-recovery process.
+- The system is able to recover from a simulated shutdown and maintain its functionality without interruption.
 
-By following this plan, we aim to ensure that the system is robust and can recover from a kill signal effectively, without compromising data integrity or performance.
-[07:44:53] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli run 3 --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --model qwen2.5-coder:3b --allow-host-tests
+**Completion Criteria:**
+- All tasks have been completed successfully according to the outlined plan.
+- All acceptance tests have passed, and the system has been verified to be operational and free from errors.
+- The system has been documented for future reference and troubleshooting purposes.
+[16:24:29] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli run 3 --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --model qwen2.5-coder:3b --allow-host-tests
 {
   "passed": true,
   "workspace": "D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-3",
@@ -324,8 +296,8 @@ By following this plan, we aim to ensure that the system is robust and can recov
   "test": {
     "passed": true,
     "returncode": 0,
-    "output": "\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nNO TESTS RAN\n",
-    "capture_source_bytes": 113,
+    "output": "test_add (test_calc.AddTests.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+    "capture_source_bytes": 149,
     "capture_complete": true,
     "output_preview_only": false,
     "evidence_reference": null,
@@ -338,9 +310,9 @@ By following this plan, we aim to ensure that the system is robust and can recov
     "ui_restrictions": 255,
     "profile_deleted": true,
     "parsed_test": {
-      "tier": "degraded",
+      "tier": "text",
       "counts": {
-        "total": 0
+        "total": 1
       }
     },
     "failure_type": {
@@ -350,10 +322,10 @@ By following this plan, we aim to ensure that the system is robust and can recov
     },
     "optimization": {
       "archived": true,
-      "reference": "e70fec2825d9bf206d27463a792768195039599cb39bcca66339f47283f84cce",
-      "source_bytes": 113,
-      "context_bytes": 108,
-      "saved_bytes": 5,
+      "reference": "4a60bd8977a4d79d4be04b0023923ef5435fd2572dc8f427646b659bd4ec3487",
+      "source_bytes": 149,
+      "context_bytes": 143,
+      "saved_bytes": 6,
       "optimized": false,
       "preset": "python-unittest",
       "deduplicated_lines": 0,
@@ -365,22 +337,22 @@ By following this plan, we aim to ensure that the system is robust and can recov
   "learning": null,
   "model": "qwen2.5-coder:3b"
 }
-[07:45:12] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
-[07:45:14] STEP kill during planning, then recover: ok. planning seen: True; live lease held: True; second planner refused: True; recover exit after lease horizon: 0; re-queued: True; replan exit: 0; run exit: 0; passed: True; project untouched: True
-[07:45:14] $ python D:\a\_temp\acceptance-planning-fix\inject_interrupt.py D:\a\_temp\acceptance-planning-fix\iw-project
+[16:24:45] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli list
+[16:24:49] STEP kill during planning, then recover: ok. planning seen: True; live lease held: True; second planner refused: True; recover exit after lease horizon: 0; re-queued: True; replan exit: 0; run exit: 0; passed: True; project untouched: True
+[16:24:49] $ python D:\a\_temp\acceptance-planning-fix\inject_interrupt.py D:\a\_temp\acceptance-planning-fix\iw-project
 injected death after 1 of 2 replacements
-[07:45:14] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover-edits D:\a\_temp\acceptance-planning-fix\iw-project
+[16:24:49] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover-edits D:\a\_temp\acceptance-planning-fix\iw-project
 Recovered edit journal
-[07:45:16] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover-edits D:\a\_temp\acceptance-planning-fix\iw-project
+[16:24:51] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli recover-edits D:\a\_temp\acceptance-planning-fix\iw-project
 No pending edit journal
-[07:45:18] STEP interrupted write rolled back by recover-edits: ok. injected death: exit 0; partial state seen: True; recover-edits recovered: True; both files restored: True; second recover no-op: True
-[07:45:18] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Damaged checkpoint A for the resume guard check.
+[16:24:53] STEP interrupted write rolled back by recover-edits: ok. injected death: exit 0; partial state seen: True; recover-edits recovered: True; both files restored: True; second recover no-op: True
+[16:24:53] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Damaged checkpoint A for the resume guard check.
 Created task #4
-[07:45:21] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Damaged checkpoint B for the resume guard check.
+[16:24:55] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli add D:\a\_temp\acceptance-planning-fix\demo-project Damaged checkpoint B for the resume guard check.
 Created task #5
-[07:45:23] $ python D:\a\_temp\acceptance-planning-fix\damage_checkpoints.py 4 5
+[16:24:57] $ python D:\a\_temp\acceptance-planning-fix\damage_checkpoints.py 4 5
 damaged 4 5
-[07:45:23] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli resume-safe --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --allow-host-tests
+[16:24:58] $ D:\a\ForgeOS\ForgeOS\under-test\dist\ForgeOS.exe --cli resume-safe --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --allow-host-tests
 {
   "interrupted": 0,
   "resumed": [],
@@ -400,5 +372,5 @@ damaged 4 5
   ],
   "failed": []
 }
-[07:45:25] STEP damaged checkpoints are refused by resume-safe: ok. tasks 4 and 5 damaged: damage exit 0; resume-safe exit 0; resumed 0; both refused: True
-[07:45:25] RESULT PASS for planning-fix (test ref fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14, exe sha256 1c2e90731c2ec3ff02c3d35340127f23f72ec99af31afb0c2d8de8f60339ec0d)
+[16:25:00] STEP damaged checkpoints are refused by resume-safe: ok. tasks 4 and 5 damaged: damage exit 0; resume-safe exit 0; resumed 0; both refused: True
+[16:25:00] RESULT PASS for planning-fix (test ref fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14, exe sha256 bd8bdf6165aa8aedbdcf0e36500c1af6ac22a60ffada662efc09caaf04e68d29)
