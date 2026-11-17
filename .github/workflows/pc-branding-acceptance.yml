@@ -1,0 +1,121 @@
+name: PC branding acceptance
+run-name: PC branding acceptance - ${{ inputs.ref || 'feat/forgeos-branding' }}
+
+# Builds ForgeOS from a branch on a hosted Windows runner, then runs the PC acceptance
+# on the self-hosted runner with that EXE. The logs are public, so the harness prints
+# no personal paths or account names.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to build and test
+        required: true
+        default: feat/forgeos-branding
+        type: string
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/pc-branding-acceptance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pc-acceptance
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build the branch EXE
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the harness from the designated branch
+        uses: actions/checkout@v4
+        with:
+          path: ci-harness
+          persist-credentials: false
+
+      - name: Check out the branch under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'feat/forgeos-branding' }}
+          path: under-test
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller and test extras
+        working-directory: under-test
+        run: python -m pip install --upgrade pip "pyinstaller>=6.0,<7" ".[secure-pytest]"
+
+      - name: Build the acceptance EXE (console, CLI route, brand icon and assets)
+        working-directory: under-test
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          python forgeos_build/write_build_info.py --sha $sha
+          python -m PyInstaller --noconfirm --clean --onefile --console --name ForgeOS --paths src --paths . --icon src/forgeos/brand_assets/ForgeOS_Windows_Icon.ico --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" --add-data "src/forgeos/brand_assets;forgeos/brand_assets" "$env:GITHUB_WORKSPACE/ci-harness/.github/scripts/acceptance_entry.py"
+          if (-not (Test-Path dist/ForgeOS.exe)) { throw "PyInstaller produced no dist/ForgeOS.exe" }
+          Get-Item dist/ForgeOS.exe | Format-List Name, Length
+
+      - name: Upload the acceptance EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: branding-exe
+          path: under-test/dist/ForgeOS.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  pc:
+    name: acceptance on the PC
+    needs: build
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+    steps:
+      - name: Check out the harness from the designated branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out the branch under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'feat/forgeos-branding' }}
+          path: under-test
+          persist-credentials: false
+
+      - name: Download the branch EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-exe
+          path: exe
+
+      - name: Run the acceptance on the PC
+        shell: powershell
+        run: |
+          $isoProfile = Join-Path $env:RUNNER_TEMP 'isolated-profile'
+          New-Item -ItemType Directory -Force -Path $isoProfile | Out-Null
+          $sha = (& git -C "$env:GITHUB_WORKSPACE\under-test" rev-parse HEAD).Trim()
+          $env:USERPROFILE = $isoProfile
+          $env:HOME = $isoProfile
+          & "$env:GITHUB_WORKSPACE\pc\windows-pc-acceptance.ps1" `
+            -Exe (Join-Path $env:GITHUB_WORKSPACE 'exe\ForgeOS.exe') `
+            -UnderTest "$env:GITHUB_WORKSPACE\under-test" `
+            -ResultsDir (Join-Path $env:RUNNER_TEMP 'pc-results') `
+            -Label pc -TestRef branding `
+            -PyLauncher py -PyArgs @('-3.12') `
+            -UnderTestSha $sha `
+            -OllamaPreinstalled
+
+      - name: Summary
+        if: always()
+        shell: powershell
+        run: |
+          $doc = Get-Content (Join-Path $env:RUNNER_TEMP 'pc-results\pc.json') -Raw | ConvertFrom-Json
+          $doc.steps | ForEach-Object { '{0,-8} {1}' -f $(if ($_.ok) { 'ok' } else { 'FAILED' }), $_.name }
+          "VERDICT: $($doc.verdict)"
