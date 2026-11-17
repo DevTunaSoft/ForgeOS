@@ -125,7 +125,7 @@ jobs:
           shopt -s nullglob
           files=(incoming/*.json incoming/*.log)
           if [ ${#files[@]} -gt 0 ]; then cp -f "${files[@]}" "$dest"/; fi
-          git add -- "$dest"
+          git add -f -- "$dest"
           if git diff --cached --quiet; then
             echo "No result files to commit."
             exit 0

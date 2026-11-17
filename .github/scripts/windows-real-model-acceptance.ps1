@@ -199,12 +199,18 @@ $lastError = if ($task) { [string]$task.last_error } else { '' }
 Add-Step 'task status' ($taskStatus -eq 'passed') ("status {0}; edited: {1}; last_error: {2}" -f $taskStatus, ($edited -join ', '), $lastError)
 
 # ---- independent evidence from the workspace ----------------------------
+$testPassed = [bool]($taskResult -and $taskResult.test -and $taskResult.test.passed)
+$testOutput = if ($taskResult -and $taskResult.test) { [string]$taskResult.test.output } else { '' }
+Add-Step 'test evidence' $testPassed ("test passed: $testPassed; last lines: " + (($testOutput -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) -join ' | '))
+
 $ws = Join-Path $wsParent "task-$taskId"
 $calcPath = Join-Path $ws 'calc.py'
 $testPath = Join-Path $ws 'test_calc.py'
 $calcText = if (Test-Path $calcPath) { Get-Content -Raw -Path $calcPath } else { '' }
 $addFixed = [bool]($calcText -match 'return\s+a\s*\+\s*b')
-$testUnchanged = [bool]((Test-Path $testPath) -and ((Get-FileHash -Path $testPath -Algorithm SHA256).Hash -eq (Get-FileHash -Path (Join-Path $demo 'test_calc.py') -Algorithm SHA256).Hash))
+# Judge "unchanged" through git, not raw bytes: on Windows the checked-out copy
+# can differ from the seed only by CRLF line endings, which git normalizes.
+$testUnchanged = [bool]((Test-Path $testPath) -and -not ((Invoke-Logged -Exe 'git' -Arguments @('-C', $ws, 'status', '--short') -Quiet).Text -match 'test_calc\.py'))
 $worktreeStatus = Invoke-Logged -Exe 'git' -Arguments @('-C', $ws, 'status', '--short')
 $worktreeDiff = Invoke-Logged -Exe 'git' -Arguments @('-C', $ws, 'diff', 'HEAD')
 $facts['worktree_status'] = $worktreeStatus.Text
@@ -213,10 +219,10 @@ $recordedSha = if ($taskResult -and $taskResult.sha256) { [string]$taskResult.sh
 $actualSha = if (Test-Path $calcPath) { (Get-FileHash -Path $calcPath -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
 $facts['calc_sha256_recorded'] = $recordedSha
 $facts['calc_sha256_actual'] = $actualSha
-Add-Step 'worktree evidence' ($addFixed -and $testUnchanged) ("calc.py returns a + b: {0}; test_calc.py unchanged: {1}; recorded calc.py sha matches file: {2}" -f $addFixed, $testUnchanged, ($recordedSha -eq $actualSha))
+Add-Step 'worktree evidence' ($addFixed -and $testUnchanged) ("calc.py returns a + b: {0}; test_calc.py unchanged per git: {1}" -f $addFixed, $testUnchanged)
 
 # ---- verdict ------------------------------------------------------------
-$pass = ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $addFixed -and $testUnchanged
+$pass = ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged
 $verdict = if ($pass) { 'PASS' } else { 'FAIL' }
 Save-Summary $verdict
 Write-Log "RESULT $verdict for ${Label} (test ref $TestRef at $($facts['under_test_sha']))"
