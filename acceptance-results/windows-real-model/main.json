@@ -4,19 +4,19 @@
   "model": "qwen2.5-coder:3b",
   "test_ref": "main",
   "under_test_sha": "5107d467db96e7512f5d7126af745fb9c5c1bcdf",
-  "designated_sha": "8c31596dc1af94a15ee5330b04624a7176d00185",
-  "run_id": "43995798176",
+  "designated_sha": "bb6fd0c32f675229422d39c6ad911262dae46998",
+  "run_id": "43996378506",
   "run_attempt": "1",
-  "started_utc": "2026-11-17T01:28:21.0840028Z",
-  "updated_utc": "2026-11-17T01:29:29.0233584Z",
+  "started_utc": "2026-11-17T01:32:55.6193361Z",
+  "updated_utc": "2026-11-17T01:34:12.5389810Z",
   "facts": {
     "runner_os": "Microsoft Windows Server 2025 Datacenter",
     "python": "Python 3.12.10",
     "under_test_sha": "5107d467db96e7512f5d7126af745fb9c5c1bcdf",
     "ollama": "0.40.16",
     "ollama_list": "NAME                ID              SIZE      MODIFIED               \nqwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    ",
-    "plan_seconds": 30.5,
-    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-main\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"blocked\", \"attempts\": 1, \"created\": 1794878938.2844238, \"updated\": 1794878968.7285638, \"last_error\": \"timed out\", \"result\": \"\"}\n]"
+    "plan_seconds": 30.4,
+    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-main\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"blocked\", \"attempts\": 1, \"created\": 1794879221.8199115, \"updated\": 1794879252.2935812, \"last_error\": \"timed out\", \"result\": \"\"}\n]"
   },
   "steps": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "model pull",
       "ok": true,
-      "detail": "exit 0 in 9.8s"
+      "detail": "exit 0 in 12.2s"
     },
     {
       "name": "forgeos models",
@@ -52,7 +52,7 @@
     {
       "name": "plan",
       "ok": false,
-      "detail": "exit 1 in 30.5s. tail:   File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\http\\client.py\", line 1430, in getresponse\n    response.begin()\n  File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\http\\client.py\", line 331, in begin\n    version, status, reason = self._read_status()\n                              ^^^^^^^^^^^^^^^^^^^\n  File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\http\\client.py\", line 292, in _read_status\n    line = str(self.fp.readline(_MAXLINE + 1), \"iso-8859-1\")\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\socket.py\", line 720, in readinto\n    return self._sock.recv_into(b)\n           ^^^^^^^^^^^^^^^^^^^^^^^\nTimeoutError: timed out"
+      "detail": "exit 1 in 30.4s. tail:   File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\http\\client.py\", line 1430, in getresponse\n    response.begin()\n  File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\http\\client.py\", line 331, in begin\n    version, status, reason = self._read_status()\n                              ^^^^^^^^^^^^^^^^^^^\n  File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\http\\client.py\", line 292, in _read_status\n    line = str(self.fp.readline(_MAXLINE + 1), \"iso-8859-1\")\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\socket.py\", line 720, in readinto\n    return self._sock.recv_into(b)\n           ^^^^^^^^^^^^^^^^^^^^^^^\nTimeoutError: timed out"
     },
     {
       "name": "abort",

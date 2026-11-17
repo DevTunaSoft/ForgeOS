@@ -1,26 +1,26 @@
 {
   "label": "planning-fix",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "model": "qwen2.5-coder:3b",
   "test_ref": "fix/planning-socket-timeout-20261117",
   "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
-  "designated_sha": "8c31596dc1af94a15ee5330b04624a7176d00185",
-  "run_id": "43995798176",
+  "designated_sha": "bb6fd0c32f675229422d39c6ad911262dae46998",
+  "run_id": "43996378506",
   "run_attempt": "1",
-  "started_utc": "2026-11-17T01:28:22.3682327Z",
-  "updated_utc": "2026-11-17T01:30:01.6720168Z",
+  "started_utc": "2026-11-17T01:32:53.0621738Z",
+  "updated_utc": "2026-11-17T01:34:20.3522398Z",
   "facts": {
     "runner_os": "Microsoft Windows Server 2025 Datacenter",
     "python": "Python 3.12.10",
     "under_test_sha": "d99472de9c51e8965002ff9565581129f3d13a14",
     "ollama": "0.40.16",
     "ollama_list": "NAME                ID              SIZE      MODIFIED               \nqwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    ",
-    "plan_seconds": 49.2,
-    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"passed\", \"attempts\": 2, \"created\": 1794878944.6267178, \"updated\": 1794879001.354172, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-1\\\", \\\"branch\\\": \\\"forgeos/task-1\\\", \\\"edited\\\": [\\\"calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\".\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 103, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"ui_restrictions\\\": 255, \\\"handle_allowlist\\\": true, \\\"containment\\\": \\\"windows-restricted-token+job-object+low-integrity\\\", \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"fb184ea57734512b1f088f9181209901b9cd46df3eb7eaa2500ea9e48dde20b5\\\", \\\"source_bytes\\\": 103, \\\"context_bytes\\\": 98, \\\"saved_bytes\\\": 5, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"}\n]",
+    "plan_seconds": 31.3,
+    "forgeos_list": "[\n{\"id\": 1, \"project\": \"D:\\\\a\\\\_temp\\\\acceptance-planning-fix\\\\demo-project\", \"description\": \"In calc.py, change add() so it returns a + b. Do not edit test_calc.py.\", \"status\": \"passed\", \"attempts\": 2, \"created\": 1794879225.144582, \"updated\": 1794879260.060043, \"last_error\": \"\", \"result\": \"{\\\"passed\\\": true, \\\"workspace\\\": \\\"D:\\\\\\\\a\\\\\\\\_temp\\\\\\\\acceptance-planning-fix\\\\\\\\ForgeOS-work\\\\\\\\task-1\\\", \\\"branch\\\": \\\"forgeos/task-1\\\", \\\"edited\\\": [\\\"calc.py\\\"], \\\"iterations\\\": 1, \\\"test\\\": {\\\"passed\\\": true, \\\"returncode\\\": 0, \\\"output\\\": \\\".\\\\n----------------------------------------------------------------------\\\\nRan 1 test in 0.000s\\\\n\\\\nOK\\\\n\\\", \\\"capture_source_bytes\\\": 103, \\\"capture_complete\\\": true, \\\"output_preview_only\\\": false, \\\"evidence_reference\\\": null, \\\"capture_error\\\": null, \\\"ui_restrictions\\\": 255, \\\"handle_allowlist\\\": true, \\\"containment\\\": \\\"windows-restricted-token+job-object+low-integrity\\\", \\\"parsed_test\\\": {\\\"tier\\\": \\\"text\\\", \\\"counts\\\": {\\\"total\\\": 1}}, \\\"failure_type\\\": {\\\"category\\\": \\\"none\\\", \\\"signals\\\": [], \\\"method\\\": \\\"test-status\\\"}, \\\"optimization\\\": {\\\"archived\\\": true, \\\"reference\\\": \\\"fb184ea57734512b1f088f9181209901b9cd46df3eb7eaa2500ea9e48dde20b5\\\", \\\"source_bytes\\\": 103, \\\"context_bytes\\\": 98, \\\"saved_bytes\\\": 5, \\\"optimized\\\": false, \\\"preset\\\": \\\"python-unittest\\\", \\\"deduplicated_lines\\\": 0, \\\"filter_status\\\": \\\"not-configured\\\", \\\"capture_complete\\\": true, \\\"source_prearchived\\\": false}}, \\\"learning\\\": null, \\\"model\\\": \\\"qwen2.5-coder:3b\\\"}\"}\n]",
     "worktree_status": " M calc.py",
-    "worktree_diff": "warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it\ndiff --git a/calc.py b/calc.py\nindex 12ee743..19cf2a0 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n\\ No newline at end of file",
+    "worktree_diff": "warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it\ndiff --git a/calc.py b/calc.py\nindex 12ee743..2a99cdf 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+  return a + b",
     "calc_sha256_recorded": "",
-    "calc_sha256_actual": "8f75a68646c879fd0cff5c02708c010fb1c01d67ef9930d4e419106feb7897aa"
+    "calc_sha256_actual": "f58b2f308ba0109a06d5f5c27ea4443c886ca7262bf5ed5d0673ff5a454e2fce"
   },
   "steps": [
     {
@@ -36,7 +36,7 @@
     {
       "name": "model pull",
       "ok": true,
-      "detail": "exit 0 in 14.3s"
+      "detail": "exit 0 in 8.4s"
     },
     {
       "name": "forgeos models",
@@ -56,12 +56,12 @@
     {
       "name": "plan",
       "ok": true,
-      "detail": "exit 0 in 49.2s. tail: - **Dependency Changes:** Any changes to the `calc.py` file could break existing code that depends on the function.\n\n#### Acceptance Tests\n\n1. **Positive Numbers:** Verify that the function returns the correct sum for positive integers.\n2. **Negative Numbers:** Ensure the function correctly handles negative numbers.\n3. **Mixed Numbers:** Confirm that the function can handle both positive and negative numbers correctly.\n4. **Zero:** Verify that the function correctly returns 0 when both numbers are zero.\n5. **Large Numbers:** Test with large integers to ensure the function can handle large numbers without overflow or incorrect results.\n\n#### Conclusion\n- This plan outlines the necessary steps to change the `add()` function in `calc.py` and ensure its correctness through a series of test cases. The acceptance tests will validate the function's behavior across various scenarios, reducing the risk of errors."
+      "detail": "exit 0 in 31.3s. tail: ### Risks\n- **Syntax Errors:** Errors in modifying the function could lead to syntax errors, which need to be fixed immediately.\n- **Behavioral Changes:** The updated function may not behave as expected, especially if it was previously used in different contexts.\n\n### Acceptance Tests\n- **Test 1:** `assert add(0, 0) == 0`\n- **Test 2:** `assert add(1, 2) == 3`\n- **Test 3:** `assert add(-1, -1) == -2`\n- **Test 4:** `assert add(100, 200) == 300`\n- **Test 5:** `assert add(-50, 50) == 0`\n\nBy following this plan, the task of modifying the `add()` function in `calc.py` will be completed efficiently, with thorough verification and testing to ensure correctness and reliability."
     },
     {
       "name": "run (edit, test, repair)",
       "ok": true,
-      "detail": "exit 0 in 7.5s. tail:       \"saved_bytes\": 5,\n      \"optimized\": false,\n      \"preset\": \"python-unittest\",\n      \"deduplicated_lines\": 0,\n      \"filter_status\": \"not-configured\",\n      \"capture_complete\": true,\n      \"source_prearchived\": false\n    }\n  },\n  \"learning\": null,\n  \"model\": \"qwen2.5-coder:3b\"\n}"
+      "detail": "exit 0 in 3.6s. tail:       \"saved_bytes\": 5,\n      \"optimized\": false,\n      \"preset\": \"python-unittest\",\n      \"deduplicated_lines\": 0,\n      \"filter_status\": \"not-configured\",\n      \"capture_complete\": true,\n      \"source_prearchived\": false\n    }\n  },\n  \"learning\": null,\n  \"model\": \"qwen2.5-coder:3b\"\n}"
     },
     {
       "name": "task status",
@@ -69,9 +69,14 @@
       "detail": "status passed; edited: calc.py; last_error: "
     },
     {
+      "name": "test evidence",
+      "ok": true,
+      "detail": "test passed: True; last lines: ---------------------------------------------------------------------- | Ran 1 test in 0.000s | OK"
+    },
+    {
       "name": "worktree evidence",
-      "ok": false,
-      "detail": "calc.py returns a + b: True; test_calc.py unchanged: False; recorded calc.py sha matches file: False"
+      "ok": true,
+      "detail": "calc.py returns a + b: True; test_calc.py unchanged per git: True"
     }
   ]
 }

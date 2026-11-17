@@ -1,0 +1,184 @@
+
+[01:32:53] runner: Microsoft Windows Server 2025 Datacenter; Python 3.12.10; fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14
+[01:33:25] STEP ollama installed: ok. D:\a\_temp\ollama\ollama.exe
+[01:33:29] STEP ollama server: ok. version 0.40.16
+[01:33:29] $ D:\a\_temp\ollama\ollama.exe pull qwen2.5-coder:3b
+[01:33:38] STEP model pull: ok. exit 0 in 8.4s
+[01:33:38] $ D:\a\_temp\ollama\ollama.exe list
+NAME                ID              SIZE      MODIFIED               
+qwen2.5-coder:3b    f72c60cabf62    1.9 GB    Less than a second ago    
+[01:33:38] $ python -m forgeos models
+[
+  {
+    "name": "qwen2.5-coder:3b",
+    "model": "qwen2.5-coder:3b",
+    "modified_at": "2026-11-17T01:33:38.0731411Z",
+    "size": 1929912626,
+    "digest": "f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "qwen2",
+      "families": [
+        "qwen2"
+      ],
+      "parameter_size": "3.1B",
+      "quantization_level": "Q4_K_M",
+      "context_length": 32768,
+      "embedding_length": 2048,
+      "runner": "ggml"
+    },
+    "capabilities": [
+      "completion",
+      "tools",
+      "insert"
+    ]
+  }
+]
+[01:33:44] STEP forgeos models: ok. exit 0; output lists qwen2.5-coder:3b: True
+[01:33:44] STEP demo project: ok. git repo with failing add() at D:\a\_temp\acceptance-planning-fix\demo-project
+[01:33:44] $ python -m forgeos add D:\a\_temp\acceptance-planning-fix\demo-project In calc.py, change add() so it returns a + b. Do not edit test_calc.py.
+Created task #1
+[01:33:45] STEP add task: ok. created task #1
+[01:33:45] $ python -m forgeos plan 1 --model qwen2.5-coder:3b
+### Task Description:
+In the file `calc.py`, modify the `add()` function so that it returns `a + b`.
+
+### Plan
+
+#### 1. **Identify the Function to Modify:**
+   - Open `calc.py`.
+   - Locate the `add()` function.
+
+#### 2. **Update the Function:**
+   - Change the return statement within `add()` to return `a + b`.
+   - Example:
+     ```python
+     def add(a, b):
+         return a + b
+     ```
+
+#### 3. **Verify the Changes:**
+   - Save the changes to `calc.py`.
+   - Run the tests in `test_calc.py` to ensure the function behaves as expected.
+
+#### 4. **Check for Risks:**
+   - **Syntax Errors:** Ensure that the changes do not introduce any syntax errors.
+   - **Behavioral Changes:** Ensure that the updated `add()` function still works correctly for typical use cases.
+
+#### 5. **Acceptance Tests:**
+   - **Test 1:** Verify that `add(0, 0)` returns `0`.
+   - **Test 2:** Verify that `add(1, 2)` returns `3`.
+   - **Test 3:** Verify that `add(-1, -1)` returns `-2`.
+   - **Test 4:** Verify that `add(100, 200)` returns `300`.
+   - **Test 5:** Verify that `add(-50, 50)` returns `0`.
+
+#### 6. **Code Review:**
+   - Have a colleague or a code reviewer review the changes to ensure they meet the requirements and handle all edge cases.
+
+#### 7. **Documentation Update:**
+   - Update the documentation for `calc.py` to reflect the changes in the `add()` function.
+
+### Risks
+- **Syntax Errors:** Errors in modifying the function could lead to syntax errors, which need to be fixed immediately.
+- **Behavioral Changes:** The updated function may not behave as expected, especially if it was previously used in different contexts.
+
+### Acceptance Tests
+- **Test 1:** `assert add(0, 0) == 0`
+- **Test 2:** `assert add(1, 2) == 3`
+- **Test 3:** `assert add(-1, -1) == -2`
+- **Test 4:** `assert add(100, 200) == 300`
+- **Test 5:** `assert add(-50, 50) == 0`
+
+By following this plan, the task of modifying the `add()` function in `calc.py` will be completed efficiently, with thorough verification and testing to ensure correctness and reliability.
+[01:34:16] STEP plan: ok. exit 0 in 31.3s. tail: ### Risks
+- **Syntax Errors:** Errors in modifying the function could lead to syntax errors, which need to be fixed immediately.
+- **Behavioral Changes:** The updated function may not behave as expected, especially if it was previously used in different contexts.
+
+### Acceptance Tests
+- **Test 1:** `assert add(0, 0) == 0`
+- **Test 2:** `assert add(1, 2) == 3`
+- **Test 3:** `assert add(-1, -1) == -2`
+- **Test 4:** `assert add(100, 200) == 300`
+- **Test 5:** `assert add(-50, 50) == 0`
+
+By following this plan, the task of modifying the `add()` function in `calc.py` will be completed efficiently, with thorough verification and testing to ensure correctness and reliability.
+[01:34:16] $ python -m forgeos run 1 --workspace-parent D:\a\_temp\acceptance-planning-fix\ForgeOS-work --preset python-unittest --model qwen2.5-coder:3b --allow-host-tests
+{
+  "passed": true,
+  "workspace": "D:\\a\\_temp\\acceptance-planning-fix\\ForgeOS-work\\task-1",
+  "branch": "forgeos/task-1",
+  "edited": [
+    "calc.py"
+  ],
+  "iterations": 1,
+  "test": {
+    "passed": true,
+    "returncode": 0,
+    "output": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+    "capture_source_bytes": 103,
+    "capture_complete": true,
+    "output_preview_only": false,
+    "evidence_reference": null,
+    "capture_error": null,
+    "ui_restrictions": 255,
+    "handle_allowlist": true,
+    "containment": "windows-restricted-token+job-object+low-integrity",
+    "parsed_test": {
+      "tier": "text",
+      "counts": {
+        "total": 1
+      }
+    },
+    "failure_type": {
+      "category": "none",
+      "signals": [],
+      "method": "test-status"
+    },
+    "optimization": {
+      "archived": true,
+      "reference": "fb184ea57734512b1f088f9181209901b9cd46df3eb7eaa2500ea9e48dde20b5",
+      "source_bytes": 103,
+      "context_bytes": 98,
+      "saved_bytes": 5,
+      "optimized": false,
+      "preset": "python-unittest",
+      "deduplicated_lines": 0,
+      "filter_status": "not-configured",
+      "capture_complete": true,
+      "source_prearchived": false
+    }
+  },
+  "learning": null,
+  "model": "qwen2.5-coder:3b"
+}
+[01:34:20] STEP run (edit, test, repair): ok. exit 0 in 3.6s. tail:       "saved_bytes": 5,
+      "optimized": false,
+      "preset": "python-unittest",
+      "deduplicated_lines": 0,
+      "filter_status": "not-configured",
+      "capture_complete": true,
+      "source_prearchived": false
+    }
+  },
+  "learning": null,
+  "model": "qwen2.5-coder:3b"
+}
+[01:34:20] $ python -m forgeos list
+[01:34:20] STEP task status: ok. status passed; edited: calc.py; last_error: 
+[01:34:20] STEP test evidence: ok. test passed: True; last lines: ---------------------------------------------------------------------- | Ran 1 test in 0.000s | OK
+[01:34:20] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
+[01:34:20] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 status --short
+ M calc.py
+[01:34:20] $ git -C D:\a\_temp\acceptance-planning-fix\ForgeOS-work\task-1 diff HEAD
+warning: in the working copy of 'calc.py', LF will be replaced by CRLF the next time Git touches it
+diff --git a/calc.py b/calc.py
+index 12ee743..2a99cdf 100644
+--- a/calc.py
++++ b/calc.py
+@@ -1,2 +1,2 @@
+ def add(a, b):
+-    return a - b
++  return a + b
+[01:34:20] STEP worktree evidence: ok. calc.py returns a + b: True; test_calc.py unchanged per git: True
+[01:34:20] RESULT PASS for planning-fix (test ref fix/planning-socket-timeout-20261117 at d99472de9c51e8965002ff9565581129f3d13a14)
