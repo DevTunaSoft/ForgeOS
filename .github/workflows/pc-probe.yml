@@ -1,0 +1,31 @@
+name: PC probe
+run-name: PC probe - ${{ github.ref_name }}
+
+# Read-only check that the self-hosted runner on the PC is online and that its
+# tools respond. Prints no personal information, because this repository's logs
+# are public. Runs only when this file changes.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/pc-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Tools on the PC
+        shell: powershell
+        run: |
+          "powershell: $($PSVersionTable.PSVersion)"
+          "interactive desktop: $([Environment]::UserInteractive)"
+          try { "git: " + (git --version) } catch { "git: missing" }
+          try { "python 3.12: " + (py -3.12 --version 2>&1) } catch { "python 3.12: missing" }
+          try { "ollama: " + (ollama --version 2>&1) } catch { "ollama: missing" }
+          try { "ollama models: " + ((ollama list 2>&1) -join ' | ') } catch { "ollama list failed" }
+          try { "ollama api: " + (Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec 5).version } catch { "ollama api: not answering" }
