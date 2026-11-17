@@ -24,8 +24,6 @@ using System;
 using System.Runtime.InteropServices;
 public struct ForgeRect { public int Left; public int Top; public int Right; public int Bottom; }
 public static class ForgeWindow {
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out ForgeRect rect);
     [DllImport("user32.dll")]
@@ -53,16 +51,21 @@ function Show-AppState([string] $Reason) {
 }
 
 try {
-    $hwnd = [IntPtr]::Zero
-    $deadline = (Get-Date).AddSeconds(150)
-    while ($hwnd -eq [IntPtr]::Zero -and -not $app.HasExited -and (Get-Date) -lt $deadline) {
+    # The window's handle comes from its process. FindWindow by title did not return
+    # it in the diagnostic run, although the process reported the exact title.
+    $target = $null
+    $deadline = (Get-Date).AddSeconds(120)
+    while ($null -eq $target -and -not $app.HasExited -and (Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 1
-        $hwnd = [ForgeWindow]::FindWindow($null, $title)
+        $target = Get-Process -Name 'ForgeOS' -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowTitle -eq $title -and $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Select-Object -First 1
     }
-    if ($hwnd -eq [IntPtr]::Zero) {
+    if ($null -eq $target) {
         Show-AppState 'the ForgeOS window was not found'
         throw 'the ForgeOS window did not appear'
     }
+    $hwnd = $target.MainWindowHandle
     Start-Sleep -Seconds 4
 
     $rect = New-Object ForgeRect
