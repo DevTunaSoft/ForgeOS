@@ -342,7 +342,94 @@ if ($killMatch.Success) {
 }
 Add-Step 'kill during planning, then recover' $killOk $killDetail
 
-$pass = $frozenOk -and ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged -and $persistOk -and $refusalOk -and $killOk
+# ---- interrupted write: process death between two target replacements ----
+$iwRoot = Join-Path $work 'iw-project'
+New-Item -ItemType Directory -Force -Path $iwRoot | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $iwRoot 'a.txt'), "AAA original`n", $utf8)
+[System.IO.File]::WriteAllText((Join-Path $iwRoot 'b.txt'), "BBB original`n", $utf8)
+$injectPath = Join-Path $work 'inject_interrupt.py'
+Set-Content -Path $injectPath -Encoding utf8 -Value @'
+import sys
+from pathlib import Path
+from unittest import mock
+import forgeos.transactions as t
+
+root = Path(sys.argv[1])
+real_publish = t._publish_staged
+count = {"publishes": 0}
+
+def die_on_second_replacement(*args, **kwargs):
+    count["publishes"] += 1
+    if count["publishes"] == 2:
+        # SystemExit skips the transaction's "except Exception" cleanup, so the
+        # journal stays pending exactly as it would after a process death.
+        raise SystemExit("injected process death")
+    return real_publish(*args, **kwargs)
+
+crashed = False
+with mock.patch.object(t, "_publish_staged", die_on_second_replacement):
+    try:
+        t.apply_transaction(root, [(root / "a.txt", "AAA edited\n"), (root / "b.txt", "BBB edited\n")])
+    except SystemExit:
+        crashed = True
+if not crashed:
+    print("UNEXPECTED: the transaction completed without the injected death")
+    sys.exit(2)
+print("injected death after 1 of 2 replacements")
+'@
+$env:PYTHONPATH = Join-Path $UnderTest 'src'
+$inject = Invoke-Logged -Exe 'python' -Arguments @($injectPath, $iwRoot)
+Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+$partialOk = ([System.IO.File]::ReadAllText((Join-Path $iwRoot 'a.txt')) -eq "AAA edited`n") -and ([System.IO.File]::ReadAllText((Join-Path $iwRoot 'b.txt')) -eq "BBB original`n")
+$rec = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'recover-edits', $iwRoot)
+$recoveredOk = ($rec.Code -eq 0) -and ($rec.Text -match 'Recovered edit journal')
+$restoredOk = ([System.IO.File]::ReadAllText((Join-Path $iwRoot 'a.txt')) -eq "AAA original`n") -and ([System.IO.File]::ReadAllText((Join-Path $iwRoot 'b.txt')) -eq "BBB original`n")
+$again = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'recover-edits', $iwRoot)
+$idempotentOk = ($again.Code -eq 0) -and ($again.Text -match 'No pending edit journal')
+$iwOk = ($inject.Code -eq 0) -and $partialOk -and $recoveredOk -and $restoredOk -and $idempotentOk
+Add-Step 'interrupted write rolled back by recover-edits' $iwOk ("injected death: exit {0}; partial state seen: {1}; recover-edits recovered: {2}; both files restored: {3}; second recover no-op: {4}" -f $inject.Code, $partialOk, $recoveredOk, $restoredOk, $idempotentOk)
+
+# ---- damaged checkpoints: resume-safe must refuse them, never resume them ----
+$dmgAdd1 = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'add', $demo, 'Damaged checkpoint A for the resume guard check.')
+$dmgAdd2 = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'add', $demo, 'Damaged checkpoint B for the resume guard check.')
+$dmgId1 = [regex]::Match($dmgAdd1.Text, 'Created task #(\d+)').Groups[1].Value
+$dmgId2 = [regex]::Match($dmgAdd2.Text, 'Created task #(\d+)').Groups[1].Value
+$damagePath = Join-Path $work 'damage_checkpoints.py'
+Set-Content -Path $damagePath -Encoding utf8 -Value @'
+import json
+import sys
+from pathlib import Path
+from forgeos.cli import default_db
+from forgeos.core import Store
+
+first, second = int(sys.argv[1]), int(sys.argv[2])
+payloads = {
+    first: '{"phase": "test_pending", "workspace": ',
+    second: json.dumps({"phase": "test_pending",
+                        "workspace": str(Path.home() / "elsewhere" / "task-999")}),
+}
+store = Store(default_db())
+try:
+    for task_id, payload in payloads.items():
+        store.db.execute("UPDATE tasks SET status='blocked', result=? WHERE id=?", (payload, task_id))
+    store.db.commit()
+finally:
+    store.close()
+print("damaged", first, second)
+'@
+$env:PYTHONPATH = Join-Path $UnderTest 'src'
+$damage = Invoke-Logged -Exe 'python' -Arguments @($damagePath, $dmgId1, $dmgId2)
+Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+$resume = Invoke-Logged -Exe $Exe -Arguments @('--cli', 'resume-safe', '--workspace-parent', $wsParent, '--preset', 'python-unittest', '--allow-host-tests')
+$resumeReport = $null
+try { $resumeReport = $resume.Text | ConvertFrom-Json -ErrorAction Stop } catch { $resumeReport = $null }
+$skippedIds = if ($resumeReport) { @($resumeReport.skipped | ForEach-Object { [string]$_.id }) } else { @() }
+$resumedCount = if ($resumeReport) { @($resumeReport.resumed).Count } else { -1 }
+$bothRefused = ($skippedIds -contains $dmgId1) -and ($skippedIds -contains $dmgId2)
+$dmgOk = ($damage.Code -eq 0) -and ($resume.Code -eq 0) -and ($resumedCount -eq 0) -and $bothRefused
+Add-Step 'damaged checkpoints are refused by resume-safe' $dmgOk ("tasks {0} and {1} damaged: damage exit {2}; resume-safe exit {3}; resumed {4}; both refused: {5}" -f $dmgId1, $dmgId2, $damage.Code, $resume.Code, $resumedCount, $bothRefused)
+
+$pass = $frozenOk -and ($plan.Code -eq 0) -and ($run.Code -eq 0) -and ($taskStatus -eq 'passed') -and $testPassed -and $addFixed -and $testUnchanged -and $persistOk -and $refusalOk -and $killOk -and $iwOk -and $dmgOk
 $verdict = if ($pass) { 'PASS' } else { 'FAIL' }
 Save-Summary $verdict
 Write-Log "RESULT $verdict for ${Label} (test ref $TestRef at $($facts['under_test_sha']), exe sha256 $($facts['exe_sha256']))"
