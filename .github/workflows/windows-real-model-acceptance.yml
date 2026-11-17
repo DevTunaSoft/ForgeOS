@@ -1,0 +1,120 @@
+name: Windows real-model acceptance
+run-name: Windows real-model acceptance - ${{ github.ref_name }}
+
+# Hosted Windows evidence for the path that hosted packaging does not cover:
+# Ollama serving a coder model, then ForgeOS add -> plan -> run against a
+# disposable Python project. Runs on windows-latest, NOT on a physical PC.
+#
+# The "main" job is the control: main still has the 30-second planning socket
+# timeout. The "planning-fix" job tests the branch with the 180-second deadline.
+#
+# Results are committed to acceptance-results/windows-real-model/ on this
+# branch with [skip ci], so they can be read from git without the Actions UI.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/windows-real-model-acceptance.yml"
+      - ".github/scripts/windows-real-model-acceptance.ps1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  real-model:
+    name: real model (${{ matrix.label }})
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: main
+            ref: main
+          - label: planning-fix
+            ref: fix/planning-socket-timeout-20261117
+    steps:
+      - name: Check out the harness from the designated branch
+        uses: actions/checkout@v4
+        with:
+          path: ci-harness
+          persist-credentials: false
+
+      - name: Check out the code under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: under-test
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Ollama plan and run cycle
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE/ci-harness/.github/scripts/windows-real-model-acceptance.ps1" `
+            -UnderTest "$env:GITHUB_WORKSPACE/under-test" `
+            -ResultsDir "$env:GITHUB_WORKSPACE/results" `
+            -Label "${{ matrix.label }}" `
+            -TestRef "${{ matrix.ref }}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.label }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  publish:
+    name: commit results
+    needs: real-model
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the designated branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download result files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Commit results to the designated branch
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          dest=acceptance-results/windows-real-model
+          mkdir -p "$dest"
+          shopt -s nullglob
+          files=(incoming/*.json incoming/*.log)
+          if [ ${#files[@]} -gt 0 ]; then cp -f "${files[@]}" "$dest"/; fi
+          git add -- "$dest"
+          if git diff --cached --quiet; then
+            echo "No result files to commit."
+            exit 0
+          fi
+          verdict() { jq -r '.verdict // "missing"' "$dest/$1.json" 2>/dev/null || echo missing; }
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "ci: record Windows real-model acceptance results [skip ci]" \
+              -m "Run ${GITHUB_RUN_ID}: main=$(verdict main), planning-fix=$(verdict planning-fix)."
+          git pull -q --no-rebase --no-edit origin "$BRANCH"
+          git push -q origin "HEAD:refs/heads/$BRANCH"
