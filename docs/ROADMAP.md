@@ -1351,3 +1351,7 @@ patched the process-wide `os.name` before importing its patch targets. The
 three Windows device-name lists in the engine, the GGUF downloader and the
 runtime installer should be consolidated into one canonical helper; that is a
 follow-up, not part of this change.
+
+### 2026-11-17 — planning waits for the full response deadline
+
+Local planning allowed the socket 30 seconds of silence, while the model sends its reply only after generation finishes. On CPU-only hardware, planning timed out before the 180-second deadline the function already enforces. The socket timeout now matches that deadline. A regression test and a full local discovery run cover it. Physical Windows acceptance is pending, and the candidate branch is `fix/planning-socket-timeout-20261117`.

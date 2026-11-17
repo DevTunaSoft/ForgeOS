@@ -2174,7 +2174,10 @@ class Ollama:
         # zero-copy getvalue() on CPython when the buffer is no longer mutated.
         bounded = BytesIO()
         total = 0
-        with urlopen(req, timeout=30) as response:
+        # The socket must outlast the response deadline above: a non-streaming
+        # reply arrives only after generation finishes, so a shorter socket
+        # timeout aborts plans that the 180-second deadline would allow.
+        with urlopen(req, timeout=180) as response:
             while True:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Local AI response exceeded 180s total deadline")
