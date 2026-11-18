@@ -37,6 +37,7 @@ jobs:
           New-Item -ItemType Directory -Path $base | Out-Null
           $driverText = @'
           import os
+          import shutil
           import subprocess
           import sys
           from pathlib import Path
@@ -60,7 +61,10 @@ jobs:
 
           before = acl(outside) + acl(secret)
           runtime = create_windows_low_integrity_snapshot(workspace)
-          cmd = os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe")
+          bin_dir = base / "bin"
+          bin_dir.mkdir()
+          cmd = str(bin_dir / "cmd.exe")
+          shutil.copy2(os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe"), cmd)
           command = f"mklink /J junction-to-outside {outside} & if exist junction-to-outside echo LINK-CREATED"
           result = {}
           error = None
