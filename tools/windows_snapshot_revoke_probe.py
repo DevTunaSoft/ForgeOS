@@ -265,9 +265,12 @@ def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
     runner_dir.mkdir()
     cmd = str(runner_dir / "cmd.exe")
     shutil.copy2(os.path.join(system_root, "System32", "cmd.exe"), cmd)
+    # AppContainer process creation resolves its profile through the caller's
+    # LOCALAPPDATA, as secure_runner._bootstrap_environment provides it.
     env = {
         "SystemRoot": system_root, "ComSpec": cmd,
         "TEMP": str(snap / "tmp"), "TMP": str(snap / "tmp"),
+        "LOCALAPPDATA": os.environ["LOCALAPPDATA"],
     }
     before = (acl(outside), acl(secret))
     result, error = {}, ""
