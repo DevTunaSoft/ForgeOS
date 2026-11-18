@@ -1,8 +1,10 @@
 name: PC Windows unit tests
 
 # Runs the unit suite on the self-hosted Windows PC runner with the temporary folder
-# set to the runner temp folder, which is outside the user profile. That is the
-# condition that broke Windows labelling before PR #158.
+# set to the runner temp folder, which is outside the user profile. With dispatch
+# input probe set to "true", it runs a label probe instead: a raw integrity label
+# without the account grant, then the product grant and label, on folders created
+# the way the harness creates them.
 # Runs when this file changes on the designated branch, or on manual dispatch with
 # the ref input. Default ref: the PR #158 branch. Logs are public: print no personal paths.
 
@@ -17,6 +19,11 @@ on:
         description: Branch or commit to test
         required: false
         type: string
+      probe:
+        description: Set to true to run the label probe instead of the unit suite
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -32,6 +39,7 @@ jobs:
           ref: ${{ inputs.ref || 'fix/windows-labelling-outside-profile' }}
 
       - name: Run the unit suite with temp outside the user profile
+        if: ${{ inputs.probe != 'true' }}
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -41,3 +49,21 @@ jobs:
           Write-Host "TEMP=$env:TEMP"
           py -m unittest discover -s tests -v
           if ($LASTEXITCODE -ne 0) { throw "unit tests failed with exit code $LASTEXITCODE" }
+
+      - name: Label probe, raw label versus product grant
+        if: ${{ inputs.probe == 'true' }}
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $base = Join-Path $env:RUNNER_TEMP ('label-probe-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          $raw = Join-Path $base 'raw'
+          $product = Join-Path $base 'product'
+          New-Item -ItemType Directory -Path $raw -Force | Out-Null
+          New-Item -ItemType Directory -Path $product -Force | Out-Null
+          Write-Host "probe folders are under the runner temp folder: $($base.StartsWith($env:RUNNER_TEMP))"
+          & icacls.exe $raw /setintegritylevel '(OI)(CI)L' /T /L /Q
+          Write-Host "raw label without grant: exit $LASTEXITCODE"
+          $env:PYTHONPATH = Join-Path $PWD 'src'
+          py -c "import sys; from pathlib import Path; from forgeos.windows_containment import prepare_low_integrity_workspace as p; p(Path(sys.argv[1])); print(1)" $product
+          Write-Host "product grant then label: exit $LASTEXITCODE"
+          Remove-Item -Recurse -Force $base -ErrorAction SilentlyContinue
