@@ -603,6 +603,8 @@ existing bounded evidence reader. A hard-link, reparse point or replacement
 during the final open therefore fails closed instead of redirecting diagnostic
 capture; the reader still uses the existing disk-bounded memory contract.
 
+Before a Windows snapshot is labelled Low integrity, ForgeOS grants the current account full control of that snapshot tree (`icacls /grant:r` with `(OI)(CI)F`, applied with `/T`). Setting the label needs WRITE_OWNER, and inherited permissions on some roots, such as the runner temp folder or a drive root, do not supply it even when the account owns the folder. The grant covers only the disposable snapshot, never the user's repository. **Review question:** the contained child's token must not gain anything outside the snapshot from this account entry. Confirm that the account SID is disabled or restricted in that token, or that the entry gives the child nothing it does not already have.
+
 Docker is **not required**. Git worktrees are version-control isolation, not operating-system security isolation. No test runner is allowed to claim full untrusted-code containment without real runtime proof.
 
 ## Sensitive data and storage
