@@ -70,3 +70,43 @@ class SecureRunSiblingAclTests(unittest.TestCase):
             remove_test_snapshot(workspace)
         after = (self._acl(sibling), self._acl(sibling / "notes.txt"))
         self.assertEqual(before, after)
+
+    def test_secure_run_grants_nothing_on_the_workspace_parent(self):
+        # The workspace's parent folder is the user's folder. A grant on it rewrites
+        # the explicit ACEs of its children, so the run must not grant it at all.
+        from forgeos import appcontainer
+        from forgeos.appcontainer import run_secure_appcontainer
+        from forgeos.secure_runner import _bootstrap_environment
+        from forgeos.test_runtime import (
+            create_windows_low_integrity_snapshot, remove_test_snapshot)
+
+        projects = self.tmp / "projects"
+        workspace = projects / "ForgeOS"
+        workspace.mkdir(parents=True)
+        (workspace / "app.txt").write_text("workspace", encoding="utf-8")
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        cmd = str(bin_dir / "cmd.exe")
+        shutil.copy2(
+            os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe"), cmd)
+
+        calls = []
+        original_icacls = appcontainer._icacls
+
+        def recording_icacls(path, *arguments):
+            calls.append((Path(path), arguments))
+            return original_icacls(path, *arguments)
+
+        runtime = create_windows_low_integrity_snapshot(workspace)
+        appcontainer._icacls = recording_icacls
+        try:
+            result = run_secure_appcontainer(
+                [cmd, "/c", "exit 0"], runtime.path,
+                _bootstrap_environment(runtime), executable=cmd, timeout=60)
+            self.assertTrue(result["passed"])
+        finally:
+            appcontainer._icacls = original_icacls
+            remove_test_snapshot(workspace)
+        granted = {path.resolve() for path, arguments in calls
+                   if "/grant" in arguments}
+        self.assertNotIn(projects.resolve(), granted)
