@@ -457,6 +457,17 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
         raise
 
 
+def _refuse_links(root: Path) -> None:
+    """Refuse a snapshot holding links: a recursive icacls run walks into link targets."""
+    file_attribute_reparse_point = 0x400
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in dirnames + filenames:
+            path = Path(dirpath, name)
+            attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+            if path.is_symlink() or attributes & file_attribute_reparse_point:
+                raise ValueError("Windows test snapshot must not contain links")
+
+
 def create_windows_low_integrity_snapshot(workspace: str | Path) -> TestRuntime:
     """Create and Low-label a disposable Windows execution snapshot."""
     if os.name != "nt":
@@ -464,6 +475,7 @@ def create_windows_low_integrity_snapshot(workspace: str | Path) -> TestRuntime:
     runtime = create_test_snapshot(workspace)
     from .windows_containment import prepare_low_integrity_workspace
     try:
+        _refuse_links(runtime.path)
         prepare_low_integrity_workspace(runtime.path)
         return runtime
     except BaseException:
