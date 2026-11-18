@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from forgeos import appcontainer
 from forgeos.appcontainer import (
-    REVOKE_BATCH_MAX_CHARS, REVOKE_BATCH_MAX_PATHS, _is_reparse_point,
-    _revoke_secure_grants, _revoke_snapshot_grant, _snapshot_objects,
+    _is_reparse_point, _revoke_secure_grants, _revoke_snapshot_grant,
+    _snapshot_objects,
 )
 
 PROBE_SID = ("S-1-15-2-1000000001-1000000002-1000000003-"
@@ -33,11 +33,13 @@ class _SnapshotFixture(unittest.TestCase):
         (self.snap / "pkg" / "mod.py").write_text("x = 1\n")
         self.calls = []
 
-    def record(self, paths, *arguments):
-        self.calls.append((list(paths), tuple(arguments)))
+    def record(self, path, *arguments):
+        # icacls is called with exactly one object name and its arguments.
+        self.assertIsInstance(path, (str, Path))
+        self.calls.append((str(path), tuple(arguments)))
 
     def named(self):
-        return [name for paths, _ in self.calls for name in paths]
+        return [name for name, _arguments in self.calls]
 
     def assert_no_outside_name(self, names):
         for name in names:
@@ -89,11 +91,11 @@ class SnapshotListingTests(_SnapshotFixture):
 
 
 class SnapshotRevokeCommandTests(_SnapshotFixture):
-    def test_every_object_is_named_with_L_and_never_recursively(self):
+    def test_every_object_is_named_alone_with_L_and_never_recursively(self):
         link = self.snap / "linkdir"
         os.symlink(self.outside, link, target_is_directory=True)
         _revoke_snapshot_grant(self.snap, PROBE_SID, run_icacls=self.record)
-        for _paths, arguments in self.calls:
+        for _name, arguments in self.calls:
             self.assertEqual(arguments, REVOKE_ARGUMENTS)
             self.assertNotIn("/T", arguments)
         named = self.named()
@@ -104,20 +106,15 @@ class SnapshotRevokeCommandTests(_SnapshotFixture):
         self.assert_no_outside_name(named)
         self.assert_nothing_below(named, link)
 
-    def test_batches_stay_within_path_and_length_limits(self):
+    def test_large_tree_is_revoked_one_object_per_call(self):
         bulk = self.snap / "bulk"
         bulk.mkdir()
         for index in range(300):
-            (bulk / f"file-{index:04d}-{'x' * 80}.txt").write_text("x")
+            (bulk / f"file-{index:04d}.txt").write_text("x")
+        expected = [str(path) for path in _snapshot_objects(self.snap)]
         _revoke_snapshot_grant(self.snap, PROBE_SID, run_icacls=self.record)
-        self.assertGreater(len(self.calls), 1)
-        for paths, _arguments in self.calls:
-            self.assertLessEqual(len(paths), REVOKE_BATCH_MAX_PATHS)
-            self.assertLessEqual(
-                sum(len(path) + 3 for path in paths), REVOKE_BATCH_MAX_CHARS)
-        named = self.named()
-        self.assertEqual(len(named), len(set(named)))
-        self.assertIn(str(bulk / f"file-0299-{'x' * 80}.txt"), named)
+        self.assertEqual(self.named(), expected)
+        self.assertIn(str(bulk / "file-0299.txt"), self.named())
 
     def test_link_root_is_refused_before_any_icacls_call(self):
         link_root = self.base / "link-root"
@@ -126,49 +123,46 @@ class SnapshotRevokeCommandTests(_SnapshotFixture):
             _revoke_snapshot_grant(link_root, PROBE_SID, run_icacls=self.record)
         self.assertEqual(self.calls, [])
 
-    def test_failed_batch_does_not_stop_later_batches_and_is_reported(self):
-        bulk = self.snap / "bulk"
-        bulk.mkdir()
-        for index in range(300):
-            (bulk / f"file-{index:04d}").write_text("x")
+    def test_failed_object_does_not_stop_the_rest_and_is_reported(self):
+        expected = len(_snapshot_objects(self.snap))
         attempts = []
 
-        def fail_first_batch(paths, *arguments):
-            attempts.append(list(paths))
+        def fail_first(path, *arguments):
+            attempts.append(str(path))
             if len(attempts) == 1:
-                raise OSError("icacls failed for the first batch")
+                raise OSError("icacls failed for the first object")
 
-        with self.assertRaisesRegex(OSError, "first batch"):
-            _revoke_snapshot_grant(
-                self.snap, PROBE_SID, run_icacls=fail_first_batch)
-        self.assertGreater(len(attempts), 1)
+        with self.assertRaisesRegex(OSError, "1 snapshot objects were not revoked"):
+            _revoke_snapshot_grant(self.snap, PROBE_SID, run_icacls=fail_first)
+        self.assertEqual(len(attempts), expected)
 
 
 class SecureGrantCleanupTests(_SnapshotFixture):
     def test_cleanup_revokes_snapshot_by_object_and_outside_path_without_recursion(self):
-        os.symlink(self.outside, self.snap / "linkdir", target_is_directory=True)
+        link = self.snap / "linkdir"
+        os.symlink(self.outside, link, target_is_directory=True)
         grants = [(self.outside, False), (self.snap, True)]
-        with patch.object(appcontainer, "_icacls_objects",
-                          side_effect=self.record) as tree, \
-                patch.object(appcontainer, "_icacls") as single:
+        with patch.object(appcontainer, "_icacls", side_effect=self.record):
             _revoke_secure_grants(grants, PROBE_SID)
-        self.assertTrue(tree.called)
-        for call in tree.call_args_list:
-            self.assertEqual(call.args[1:], REVOKE_ARGUMENTS)
-        single.assert_called_once_with(
-            self.outside, "/remove:g", f"*{PROBE_SID}", "/Q")
-        self.assert_no_outside_name(self.named())
-        self.assert_nothing_below(self.named(), self.snap / "linkdir")
+        names = self.named()
+        for name, arguments in self.calls:
+            if Path(name).is_relative_to(self.snap):
+                self.assertEqual(arguments, REVOKE_ARGUMENTS, name)
+        # The outside directory is revoked only as itself, non-recursively.
+        self.assertIn(
+            (str(self.outside), ("/remove:g", f"*{PROBE_SID}", "/Q")), self.calls)
+        self.assertEqual(
+            [name for name in names if Path(name).is_relative_to(self.outside)],
+            [str(self.outside)])
+        self.assert_nothing_below(names, link)
 
     def test_cleanup_raises_one_error_listing_every_failure(self):
-        with patch.object(appcontainer, "_icacls_objects",
-                          side_effect=OSError("tree failed")), \
-                patch.object(appcontainer, "_icacls",
-                             side_effect=OSError("outside failed")):
+        with patch.object(appcontainer, "_icacls",
+                          side_effect=OSError("failed")):
             with self.assertRaisesRegex(
                     OSError,
-                    "Failed to revoke secure AppContainer grants: "
-                    "tree failed; outside failed"):
+                    r"Failed to revoke secure AppContainer grants: "
+                    r"\d+ snapshot objects were not revoked: failed"):
                 _revoke_secure_grants(
                     [(self.outside, False), (self.snap, True)], PROBE_SID)
 

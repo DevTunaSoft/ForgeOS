@@ -10,7 +10,6 @@ import ctypes
 import locale
 from contextlib import contextmanager
 from ctypes import wintypes
-from collections.abc import Sequence
 import os
 import socket
 import stat
@@ -136,9 +135,6 @@ def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -
 
 # Windows reparse-point attribute (FILE_ATTRIBUTE_REPARSE_POINT).
 FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
-# Bounds for one icacls invocation that names several snapshot objects.
-REVOKE_BATCH_MAX_PATHS = 128
-REVOKE_BATCH_MAX_CHARS = 24000
 
 
 def _is_reparse_point(info: os.stat_result) -> bool:
@@ -174,55 +170,33 @@ def _snapshot_objects(root: Path, *,
     return objects
 
 
-def _icacls_objects(paths: Sequence[str], *arguments: str) -> None:
-    result = subprocess.run(
-        ["icacls.exe", *paths, *arguments],
-        capture_output=True, text=True, timeout=120, shell=False,
-        errors="replace")
-    if result.returncode != 0:
-        detail = (result.stdout + "\n" + result.stderr)[-4000:]
-        raise OSError(
-            f"icacls failed for {len(paths)} snapshot objects "
-            f"(first {paths[0]}): {detail}")
-
-
 def _revoke_snapshot_grant(root: Path, sid_string: str, *,
                            is_reparse_point=_is_reparse_point,
                            run_icacls=None) -> None:
     """Remove the temporary SID's grant from a snapshot without following links.
 
     Every object is listed first, without entering a reparse point. Each listed
-    object is then named to icacls with /L and without /T, in batches. No call
-    recurses, and with /L a call that names a link changes the link itself, not
-    its target. Every batch is attempted; any failures are raised together.
+    object is then named to icacls alone, with /L and without /T. icacls takes
+    one name per call. With /L, a call that names a link changes the link
+    itself, not its target, and no call recurses. Every object is attempted;
+    failures are raised together.
     """
-    run = run_icacls or _icacls_objects
+    run = run_icacls or _icacls
     info = os.lstat(root)
     if not stat.S_ISDIR(info.st_mode) or is_reparse_point(info):
         raise OSError(f"Snapshot root is not a real directory: {root}")
-    names = [str(path) for path in _snapshot_objects(
-        root, is_reparse_point=is_reparse_point)]
-    batches: list[list[str]] = []
-    current: list[str] = []
-    size = 0
-    for name in names:
-        cost = len(name) + 3
-        if current and (len(current) >= REVOKE_BATCH_MAX_PATHS
-                        or size + cost > REVOKE_BATCH_MAX_CHARS):
-            batches.append(current)
-            current, size = [], 0
-        current.append(name)
-        size += cost
-    if current:
-        batches.append(current)
     errors = []
-    for batch in batches:
+    for path in _snapshot_objects(root, is_reparse_point=is_reparse_point):
         try:
-            run(batch, "/remove:g", f"*{sid_string}", "/L", "/Q")
+            run(path, "/remove:g", f"*{sid_string}", "/L", "/Q")
         except OSError as exc:
             errors.append(str(exc))
     if errors:
-        raise OSError("; ".join(errors))
+        more = len(errors) - 10
+        raise OSError(
+            f"{len(errors)} snapshot objects were not revoked: "
+            + "; ".join(errors[:10])
+            + (f" (and {more} more)" if more > 0 else ""))
 
 
 def _revoke_secure_grants(grants, sid_string: str) -> None:

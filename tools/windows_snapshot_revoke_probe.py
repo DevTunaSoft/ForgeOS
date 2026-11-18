@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -102,10 +103,22 @@ def revoke(mode: str, snap: Path) -> None:
         appcontainer._revoke_snapshot_grant(snap, PROBE_SID)
 
 
-def objects_with_sid(snap: Path) -> list[str]:
-    # /L reads a link's own ACL; for other objects it reads the object itself.
-    return [path.name for path in appcontainer._snapshot_objects(snap)
-            if has_sid(acl(path, "/L"))]
+def read_object_acl(path: Path) -> str:
+    # A link's own ACL is read with /L; ordinary objects are read as they are.
+    if appcontainer._is_reparse_point(os.lstat(path)):
+        return acl(path, "/L")
+    return acl(path)
+
+
+def objects_with_sid(snap: Path) -> dict:
+    found, unreadable = [], []
+    for path in appcontainer._snapshot_objects(snap):
+        text = read_object_acl(path)
+        if text.startswith("<icacls"):
+            unreadable.append(path.name)
+        elif has_sid(text):
+            found.append(path.name)
+    return {"with_sid": found, "unreadable": unreadable}
 
 
 def python_checks(base: Path, variant: str) -> dict:
@@ -113,6 +126,13 @@ def python_checks(base: Path, variant: str) -> dict:
     walked = [str(path).casefold() for path, _dirs, _files in os.walk(ctx["snap"])]
     link_prefix = str(ctx["link"]).casefold()
     listed = [Path(path) for path in appcontainer._snapshot_objects(ctx["snap"])]
+    # Deletion follows the revoke: the snapshot removal must not reach outside.
+    removal = build(base / f"rm-{variant}", variant)
+    removal_errors = []
+    shutil.rmtree(
+        removal["snap"],
+        onerror=lambda func, path, exc_info: removal_errors.append(
+            f"{getattr(func, '__name__', func)}:{path}"))
     return {
         "os_walk_enters_link": any(
             path == link_prefix or path.startswith(link_prefix + os.sep)
@@ -120,6 +140,9 @@ def python_checks(base: Path, variant: str) -> dict:
         "walker_lists_outside_target": any(
             path.is_relative_to(ctx["outside"]) for path in listed),
         "walker_lists_link": ctx["link"] in listed,
+        "rmtree_outside_survived": (removal["secret"].exists()
+                                    and removal["outside"].exists()),
+        "rmtree_errors": len(removal_errors),
     }
 
 
@@ -141,15 +164,46 @@ def probe_mode(base: Path, variant: str, mode: str) -> dict:
         "secret_changed": before["secret"] != after["secret"],
         "outside_sid_removed": has_sid(before["outside"]) and not has_sid(after["outside"]),
         "secret_sid_removed": has_sid(before["secret"]) and not has_sid(after["secret"]),
+        "outside_readable": not before["outside"].startswith("<icacls"),
         "link_display_ok": not link_before.startswith("<icacls"),
         "link_own_sid_before": has_sid(link_before),
         "link_own_sid_after": has_sid(acl(ctx["link"], "/L")),
-        "in_tree_sid_objects": objects_with_sid(ctx["snap"]),
+        "in_tree": objects_with_sid(ctx["snap"]),
     }
 
 
 def legacy_revoke(path: Path, sid_string: str, **_unused) -> None:
     appcontainer._revoke_path_grant(path, sid_string, recursive=True)
+
+
+def scale_check(base: Path, files: int = 400) -> dict:
+    # Cost of the object-by-object revoke on a tree of ordinary files, with a
+    # directory symlink inside it that must not be entered.
+    ctx = build(base / "scale", "dir_symlink_absolute")
+    bulk = ctx["snap"] / "bulk"
+    bulk.mkdir()
+    for index in range(files):
+        (bulk / f"file-{index:04d}.txt").write_text("x", encoding="ascii")
+    before = (acl(ctx["outside"]), acl(ctx["secret"]))
+    objects = len(appcontainer._snapshot_objects(ctx["snap"]))
+    started = time.monotonic()
+    error = ""
+    try:
+        appcontainer._revoke_snapshot_grant(ctx["snap"], PROBE_SID)
+    except OSError as exc:
+        error = str(exc)[-300:]
+    seconds = time.monotonic() - started
+    after = (acl(ctx["outside"]), acl(ctx["secret"]))
+    tree = objects_with_sid(ctx["snap"])
+    return {
+        "objects": objects,
+        "seconds": round(seconds, 2),
+        "seconds_per_object": round(seconds / max(objects, 1), 4),
+        "error": error,
+        "outside_changed": before != after,
+        "in_tree_with_sid": tree["with_sid"],
+        "unreadable": tree["unreadable"],
+    }
 
 
 def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
@@ -197,7 +251,7 @@ def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
         "outside_changed": before[0] != after[0],
         "secret_changed": before[1] != after[1],
         "outside_sid_after": has_sid(after[0]) or has_sid(after[1]),
-        "in_tree_sid_objects": objects_with_sid(snap),
+        "in_tree": objects_with_sid(snap),
     }
 
 
@@ -210,17 +264,22 @@ def summarise(report: dict) -> list[str]:
             f"== {fixture['variant']}: os.walk_enters_link="
             f"{python['os_walk_enters_link']} walker_lists_outside="
             f"{python['walker_lists_outside_target']} walker_lists_link="
-            f"{python['walker_lists_link']}")
+            f"{python['walker_lists_link']} rmtree_outside_survived="
+            f"{python['rmtree_outside_survived']} rmtree_errors="
+            f"{python['rmtree_errors']}")
         for mode in fixture["modes"]:
+            tree = mode["in_tree"]
             lines.append(
                 f"  {mode['mode']:<11} outside_changed={mode['outside_changed']} "
                 f"secret_changed={mode['secret_changed']} "
+                f"outside_readable={mode['outside_readable']} "
                 f"outside_sid_removed={mode['outside_sid_removed']} "
                 f"link_sid_after={mode['link_own_sid_after']} "
                 f"link_display_ok={mode['link_display_ok']} "
-                f"in_tree_sid={mode['in_tree_sid_objects']} "
+                f"in_tree_sid={tree['with_sid']} unreadable={tree['unreadable']} "
                 f"error={mode['error'][:160]!r}")
     for run_report in report["appcontainer"]:
+        tree = run_report["in_tree"]
         lines.append(
             f"== AppContainer {run_report['label']} (revoke={run_report['revoke']}): "
             f"rc={run_report['returncode']} passed={run_report['passed']} "
@@ -229,16 +288,25 @@ def summarise(report: dict) -> list[str]:
             f"outside_changed={run_report['outside_changed']} "
             f"secret_changed={run_report['secret_changed']} "
             f"outside_sid_after={run_report['outside_sid_after']} "
-            f"in_tree_sid={run_report['in_tree_sid_objects']} "
+            f"in_tree_sid={tree['with_sid']} unreadable={tree['unreadable']} "
             f"profile_deleted={run_report['profile_deleted']} "
             f"error={run_report['error'][:200]!r}")
+    scale = report.get("scale", {})
+    lines.append(
+        f"== scale: objects={scale.get('objects')} seconds={scale.get('seconds')} "
+        f"seconds_per_object={scale.get('seconds_per_object')} "
+        f"outside_changed={scale.get('outside_changed')} "
+        f"in_tree_with_sid={scale.get('in_tree_with_sid')} "
+        f"unreadable={scale.get('unreadable')} error={scale.get('error', '')[:160]!r}")
     object_rows = [mode for fixture in report["fixtures"]
                    for mode in fixture["modes"] if mode["mode"] == "object_L"]
     lines.append(
         "verdict: object_L changed no outside object in any fixture="
         f"{not any(row['outside_changed'] or row['secret_changed'] for row in object_rows)}"
-        f"; object_L left no SID on in-tree objects="
-        f"{not any(row['in_tree_sid_objects'] for row in object_rows)}")
+        "; object_L left no SID on in-tree objects="
+        f"{not any(row['in_tree']['with_sid'] for row in object_rows)}"
+        "; every object was readable="
+        f"{not any(row['in_tree']['unreadable'] for row in object_rows)}")
     return lines
 
 
@@ -269,6 +337,7 @@ def main(argv=None) -> int:
             appcontainer_run(base, "object_L", legacy=False))
         report["appcontainer"].append(
             appcontainer_run(base, "legacy_T", legacy=True))
+        report["scale"] = scale_check(base)
     finally:
         shutil.rmtree(base, ignore_errors=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
