@@ -5,6 +5,7 @@ name: Hosted job race probe
 # snapshot. The probe reports whether the file grows after the run returns. Runs on a
 # GitHub-hosted Windows runner when this file changes on the designated branch.
 # Logs are public: print no personal paths.
+# Re-run after the job-wait fix (f0d15e8): the checkout below picks up the fixed branch.
 
 on:
   push:
