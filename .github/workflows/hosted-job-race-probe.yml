@@ -1,0 +1,92 @@
+name: Hosted job race probe
+
+# Does the secure AppContainer run leave a background process writing after it returns?
+# The child starts a background loop in the same job that appends to a file in the
+# snapshot. The probe reports whether the file grows after the run returns. Runs on a
+# GitHub-hosted Windows runner when this file changes on the designated branch.
+# Logs are public: print no personal paths.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/hosted-job-race-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  job-race-probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the branch under test
+        uses: actions/checkout@v4
+        with:
+          ref: fix/windows-labelling-outside-profile
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run the secure child with a background writer and check whether it keeps writing
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = Join-Path $env:RUNNER_TEMP ('race-probe-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          New-Item -ItemType Directory -Path $base | Out-Null
+          $driverText = @'
+          import os
+          import shutil
+          import sys
+          import time
+          from pathlib import Path
+
+          from forgeos.appcontainer import run_secure_appcontainer
+          from forgeos.secure_runner import _bootstrap_environment
+          from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
+
+          base = Path(sys.argv[1])
+          workspace = base / "workspace"
+          workspace.mkdir(parents=True)
+          (workspace / "app.txt").write_text("workspace", encoding="utf-8")
+          bin_dir = base / "bin"
+          bin_dir.mkdir()
+          cmd = str(bin_dir / "cmd.exe")
+          shutil.copy2(os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe"), cmd)
+          runtime = create_windows_low_integrity_snapshot(workspace)
+          spin = runtime.path / "spin.txt"
+          command = 'start /b cmd /c "for /l %i in (1,1,400000) do @echo %i >> spin.txt"'
+          error = None
+          result = {}
+          try:
+              result = run_secure_appcontainer([cmd, "/c", command], runtime.path,
+                                               _bootstrap_environment(runtime),
+                                               executable=cmd, timeout=60)
+          except Exception as exc:
+              error = repr(exc)
+
+
+          def size():
+              return spin.stat().st_size if spin.exists() else -1
+
+
+          print("RUN-ERROR", error)
+          print("RETURNED-PASSED", result.get("passed"), "RETURNCODE", result.get("returncode"))
+          at_return = size()
+          time.sleep(10)
+          later = size()
+          print("SIZE-AT-RETURN", at_return)
+          print("SIZE-10S-LATER", later)
+          print("SPIN-GREW-AFTER-RETURN", later > at_return)
+          try:
+              remove_test_snapshot(workspace)
+          except Exception as exc:
+              print("CLEANUP-ERROR", repr(exc))
+          '@
+          $driver = Join-Path $env:RUNNER_TEMP 'race_probe_driver.py'
+          Set-Content -Path $driver -Value $driverText -Encoding utf8
+          $env:PYTHONPATH = Join-Path $PWD 'src'
+          python $driver $base
+          if ($LASTEXITCODE -ne 0) { throw "race probe failed with exit code $LASTEXITCODE" }
