@@ -1,5 +1,10 @@
 {
   "permissions": {
-    "allow": ["Bash(git push:*)"]
+    "allow": [
+      "Bash(git push origin claude/exciting-bohr-wr08bs:*)",
+      "Bash(git push -u origin claude/exciting-bohr-wr08bs:*)",
+      "Bash(git push origin feat/forgeos-branding:*)",
+      "Bash(git push -u origin feat/forgeos-branding:*)"
+    ]
   }
 }
