@@ -4030,7 +4030,7 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 1. On PR #158's head, the copied junction contents are still readable by the AppContainer child. Only this change, or an equivalent refusal, closes that.
 2. Links created during a run are not covered here. The recursive revoke on `main` runs without `/L`. PR #158 adds `/L` to the revoke, but whether a child can create a directory link inside its own granted snapshot was not measured.
 3. A same-user process that adds a link between copy and grant is not addressed.
-4. In the probe, sibling decoy folders' ACL text changed only in inheritance markers after the snapshot's parent-folder grant and revoke. The same principals kept the same rights, and no AppContainer ACE remained. The cause was not isolated. This is ACL normalisation, not an escape, and it is on `main` as well as on PR #158's head.
+4. On `main` (run 44352967852), the sibling decoy folders' ACL text changed only in inheritance markers after the snapshot's parent-folder grant and revoke. The same principals kept the same rights, and no AppContainer ACE remained. The cause was not isolated. PR #158's head (run 44352145710) also reported a changed decoy ACL, but that version of the probe did not record the diff, so its change is unexplained.
 5. A `0` exit code from `icacls` shows that the command succeeded, not that links were left alone. PR #158's handoff reads its hosted run that way. The probe measures the target.
 
 **Rejected approaches.**
