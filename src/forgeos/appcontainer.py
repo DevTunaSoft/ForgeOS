@@ -10,9 +10,12 @@ import ctypes
 import locale
 from contextlib import contextmanager
 from ctypes import wintypes
+from collections.abc import Sequence
 import os
 import socket
+import stat
 import sys
+import time
 from pathlib import Path
 import subprocess
 import tempfile
@@ -35,6 +38,19 @@ if os.name == "nt":
     TokenIsAppContainer = 29
     TokenCapabilities = 30
     ERROR_ALREADY_EXISTS = 183
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS = 1
+
+    class JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("TotalUserTime", ctypes.c_longlong),
+            ("TotalKernelTime", ctypes.c_longlong),
+            ("ThisPeriodTotalUserTime", ctypes.c_longlong),
+            ("ThisPeriodTotalKernelTime", ctypes.c_longlong),
+            ("TotalPageFaultCount", wintypes.DWORD),
+            ("TotalProcesses", wintypes.DWORD),
+            ("ActiveProcesses", wintypes.DWORD),
+            ("TotalTerminatedProcesses", wintypes.DWORD),
+        ]
 
     class SECURITY_CAPABILITIES(ctypes.Structure):
         _fields_ = [
@@ -116,6 +132,114 @@ def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -
         arguments.append("/T")
     arguments.append("/Q")
     _icacls(path, *arguments)
+
+
+# Windows reparse-point attribute (FILE_ATTRIBUTE_REPARSE_POINT).
+FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
+# Bounds for one icacls invocation that names several snapshot objects.
+REVOKE_BATCH_MAX_PATHS = 128
+REVOKE_BATCH_MAX_CHARS = 24000
+
+
+def _is_reparse_point(info: os.stat_result) -> bool:
+    """True for a symbolic link, a junction or any other reparse point.
+
+    On Windows os.walk and DirEntry.is_symlink() treat a junction as an
+    ordinary directory, so the reparse attribute is checked as well.
+    """
+    if stat.S_ISLNK(info.st_mode):
+        return True
+    return bool(getattr(info, "st_file_attributes", 0)
+                & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _snapshot_objects(root: Path, *,
+                      is_reparse_point=_is_reparse_point) -> list[Path]:
+    """List root and everything below it, entering no reparse point.
+
+    A link or junction is listed as an object, so its own ACE can be named to
+    icacls with /L. Its target is never listed.
+    """
+    objects = [root]
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                info = entry.stat(follow_symlinks=False)
+                path = Path(entry.path)
+                objects.append(path)
+                if stat.S_ISDIR(info.st_mode) and not is_reparse_point(info):
+                    pending.append(path)
+    return objects
+
+
+def _icacls_objects(paths: Sequence[str], *arguments: str) -> None:
+    result = subprocess.run(
+        ["icacls.exe", *paths, *arguments],
+        capture_output=True, text=True, timeout=120, shell=False,
+        errors="replace")
+    if result.returncode != 0:
+        detail = (result.stdout + "\n" + result.stderr)[-4000:]
+        raise OSError(
+            f"icacls failed for {len(paths)} snapshot objects "
+            f"(first {paths[0]}): {detail}")
+
+
+def _revoke_snapshot_grant(root: Path, sid_string: str, *,
+                           is_reparse_point=_is_reparse_point,
+                           run_icacls=None) -> None:
+    """Remove the temporary SID's grant from a snapshot without following links.
+
+    Every object is listed first, without entering a reparse point. Each listed
+    object is then named to icacls with /L and without /T, in batches. No call
+    recurses, and with /L a call that names a link changes the link itself, not
+    its target. Every batch is attempted; any failures are raised together.
+    """
+    run = run_icacls or _icacls_objects
+    info = os.lstat(root)
+    if not stat.S_ISDIR(info.st_mode) or is_reparse_point(info):
+        raise OSError(f"Snapshot root is not a real directory: {root}")
+    names = [str(path) for path in _snapshot_objects(
+        root, is_reparse_point=is_reparse_point)]
+    batches: list[list[str]] = []
+    current: list[str] = []
+    size = 0
+    for name in names:
+        cost = len(name) + 3
+        if current and (len(current) >= REVOKE_BATCH_MAX_PATHS
+                        or size + cost > REVOKE_BATCH_MAX_CHARS):
+            batches.append(current)
+            current, size = [], 0
+        current.append(name)
+        size += cost
+    if current:
+        batches.append(current)
+    errors = []
+    for batch in batches:
+        try:
+            run(batch, "/remove:g", f"*{sid_string}", "/L", "/Q")
+        except OSError as exc:
+            errors.append(str(exc))
+    if errors:
+        raise OSError("; ".join(errors))
+
+
+def _revoke_secure_grants(grants, sid_string: str) -> None:
+    """Revoke every grant in reverse order and report all failures together."""
+    cleanup_errors = []
+    for path, recursive in reversed(grants):
+        try:
+            if recursive:
+                _revoke_snapshot_grant(path, sid_string)
+            else:
+                _revoke_path_grant(path, sid_string, recursive=False)
+        except OSError as exc:
+            cleanup_errors.append(str(exc))
+    if cleanup_errors:
+        raise OSError(
+            "Failed to revoke secure AppContainer grants: "
+            + "; ".join(cleanup_errors))
 
 
 def _python_runtime_acl_targets() -> list[Path]:
@@ -668,6 +792,28 @@ def _startup_with_appcontainer_and_handles(appcontainer_sid, in_handle, out_hand
     return startup, buffer, capabilities, handles
 
 
+def _drain_job(job, timeout: float = 10.0) -> None:
+    """Terminate every process still in the Job Object and wait until none is.
+
+    The snapshot is walked and revoked after this returns, so no contained
+    process may still be able to create or replace an entry during revocation.
+    """
+    if not wc.kernel32.TerminateJobObject(job, 125):
+        raise wc._win_error("TerminateJobObject(drain)")
+    deadline = time.monotonic() + timeout
+    while True:
+        info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+        if not wc.kernel32.QueryInformationJobObject(
+                job, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS,
+                ctypes.byref(info), ctypes.sizeof(info), None):
+            raise wc._win_error("QueryInformationJobObject(drain)")
+        if info.ActiveProcesses == 0:
+            return
+        if time.monotonic() >= deadline:
+            raise OSError("Contained processes did not exit before revocation")
+        time.sleep(0.05)
+
+
 def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
                               env: dict[str, str], timeout: int = 180,
                               active_process_limit: int = 64,
@@ -782,12 +928,14 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
             if not wc.kernel32.TerminateJobObject(job, 124):
                 raise wc._win_error("TerminateJobObject(Secure AppContainer)")
             wc.kernel32.WaitForSingleObject(process, 5000)
+            _drain_job(job)
             raise subprocess.TimeoutExpired(list(argv), timeout)
         if status == wc.WAIT_FAILED:
             raise wc._win_error("WaitForSingleObject(Secure AppContainer)")
         if status != wc.WAIT_OBJECT_0:
             raise OSError(
                 f"Unexpected secure AppContainer wait status: {status}")
+        _drain_job(job)
 
         code = wintypes.DWORD()
         if not wc.kernel32.GetExitCodeProcess(
@@ -839,7 +987,8 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
 
     Only the disposable execution snapshot and the ForgeOS-owned executable are
     explicitly granted to the temporary AppContainer SID. Grants are revoked
-    before the temporary profile is deleted.
+    before the temporary profile is deleted. The snapshot is revoked object by
+    object and never through a link or junction a contained process created.
     """
     if os.name != "nt":
         raise OSError("Secure AppContainer execution is Windows-only")
@@ -904,17 +1053,7 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                 sid, argv, cwd=root, env=env, timeout=timeout,
                 watched_outputs=watched)
         finally:
-            cleanup_errors = []
-            for path, recursive in reversed(grants):
-                try:
-                    _revoke_path_grant(
-                        path, sid_string, recursive=recursive)
-                except OSError as exc:
-                    cleanup_errors.append(str(exc))
-            if cleanup_errors:
-                raise OSError(
-                    "Failed to revoke secure AppContainer grants: "
-                    + "; ".join(cleanup_errors))
+            _revoke_secure_grants(grants, sid_string)
     if result is None:
         raise OSError("Secure AppContainer did not produce a result")
     result["profile_deleted"] = True
