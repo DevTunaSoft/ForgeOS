@@ -392,6 +392,27 @@ def _ignore_runtime_metadata(_directory, names):
     return ignored
 
 
+def _refuse_links_and_ignore_metadata(directory, names):
+    """copytree ignore hook that refuses links before any entry is copied.
+
+    Names excluded by the metadata rules are never copied, so they are not
+    inspected. A symlink, junction or other reparse point that would be copied
+    fails the snapshot instead. Copying it as a link lets a recursive icacls
+    grant reach outside the snapshot, and following a junction copies outside
+    content into the sandbox-readable tree.
+    """
+    excluded = _ignore_runtime_metadata(directory, names)
+    for name in names:
+        if name in excluded:
+            continue
+        path = Path(directory) / name
+        if _is_reparse_point(path.lstat()):
+            raise ValueError(
+                "Workspace contains a link or junction and cannot be snapshotted: "
+                f"{path}")
+    return excluded
+
+
 def _build_environment(runtime: Path) -> dict[str, str]:
     writable = runtime / RUNTIME_DIR
     directories = {
@@ -454,8 +475,8 @@ def create_test_snapshot(
         workspace: str | Path, *, runtime_root: Path | None = None) -> TestRuntime:
     """Create a fresh, guarded copy of one ForgeOS worktree."""
     raw = Path(workspace).expanduser()
-    if raw.is_symlink():
-        raise ValueError("Workspace must not be a symlink")
+    if raw.is_symlink() or _is_reparse_point(raw.lstat()):
+        raise ValueError("Workspace must not be a symlink or junction")
     source = raw.resolve(strict=True)
     if not source.is_dir():
         raise ValueError("Workspace must be a real directory")
@@ -474,9 +495,13 @@ def create_test_snapshot(
         "runtime": str(runtime),
     })
     try:
+        # The guard refuses every link and junction before copytree reaches it.
+        # copytree does not treat a junction as a symlink and would follow it,
+        # so the guard is what stops junctions; symlinks=True only makes
+        # copytree recreate a symlink rather than follow it.
         shutil.copytree(
             source, runtime, dirs_exist_ok=True, symlinks=True,
-            ignore=_ignore_runtime_metadata,
+            ignore=_refuse_links_and_ignore_metadata,
         )
         env = _build_environment(runtime)
         return TestRuntime(path=runtime, env=env)

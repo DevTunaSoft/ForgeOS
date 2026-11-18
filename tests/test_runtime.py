@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import tempfile
 import os
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -167,6 +168,129 @@ class TestRuntimeTests(unittest.TestCase):
                 create_test_snapshot(self.workspace)
         self.assertTrue(runtime.exists())
         self.assertEqual(marker.read_text(), "operator-owned-marker")
+
+
+class SnapshotLinkRefusalTests(unittest.TestCase):
+    """A worktree link fails the snapshot. It is never copied or followed."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.workspace = self.root / "task-7"
+        self.workspace.mkdir()
+        (self.workspace / "app.py").write_text("print('source')\n")
+        self.outside = self.root / "outside"
+        self.outside.mkdir()
+        (self.outside / "secret.txt").write_text("outside-secret")
+        self.runtime = self.root / ".forgeos-exec-task-7"
+        self.marker = self.runtime.with_name(self.runtime.name + MARKER)
+
+    def assert_refused_without_residue(self, pattern="link or junction"):
+        with self.assertRaisesRegex(ValueError, pattern):
+            create_test_snapshot(self.workspace)
+        self.assertFalse(self.runtime.exists())
+        self.assertFalse(self.marker.exists())
+        self.assertEqual((self.outside / "secret.txt").read_text(), "outside-secret")
+        self.assertEqual((self.workspace / "app.py").read_text(), "print('source')\n")
+
+    def symlink_or_skip(self, target, link, *, directory):
+        try:
+            os.symlink(target, link, target_is_directory=directory)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symbolic links unavailable here: {exc}")
+
+    def test_refuses_symlinked_directory_in_worktree(self):
+        self.symlink_or_skip(self.outside, self.workspace / "linked-dir", directory=True)
+        self.assert_refused_without_residue()
+
+    def test_refuses_symlinked_file_in_worktree(self):
+        self.symlink_or_skip(self.outside / "secret.txt",
+                             self.workspace / "linked.txt", directory=False)
+        self.assert_refused_without_residue()
+
+    def test_refuses_link_nested_below_worktree_root(self):
+        nested = self.workspace / "pkg" / "data"
+        nested.mkdir(parents=True)
+        self.symlink_or_skip(self.outside, nested / "linked-dir", directory=True)
+        self.assert_refused_without_residue()
+
+    def test_refuses_any_reparse_point_not_only_symlinks(self):
+        # Simulates a junction on any platform: a real directory whose reparse
+        # check reports true. Real junctions are covered by the Windows class.
+        simulated = self.workspace / "simulated-junction"
+        simulated.mkdir()
+        identity = simulated.lstat().st_ino
+        real_check = test_runtime._is_reparse_point
+
+        def reparse_for_simulated(info):
+            return getattr(info, "st_ino", None) == identity or real_check(info)
+
+        with patch.object(test_runtime, "_is_reparse_point",
+                          side_effect=reparse_for_simulated):
+            self.assert_refused_without_residue()
+
+    def test_refuses_symlinked_workspace_root_before_creating_anything(self):
+        alias = self.root / "alias"
+        self.symlink_or_skip(self.workspace, alias, directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink or junction"):
+            create_test_snapshot(alias)
+        self.assertFalse(self.runtime.exists())
+        self.assertFalse(self.marker.exists())
+
+    def test_excluded_metadata_links_do_not_block_snapshot(self):
+        # Names under the .env rule are never copied, so a link there is harmless.
+        self.symlink_or_skip(self.outside / "secret.txt",
+                             self.workspace / ".env-link", directory=False)
+        runtime = create_test_snapshot(self.workspace)
+        self.addCleanup(remove_test_snapshot, self.workspace)
+        self.assertFalse(os.path.lexists(runtime.path / ".env-link"))
+        self.assertEqual((runtime.path / "app.py").read_text(), "print('source')\n")
+
+
+@unittest.skipUnless(os.name == "nt", "NTFS junctions exist only on Windows")
+class WindowsJunctionSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.workspace = self.root / "task-7"
+        self.workspace.mkdir()
+        (self.workspace / "app.py").write_text("print('source')\n")
+        self.outside = self.root / "outside"
+        self.outside.mkdir()
+        (self.outside / "secret.txt").write_text("outside-secret")
+        self.runtime = self.root / ".forgeos-exec-task-7"
+        self.marker = self.runtime.with_name(self.runtime.name + MARKER)
+
+    def make_link(self, flags, link, target):
+        result = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", *flags, str(link), str(target)],
+            capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            self.skipTest(f"mklink {' '.join(flags)} unavailable: "
+                          f"{result.stdout}{result.stderr}")
+
+    def test_junction_in_worktree_is_refused_and_outside_content_survives(self):
+        self.make_link(["/J"], self.workspace / "junction", self.outside)
+        with self.assertRaisesRegex(ValueError, "link or junction"):
+            create_test_snapshot(self.workspace)
+        self.assertFalse(self.runtime.exists())
+        self.assertFalse(self.marker.exists())
+        self.assertEqual((self.outside / "secret.txt").read_text(), "outside-secret")
+
+    def test_directory_symlink_in_worktree_is_refused(self):
+        self.make_link(["/D"], self.workspace / "linked-dir", self.outside)
+        with self.assertRaisesRegex(ValueError, "link or junction"):
+            create_test_snapshot(self.workspace)
+        self.assertFalse(self.runtime.exists())
+
+    def test_junction_workspace_root_is_refused(self):
+        alias = self.root / "alias"
+        self.make_link(["/J"], alias, self.workspace)
+        with self.assertRaisesRegex(ValueError, "symlink or junction"):
+            create_test_snapshot(alias)
+        self.assertFalse(self.runtime.exists())
 
 
 class SecureRuntimeRootTests(unittest.TestCase):
