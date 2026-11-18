@@ -43,6 +43,7 @@ jobs:
           from pathlib import Path
 
           from forgeos.appcontainer import run_secure_appcontainer
+          from forgeos.secure_runner import _bootstrap_environment
           from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
 
           base = Path(sys.argv[1])
@@ -69,7 +70,8 @@ jobs:
           result = {}
           error = None
           try:
-              result = run_secure_appcontainer([cmd, "/c", command], runtime.path, runtime.env,
+              result = run_secure_appcontainer([cmd, "/c", command], runtime.path,
+                                               _bootstrap_environment(runtime),
                                                executable=cmd, timeout=60)
           except Exception as exc:
               error = repr(exc)
