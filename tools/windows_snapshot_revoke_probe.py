@@ -64,6 +64,13 @@ def has_sid(text: str) -> bool:
     return PROBE_SID.casefold() in text.casefold()
 
 
+def acl_delta(before: str, after: str) -> str:
+    # The ACL lines that were added and removed, so a rewrite can be read.
+    old = {line.strip() for line in before.splitlines() if line.strip()}
+    new = {line.strip() for line in after.splitlines() if line.strip()}
+    return f"+{sorted(new - old)[:3]} -{sorted(old - new)[:3]}"[:300]
+
+
 def build(root: Path, variant: str) -> dict:
     flags, link_name, kind, written = VARIANTS[variant]
     outside = root / "outside"
@@ -176,6 +183,41 @@ def legacy_revoke(path: Path, sid_string: str, **_unused) -> None:
     appcontainer._revoke_path_grant(path, sid_string, recursive=True)
 
 
+def parent_write_check(base: Path) -> dict:
+    # The AppContainer grant and revoke on the snapshot's parent directory are
+    # non-recursive DACL writes on that directory. Does such a write rewrite the
+    # directory's children, which lie outside the snapshot?
+    root = base / "parent-check"
+    parent = root / "parent"
+    (parent / "child").mkdir(parents=True)
+    (parent / "child" / "inner.txt").write_text("x", encoding="ascii")
+    (parent / "sibling.txt").write_text("y", encoding="ascii")
+    objects = {
+        "child": parent / "child",
+        "inner": parent / "child" / "inner.txt",
+        "sibling": parent / "sibling.txt",
+    }
+    before = {name: acl(path) for name, path in objects.items()}
+    grant_code, grant_text = run(
+        ["icacls.exe", str(parent), "/grant", f"*{PROBE_SID}:(RX)", "/Q"])
+    after_grant = {name: acl(path) for name, path in objects.items()}
+    revoke_code, revoke_text = run(
+        ["icacls.exe", str(parent), "/remove:g", f"*{PROBE_SID}", "/Q"])
+    after_revoke = {name: acl(path) for name, path in objects.items()}
+    return {
+        "grant_rc": grant_code,
+        "revoke_rc": revoke_code,
+        "grant_output": grant_text[-200:],
+        "revoke_output": revoke_text[-200:],
+        "changed_by_grant": {n: before[n] != after_grant[n] for n in objects},
+        "changed_by_revoke": {n: after_grant[n] != after_revoke[n] for n in objects},
+        "changed_overall": {n: before[n] != after_revoke[n] for n in objects},
+        "parent_sid_after": has_sid(acl(parent)),
+        "sibling_delta": acl_delta(before["sibling"], after_revoke["sibling"]),
+        "child_delta": acl_delta(before["child"], after_revoke["child"]),
+    }
+
+
 def scale_check(base: Path, files: int = 400) -> dict:
     # Cost of the object-by-object revoke on a tree of ordinary files, with a
     # directory symlink inside it that must not be entered.
@@ -217,7 +259,12 @@ def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
     secret.write_text("decoy-secret", encoding="ascii")
     link = snap / "junction"
     system_root = os.environ.get("SystemRoot", r"C:\Windows")
-    cmd = os.path.join(system_root, "System32", "cmd.exe")
+    # A copy in a directory this probe owns. Granting and revoking the runner's
+    # parent directory must not write System32's own ACL.
+    runner_dir = root / "runner"
+    runner_dir.mkdir()
+    cmd = str(runner_dir / "cmd.exe")
+    shutil.copy2(os.path.join(system_root, "System32", "cmd.exe"), cmd)
     env = {
         "SystemRoot": system_root, "ComSpec": cmd,
         "TEMP": str(snap / "tmp"), "TMP": str(snap / "tmp"),
@@ -250,6 +297,8 @@ def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
             os.lstat(link).st_file_attributes & REPARSE_POINT),
         "outside_changed": before[0] != after[0],
         "secret_changed": before[1] != after[1],
+        "outside_delta": acl_delta(before[0], after[0]),
+        "secret_delta": acl_delta(before[1], after[1]),
         "outside_sid_after": has_sid(after[0]) or has_sid(after[1]),
         "in_tree": objects_with_sid(snap),
     }
@@ -287,10 +336,22 @@ def summarise(report: dict) -> list[str]:
             f"junction_created={run_report['junction_created']} "
             f"outside_changed={run_report['outside_changed']} "
             f"secret_changed={run_report['secret_changed']} "
+            f"outside_delta={run_report.get('outside_delta')} "
             f"outside_sid_after={run_report['outside_sid_after']} "
             f"in_tree_sid={tree['with_sid']} unreadable={tree['unreadable']} "
             f"profile_deleted={run_report['profile_deleted']} "
             f"error={run_report['error'][:200]!r}")
+    parent = report.get("parent_write", {})
+    if parent:
+        lines.append(
+            f"== parent_write: grant_rc={parent['grant_rc']} "
+            f"revoke_rc={parent['revoke_rc']} "
+            f"changed_by_grant={parent['changed_by_grant']} "
+            f"changed_by_revoke={parent['changed_by_revoke']} "
+            f"changed_overall={parent['changed_overall']} "
+            f"parent_sid_after={parent['parent_sid_after']} "
+            f"sibling_delta={parent['sibling_delta']!r} "
+            f"child_delta={parent['child_delta']!r}")
     scale = report.get("scale", {})
     lines.append(
         f"== scale: objects={scale.get('objects')} seconds={scale.get('seconds')} "
@@ -338,6 +399,7 @@ def main(argv=None) -> int:
         report["appcontainer"].append(
             appcontainer_run(base, "legacy_T", legacy=True))
         report["scale"] = scale_check(base)
+        report["parent_write"] = parent_write_check(base)
     finally:
         shutil.rmtree(base, ignore_errors=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

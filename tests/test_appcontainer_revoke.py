@@ -1,6 +1,7 @@
 """Snapshot grant revocation must never follow a link or junction out of it."""
 from pathlib import Path
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -77,15 +78,15 @@ class SnapshotListingTests(_SnapshotFixture):
         self.assertIn(str(self.snap / "linkfile.txt"), names)
         self.assertNotIn(str(self.secret), names)
 
-    def test_reparse_point_predicate_stops_descent_at_a_real_directory(self):
-        # Stands in for a junction: a real directory that reports a reparse point.
-        pkg_inode = os.lstat(self.snap / "pkg").st_ino
-
-        def simulated_junction(info):
-            return info.st_ino == pkg_inode or _is_reparse_point(info)
+    def test_reparse_point_predicate_stops_descent_at_every_directory(self):
+        # Stands in for junctions: every real directory reports a reparse point.
+        # Identity is not used here, because DirEntry.stat() on Windows does not
+        # fill st_ino.
+        def every_directory_is_a_reparse_point(info):
+            return stat.S_ISDIR(info.st_mode) or _is_reparse_point(info)
 
         names = {str(path) for path in _snapshot_objects(
-            self.snap, is_reparse_point=simulated_junction)}
+            self.snap, is_reparse_point=every_directory_is_a_reparse_point)}
         self.assertIn(str(self.snap / "pkg"), names)
         self.assertNotIn(str(self.snap / "pkg" / "mod.py"), names)
 
