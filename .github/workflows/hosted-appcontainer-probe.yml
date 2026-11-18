@@ -1,0 +1,86 @@
+name: Hosted AppContainer junction probe
+
+# Can a zero-capability AppContainer child create a junction inside its snapshot, and does
+# the secure cleanup unlink it without touching the target? Runs the product's secure runner
+# on a GitHub-hosted Windows runner with cmd.exe as the child. Runs when this file changes on
+# the designated branch. Logs are public: print no personal paths.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/hosted-appcontainer-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  appcontainer-probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the branch under test
+        uses: actions/checkout@v4
+        with:
+          ref: fix/windows-labelling-outside-profile
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run the AppContainer child and check the snapshot and the target
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = Join-Path $env:RUNNER_TEMP ('appc-probe-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          New-Item -ItemType Directory -Path $base | Out-Null
+          $driverText = @'
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          from forgeos.appcontainer import run_secure_appcontainer
+          from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
+
+          base = Path(sys.argv[1])
+          workspace = base / "workspace"
+          workspace.mkdir(parents=True)
+          (workspace / "app.txt").write_text("workspace", encoding="utf-8")
+          outside = base / "outside"
+          outside.mkdir()
+          secret = outside / "secret.txt"
+          secret.write_text("outside-secret", encoding="utf-8")
+
+
+          def acl(path):
+              return subprocess.run(["icacls.exe", str(path)], capture_output=True, text=True).stdout
+
+
+          before = acl(outside) + acl(secret)
+          runtime = create_windows_low_integrity_snapshot(workspace)
+          cmd = os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe")
+          command = f"mklink /J junction-to-outside {outside} & if exist junction-to-outside echo LINK-CREATED"
+          result = {}
+          error = None
+          try:
+              result = run_secure_appcontainer([cmd, "/c", command], runtime.path, runtime.env,
+                                               executable=cmd, timeout=60)
+          except Exception as exc:
+              error = repr(exc)
+          print("RUN-ERROR", error)
+          print("RESULT-KEYS", sorted(result.keys()))
+          print("OUTPUT-BEGIN")
+          print(result.get("output", ""))
+          print("OUTPUT-END")
+          print("LINK-LEFT-IN-SNAPSHOT", os.path.lexists(runtime.path / "junction-to-outside"))
+          print("OUTSIDE-SECRET-INTACT", secret.exists() and secret.read_text(encoding="utf-8") == "outside-secret")
+          print("OUTSIDE-ACL-CHANGED", before != (acl(outside) + acl(secret)))
+          remove_test_snapshot(workspace)
+          '@
+          $driver = Join-Path $env:RUNNER_TEMP 'appc_probe_driver.py'
+          Set-Content -Path $driver -Value $driverText -Encoding utf8
+          $env:PYTHONPATH = Join-Path $PWD 'src'
+          python $driver $base
+          if ($LASTEXITCODE -ne 0) { throw "AppContainer probe failed with exit code $LASTEXITCODE" }
