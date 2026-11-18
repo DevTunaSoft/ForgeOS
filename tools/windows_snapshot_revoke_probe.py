@@ -248,7 +248,8 @@ def scale_check(base: Path, files: int = 400) -> dict:
     }
 
 
-def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
+def appcontainer_run(base: Path, label: str, *, legacy: bool,
+                     target: str = "outside") -> dict:
     root = base / f"appcontainer-{label}"
     snap = root / "snap"
     (snap / "tmp").mkdir(parents=True)
@@ -274,7 +275,14 @@ def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
     }
     before = (acl(outside), acl(secret))
     result, error = {}, ""
-    argv = [cmd, "/d", "/c", "mklink", "/J", str(link), str(outside)]
+    # "outside" asks whether the sandbox may link to a target it cannot read.
+    # "inside" asks whether it may create a junction at all, to a target it can
+    # read; a denial in the outside case may come from mklink reading the target.
+    target_path = outside
+    if target == "inside":
+        target_path = snap / "inner"
+        target_path.mkdir()
+    argv = [cmd, "/d", "/c", "mklink", "/J", str(link), str(target_path)]
     try:
         if legacy:
             with patch.object(appcontainer, "_revoke_snapshot_grant",
@@ -290,6 +298,7 @@ def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
     created = os.path.lexists(link)
     return {
         "label": label,
+        "target": target,
         "revoke": "legacy_T" if legacy else "object_L",
         "returncode": result.get("returncode"),
         "passed": result.get("passed"),
@@ -403,6 +412,8 @@ def main(argv=None) -> int:
             appcontainer_run(base, "object_L", legacy=False))
         report["appcontainer"].append(
             appcontainer_run(base, "legacy_T", legacy=True))
+        report["appcontainer"].append(
+            appcontainer_run(base, "inside_target", legacy=False, target="inside"))
         report["scale"] = scale_check(base)
         report["parent_write"] = parent_write_check(base)
     finally:
