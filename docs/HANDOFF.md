@@ -3966,3 +3966,11 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-18 — Ponytail coding principles as a Claude Code project skill
+
+- Added `.claude/skills/ponytail/`: `SKILL.md` is the upstream MIT skill from DietrichGebert/ponytail at commit 96608e078b2d5ea607c5c3b8b5a54d1c1fba6846, adapted with a precedence clause, a level-switch activation rule and a never-cut addition. `LICENSE.txt` is the upstream MIT text, unchanged. `ADAPTATION.md` records provenance, exclusions, the conflict check and the update procedure.
+- Not installed: the plugin hooks, the band, the ledger and webhook, and the detached background process that the mode tracker starts. ForgeOS does not run background services. The other ponytail skills and the host adapters were not requested.
+- Verified: the adapted `SKILL.md` differs from upstream only in its three marked blocks (diff checked). The frontmatter parses and `name` matches the folder. The documentation link check passes. A fresh Claude Code cloud session on the designated branch listed `ponytail` among its skills, read `SKILL.md`, and dry-ran it on a sample request without editing anything.
+- Cloud limits: the plugin band does not show in cloud sessions, and there is no session-start hook, so the skill applies when it is invoked or judged relevant rather than for the whole session. The fresh-session check is that session's own report, not an independent inspection of its tool list.
+- Next: review and merge the draft pull request. Decide whether the review and audit skills are wanted.
