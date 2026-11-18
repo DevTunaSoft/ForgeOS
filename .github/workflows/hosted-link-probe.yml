@@ -1,9 +1,9 @@
 name: Hosted link probe
 
 # Does icacls /T follow a junction or a directory symlink inside a tree, with and
-# without /L? Runs on a GitHub-hosted Windows runner. Decoys live under the runner
-# temp folder. Runs when this file changes on the designated branch.
-# Logs are public: print no personal paths.
+# without /L? Each case has one link type only. Runs on a GitHub-hosted Windows
+# runner. Decoys live under the runner temp folder. Runs when this file changes on
+# the designated branch. Logs are public: print no personal paths.
 
 on:
   push:
@@ -27,26 +27,30 @@ jobs:
           New-Item -ItemType Directory -Path $root | Out-Null
           $sid = '*S-1-5-32-546'
           $cases = @(
-            @{ label = 'without /L'; flags = @() },
-            @{ label = 'with /L'; flags = @('/L') }
+            @{ name = 'junction-noL'; link = 'junction'; flags = @() },
+            @{ name = 'junction-L'; link = 'junction'; flags = @('/L') },
+            @{ name = 'symlink-noL'; link = 'symlink'; flags = @() },
+            @{ name = 'symlink-L'; link = 'symlink'; flags = @('/L') }
           )
           foreach ($case in $cases) {
-            $tag = $case.label -replace '[^A-Za-z]', ''
-            $decoy = Join-Path $root ("decoy-$tag")
-            $snap = Join-Path $root ("snap-$tag")
+            $decoy = Join-Path $root ('decoy-' + $case.name)
+            $snap = Join-Path $root ('snap-' + $case.name)
             New-Item -ItemType Directory -Path $decoy, $snap | Out-Null
             Set-Content -Path (Join-Path $decoy 'secret.txt') -Value 'decoy'
-            $junction = Join-Path $snap 'junction'
-            $symlink = Join-Path $snap 'symlink'
-            cmd /c mklink /J $junction $decoy | Out-Null
-            cmd /c mklink /D $symlink $decoy | Out-Null
+            $link = Join-Path $snap 'link'
+            if ($case.link -eq 'junction') {
+              cmd /c mklink /J $link $decoy | Out-Null
+            } else {
+              cmd /c mklink /D $link $decoy | Out-Null
+            }
+            $linkMade = Test-Path $link
             $before = (& icacls.exe $decoy | Out-String) + (& icacls.exe (Join-Path $decoy 'secret.txt') | Out-String)
             $grant = @($snap, '/grant:r', ($sid + ':(OI)(CI)R'), '/T', '/C') + $case.flags + @('/Q')
             & icacls.exe @grant | Out-Null
             $code = $LASTEXITCODE
             $after = (& icacls.exe $decoy | Out-String) + (& icacls.exe (Join-Path $decoy 'secret.txt') | Out-String)
-            Write-Host "icacls grant $($case.label): exit $code; decoy ACL changed: $($before -ne $after)"
-            cmd /c rmdir $junction | Out-Null
-            cmd /c rmdir $symlink | Out-Null
+            $guestsAdded = $after -match 'Guests'
+            Write-Host "$($case.name): link made $linkMade; grant exit $code; decoy ACL changed: $($before -ne $after); Guests on decoy after: $guestsAdded"
+            cmd /c rmdir $link | Out-Null
           }
           Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
