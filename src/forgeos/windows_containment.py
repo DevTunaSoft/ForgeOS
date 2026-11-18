@@ -6,8 +6,10 @@ sandbox: it does not isolate the filesystem or block network access.
 """
 from __future__ import annotations
 
+import csv
 import ctypes
 from ctypes import wintypes
+import io
 import locale
 import os
 from pathlib import Path
@@ -507,6 +509,37 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         output.close()
 
 
+def _parse_whoami_sid(csv_output: str) -> str:
+    """Return the account SID from `whoami /user /fo csv /nh` output."""
+    fields = next(csv.reader(io.StringIO(csv_output.strip())), [])
+    sid = fields[1].strip() if len(fields) > 1 else ""
+    if not sid.startswith("S-1-"):
+        raise OSError("Could not read the account SID for the workspace grant")
+    return sid
+
+
+def _current_account_sid() -> str:
+    result = subprocess.run(
+        ["whoami.exe", "/user", "/fo", "csv", "/nh"],
+        capture_output=True, text=True, timeout=30, shell=False,
+        errors="replace",
+    )
+    if result.returncode != 0:
+        raise OSError("Could not run whoami to read the account SID for the workspace grant")
+    return _parse_whoami_sid(result.stdout)
+
+
+def _owner_grant_arguments(path: Path, sid: str) -> list[str]:
+    """Arguments that give the account full control of a disposable tree.
+
+    Setting a Low integrity label needs WRITE_OWNER on the folder. On some roots the
+    account owns the folder but inherits no grant of that right, so labelling fails
+    with "Access is denied". An explicit full-control grant to the same account,
+    applied recursively, supplies the right. It covers only this tree.
+    """
+    return ["icacls.exe", str(path), "/grant:r", f"*{sid}:(OI)(CI)F", "/T", "/C", "/Q"]
+
+
 def prepare_low_integrity_workspace(root: str | Path):
     """Label a disposable workspace tree Low integrity for Low-IL writers.
 
@@ -518,6 +551,16 @@ def prepare_low_integrity_workspace(root: str | Path):
     path = Path(root).resolve(strict=True)
     if not path.is_dir() or Path(root).is_symlink():
         raise ValueError("Low-integrity workspace must be a real directory")
+    grant = subprocess.run(
+        _owner_grant_arguments(path, _current_account_sid()),
+        capture_output=True, text=True, timeout=120, shell=False,
+        errors="replace",
+    )
+    if grant.returncode != 0:
+        detail = (grant.stdout + "\n" + grant.stderr)[-4000:]
+        raise OSError(
+            f"Failed to grant the account full control of the disposable workspace: {detail}"
+        )
     result = subprocess.run(
         ["icacls.exe", str(path), "/setintegritylevel", "(OI)(CI)L",
          "/T", "/L", "/Q"],
