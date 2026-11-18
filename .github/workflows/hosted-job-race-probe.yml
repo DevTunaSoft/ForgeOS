@@ -1,11 +1,15 @@
 name: Hosted job race probe
 
-# Does the secure AppContainer run leave a background process writing after it returns?
-# The child starts a background loop in the same job that appends to a file in the
-# snapshot. The probe reports whether the file grows after the run returns. Runs on a
-# GitHub-hosted Windows runner when this file changes on the designated branch.
+# Does a secure AppContainer run leave a process writing into its snapshot after it returns?
+# Two cases run in parallel on GitHub-hosted Windows runners (fail-fast off):
+#   fixed   - f0d15e8: the normal path ends the job and waits for it to empty before returning.
+#   pre-fix - c81a039: its parent, which returns straight after TerminateJobObject.
+# The child starts a background writer that appends "b" lines to bg.txt until the job is
+# killed. The root process exits only after the driver creates stop.txt, so the writer is
+# still running when the job is ended. The driver samples bg.txt right after the run returns,
+# then 0.05 s, 0.5 s, 2 s and 5 s later. Growth after return means a process outlived the run.
 # Logs are public: print no personal paths.
-# Re-run after the job-wait fix (f0d15e8): the checkout below picks up the fixed branch.
+# Runs when this file changes on the designated branch.
 
 on:
   push:
@@ -18,13 +22,22 @@ permissions:
 
 jobs:
   job-race-probe:
+    name: race probe (${{ matrix.label }})
     runs-on: windows-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: fixed
+            ref: f0d15e86e6726062af65d32286eefd9864437c64
+          - label: pre-fix
+            ref: c81a0397732e93524800a3af4a885e96a260af02
     steps:
-      - name: Check out the branch under test
+      - name: Check out the code under test
         uses: actions/checkout@v4
         with:
-          ref: fix/windows-labelling-outside-profile
+          ref: ${{ matrix.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,6 +46,8 @@ jobs:
 
       - name: Run the secure child with a background writer and check whether it keeps writing
         shell: powershell
+        env:
+          PROBE_CASE: ${{ matrix.label }}
         run: |
           $ErrorActionPreference = 'Stop'
           $base = Join-Path $env:RUNNER_TEMP ('race-probe-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -41,6 +56,7 @@ jobs:
           import os
           import shutil
           import sys
+          import threading
           import time
           from pathlib import Path
 
@@ -48,6 +64,7 @@ jobs:
           from forgeos.secure_runner import _bootstrap_environment
           from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
 
+          case = os.environ.get("PROBE_CASE", "unknown")
           base = Path(sys.argv[1])
           workspace = base / "workspace"
           workspace.mkdir(parents=True)
@@ -57,43 +74,62 @@ jobs:
           cmd = str(bin_dir / "cmd.exe")
           shutil.copy2(os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe"), cmd)
           runtime = create_windows_low_integrity_snapshot(workspace)
-          command = 'start /b cmd /c echo START^>started.txt ^& for /l %i in (1,1,3000000) do @rem ^& echo LATE^>late.txt'
-          error = None
-          result = {}
-          try:
-              result = run_secure_appcontainer([cmd, "/c", command], runtime.path,
-                                               _bootstrap_environment(runtime),
-                                               executable=cmd, timeout=60)
-          except Exception as exc:
-              error = repr(exc)
+          background = runtime.path / "bg.txt"
+          stop_flag = runtime.path / "stop.txt"
+          # The background cmd appends "b" lines until the job is killed. The foreground
+          # loop ends the root process only once the driver has created stop.txt.
+          command = ("start /b cmd /c for /l %i in (1,1,9999999) do @echo b^>^>bg.txt"
+                     " & for /l %j in (1,1,99999999) do @if exist stop.txt exit")
+          state = {}
 
 
-          def present(name):
-              return (runtime.path / name).exists()
+          def size_of(path):
+              try:
+                  return path.stat().st_size
+              except OSError:
+                  return -1
 
 
-          print("RUN-ERROR", error)
-          print("RETURNED-PASSED", result.get("passed"), "RETURNCODE", result.get("returncode"))
-          print("OUTPUT-BEGIN")
-          print(result.get("output", ""))
-          print("OUTPUT-END")
-          started = False
-          for _ in range(50):
-              if present("started.txt"):
-                  started = True
-                  break
+          def run_child():
+              try:
+                  result = run_secure_appcontainer([cmd, "/c", command], runtime.path,
+                                                   _bootstrap_environment(runtime),
+                                                   executable=cmd, timeout=60)
+                  state["passed"] = result.get("passed")
+                  state["returncode"] = result.get("returncode")
+              except Exception as exc:
+                  state["error"] = repr(exc)
+              state["size_at_return"] = size_of(background)
+              returned = time.monotonic()
+              samples = []
+              for delay in (0.05, 0.5, 2.0, 5.0):
+                  time.sleep(max(0.0, returned + delay - time.monotonic()))
+                  samples.append(size_of(background))
+              state["samples"] = samples
+
+
+          worker = threading.Thread(target=run_child, daemon=True)
+          worker.start()
+          deadline = time.monotonic() + 30
+          while size_of(background) < 200 and time.monotonic() < deadline and worker.is_alive():
               time.sleep(0.1)
-          print("STARTED-FILE-AFTER-RETURN", started)
-          late_after = None
-          t0 = time.monotonic()
-          while time.monotonic() - t0 < 60:
-              if present("late.txt"):
-                  late_after = round(time.monotonic() - t0, 1)
-                  break
-              time.sleep(0.5)
-          print("LATE-FILE-SECONDS-AFTER-RETURN", late_after)
+          size_before_stop = size_of(background)
+          stop_flag.write_text("stop", encoding="utf-8")
+          worker.join(timeout=150)
+
+          at_return = state.get("size_at_return", -1)
+          samples = state.get("samples", [])
+          print("CASE", case)
+          print("RUN-ERROR", state.get("error"))
+          print("RETURNED-PASSED", state.get("passed"), "RETURNCODE", state.get("returncode"))
+          print("BG-BYTES-BEFORE-STOP", size_before_stop)
+          print("BG-BYTES-AT-RETURN", at_return)
+          print("BG-BYTES-AFTER-RETURN", samples)
+          print("WRITER-RUNNING-BEFORE-RETURN", size_before_stop >= 200 and at_return > size_before_stop)
+          print("WRITE-AFTER-RETURN", any(s > at_return for s in samples))
           try:
               remove_test_snapshot(workspace)
+              print("CLEANUP-OK", True)
           except Exception as exc:
               print("CLEANUP-ERROR", repr(exc))
           '@
