@@ -208,6 +208,8 @@ The one-window desktop prototype has **two tabs**:
 | **Activity & diagnostics** | Task results, original-versus-summary comparisons, repair-learning statistics, one-shot RAM snapshot | Evidence inspection and operational visibility |
 | **Activity & diagnostics** | **How to use ForgeOS** | Opens this guide offline, without loading it into memory at startup |
 
+**Branding:** The window and the Windows executable show the ForgeOS icon. The header shows the ForgeOS wordmark on a dark band, with the status text at the right. These are cosmetic and do not change how tasks run. If the brand files are missing from a build, the header shows the plain text "ForgeOS" and the window keeps its default icon.
+
 Not every error can be fixed automatically. A failed model operation, a failed or unsupported test, a missing dependency or an unsafe edit can stop a task with a blocked/failed status.
 
 ## 3. Your first task — step by step
