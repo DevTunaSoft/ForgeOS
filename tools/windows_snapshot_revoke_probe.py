@@ -302,6 +302,7 @@ def appcontainer_run(base: Path, label: str, *, legacy: bool) -> dict:
         "secret_changed": before[1] != after[1],
         "outside_delta": acl_delta(before[0], after[0]),
         "secret_delta": acl_delta(before[1], after[1]),
+        "child_output": str(result.get("output", ""))[-400:],
         "outside_sid_after": has_sid(after[0]) or has_sid(after[1]),
         "in_tree": objects_with_sid(snap),
     }
@@ -343,6 +344,7 @@ def summarise(report: dict) -> list[str]:
             f"outside_sid_after={run_report['outside_sid_after']} "
             f"in_tree_sid={tree['with_sid']} unreadable={tree['unreadable']} "
             f"profile_deleted={run_report['profile_deleted']} "
+            f"child_output={run_report.get('child_output', '')[-200:]!r} "
             f"error={run_report['error'][:200]!r}")
     parent = report.get("parent_write", {})
     if parent:
