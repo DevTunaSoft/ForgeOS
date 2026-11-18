@@ -3974,3 +3974,22 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Verified locally: the adapted `SKILL.md` differs from upstream only in its three marked blocks (diff checked). The frontmatter parses and `name` matches the folder. `.claude/settings.json` is unchanged.
 - Verified: a fresh Claude Code cloud session on this branch listed `ponytail` among its skills, read `SKILL.md`, and dry-ran it on a sample request without editing anything. Known cloud limits: the plugin band does not show in cloud sessions, and there is no session-start hook, so the skill applies when it is invoked or judged relevant rather than for the whole session.
 - Next: the clean pull request is [DevTunaSoft/ForgeOS#159](https://github.com/DevTunaSoft/ForgeOS/pull/159), from `feat/ponytail-project-skill`. Decide whether the review and audit skills are wanted.
+
+## 2026-11-18 — frozen secure snapshots move out of the user's folder
+
+**Problem.** The AppContainer runner granted read and execute on the snapshot's parent folder. The snapshot sat beside the user's workspace, so the grant landed on the user's project folder. Another branch's hosted probe (run 44364847892, revoke-acceptance job) showed a non-recursive grant on a folder rewriting the explicit ACEs of its children, and the revoke did not restore them. Our first sibling test passed because its sibling had only inherited ACEs. A second version, with an explicit copy of an inheritable ACE on the sibling, also passed on the PC and on hosted runners, so that mechanism was not reproduced with that state.
+
+**Tried and rejected.** Removing the parent grant. The frozen secure smoke test failed with access denied on the snapshot path: the child needs traversal on the parent. The attempt was reverted in `dfd0675`.
+
+**Change.** Frozen secure runs place snapshots in `LOCALAPPDATA\ForgeOS\secure-runs` (`secure_runtime_root()` in `src/forgeos/test_runtime.py`). The grant then touches only a ForgeOS-owned folder. Source-mode snapshots stay beside the workspace. Same-named workspaces get distinct, hashed snapshot names in the shared folder. `src/forgeos/engine.py` and `src/forgeos/secure_smoke.py` pass the root.
+
+**Evidence.**
+- Red baseline: `tests/test_secure_run_sibling_acls.py::test_secure_run_grants_nothing_on_the_workspace_parent` failed on hosted windows-latest (run 44406740937, `d3bc921`) and on the PC (run 44406732632). The workspace's parent was among the granted paths.
+- Hosted sibling check passed after the fix (run 44407124081, `752e941`).
+- Hosted EXE build passed every step, including the frozen secure AppContainer smoke test from the new folder (run 44407129544, `752e941`).
+- PC unit suite passed: 822 tests, OK, 10 skipped (run 44407570153, `e2c88f4`).
+- The PC run at `752e941` failed one test that asserted the old call signature and created a real folder under the user's `LOCALAPPDATA`. `e2c88f4` patches the root and asserts the new call.
+
+**Open.** Not changed here: the runner's folder still gets a non-recursive read and execute grant (`grant(runner.parent, "RX")`). For the frozen product that is ForgeOS's own install folder. For source-mode Python it is the interpreter folder. The containment series (#160, #161) should take this change. #160 also changes `create_test_snapshot`, so its merge needs a hand resolution.
+
+**Rollback.** Revert the commits from `752e941` and `e2c88f4`. No data or stored-format change. Existing snapshot folders are removed by the existing cleanup.
