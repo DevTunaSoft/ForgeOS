@@ -783,6 +783,7 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
             if not wc.kernel32.TerminateJobObject(job, 124):
                 raise wc._win_error("TerminateJobObject(Secure AppContainer)")
             wc.kernel32.WaitForSingleObject(process, 5000)
+            wc.wait_for_job_empty(job)
             raise subprocess.TimeoutExpired(list(argv), timeout)
         if status == wc.WAIT_FAILED:
             raise wc._win_error("WaitForSingleObject(Secure AppContainer)")
@@ -790,6 +791,10 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
             raise OSError(
                 f"Unexpected secure AppContainer wait status: {status}")
 
+        # The main process has exited, but a child it started may still run in the job.
+        if not wc.kernel32.TerminateJobObject(job, 0):
+            raise wc._win_error("TerminateJobObject(Secure AppContainer cleanup)")
+        wc.wait_for_job_empty(job)
         code = wintypes.DWORD()
         if not wc.kernel32.GetExitCodeProcess(
                 process, ctypes.byref(code)):

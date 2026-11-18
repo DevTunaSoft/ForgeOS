@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 
 if os.name == "nt":
     import msvcrt
@@ -39,6 +40,7 @@ if os.name == "nt":
     JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
     JobObjectBasicUIRestrictions = 4
+    JobObjectBasicAccountingInformation = 1
     JobObjectExtendedLimitInformation = 9
 
     JOB_OBJECT_UILIMIT_HANDLES = 0x00000001
@@ -146,6 +148,18 @@ if os.name == "nt":
             ("hThread", wintypes.HANDLE),
             ("dwProcessId", wintypes.DWORD),
             ("dwThreadId", wintypes.DWORD),
+        ]
+
+    class JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("TotalUserTime", ctypes.c_longlong),
+            ("TotalKernelTime", ctypes.c_longlong),
+            ("ThisPeriodTotalUserTime", ctypes.c_longlong),
+            ("ThisPeriodTotalKernelTime", ctypes.c_longlong),
+            ("TotalPageFaultCount", wintypes.DWORD),
+            ("TotalProcesses", wintypes.DWORD),
+            ("ActiveProcesses", wintypes.DWORD),
+            ("TotalTerminatedProcesses", wintypes.DWORD),
         ]
 
     kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
@@ -337,6 +351,28 @@ def _apply_ui_restrictions(job, enabled: bool) -> int:
     return int(actual.UIRestrictionsClass)
 
 
+def wait_for_job_empty(job, timeout_ms: int = 5000) -> None:
+    """Wait until no process is active in the job, or raise.
+
+    A process the main child started can outlive it. Cleanup must not race such a
+    writer, so the caller ends the job first; this waits for the end to take effect.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+        returned = wintypes.DWORD()
+        if not kernel32.QueryInformationJobObject(
+                job, JobObjectBasicAccountingInformation,
+                ctypes.byref(info), ctypes.sizeof(info), ctypes.byref(returned)):
+            raise _win_error("QueryInformationJobObject")
+        if info.ActiveProcesses == 0:
+            return
+        if time.monotonic() >= deadline:
+            raise OSError(
+                f"{info.ActiveProcesses} process(es) still active in the job after cleanup")
+        time.sleep(0.05)
+
+
 def run_contained(argv, cwd: str | Path, *, timeout: int,
                   active_process_limit: int = 64,
                   process_memory_bytes: int = 1024 * 1024 * 1024,
@@ -462,11 +498,16 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             if not kernel32.TerminateJobObject(job, 124):
                 raise _win_error("TerminateJobObject")
             kernel32.WaitForSingleObject(process, 5000)
+            wait_for_job_empty(job)
             raise subprocess.TimeoutExpired(list(argv), timeout)
         if status == WAIT_FAILED:
             raise _win_error("WaitForSingleObject")
         if status != WAIT_OBJECT_0:
             raise OSError(f"Unexpected Windows wait status: {status}")
+        # The main process has exited, but a child it started may still run in the job.
+        if not kernel32.TerminateJobObject(job, 0):
+            raise _win_error("TerminateJobObject(cleanup)")
+        wait_for_job_empty(job)
 
         code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(process, ctypes.byref(code)):
