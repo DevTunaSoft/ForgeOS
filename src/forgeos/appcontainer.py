@@ -845,12 +845,12 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
     if os.name != "nt":
         raise OSError("Secure AppContainer execution is Windows-only")
     root = Path(cwd).expanduser()
-    if root.is_symlink():
-        raise ValueError("Secure execution snapshot must not be a symlink")
+    if wc.is_reparse_point(root):
+        raise ValueError("Secure execution snapshot must not be a link")
     root = root.resolve(strict=True)
     runner = Path(executable).expanduser()
-    if runner.is_symlink():
-        raise ValueError("Secure runner executable must not be a symlink")
+    if wc.is_reparse_point(runner):
+        raise ValueError("Secure runner executable must not be a link")
     runner = runner.resolve(strict=True)
     if not root.is_dir() or not runner.is_file():
         raise ValueError("Secure execution paths are invalid")
@@ -907,9 +907,18 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
         finally:
             cleanup_errors = []
             # The child ran with write access to the snapshot, so it may have created
-            # junctions there. Unlink them first: the revoke below walks the tree.
-            wc.remove_reparse_points(root)
+            # junctions there. Unlink them first: the recursive revoke walks the tree.
+            links_removed = True
+            try:
+                wc.remove_reparse_points(root)
+            except OSError as exc:
+                links_removed = False
+                cleanup_errors.append(str(exc))
             for path, recursive in reversed(grants):
+                if recursive and not links_removed:
+                    # A recursive revoke could walk a surviving link. The snapshot is
+                    # deleted next, so its ACEs go with it; grants outside it still revoke.
+                    continue
                 try:
                     _revoke_path_grant(
                         path, sid_string, recursive=recursive)

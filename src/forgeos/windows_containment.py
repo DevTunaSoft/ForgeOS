@@ -524,7 +524,7 @@ FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 def system_exe(name: str) -> str:
     """A System32 program by absolute path, so a file in the working directory cannot shadow it."""
-    return ntpath.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", name)
+    return ntpath.join(os.environ.get("SystemRoot") or r"C:\Windows", "System32", name)
 
 
 def is_reparse_point(path: Path) -> bool:
@@ -540,6 +540,9 @@ def remove_reparse_points(root: Path) -> None:
     junction as a directory, so it must be gone before the tree is deleted or icacls runs.
     Raises if a directory cannot be read, instead of skipping it.
     """
+    if is_reparse_point(root):
+        raise ValueError("Refusing to clean a link as if it were a tree")
+
     def fail(exc):
         raise exc
 
