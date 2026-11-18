@@ -3966,3 +3966,9 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-17 — planning waits for the full 180-second response deadline
+
+**Change:** `core.Ollama._complete` opened its request with a 30-second socket timeout. The model returns a non-streaming reply only after generation finishes, so a plan that needed more than 30 seconds to generate failed with `TimeoutError`, even though the same function already enforces a 180-second response deadline. The socket timeout is now 180 seconds. The test-and-fix path in `local_models` already used 180 seconds.
+
+**Verification:** `tests/test_planning_timeout.py` records the timeout passed to `urlopen` and requires 180. It fails on the previous `core.py`. The full discovery suite on Linux with Python 3.12 under `xvfb-run` passes 817 tests with 23 skips. On the Windows test PC before this change, `qwen2.5-coder:3b` generated about 9 tokens per second on CPU, so a 311-token reply took about 34 seconds and timed out at the 30-second socket limit. Physical Windows acceptance of this change is not run yet. The candidate branch is `fix/planning-socket-timeout-20261117`, based on `origin/main` `5107d46`.

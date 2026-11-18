@@ -70,7 +70,7 @@ py -3.12 -m pip install "pyinstaller>=6.0,<7" ".[secure-pytest]"
 py -3.12 -m unittest discover -s tests -v
 $sha = (git rev-parse HEAD).Trim()
 py -3.12 forgeos_build/write_build_info.py --sha $sha
-py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
+py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --icon src/forgeos/brand_assets/ForgeOS_Windows_Icon.ico --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" --add-data "src/forgeos/brand_assets;forgeos/brand_assets" forgeos_build/launcher.py
 ```
 
 The result should be `dist/ForgeOS.exe` if all commands succeed. Do not claim it succeeded without examining the actual files and command exit statuses.
