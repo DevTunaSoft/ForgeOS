@@ -4061,3 +4061,18 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 2. Order this change with #160 (refusal at snapshot creation) and #158 (`/L` on the grant) as one series, then re-run this probe on the combined branch.
 3. Before the pull request is marked ready, remove the `revoke-acceptance-temporary` job. Decide whether the probe stays as evidence tooling.
 4. Decide the probe path's revoke policy, apply the object-by-object revoke there if appropriate, and add hosted coverage.
+
+## 2026-11-18 — containment series integration test (designated branch)
+
+**What was merged.** For the integration test only, `claude/exciting-bohr-wr08bs` merged PR #160 (`1473994`, merge `a1d3d2a`) and PR #161 (`e61e2a4`, merge `a0f472b`) on top of the relocation fix (`0c6a698`). PR #158 is not merged here, and no PR's state was changed. Conflicts: `tests/test_runtime.py` (both sides appended a test class; kept as two separate classes) and `docs/HANDOFF.md` (both sections kept). `src/forgeos/test_runtime.py` merged automatically, and `create_test_snapshot` combines the runtime root with #160's reparse-point refusal and ignore hook.
+
+**Results on the merged tree.**
+- PC unit suite (run [44424253270](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44424253270), `a0f472b`): 844 tests, OK, 10 skipped.
+- Hosted EXE build (run [44424244737](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44424244737), `a0f472b`): every step passed, including the frozen secure AppContainer smoke test.
+- Hosted sibling check (run [44424249154](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44424249154), `a0f472b`): passed.
+- Hosted revoke-acceptance from #161, same run: unit suites passed on Python 3.10 and 3.12. The 3.12 probe verdict: the object-by-object revoke changed no outside object in any fixture, left no SID on in-tree objects, and every object stayed readable.
+- Linux suite on the merged tree: 811 tests, 10 errors (tkinter and the managed-llama process test, as before), no new failures.
+
+**Read with care.** The probe's `parent_write` rows still show the grant-side change, because that probe grants its own parent folder. Production no longer grants a user folder, so this is expected. The probe's AppContainer child could not create a junction from outside its snapshot (`Access is denied`). It did create one inside its snapshot.
+
+**Recommended merge order.** 1. #160, which refuses links at snapshot creation. 2. #161, the object-by-object revoke and the drain. 3. The relocation fix (`752e941`, `e2c88f4`), which conflicts with #160 in `create_test_snapshot` and `tests/test_runtime.py`. The resolution used here applies. 4. #158 last, rebased on the three, with its docs conflicts resolved by hand. Nothing here merges into `main`.
