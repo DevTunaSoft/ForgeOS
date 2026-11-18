@@ -653,10 +653,13 @@ class FrozenSecureRoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             runtime = SimpleNamespace(path=root, env={"FORGEOS_EXECUTION_SNAPSHOT": "1"})
+            secure_root = root / "secure-runs"
             with patch("forgeos.engine.os.name", "nt"), \
                  patch("forgeos.engine.sys.frozen", True, create=True), \
+                 patch("forgeos.test_runtime.secure_runtime_root",
+                       return_value=secure_root), \
                  patch("forgeos.test_runtime.create_windows_low_integrity_snapshot",
-                       return_value=runtime), \
+                       return_value=runtime) as create, \
                  patch("forgeos.test_runtime.remove_test_snapshot") as cleanup, \
                  patch("forgeos.secure_runner.run_secure_windows_test",
                        return_value={"passed": True}) as secure, \
@@ -665,7 +668,8 @@ class FrozenSecureRoutingTests(unittest.TestCase):
                 result = _run_workspace_tests(root, "python-unittest")
             self.assertTrue(result["passed"])
             secure.assert_called_once_with(runtime, "python-unittest")
-            cleanup.assert_called_once_with(root)
+            create.assert_called_once_with(root, runtime_root=secure_root)
+            cleanup.assert_called_once_with(root, runtime_root=secure_root)
 
 
 class AuditRegressionTests(unittest.TestCase):
