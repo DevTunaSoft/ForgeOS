@@ -3966,3 +3966,95 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-18 — Windows snapshot links: measured on hosted Windows, then refused before the grant
+
+**Objective.** Verify on Windows whether `icacls /grant ... /T` follows links inside an execution snapshot, and whether the snapshot copy can expose outside content to the AppContainer child. Then fix the root cause once in shared code, with regression tests and Windows evidence. No pull request was created, marked ready or merged.
+
+**Premise correction for PR #158.** The request said PR #158 (`fix/windows-labelling-outside-profile`, draft, head `9581162`) leaves the AppContainer grants unchanged. Its current diff does add `/L` to four recursive `icacls` call sites in `src/forgeos/appcontainer.py` (read/execute grant, recursive revoke, probe grant and secure-path grant), and it adds `tests/test_appcontainer_grants.py`. This branch does not change `appcontainer.py`, so the two branches do not collide there. Both branches edit `docs/ARCHITECTURE.md` (Windows section) and append to the end of `docs/HANDOFF.md`, so documentation conflicts are expected on merge.
+
+**Evidence that drove the change (hosted `windows-latest`, image `win25-vs2026`, Python 3.12.10 unless stated).**
+
+- Production path on `main` 5107d46, run [44352145710](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44352145710), job 134970391477, and again in run [44352967852](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44352967852), job 134973342804: the AppContainer child wrote `escape-dir.txt` into an outside decoy folder through a directory link (`dir_link_write_escaped: true`), read that folder's secret through the link (`dir_link_secret_read: true`), and read the copied contents of a junction target (`junction_copy_secret_read: true`). The file-link overwrite did not happen (`file_link_write_escaped: false`).
+- Same path on PR #158 head `9581162`, run 44352145710, job 134970391584: the directory-link write and read were blocked (`false`), but the copied junction contents were still readable (`true`). Its `/L` closes the grant-time link escape. It does not close the copy exposure.
+- Raw `icacls` on the same runner (`/grant` on a tree containing a directory link, a junction and a file link, with and without `/T` and `/L`): a recursive grant without `/L` changed the outside target of the directory link only. A direct grant without `/L` changed the directory and file link targets. Junctions were not changed by a recursive or a direct grant. With `/L`, no outside object changed, and real children still received the grant. Microsoft documents `/L` as acting on a link itself; the exact wording on learn.microsoft.com was not re-read.
+- Python's `shutil.copytree` (3.13 source, lines 502-508) recurses into junctions on Windows and copies their contents. Measured in the snapshot: the directory link and file link were recreated as symlinks, and the junction became a plain directory holding the copied secret.
+- The first probe run exposed a probe defect, not a product result: running the system `cmd.exe` from `System32` made the production runner-parent grant fail with access denied. The probe now runs a copy from a scratch folder (commit 7301647).
+
+**Change.** `src/forgeos/test_runtime.py`: `create_test_snapshot` refuses a symbolic link or junction in the workspace, and a link or junction as the workspace root, with `ValueError`. The check is a `copytree` ignore callback, so it runs when each directory is listed. Names the snapshot never copies (`.forgeos`, `.forgeos-runtime`, `.env*`) are skipped first. A refused snapshot is removed before the error is raised, and no grant is made. This is not a whole-tree pre-scan: entries copied from earlier directories are deleted with the partial snapshot. The commit message for `8cb130f` says "before it copies any entry", which overstates it. The code is correct. The wording here is precise.
+
+**Changed paths.**
+
+- `src/forgeos/test_runtime.py`: refusal (`_is_link_path`, `_refuse_links_then_ignore`, `create_test_snapshot`).
+- `tests/test_runtime.py`: six new tests. Two file/directory symlink refusal tests fail against the previous module and pass now. Two junction tests are Windows-only. A workspace-root symlink test pins the existing message. A test confirms that links under excluded names do not block a run.
+- `tools/windows_link_acl_probe.py` (new): the probe. It creates links only inside a fresh scratch directory and never writes outside it. Reproduce on Windows from a checkout: `python tools/windows_link_acl_probe.py --src src --label local --out probe.json`.
+- `.github/workflows/windows-exe.yml`: two dispatch-only temporary jobs, `link-acl-probe` (3 targets × 2 Python versions) and `dispatch-unit-tests` (full Windows suite, 2 versions). Neither runs on push or pull request. The frozen package job is unchanged.
+- `docs/ARCHITECTURE.md`: "Windows snapshot link boundary" subsection with the measured results, scope and open limits.
+- `docs/USER_GUIDE.md`: troubleshooting row for the new refusal message.
+- `docs/HANDOFF.md`: this entry.
+
+**Branch and commits.** Branch `claude/determined-knuth-smj17v`, based on `main` 5107d46.
+
+- `0e71329`: probe and a standalone dispatch workflow.
+- `ebe5c67`: the standalone workflow was removed and its job moved into `windows-exe.yml`. GitHub returns 404 when dispatching a workflow file that exists only on a feature branch, so the standalone file could not run.
+- `7301647`: probe runs a copy of `cmd.exe`, and prints one line per case.
+- `8cb130f`: refusal, tests, probe update, dispatch-only unit-test job.
+- This commit: documentation.
+
+**Acceptance criteria and outcomes.**
+
+| Check | Command or job | Result |
+| --- | --- | --- |
+| Snapshot tests, Linux, Python 3.12 | `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests -p test_runtime.py -v` | PASS: 17 run, 2 skipped (the Windows-only junction tests) |
+| Snapshot tests, Linux, Python 3.13 | same with `/usr/bin/python3.13` | PASS: 17 run, 2 skipped |
+| New symlink tests against the pre-change module | scratch copy of `src` with `git show 5107d46:src/forgeos/test_runtime.py` | FAIL as intended: the two symlink refusal tests |
+| Full Linux suite, Python 3.12 | `PYTHONPATH=src /usr/bin/python3.12 -m unittest discover -s tests` | 10 errors, 25 skipped. Pristine `main` (`git archive 5107d46`): the same 10 errors and 23 skipped. All 10 are `No module named 'tkinter'` in this sandbox. The two extra skips are the new Windows-only junction tests |
+| Full Windows suite, Python 3.10.11 | job 134973342228, run 44352967852 | PASS: 822 run, 10 skipped |
+| Full Windows suite, Python 3.12.10 | job 134973343059, run 44352967852 | PASS: 822 run, 10 skipped. All 17 `TestRuntimeTests` ran and passed, including both junction tests |
+| Probe on candidate `8cb130f`, Python 3.12.10 and 3.10.11 | jobs 134973342871 and 134973342736 | Refused at `dirlink` before any copy: `snapshot_entries` empty, no AppContainer child, `appcontainer_exposure_observed: false` |
+| Frozen EXE, headless smoke, GUI and secure AppContainer smoke | job 134973342836, run 44352967852 | PASS: every step succeeded, including "Frozen secure AppContainer boundary smoke test" |
+| Probe on PR #158 head `9581162`, Python 3.12.10 | job 134970391584, run 44352145710 | Directory-link write and read blocked; copied junction read still true (see above) |
+| Documentation links | `python3 tools/check_documentation.py --links` | Re-run after this commit |
+| Documentation change coverage | `python3 tools/check_documentation.py --base 5107d46... --head HEAD` | Failed before this commit (product code changed without docs), expected; re-run after this commit |
+| Handoff integrity | `python3 scripts/check_handoff.py --json` | PASS (source SHA `8cb130f`) |
+| Handoff unit tests, Linux | `python3 -m unittest discover -s tests -p 'test_handoff*.py'` | PASS |
+
+**Verification status.** PASS: the Windows measurements above, the Windows suite on two interpreters, the frozen smoke on the candidate commit, and the Linux checks. NOT RUN: physical Windows hardware; the self-hosted PC (not used, no approval given); a real local model; PDF export. UNVERIFIED: links created during a run (see defects); whether an unprivileged account can create these links (the probe ran on a runner account that can); the Windows behaviour of user projects that legitimately contain junctions.
+
+**Security and privacy.** The refusal removes the directory-link escape and the copied-junction exposure from the Windows snapshot path, both measured on `main`. No credential or network handling changed. No file outside the snapshot is granted. Probe output contains temporary paths and ACL text only, not user data.
+
+**Resource impact.** Not measured. The check adds one `lstat` per copied directory entry, to the walk that `copytree` already performs. Snapshot creation fails earlier on a linked workspace, so the partial copy is not a cost in normal runs.
+
+**Defects and remaining exposure.**
+
+1. On PR #158's head, the copied junction contents are still readable by the AppContainer child. Only this change, or an equivalent refusal, closes that.
+2. Links created during a run are not covered here. The recursive revoke on `main` runs without `/L`. PR #158 adds `/L` to the revoke, but whether a child can create a directory link inside its own granted snapshot was not measured.
+3. A same-user process that adds a link between copy and grant is not addressed.
+4. In the probe, sibling decoy folders' ACL text changed only in inheritance markers after the snapshot's parent-folder grant and revoke. The same principals kept the same rights, and no AppContainer ACE remained. The cause was not isolated. This is ACL normalisation, not an escape, and it is on `main` as well as on PR #158's head.
+5. A `0` exit code from `icacls` shows that the command succeeded, not that links were left alone. PR #158's handoff reads its hosted run that way. The probe measures the target.
+
+**Rejected approaches.**
+
+- Adding `/L` to every recursive call in `appcontainer.py` on this branch. PR #158 already changes those lines, so this would duplicate and conflict with it. It also changes the frozen AppContainer path, and it does not close the copied-junction read.
+- A standalone probe workflow. It could not be dispatched from a feature branch (404). The probe now runs inside `windows-exe.yml`.
+- Refusing only symbolic links. The copied-junction read is a separate path, and a junction is the link type that copytree silently expands.
+
+**Remaining blockers and decisions.**
+
+- Decide the merge order with PR #158. The two change different parts of the same boundary, and their documentation edits will conflict.
+- Decide whether the two dispatch-only jobs in `windows-exe.yml` stay for reproduction or are removed before any PR is marked ready. Keeping them does not change push or pull request behaviour.
+- Physical Windows acceptance and the self-hosted PC run remain outstanding, as before.
+
+**Next executable step.** From a Windows checkout of this branch, run `python -m unittest discover -s tests -p test_runtime.py -v` with `PYTHONPATH=src`. Expect 17 tests, 0 skipped. Then open a draft pull request only if the user asks for one.
+
+**Rollback.** Revert commit `8cb130f`, which removes the refusal. That restores the directory-link escape and copied-junction read measured above. The documentation commit can be reverted independently.
+
+**Snapshot (Layer C).**
+
+- Checked at: 2026-11-18, after run 44352967852 completed.
+- Repository and branch: DevTunaSoft/ForgeOS, `claude/determined-knuth-smj17v`, based on `main` 5107d46. HEAD is this checkpoint's commit.
+- Product status: experimental prototype. The Windows snapshot link boundary is implemented, verified on hosted Windows at `8cb130f`, and not merged.
+- Latest verified checks: Windows full suite 822 tests passed on Python 3.10.11 and 3.12.10; frozen smoke passed; Linux snapshot tests pass; Linux full suite errors are unchanged from `main` and are tkinter-only in this sandbox.
+- Real Windows and local-model acceptance: NOT RUN.
+- Active pull request: PR #158, draft, open, not merged, not marked ready. Its head `9581162` adds `/L` to the AppContainer grants and does not refuse links.
+- Highest-priority next task: the merge-order decision with PR #158, then the two temporary dispatch jobs.

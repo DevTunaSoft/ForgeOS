@@ -603,6 +603,29 @@ existing bounded evidence reader. A hard-link, reparse point or replacement
 during the final open therefore fails closed instead of redirecting diagnostic
 capture; the reader still uses the existing disk-bounded memory contract.
 
+### Windows snapshot link boundary
+
+The Windows secure path copies a task workspace into a disposable snapshot with `shutil.copytree(symlinks=True)`, then grants the snapshot tree to the zero-capability AppContainer child. Before this boundary, a link in the workspace could reach outside content through that copy:
+
+- A directory symbolic link was recreated as a link in the snapshot. The recursive grant (`icacls ... /T`, without `/L`) followed it, so the child could write to and read from the outside target.
+- A junction was recursed into. Its outside target's contents were copied into the granted snapshot, where the child could read them.
+
+**Measured before the change** on hosted `windows-latest` (image `win25-vs2026`, Python 3.12.10), through the production `create_test_snapshot` and `run_secure_appcontainer` path, with the probe `tools/windows_link_acl_probe.py` run on `main` 5107d46 ([run 44352145710](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44352145710), commit 7301647; repeated in [run 44352967852](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44352967852)). The zero-capability child wrote a file into an outside decoy folder through a directory link and read that folder's secret through the link. It also read the copied contents of a junction's target. A file symbolic link was not followed by the recursive grant in these runs. Raw `icacls` measurements on the same runner show the same pattern: a recursive grant without `/L` changed the outside target of a directory link, but not the target of a junction or a file link, and a direct grant without `/L` changed both directory and file link targets. With `/L`, no outside object changed, and real children still received the grant. The probe ran as an administrator, so it does not show that an unprivileged account can create these links.
+
+**Change.** `create_test_snapshot` refuses a symbolic link or junction in the workspace, and a link or junction as the workspace root, with `ValueError`. The check runs when the directory that holds the link is listed. Entries already copied from earlier directories are removed with the partial snapshot before the error is raised, and no grant is made. Names the snapshot never copies (`.forgeos`, `.forgeos-runtime`, `.env*`) are skipped before the check, so they cannot block a run. Other Windows reparse points are refused as well, matching the worktree manifest policy. `src/forgeos/appcontainer.py` is unchanged, so the frozen grant behaviour is unchanged.
+
+**Verified after the change** on candidate commit 8cb130f, [run 44352967852](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44352967852), hosted Windows: the probe's snapshot step refused the workspace at the directory link on Python 3.10.11 and 3.12.10, with no snapshot entries and no AppContainer child. The full Windows `unittest` suite passed on both interpreters (822 tests, 10 skipped). On Python 3.12.10 all six new snapshot tests ran and passed, including both junction tests. The frozen package job, including the frozen secure AppContainer boundary smoke test, passed on this commit.
+
+**Status.** Implemented on this branch and verified on hosted Windows at 8cb130f as above. Not merged. Not verified on physical Windows hardware or on the self-hosted PC.
+
+**Not covered or not verified:**
+
+- Links created during a run are outside this change. The recursive revoke runs without `/L` on `main`. Open draft [PR #158](https://github.com/DevTunaSoft/ForgeOS/pull/158) (head `9581162`) adds `/L` to the recursive grants and revoke in `appcontainer.py`. On that head, measured on Python 3.12.10 (run 44352145710), the same production path blocked the directory-link write and read, but still read the copied junction contents, which this change closes. The two changes are complementary, and PR #158 has not been measured on Python 3.10.
+- A same-user process that adds a link between the copy and the grant is not addressed.
+- User projects that legitimately contain links or junctions now fail closed in the Windows test path, with the message "Workspace contains a symlink or junction".
+- The probe measured sibling decoy folders whose ACL text changed only in inheritance markers after the run, with the same principals and rights, and no AppContainer ACE left. The cause was not isolated.
+- Junction creation by an unprivileged account was not tested.
+
 Docker is **not required**. Git worktrees are version-control isolation, not operating-system security isolation. No test runner is allowed to claim full untrusted-code containment without real runtime proof.
 
 ## Sensitive data and storage

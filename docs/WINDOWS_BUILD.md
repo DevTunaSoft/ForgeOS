@@ -51,10 +51,13 @@ The `.github/workflows/windows-exe.yml` workflow on `main`:
 
 These are genuine hosted CI checks, **not** a substitute for a person launching the EXE on a target Windows laptop with a real local Ollama model and an actual project.
 
+The same workflow also defines two temporary jobs, `link-acl-probe` and `dispatch-unit-tests`. They run only on manual dispatch, never on push or pull request. `link-acl-probe` records how `icacls` recursion and the snapshot copy treat links. `dispatch-unit-tests` runs the full Windows unit suite on the dispatched commit. Their results are recorded in [HANDOFF](HANDOFF.md), 2026-11-18.
+
 ## Test execution trust boundary
 
 - The **frozen Windows** workflow uses a restricted AppContainer + Job Object + disposable snapshot for `python-unittest` and experimental **bundled `python-pytest`**. The pytest module, including normal logging/caplog behavior, is loaded only inside the hidden test child; its logging file stays in the owned snapshot and is disk-limited by the native watchdog.
 - **Unsupported frozen presets fail closed**; the program must not fall back to unrestricted host commands to make testing appear successful.
+- **Symbolic links and junctions in the task workspace stop the Windows test run** before the snapshot is granted. The copy would otherwise let the child reach outside files through a directory link, or read a junction target's contents. Hosted measurements and the remaining limits are in [architecture and security boundaries](ARCHITECTURE.md#windows-snapshot-link-boundary).
 - The **source/development** workflow may run generated project tests on the host with explicit opt-in; do not test untrusted repositories there.
 - The original [PR #29](https://github.com/DevTunaSoft/ForgeOS/pull/29) hit a Windows AppContainer failure when pytest opened the protected `NUL` device. The rewritten [PR #43](https://github.com/DevTunaSoft/ForgeOS/pull/43) uses snapshot-owned, watched logging. Its Windows frozen secure smoke now passes for both unittest and pytest; physical end-user acceptance remains outstanding.
 - Docker is not part of the required ForgeOS architecture.
