@@ -51,6 +51,7 @@ jobs:
             $after = (& icacls.exe $decoy | Out-String) + (& icacls.exe (Join-Path $decoy 'secret.txt') | Out-String)
             $guestsAdded = $after -match 'Guests'
             Write-Host "$($case.name): link made $linkMade; grant exit $code; decoy ACL changed: $($before -ne $after); Guests on decoy after: $guestsAdded"
+            Compare-Object ($before -split "`r?`n") ($after -split "`r?`n") | ForEach-Object { Write-Host "  $($_.SideIndicator) $($_.InputObject)" }
             cmd /c rmdir $link | Out-Null
           }
           Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
