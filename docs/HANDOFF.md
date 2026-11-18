@@ -3994,6 +3994,7 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - The sandboxed test code can change permissions on, and delete, its own disposable snapshot tree. A profile-based parent already allows this.
 - The grant depends on the account owning the snapshot root. If Windows makes the Administrators group the owner, the grant is refused and the new message is shown.
 - The `lstat` check and the `icacls` call are separate steps, so a same-user path swap between them could redirect the grant. This requires code already running as the account.
+- Privilege reduction uses `DISABLE_MAX_PRIVILEGE`, which disables privileges rather than removing them, so a process that holds one can re-enable it. This change does not alter that. Which privileges the runner's token holds was not measured. Labelling failed without the grant, so the file-bypass privileges (such as take-ownership) were probably not enabled there.
 - Low integrity remains a write barrier, not a read or network sandbox.
 
 **Rollback.** Revert the commit. No data migration, schema change or stored-format change.

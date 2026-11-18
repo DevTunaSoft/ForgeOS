@@ -610,8 +610,8 @@ grant fails creation with a message that names the snapshot folder and the
 permission problem, and the partial snapshot is removed.
 
 Containment with this grant: the restricted child keeps the same account SID,
-the restricted token adds no restricting SIDs and removes no SIDs, and its
-privileges stay disabled. The entry therefore gives the child control of its own
+the restricted token adds no restricting SIDs and removes no SIDs, and the existing
+privilege reduction (`DISABLE_MAX_PRIVILEGE`) is unchanged. The entry therefore gives the child control of its own
 disposable tree and nothing else. It is applied to no ancestor, the editable
 worktree, the user profile or the source repository. The Low label still blocks
 writes to Medium-integrity objects whatever their permissions are. The sandboxed
