@@ -541,9 +541,12 @@ def _parse_whoami_user_csv(output: str) -> str:
     skipped. Zero or several SIDs are refused rather than guessed.
     """
     sids = []
-    for row in csv.reader(io.StringIO(output)):
-        if len(row) >= 2 and _SID_TEXT.fullmatch(row[1].strip()):
-            sids.append(row[1].strip())
+    try:
+        for row in csv.reader(io.StringIO(output)):
+            if len(row) >= 2 and _SID_TEXT.fullmatch(row[1].strip()):
+                sids.append(row[1].strip())
+    except csv.Error as exc:
+        raise OSError("Could not read the current account SID") from exc
     if len(sids) != 1:
         raise OSError("Could not read the current account SID")
     return sids[0]

@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import os
+import csv
 from pathlib import Path
 import sys
 import tempfile
 import time
 import subprocess
 import unittest
+from unittest.mock import patch
 
 from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
 from forgeos.windows_containment import (
@@ -245,6 +247,11 @@ class AccountGrantCommandTests(unittest.TestCase):
                     '"a","S-1-5-21-1-2"\n"b","S-1-5-21-1-3"\n'):
             with self.subTest(output=bad), self.assertRaises(OSError):
                 _parse_whoami_user_csv(bad)
+        # A csv parse error is reported with the same clear message, not a raw csv.Error.
+        with patch("forgeos.windows_containment.csv.reader",
+                   side_effect=csv.Error("line contains NUL")):
+            with self.assertRaisesRegex(OSError, "current account SID"):
+                _parse_whoami_user_csv("anything")
 
     def test_grant_failure_message_names_the_snapshot_folder_and_permission(self):
         message = _grant_failure_message(
