@@ -105,7 +105,7 @@ def _icacls(path: Path, *arguments: str) -> None:
 def _grant_path_read_execute(path: Path, sid_string: str) -> None:
     if path.is_dir():
         _icacls(
-            path, "/grant", f"*{sid_string}:(OI)(CI)(RX)", "/T", "/Q")
+            path, "/grant", f"*{sid_string}:(OI)(CI)(RX)", "/T", "/L", "/Q")
     else:
         _icacls(path, "/grant", f"*{sid_string}:(RX)", "/Q")
 
@@ -113,7 +113,7 @@ def _grant_path_read_execute(path: Path, sid_string: str) -> None:
 def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -> None:
     arguments = ["/remove:g", f"*{sid_string}"]
     if recursive and path.is_dir():
-        arguments.append("/T")
+        arguments.extend(["/T", "/L"])
     arguments.append("/Q")
     _icacls(path, *arguments)
 
@@ -153,7 +153,7 @@ def _grant_probe_access(root: Path, allowed: Path, sid_string: str) -> None:
     # child directory gets an inheritable modify ACE and Low mandatory label.
     _icacls(root, "/grant", f"*{sid_string}:(RX)", "/Q")
     _icacls(
-        allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/Q")
+        allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/L", "/Q")
     wc.prepare_low_integrity_workspace(allowed)
 
 
@@ -888,7 +888,7 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                 _icacls(
                     path, "/grant",
                     f"*{sid_string}:(OI)(CI)({permission})",
-                    "/T", "/Q")
+                    "/T", "/L", "/Q")
             else:
                 _icacls(
                     path, "/grant", f"*{sid_string}:({permission})", "/Q")
