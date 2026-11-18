@@ -1,0 +1,76 @@
+name: Hosted child probe
+
+# What can a Low-integrity child do on a GitHub-hosted Windows runner? Runs the product's
+# contained runner (run_contained, low_integrity=True) on a workspace and reports the
+# child's identity, privileges and integrity level, a read of a file outside the
+# workspace, and a write outside it. Runs when this file changes on the designated branch.
+# Logs are public: print no personal paths.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/hosted-child-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  child-probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the branch under test
+        uses: actions/checkout@v4
+        with:
+          ref: fix/windows-labelling-outside-profile
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run the Low-integrity child and report what it can reach
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = Join-Path $env:RUNNER_TEMP ('child-probe-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          $workspace = Join-Path $base 'workspace'
+          $outside = Join-Path $base 'outside'
+          New-Item -ItemType Directory -Path $workspace, $outside | Out-Null
+          Set-Content -Path (Join-Path $outside 'secret.txt') -Value 'outside-secret'
+          $driverText = @'
+          import sys
+          from pathlib import Path
+          from forgeos.windows_containment import prepare_low_integrity_workspace, run_contained
+
+          base = Path(sys.argv[1])
+          workspace = base / "workspace"
+          outside = base / "outside" / "secret.txt"
+          written = base / "outside" / "written.txt"
+          prepare_low_integrity_workspace(workspace)
+          child = (
+              "import subprocess\n"
+              "from pathlib import Path\n"
+              "print('ALL-BEGIN')\n"
+              "print(subprocess.run(['cmd', '/c', 'whoami', '/all'], capture_output=True, text=True).stdout)\n"
+              "print('ALL-END')\n"
+              "try:\n"
+              f"    print('READ-OUTSIDE:', Path({str(outside)!r}).read_text())\n"
+              "except OSError as exc:\n"
+              "    print('READ-OUTSIDE-BLOCKED:', type(exc).__name__)\n"
+              "try:\n"
+              f"    Path({str(written)!r}).write_text('x')\n"
+              "    print('WRITE-OUTSIDE: wrote')\n"
+              "except OSError as exc:\n"
+              "    print('WRITE-OUTSIDE-BLOCKED:', type(exc).__name__)\n"
+          )
+          result = run_contained([sys.executable, "-c", child], workspace, timeout=60, low_integrity=True)
+          print("PASSED:", result.get("passed"), "CONTAINMENT:", result.get("containment"))
+          print(result.get("output", ""))
+          '@
+          $driver = Join-Path $env:RUNNER_TEMP 'child_probe_driver.py'
+          Set-Content -Path $driver -Value $driverText -Encoding utf8
+          $env:PYTHONPATH = Join-Path $PWD 'src'
+          python $driver $base
+          if ($LASTEXITCODE -ne 0) { throw "child probe failed with exit code $LASTEXITCODE" }
