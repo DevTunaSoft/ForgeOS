@@ -596,6 +596,31 @@ Snapshot creation serializes the compact marker through an exclusive
 marker that appeared after the initial cleanup check. A creation race fails
 closed and preserves the appearing marker for inspection.
 
+Windows Low-integrity snapshots need one permission step before the label.
+Setting a Low integrity label requires WRITE_OWNER on the folder. Some Windows
+parents (a drive root or a runner temp folder) do not give the account that
+right through inheritance, although the account owns the folders it creates.
+ForgeOS therefore grants the current account SID `(OI)(CI)F` on the empty
+snapshot root with a non-recursive `icacls /grant:r` before the copy, then
+applies the Low label to the copied tree. The entry is inheritable, so the grant
+must run before the copy: everything copied in afterwards inherits it. The
+root is refused if it is a symbolic link or reparse point (junction), and the
+icacls and whoami calls use the System32 copies by absolute path. A refused
+grant fails creation with a message that names the snapshot folder and the
+permission problem, and the partial snapshot is removed.
+
+Containment with this grant: the restricted child keeps the same account SID,
+the restricted token adds no restricting SIDs and removes no SIDs, and its
+privileges stay disabled. The entry therefore gives the child control of its own
+disposable tree and nothing else. It is applied to no ancestor, the editable
+worktree, the user profile or the source repository. The Low label still blocks
+writes to Medium-integrity objects whatever their permissions are. The sandboxed
+test code can change permissions on, or delete, its own snapshot tree, as it can
+already do in a profile-based parent. This boundary does not block reads.
+
+Status: implemented on this branch, with Linux unit tests. The Windows-only
+tests and a run on the non-profile PC runner are not yet evidenced.
+
 After a contained Windows test exits, ForgeOS opens each required output file
 through an identity-bound descriptor. It rechecks the unlinked regular-file
 identity before and after the open, then streams the descriptor into the

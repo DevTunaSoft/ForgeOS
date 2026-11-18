@@ -6,11 +6,15 @@ sandbox: it does not isolate the filesystem or block network access.
 """
 from __future__ import annotations
 
+import csv
 import ctypes
 from ctypes import wintypes
+import io
 import locale
 import os
 from pathlib import Path
+import re
+import stat
 import subprocess
 import tempfile
 
@@ -507,6 +511,105 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         output.close()
 
 
+FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
+_SID_TEXT = re.compile(r"S-1-[0-9]+(?:-[0-9]+)+")
+
+
+def _system_tool(name: str) -> str:
+    """Return the absolute System32 path so a same-named file in the cwd never runs."""
+    root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    return os.path.join(root, "System32", name)
+
+
+def _real_directory(root: str | Path) -> Path:
+    """Return a resolved directory that is neither a symbolic link nor a reparse point."""
+    raw = Path(root)
+    try:
+        info = os.lstat(raw)
+    except OSError as exc:
+        raise ValueError("Low-integrity workspace must be a real directory") from exc
+    if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+            or getattr(info, "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT):
+        raise ValueError("Low-integrity workspace must be a real directory")
+    return raw.resolve(strict=True)
+
+
+def _parse_whoami_user_csv(output: str) -> str:
+    """Return the one SID in `whoami /user /fo csv` output (quoted name, then SID).
+
+    A header row, if a locale or tool version adds one, is not a SID and is
+    skipped. Zero or several SIDs are refused rather than guessed.
+    """
+    sids = []
+    for row in csv.reader(io.StringIO(output)):
+        if len(row) >= 2 and _SID_TEXT.fullmatch(row[1].strip()):
+            sids.append(row[1].strip())
+    if len(sids) != 1:
+        raise OSError("Could not read the current account SID")
+    return sids[0]
+
+
+def current_account_sid() -> str:
+    """Return the SID of this process's account, the identity a restricted child also runs as."""
+    if os.name != "nt":
+        raise OSError("Account SIDs are only available on Windows")
+    result = subprocess.run(
+        [_system_tool("whoami.exe"), "/user", "/fo", "csv", "/nh"],
+        capture_output=True, text=True, timeout=30, shell=False,
+        errors="replace",
+    )
+    if result.returncode != 0:
+        raise OSError(
+            f"Could not read the current account SID (whoami exit {result.returncode})")
+    return _parse_whoami_user_csv(result.stdout)
+
+
+def _account_grant_argv(path: Path, sid: str) -> list[str]:
+    """Build the icacls call that replaces one account's entry with inheritable full control."""
+    # No /T: only the root changes here. Children inherit the entry when they are
+    # created, which is why the grant must run before the snapshot is copied.
+    return [_system_tool("icacls.exe"), str(path), "/grant:r",
+            f"*{sid}:(OI)(CI)F", "/Q"]
+
+
+def _grant_failure_message(path: Path, returncode: int, detail: str) -> str:
+    return (
+        f"Cannot give this account full control of the disposable snapshot folder {path}, "
+        "which is needed to set its Low integrity label. Windows refused the permission "
+        f"change (icacls exit {returncode}); the folder must be owned by this account or "
+        f"otherwise allow it to change permissions. Detail: {detail}"
+    )
+
+
+def grant_account_full_control(root: str | Path) -> Path:
+    """Give this account full control of a ForgeOS-owned disposable snapshot root.
+
+    Setting a Low integrity label needs WRITE_OWNER on the folder. On some Windows
+    locations (a drive root, a runner temp folder) the inherited permissions do not
+    give this account that right, but the account can still change a folder it owns.
+    The entry is inheritable, so files and folders copied under the root afterwards
+    inherit it.
+
+    Containment: the restricted child keeps this same account SID, so the entry lets
+    the child change this disposable tree only. It is applied to no ancestor, to the
+    editable worktree or to the user profile. Privilege reduction is unchanged, and
+    the Low label still blocks writes to Medium-integrity objects whatever their
+    permissions are.
+    """
+    if os.name != "nt":
+        raise OSError("Account grants are only available on Windows")
+    path = _real_directory(root)
+    sid = current_account_sid()
+    result = subprocess.run(
+        _account_grant_argv(path, sid), capture_output=True, text=True,
+        timeout=60, shell=False, errors="replace",
+    )
+    if result.returncode != 0:
+        detail = (result.stdout + "\n" + result.stderr).strip()[-2000:]
+        raise OSError(_grant_failure_message(path, result.returncode, detail))
+    return path
+
+
 def prepare_low_integrity_workspace(root: str | Path):
     """Label a disposable workspace tree Low integrity for Low-IL writers.
 
@@ -515,11 +618,9 @@ def prepare_low_integrity_workspace(root: str | Path):
     """
     if os.name != "nt":
         raise OSError("Low-integrity workspace labels are only available on Windows")
-    path = Path(root).resolve(strict=True)
-    if not path.is_dir() or Path(root).is_symlink():
-        raise ValueError("Low-integrity workspace must be a real directory")
+    path = _real_directory(root)
     result = subprocess.run(
-        ["icacls.exe", str(path), "/setintegritylevel", "(OI)(CI)L",
+        [_system_tool("icacls.exe"), str(path), "/setintegritylevel", "(OI)(CI)L",
          "/T", "/L", "/Q"],
         capture_output=True, text=True, timeout=60, shell=False,
         errors="replace",

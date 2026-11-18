@@ -3966,3 +3966,36 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-18 — Low-integrity snapshot account grant for non-profile workspaces
+
+**Repository / branch:** DevTunaSoft/ForgeOS, `claude/fervent-hawking-fci93b`, based on `5107d46`. **Status:** implemented and Linux-tested. Windows tests and PC acceptance NOT RUN.
+
+**Problem.** On the self-hosted PC runner, creating a Windows Low-integrity test snapshot failed with `icacls` exit 5 (Access is denied) when the workspace parent was not under the user profile, for example under the runner temp folder or on a drive root. Run, test and resume-safe commands then failed, and tasks stayed blocked. Probe run 44149273094 (branch `claude/exciting-bohr-wr08bs`, as described in the engineering report) showed that the unelevated administrator account owns folders it creates there, but labelling needs WRITE_OWNER, which inherited permissions did not give. After the account received an explicit full-control grant on the parent, a new child folder labelled successfully.
+
+**Decision.** Option 1, with option 2 as the failure path. `create_windows_low_integrity_snapshot` grants the current account SID `(OI)(CI)F` on the empty snapshot root with `icacls /grant:r` (no `/T`) before the copy, then applies the existing `/setintegritylevel (OI)(CI)L /T` label. The grant runs before the copy because children created afterwards inherit it, so no recursive grant is needed. If the grant is refused, creation fails with a message that names the snapshot folder and the permission problem, and the partial snapshot is removed.
+
+**Restricted-token check.** `CreateRestrictedToken` here disables privileges (`DISABLE_MAX_PRIVILEGE`) and adds no restricting SIDs. The child keeps the account SID, so the new entry applies to it. That is why the entry is scoped to the snapshot root: no ancestor, editable worktree, profile or source repository receives it. The Low mandatory label, which blocks writes to Medium-integrity objects, is unchanged. The child gains control of its own disposable tree, which the profile-based location already gives it. Reads are not restricted by this design, as before.
+
+**Other changes.** `prepare_low_integrity_workspace` and the new grant refuse symbolic links and reparse points through `_real_directory`, instead of resolving them. Both call `System32\icacls.exe` and `System32\whoami.exe` by absolute path, so a same-named file in the working directory cannot run.
+
+**Files.** `src/forgeos/windows_containment.py`, `src/forgeos/test_runtime.py`, `tests/test_runtime.py`, `tests/test_windows_containment.py`, `docs/ARCHITECTURE.md`, `docs/USER_GUIDE.md`, `docs/HANDOFF.md`.
+
+**Verification status.**
+- PASS, Linux, Python 3.13: `tests.test_runtime` and `tests.test_windows_containment` ran 35 tests with 13 Windows-only skips. Mutation check in a scratch copy: moving the grant after the copy fails the ordering test. A mutant that also drops cleanup on failure fails the ordering, grant-failure and label-failure tests.
+- Full Linux suite: 796 run, 10 errors, 25 skipped. A clean checkout of `5107d46` shows the same 10 errors and no others. They are in GUI, launcher and managed-llama tests that import Tk, which this sandbox's Python lacks.
+- NOT RUN: Windows unit tests, including `WindowsAccountGrantTests` (real grant and label, child SID equals the granted SID, child writes only inside the snapshot). No Windows machine was available, and `ci.yml` runs the suite on `windows-latest` only for pull requests or pushes to `main`.
+- NOT RUN: PC acceptance with the workspace outside the user profile. `pc-acceptance.yml` runs a release EXE (`acceptance-latest`) and a pinned checkout from another branch, so it cannot exercise this change until a frozen EXE built from this commit is published and the workflow is pointed at it.
+- UNVERIFIED on hardware: that the grant succeeds on the runner, that the snapshot root's owner is the account, and that inherited children label without error. The probe supports the owner premise for a parent folder, not for this root.
+
+**Acceptance harness.** `pc/windows-pc-acceptance.ps1` still grants the account full control on its acceptance folder. It is kept because its `label-preflight` step labels a folder under that grant. The product fix covers ForgeOS's own steps only, so the harness grant is not yet redundant. Remove it after a Windows run shows both the preflight and the ForgeOS steps pass without it.
+
+**Remaining risks.**
+- The sandboxed test code can change permissions on, and delete, its own disposable snapshot tree. A profile-based parent already allows this.
+- The grant depends on the account owning the snapshot root. If Windows makes the Administrators group the owner, the grant is refused and the new message is shown.
+- The `lstat` check and the `icacls` call are separate steps, so a same-user path swap between them could redirect the grant. This requires code already running as the account.
+- Low integrity remains a write barrier, not a read or network sandbox.
+
+**Rollback.** Revert the commit. No data migration, schema change or stored-format change.
+
+**Next exact steps.** (1) On the PC runner, run `py -m unittest discover -s tests -v` from a checkout of this commit. (2) Run the PC acceptance with a frozen EXE built from this commit and a workspace outside the user profile. (3) Remove the harness grant only after both pass.

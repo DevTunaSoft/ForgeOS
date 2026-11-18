@@ -6,6 +6,7 @@ the child process starts.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
 import os
@@ -422,8 +423,15 @@ def _build_environment(runtime: Path) -> dict[str, str]:
     return env
 
 
-def create_test_snapshot(workspace: str | Path) -> TestRuntime:
-    """Create a fresh, guarded copy of one ForgeOS worktree."""
+def create_test_snapshot(
+        workspace: str | Path, *,
+        before_copy: Callable[[Path], object] | None = None) -> TestRuntime:
+    """Create a fresh, guarded copy of one ForgeOS worktree.
+
+    ``before_copy`` runs on the empty runtime directory before any file is
+    copied, so permissions it sets are inherited by everything copied in later.
+    A failure there removes the snapshot like any other creation failure.
+    """
     raw = Path(workspace).expanduser()
     if raw.is_symlink():
         raise ValueError("Workspace must not be a symlink")
@@ -443,6 +451,8 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
         "runtime": str(runtime),
     })
     try:
+        if before_copy is not None:
+            before_copy(runtime)
         shutil.copytree(
             source, runtime, dirs_exist_ok=True, symlinks=True,
             ignore=_ignore_runtime_metadata,
@@ -458,13 +468,30 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
 
 
 def create_windows_low_integrity_snapshot(workspace: str | Path) -> TestRuntime:
-    """Create and Low-label a disposable Windows execution snapshot."""
+    """Create and Low-label a disposable Windows execution snapshot.
+
+    The account is granted full control of the empty snapshot root before the
+    copy, so the copied tree inherits it. Without that grant, labelling fails with
+    Access denied under some Windows parents (a drive root or a runner temp folder).
+    """
     if os.name != "nt":
         raise OSError("Windows Low-integrity snapshots require Windows")
-    runtime = create_test_snapshot(workspace)
-    from .windows_containment import prepare_low_integrity_workspace
+    from .windows_containment import (
+        grant_account_full_control, prepare_low_integrity_workspace,
+    )
+    return _create_low_integrity_snapshot(
+        workspace, grant=grant_account_full_control,
+        label=prepare_low_integrity_workspace)
+
+
+def _create_low_integrity_snapshot(
+        workspace: str | Path, *,
+        grant: Callable[[Path], object],
+        label: Callable[[Path], object]) -> TestRuntime:
+    """Grant, copy and label a snapshot. Any failure removes the snapshot."""
+    runtime = create_test_snapshot(workspace, before_copy=grant)
     try:
-        prepare_low_integrity_workspace(runtime.path)
+        label(runtime.path)
         return runtime
     except BaseException:
         try:

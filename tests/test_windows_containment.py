@@ -9,7 +9,12 @@ import time
 import subprocess
 import unittest
 
-from forgeos.windows_containment import prepare_low_integrity_workspace, run_contained
+from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
+from forgeos.windows_containment import (
+    _account_grant_argv, _grant_failure_message, _parse_whoami_user_csv,
+    _real_directory, current_account_sid, grant_account_full_control,
+    prepare_low_integrity_workspace, run_contained,
+)
 
 
 @unittest.skipUnless(os.name == "nt", "Windows-only containment tests")
@@ -213,3 +218,116 @@ print('write=' + str(int(bool(ok))))
             self.root, timeout=15, restrict_ui=False)
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["ui_restrictions"], 0)
+
+
+class AccountGrantCommandTests(unittest.TestCase):
+    """Checks for the snapshot account grant that run on every platform."""
+
+    def test_grant_command_is_single_root_inheritable_and_replaces_one_sid(self):
+        argv = _account_grant_argv(
+            Path(r"D:\work\.forgeos-exec-task-1"), "S-1-5-21-1-2-3-1001")
+        self.assertTrue(argv[0].lower().endswith("icacls.exe"), argv)
+        self.assertIn("System32", argv[0])
+        self.assertEqual(argv[1], r"D:\work\.forgeos-exec-task-1")
+        self.assertEqual(argv[2:], ["/grant:r", "*S-1-5-21-1-2-3-1001:(OI)(CI)F", "/Q"])
+        self.assertNotIn("/T", argv)
+
+    def test_whoami_csv_yields_the_sid_and_rejects_malformed_output(self):
+        self.assertEqual(
+            _parse_whoami_user_csv('"DESKTOP-ABC\\alice","S-1-5-21-1-2-3-1001"\r\n'),
+            "S-1-5-21-1-2-3-1001")
+        # A header row is not a SID and is ignored.
+        self.assertEqual(
+            _parse_whoami_user_csv('"User Name","SID"\r\n'
+                                   '"DESKTOP-ABC\\alice","S-1-5-21-1-2-3-1001"\r\n'),
+            "S-1-5-21-1-2-3-1001")
+        for bad in ("", '"only-one-field"\n', '"name","not-a-sid"\n',
+                    '"a","S-1-5-21-1-2"\n"b","S-1-5-21-1-3"\n'):
+            with self.subTest(output=bad), self.assertRaises(OSError):
+                _parse_whoami_user_csv(bad)
+
+    def test_grant_failure_message_names_the_snapshot_folder_and_permission(self):
+        message = _grant_failure_message(
+            Path(r"D:\work\.forgeos-exec-task-1"), 5, "Access is denied.")
+        self.assertIn("disposable snapshot folder", message)
+        self.assertIn(r"D:\work\.forgeos-exec-task-1", message)
+        self.assertIn("permission", message)
+        self.assertIn("icacls exit 5", message)
+        self.assertIn("Access is denied.", message)
+
+    def test_real_directory_refuses_links_and_missing_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "target"
+            target.mkdir()
+            link = Path(temp) / "link"
+            try:
+                os.symlink(target, link, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symbolic links unavailable: {exc}")
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                _real_directory(link)
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                _real_directory(Path(temp) / "missing")
+            self.assertEqual(_real_directory(target), target.resolve())
+
+    @unittest.skipIf(os.name == "nt", "The refusal path applies off Windows")
+    def test_grant_and_sid_lookup_refuse_non_windows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(OSError, "only available on Windows"):
+                grant_account_full_control(temp)
+        with self.assertRaisesRegex(OSError, "only available on Windows"):
+            current_account_sid()
+
+
+@unittest.skipUnless(os.name == "nt", "Windows-only account grant tests")
+class WindowsAccountGrantTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def test_granted_sid_is_the_restricted_child_identity(self):
+        code = r"""
+import os, subprocess
+exe = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32', 'whoami.exe')
+out = subprocess.run([exe, '/user', '/fo', 'csv', '/nh'], capture_output=True, text=True).stdout
+print('whoami=' + out.strip())
+"""
+        workspace = self.root / "sid-check"
+        workspace.mkdir()
+        result = run_contained([sys.executable, "-c", code], workspace,
+                               timeout=30, low_integrity=True)
+        self.assertTrue(result["passed"], result)
+        line = next(item for item in result["output"].splitlines()
+                    if item.startswith("whoami="))
+        self.assertEqual(_parse_whoami_user_csv(line[len("whoami="):]),
+                         current_account_sid())
+
+    def test_grant_then_label_lets_low_child_write_inside_snapshot_only(self):
+        workspace = self.root / "task-1"
+        workspace.mkdir()
+        source = workspace / "app.py"
+        source.write_text("source", encoding="utf-8")
+        outside = self.root / "medium-sibling.txt"
+        runtime = create_windows_low_integrity_snapshot(workspace)
+        self.addCleanup(remove_test_snapshot, workspace)
+        code = (
+            "from pathlib import Path\n"
+            "Path('inside.txt').write_text('inside')\n"
+            f"for target in ({str(outside)!r}, {str(source)!r}):\n"
+            "    try:\n"
+            "        Path(target).write_text('escaped')\n"
+            "    except OSError as exc:\n"
+            "        print('blocked:' + type(exc).__name__)\n"
+            "    else:\n"
+            "        print('wrote:' + target)\n"
+        )
+        result = run_contained([sys.executable, "-c", code], runtime.path,
+                               timeout=30, low_integrity=True, env=runtime.env)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual((runtime.path / "inside.txt").read_text(encoding="utf-8"),
+                         "inside")
+        self.assertEqual(result["output"].count("blocked:"), 2, result)
+        self.assertNotIn("wrote:", result["output"])
+        self.assertFalse(outside.exists())
+        self.assertEqual(source.read_text(encoding="utf-8"), "source")

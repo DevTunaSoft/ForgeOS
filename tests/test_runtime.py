@@ -167,3 +167,84 @@ class TestRuntimeTests(unittest.TestCase):
                 create_test_snapshot(self.workspace)
         self.assertTrue(runtime.exists())
         self.assertEqual(marker.read_text(), "operator-owned-marker")
+
+    def test_before_copy_hook_sees_empty_runtime_before_copy(self):
+        seen = []
+
+        def record(runtime_path):
+            seen.append((runtime_path, sorted(p.name for p in runtime_path.iterdir())))
+
+        runtime = create_test_snapshot(self.workspace, before_copy=record)
+        self.addCleanup(remove_test_snapshot, self.workspace)
+        self.assertEqual(seen, [(runtime.path, [])])
+        self.assertEqual((runtime.path / "app.py").read_text(), "print('source')\n")
+
+    def test_failing_before_copy_hook_removes_snapshot_and_marker(self):
+        runtime = test_runtime._runtime_path(self.workspace.resolve())
+        marker = runtime.with_name(runtime.name + MARKER)
+
+        def deny(_runtime_path):
+            raise OSError("grant denied")
+
+        with self.assertRaisesRegex(OSError, "grant denied"):
+            create_test_snapshot(self.workspace, before_copy=deny)
+        self.assertFalse(runtime.exists())
+        self.assertFalse(marker.exists())
+        self.assertEqual((self.workspace / "app.py").read_text(), "print('source')\n")
+
+    def test_low_integrity_grant_runs_before_copy_and_label_after_copy(self):
+        events = []
+
+        def grant(runtime_path):
+            events.append(("grant", runtime_path,
+                           sorted(p.name for p in runtime_path.iterdir())))
+
+        def label(runtime_path):
+            events.append(("label", runtime_path,
+                           sorted(p.name for p in runtime_path.iterdir())))
+
+        runtime = test_runtime._create_low_integrity_snapshot(
+            self.workspace, grant=grant, label=label)
+        self.addCleanup(remove_test_snapshot, self.workspace)
+        self.assertEqual([event[0] for event in events], ["grant", "label"])
+        # Both steps name only the disposable root, never the editable workspace.
+        self.assertEqual(events[0][1], runtime.path)
+        self.assertEqual(events[1][1], runtime.path)
+        # Nothing has been copied yet, so the copied tree inherits the grant.
+        self.assertEqual(events[0][2], [])
+        self.assertIn("app.py", events[1][2])
+
+    def test_low_integrity_grant_failure_removes_snapshot_and_skips_label(self):
+        runtime = test_runtime._runtime_path(self.workspace.resolve())
+        marker = runtime.with_name(runtime.name + MARKER)
+        labelled = []
+
+        def deny(_runtime_path):
+            raise OSError("Cannot give this account full control")
+
+        with self.assertRaisesRegex(OSError, "full control"):
+            test_runtime._create_low_integrity_snapshot(
+                self.workspace, grant=deny, label=labelled.append)
+        self.assertEqual(labelled, [])
+        self.assertFalse(runtime.exists())
+        self.assertFalse(marker.exists())
+
+    def test_low_integrity_label_failure_removes_snapshot(self):
+        runtime = test_runtime._runtime_path(self.workspace.resolve())
+        marker = runtime.with_name(runtime.name + MARKER)
+
+        def fail_label(_runtime_path):
+            raise OSError("Failed to label low-integrity workspace")
+
+        with self.assertRaisesRegex(OSError, "Failed to label"):
+            test_runtime._create_low_integrity_snapshot(
+                self.workspace, grant=lambda _path: None, label=fail_label)
+        self.assertFalse(runtime.exists())
+        self.assertFalse(marker.exists())
+
+    @unittest.skipIf(os.name == "nt", "The refusal path applies off Windows")
+    def test_windows_low_integrity_snapshot_refuses_other_platforms(self):
+        runtime = test_runtime._runtime_path(self.workspace.resolve())
+        with self.assertRaisesRegex(OSError, "require Windows"):
+            test_runtime.create_windows_low_integrity_snapshot(self.workspace)
+        self.assertFalse(runtime.exists())
