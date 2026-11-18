@@ -6,8 +6,10 @@ name: Hosted job race probe
 #   pre-fix - c81a039: its parent, which returns straight after TerminateJobObject.
 # The child starts a background writer that appends "b" lines to bg.txt until the job is
 # killed. The root process exits only after the driver creates stop.txt, so the writer is
-# still running when the job is ended. The driver samples bg.txt right after the run returns,
-# then 0.05 s, 0.5 s, 2 s and 5 s later. Growth after return means a process outlived the run.
+# still running when the job is ended. The driver traces each TerminateJobObject call with
+# the time and the bg.txt size, samples bg.txt right after the run returns, and samples it
+# again 0.05 s, 0.5 s, 2 s and 5 s later. Growth after the kill returns means a process
+# outlived it; growth after the run returns means a process outlived the run.
 # Logs are public: print no personal paths.
 # Runs when this file changes on the designated branch.
 
@@ -60,6 +62,7 @@ jobs:
           import time
           from pathlib import Path
 
+          from forgeos import windows_containment as wc
           from forgeos.appcontainer import run_secure_appcontainer
           from forgeos.secure_runner import _bootstrap_environment
           from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
@@ -80,7 +83,7 @@ jobs:
           # loop ends the root process only once the driver has created stop.txt.
           command = ("start /b cmd /c for /l %i in (1,1,9999999) do @echo b^>^>bg.txt"
                      " & for /l %j in (1,1,99999999) do @if exist stop.txt exit")
-          state = {}
+          state = {"kill": []}
 
 
           def size_of(path):
@@ -88,6 +91,24 @@ jobs:
                   return path.stat().st_size
               except OSError:
                   return -1
+
+
+          # Trace each TerminateJobObject call: the time and the bg.txt size before and after.
+          real_terminate = wc.kernel32.TerminateJobObject
+
+
+          def traced_terminate(job, code):
+              state["kill"].append(("call", time.monotonic(), size_of(background)))
+              result = real_terminate(job, code)
+              state["kill"].append(("return", time.monotonic(), size_of(background)))
+              return result
+
+
+          try:
+              wc.kernel32.TerminateJobObject = traced_terminate
+              trace_installed = True
+          except Exception:
+              trace_installed = False
 
 
           def run_child():
@@ -99,11 +120,11 @@ jobs:
                   state["returncode"] = result.get("returncode")
               except Exception as exc:
                   state["error"] = repr(exc)
+              state["returned_at"] = time.monotonic()
               state["size_at_return"] = size_of(background)
-              returned = time.monotonic()
               samples = []
               for delay in (0.05, 0.5, 2.0, 5.0):
-                  time.sleep(max(0.0, returned + delay - time.monotonic()))
+                  time.sleep(max(0.0, state["returned_at"] + delay - time.monotonic()))
                   samples.append(size_of(background))
               state["samples"] = samples
 
@@ -114,18 +135,28 @@ jobs:
           while size_of(background) < 200 and time.monotonic() < deadline and worker.is_alive():
               time.sleep(0.1)
           size_before_stop = size_of(background)
+          stop_at = time.monotonic()
           stop_flag.write_text("stop", encoding="utf-8")
           worker.join(timeout=150)
 
+
+          def since_stop(t):
+              return None if t is None else round((t - stop_at) * 1000)
+
+
+          kill = state["kill"]
+          kill_return_size = next((size for name, _, size in kill if name == "return"), None)
           at_return = state.get("size_at_return", -1)
           samples = state.get("samples", [])
           print("CASE", case)
+          print("TRACE-INSTALLED", trace_installed)
           print("RUN-ERROR", state.get("error"))
           print("RETURNED-PASSED", state.get("passed"), "RETURNCODE", state.get("returncode"))
           print("BG-BYTES-BEFORE-STOP", size_before_stop)
-          print("BG-BYTES-AT-RETURN", at_return)
+          print("KILL-CALLS (name, ms after stop, bytes)", [(name, since_stop(t), size) for name, t, size in kill])
+          print("RETURN (ms after stop, bytes)", since_stop(state.get("returned_at")), at_return)
           print("BG-BYTES-AFTER-RETURN", samples)
-          print("WRITER-RUNNING-BEFORE-RETURN", size_before_stop >= 200 and at_return > size_before_stop)
+          print("WRITES-BETWEEN-KILL-AND-RETURN", kill_return_size is not None and at_return > kill_return_size)
           print("WRITE-AFTER-RETURN", any(s > at_return for s in samples))
           try:
               remove_test_snapshot(workspace)
