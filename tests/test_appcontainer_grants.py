@@ -7,7 +7,7 @@ from forgeos import appcontainer
 
 
 class RecursiveGrantLinkSafetyTests(unittest.TestCase):
-    """Recursive icacls grants pass /L, so they change a link itself, not its target."""
+    """Recursive icacls grants pass /L, so a grant stops at a link. Links are refused before any grant."""
 
     def test_read_execute_grant_passes_link_flag(self):
         with TemporaryDirectory() as tmp, patch.object(appcontainer, "_icacls") as icacls:

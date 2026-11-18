@@ -287,6 +287,8 @@ def _remove_snapshot_directory(runtime: Path, identity: _SnapshotIdentity,
     _check_snapshot_identity(
         runtime, identity, parent_info, "Execution runtime directory",
         directory=True)
+    from .windows_containment import remove_reparse_points
+    remove_reparse_points(runtime)
     shutil.rmtree(runtime, onerror=_delete_readonly)
     try:
         runtime.lstat()
@@ -459,12 +461,14 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
 
 def _refuse_links(root: Path) -> None:
     """Refuse a snapshot holding links: a recursive icacls run walks into link targets."""
-    file_attribute_reparse_point = 0x400
-    for dirpath, dirnames, filenames in os.walk(root):
+    from .windows_containment import is_reparse_point
+
+    def fail(exc):
+        raise exc
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=fail):
         for name in dirnames + filenames:
-            path = Path(dirpath, name)
-            attributes = getattr(os.lstat(path), "st_file_attributes", 0)
-            if path.is_symlink() or attributes & file_attribute_reparse_point:
+            if is_reparse_point(Path(dirpath, name)):
                 raise ValueError("Windows test snapshot must not contain links")
 
 

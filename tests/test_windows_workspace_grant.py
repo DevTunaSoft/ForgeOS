@@ -16,7 +16,7 @@ class WorkspaceGrantTests(unittest.TestCase):
     def test_grant_covers_the_tree_and_only_the_account(self):
         sid = "S-1-5-21-1111-2222-3333-1001"
         args = _owner_grant_arguments(Path("C:/work/task"), sid)
-        self.assertEqual(args[0], "icacls.exe")
+        self.assertTrue(args[0].lower().endswith("system32\\icacls.exe"), args[0])
         self.assertIn("/grant:r", args)
         self.assertIn(f"*{sid}:(OI)(CI)F", args)
         self.assertIn("/T", args)

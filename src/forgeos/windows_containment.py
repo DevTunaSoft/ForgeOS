@@ -11,6 +11,7 @@ import ctypes
 from ctypes import wintypes
 import io
 import locale
+import ntpath
 import os
 from pathlib import Path
 import subprocess
@@ -518,9 +519,52 @@ def _parse_whoami_sid(csv_output: str) -> str:
     return sid
 
 
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
+def system_exe(name: str) -> str:
+    """A System32 program by absolute path, so a file in the working directory cannot shadow it."""
+    return ntpath.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", name)
+
+
+def is_reparse_point(path: Path) -> bool:
+    """True for a symbolic link, a junction or another reparse point."""
+    return path.is_symlink() or bool(
+        getattr(os.lstat(path), "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def remove_reparse_points(root: Path) -> None:
+    """Unlink the links under root without following them, so tree operations stay inside root.
+
+    A junction is removed as a link, not walked: shutil.rmtree on Python 3.11 treats a
+    junction as a directory, so it must be gone before the tree is deleted or icacls runs.
+    Raises if a directory cannot be read, instead of skipping it.
+    """
+    def fail(exc):
+        raise exc
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=fail):
+        for name in list(dirnames):
+            path = Path(dirpath, name)
+            if is_reparse_point(path):
+                _unlink_link(path)
+                dirnames.remove(name)
+        for name in filenames:
+            path = Path(dirpath, name)
+            if is_reparse_point(path):
+                _unlink_link(path)
+
+
+def _unlink_link(path: Path) -> None:
+    try:
+        os.rmdir(path)  # directory junctions and directory symlinks
+    except OSError:
+        os.unlink(path)  # file symlinks
+
+
 def _current_account_sid() -> str:
     result = subprocess.run(
-        ["whoami.exe", "/user", "/fo", "csv", "/nh"],
+        [system_exe("whoami.exe"), "/user", "/fo", "csv", "/nh"],
         capture_output=True, text=True, timeout=30, shell=False,
         errors="replace",
     )
@@ -535,10 +579,11 @@ def _owner_grant_arguments(path: Path, sid: str) -> list[str]:
     Setting a Low integrity label needs WRITE_OWNER on the folder. On some roots the
     account owns the folder but inherits no grant of that right, so labelling fails
     with "Access is denied". An explicit full-control grant to the same account,
-    applied recursively, supplies the right. It covers only this tree. /L makes the
-    grant change a link itself, not its target.
+    applied recursively, supplies the right. It covers only this tree. /L stops the grant
+    at a link's target, but icacls still walks into the target, so links are refused
+    before the grant (see test_runtime._refuse_links).
     """
-    return ["icacls.exe", str(path), "/grant:r", f"*{sid}:(OI)(CI)F", "/T", "/C", "/L", "/Q"]
+    return [system_exe("icacls.exe"), str(path), "/grant:r", f"*{sid}:(OI)(CI)F", "/T", "/C", "/L", "/Q"]
 
 
 def prepare_low_integrity_workspace(root: str | Path):
@@ -563,7 +608,7 @@ def prepare_low_integrity_workspace(root: str | Path):
             f"Failed to grant the account full control of the disposable workspace: {detail}"
         )
     result = subprocess.run(
-        ["icacls.exe", str(path), "/setintegritylevel", "(OI)(CI)L",
+        [system_exe("icacls.exe"), str(path), "/setintegritylevel", "(OI)(CI)L",
          "/T", "/L", "/Q"],
         capture_output=True, text=True, timeout=60, shell=False,
         errors="replace",

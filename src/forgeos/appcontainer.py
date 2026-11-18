@@ -93,8 +93,9 @@ def _sid_to_string(sid) -> str:
 
 
 def _icacls(path: Path, *arguments: str) -> None:
+    from .windows_containment import system_exe
     result = subprocess.run(
-        ["icacls.exe", str(path), *arguments],
+        [system_exe("icacls.exe"), str(path), *arguments],
         capture_output=True, text=True, timeout=60, shell=False,
         errors="replace")
     if result.returncode != 0:
@@ -905,6 +906,9 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                 watched_outputs=watched)
         finally:
             cleanup_errors = []
+            # The child ran with write access to the snapshot, so it may have created
+            # junctions there. Unlink them first: the revoke below walks the tree.
+            wc.remove_reparse_points(root)
             for path, recursive in reversed(grants):
                 try:
                     _revoke_path_grant(
