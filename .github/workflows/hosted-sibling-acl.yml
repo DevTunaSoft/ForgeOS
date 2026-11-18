@@ -5,6 +5,10 @@ name: Hosted sibling ACL check
 # Logs are public: print no personal paths.
 
 on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/hosted-sibling-acl.yml"
   workflow_dispatch:
 
 permissions:
