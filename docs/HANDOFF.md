@@ -3966,3 +3966,52 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-18 — snapshot grant revocation must not follow links on Windows
+
+**Checkpoint:** `2026-11-18-snapshot-revoke-links`. **Repository / branch:** DevTunaSoft/ForgeOS, `claude/festive-albattani-a6ggji`, a draft pull request based on `main` at `5107d46`, not ready for review. **Hosted evidence:** the code under test is at `ba6b5f1` (run 44364847892); the final documentation commit is recorded in the pull request.
+
+**Starting state.** `main` at `5107d46`. Two open drafts work in the same area and are not in this branch. PR #158 (`fix/windows-labelling-outside-profile`) adds `/L` to the AppContainer grant and revoke helpers in `src/forgeos/appcontainer.py`, so a conflict is expected. PR #160 (`claude/trusting-goodall-e0qssy`) refuses links and junctions when a snapshot is created and adds `tools/windows_link_acl_probe.py`. Earlier evidence cited here is from #160's branch: runs 44351478456, 44352711913 and 44354285755.
+
+**Problem.** `run_secure_appcontainer` revoked the snapshot grant with `icacls /remove:g SID /T /Q`. Recursion follows directory symlinks, so a link a contained process created could carry the revoke to an object outside the snapshot. Run 44352711913 showed the SID removed from an outside directory and its child, and an outside file rewritten. Adding `/L` to the recursive form did not confine the effect.
+
+**Decision.** Revoke object by object: list the snapshot without entering any reparse point, then run `icacls <object> /remove:g SID /L /Q` for each object, never with `/T`. Rejected: (c) `/L` with `/T`, because it still rewrites outside children; (b) refusing the revoke when a reparse point is found, because that leaves the in-tree grant in place and fails the run without removing it.
+
+**Changes.**
+
+- `src/forgeos/appcontainer.py`: `_is_reparse_point`, `_snapshot_objects`, `_revoke_snapshot_grant` (the root must be a real directory, every object is attempted, and failures are raised together), `_revoke_secure_grants`, and `_drain_job`, which terminates the Job Object and waits up to 10 seconds for it to be empty before the walk. The grant, the non-recursive revokes and the probe path are unchanged.
+- `tests/test_appcontainer_revoke.py`: Linux tests for the listing, the command shape (one object per call, `/L`, never `/T`), root refusal, failure aggregation and cleanup orchestration. Mutation check: re-adding `/T`, and making the walker follow links, each fail these tests. Windows tests create junctions and directory symlinks after the grant and check that outside objects keep their ACLs and in-tree objects lose the SID.
+- `tools/windows_snapshot_revoke_probe.py`: the hosted probe whose results are in ARCHITECTURE.
+- `.github/workflows/windows-exe.yml`: a temporary, manual-only job `revoke-acceptance-temporary`. **Remove it before the pull request is marked ready.**
+
+**Hosted failures found and fixed on this branch.** Each is recorded so it is not repeated.
+
+1. Naming several objects in one `icacls` call fails with `Invalid parameter`. The first hosted run (44358858841, `c466c94`) failed the frozen secure smoke test at cleanup. Fixed by one object per call (`6aa7af2`).
+2. A test identified directories by `st_ino`, which `DirEntry.stat()` does not fill on Windows. Run 44359415106 failed one unit test on both Python versions. Fixed in the test (`15fc94c`).
+3. The probe ran its AppContainer runner from `System32`, so revoking that parent failed with `Access is denied`. Fixed by copying `cmd.exe` into a probe-owned directory (`15fc94c`).
+4. The probe's AppContainer child lacked `LOCALAPPDATA`, which AppContainer process creation resolves. Run 44360708046 failed with `ERROR_ENVVAR_NOT_FOUND` (203). Fixed (`10c89e3`).
+
+**Verification.**
+
+- Linux, full suite on the current tree: 796 tests with 10 errors. Clean `main` has 783 tests with the same 10 errors, which come from this container having no `tkinter` and from the managed-llama process test. The failure sets are identical. Windows-only tests are skipped on Linux.
+- Hosted `windows-latest`, run 44364847892 (`ba6b5f1`): the unit suites passed on Python 3.12 (829 tests, 10 skipped) and on Python 3.10; the probe passed on both; `package-windows` passed, including the frozen secure AppContainer boundary smoke test.
+- Probe results are in ARCHITECTURE. The sandboxed child created a junction inside its snapshot. It was refused a junction to an outside target with `Access is denied.`, which `mklink` reports when it cannot read the target.
+
+**Remaining risks.**
+
+1. **Grant-side parent propagation (blocks use on real workspaces).** The non-recursive `RX` grant on the snapshot's parent directory, and on the runner's parent, rewrote the children of that directory, including objects outside the snapshot (run 44364847892, both Python versions). Their explicit ACEs became inherited copies with the same rights, and the revoke did not restore them. No SID reached those children. In production the snapshot's parent is the workspace's parent (`_runtime_path`), so this reaches sibling folders. It is a grant-side effect and is not fixed here.
+2. **Junction creation by the sandbox.** A contained process can create junctions inside its snapshot. The outside-target refusal comes from `mklink` reading the target, not from a control on junction creation, so the revoke's no-follow property is the control that matters. That property is verified only on the probe's fixtures.
+3. **Probe path.** `probe_appcontainer_python_runtime` still grants and revokes recursively with `/T` on Python runtime trees, and hosted secure acceptance does not cover it.
+4. **Snapshot creation on `main`.** Links are copied with `symlinks=True` and junction contents are materialised, so a recursive grant can reach an outside target that existed before the grant. PR #160 and PR #158 address this and are not in this branch.
+5. **Cost.** The revoke runs one `icacls` process per object, about 8 ms per object on hosted runners. A very large worktree makes cleanup slow, and cleanup has no separate timeout.
+6. **Job drain.** The wait is bounded at 10 seconds. A contained process that survives termination fails the run closed; this has not been observed.
+7. **Not tested.** Hard links, and any Windows edition or hardware other than hosted `windows-latest`. The hosted evidence is not physical Windows acceptance.
+
+**Rollback.** Revert the commits on this branch. No data, schema or stored-format change.
+
+**Next actions.**
+
+1. Fix grant-side parent propagation before the AppContainer path is used on real workspaces. Options: stop writing non-recursive DACLs to directories the user owns, for example by running snapshots under a ForgeOS-owned container directory; or test `SetNamedSecurityInfo` without automatic inheritance on the hosted runner.
+2. Order this change with #160 (refusal at snapshot creation) and #158 (`/L` on the grant) as one series, then re-run this probe on the combined branch.
+3. Before the pull request is marked ready, remove the `revoke-acceptance-temporary` job. Decide whether the probe stays as evidence tooling.
+4. Decide the probe path's revoke policy, apply the object-by-object revoke there if appropriate, and add hosted coverage.

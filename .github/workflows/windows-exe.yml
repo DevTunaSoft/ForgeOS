@@ -108,3 +108,35 @@ jobs:
           path: dist/ForgeOS.exe
           if-no-files-found: error
           retention-days: 14
+  # TEMPORARY verification job for the snapshot revoke change. It runs only on
+  # manual dispatch, on hosted Windows, and must be removed before the pull
+  # request is marked ready for review.
+  revoke-acceptance-temporary:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile and run the Windows unit suite
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m compileall -q src tests
+          python -m unittest discover -s tests -v
+      - name: Probe the snapshot grant cleanup path
+        if: always()
+        run: python tools/windows_snapshot_revoke_probe.py --report snapshot-revoke-probe-${{ matrix.python-version }}.json
+      - name: Upload probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-revoke-probe-${{ matrix.python-version }}
+          path: snapshot-revoke-probe-${{ matrix.python-version }}.json
+          if-no-files-found: warn
