@@ -1,0 +1,31 @@
+name: Hosted sibling ACL check
+
+# Does a secure run change the ACLs of a folder beside the workspace on a hosted runner?
+# Runs tests/test_secure_run_sibling_acls.py on windows-latest. Manual dispatch only.
+# Logs are public: print no personal paths.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sibling-acl:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the branch under test
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run the sibling-ACL test on a hosted runner
+        shell: powershell
+        run: |
+          $env:PYTHONPATH = Join-Path $PWD 'src'
+          python -m unittest -v tests.test_secure_run_sibling_acls
+          if ($LASTEXITCODE -ne 0) { throw "sibling ACL test failed with exit code $LASTEXITCODE" }
