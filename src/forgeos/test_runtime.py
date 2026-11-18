@@ -364,6 +364,45 @@ def _ignore_runtime_metadata(_directory, names):
     return ignored
 
 
+def _is_link_path(path: Path) -> bool:
+    """Return True when path itself is a symlink or junction; never follows it."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return _is_reparse_point(info)
+
+
+def _refuse_links_then_ignore(source: Path):
+    """Return a copytree ignore callback that refuses links and junctions.
+
+    copytree recreates a symbolic link inside the snapshot, and the snapshot is
+    then granted to the AppContainer child. A directory link there lets the
+    child write to and read from its target outside the workspace. copytree
+    also recurses into a junction and copies the target's contents, which
+    exposes that outside data to the child. Refusing before any entry of a
+    directory is copied keeps every link out of the granted tree. Names that
+    the snapshot never copies are skipped first, so ignored metadata cannot
+    block a run.
+    """
+    def ignore(directory, names):
+        ignored = _ignore_runtime_metadata(directory, names)
+        for name in names:
+            if name in ignored:
+                continue
+            path = os.path.join(directory, name)
+            if _is_reparse_point(os.lstat(path)):
+                raise ValueError(
+                    "Workspace contains a symlink or junction, which an "
+                    "execution snapshot refuses: "
+                    f"{os.path.relpath(path, source)}")
+        return ignored
+
+    return ignore
+
+
 def _build_environment(runtime: Path) -> dict[str, str]:
     writable = runtime / RUNTIME_DIR
     directories = {
@@ -425,8 +464,8 @@ def _build_environment(runtime: Path) -> dict[str, str]:
 def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     """Create a fresh, guarded copy of one ForgeOS worktree."""
     raw = Path(workspace).expanduser()
-    if raw.is_symlink():
-        raise ValueError("Workspace must not be a symlink")
+    if raw.is_symlink() or _is_link_path(raw):
+        raise ValueError("Workspace must not be a symlink or junction")
     source = raw.resolve(strict=True)
     if not source.is_dir():
         raise ValueError("Workspace must be a real directory")
@@ -445,7 +484,7 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     try:
         shutil.copytree(
             source, runtime, dirs_exist_ok=True, symlinks=True,
-            ignore=_ignore_runtime_metadata,
+            ignore=_refuse_links_then_ignore(source),
         )
         env = _build_environment(runtime)
         return TestRuntime(path=runtime, env=env)

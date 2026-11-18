@@ -124,6 +124,8 @@ jobs:
             sha: 5107d467db96e7512f5d7126af745fb9c5c1bcdf
           - label: pr158-head-9581162
             sha: 9581162fb158e0c54b2e9e6ee510f811de3fd997
+          - label: candidate-head
+            sha: ${{ github.sha }}
     steps:
       - name: Checkout probe tools (dispatched branch)
         uses: actions/checkout@v4
@@ -149,3 +151,24 @@ jobs:
           path: ${{ runner.temp }}/link-acl-probe.json
           if-no-files-found: warn
           retention-days: 14
+  # Temporary evidence job: the full Windows unittest suite on the dispatched
+  # commit, matching the Foundation gate's Windows leg. Dispatch only.
+  dispatch-unit-tests:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Python compilation
+        run: python -m compileall -q src tests
+      - name: Full Windows unittest suite (dispatched commit)
+        run: python -m unittest discover -s tests -v

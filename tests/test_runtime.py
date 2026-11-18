@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import tempfile
 import os
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -167,3 +168,75 @@ class TestRuntimeTests(unittest.TestCase):
                 create_test_snapshot(self.workspace)
         self.assertTrue(runtime.exists())
         self.assertEqual(marker.read_text(), "operator-owned-marker")
+
+    def _link_or_skip(self, link: Path, target: Path, *, directory: bool) -> None:
+        try:
+            os.symlink(target, link, target_is_directory=directory)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symbolic links are unavailable on this host")
+
+    def _junction_or_skip(self, link: Path, target: Path) -> None:
+        made = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True, text=True)
+        if made.returncode != 0 or not os.path.lexists(link):
+            self.skipTest("Junction creation is unavailable on this host")
+        # Remove the link object only. Registered after TemporaryDirectory
+        # cleanup, so it runs first (LIFO), before any recursive removal.
+        self.addCleanup(os.rmdir, link)
+
+    def test_snapshot_refuses_file_symlink_before_copying(self):
+        outside = self.root / "outside-secret.txt"
+        outside.write_text("do-not-copy")
+        self._link_or_skip(self.workspace / "linked.txt", outside, directory=False)
+        with self.assertRaisesRegex(ValueError, "symlink or junction"):
+            create_test_snapshot(self.workspace)
+        self.assertFalse((self.root / ".forgeos-exec-task-7").exists())
+        self.assertEqual(outside.read_text(), "do-not-copy")
+
+    def test_snapshot_refuses_directory_symlink_to_outside_folder(self):
+        outside = self.root / "outside-dir"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("do-not-copy")
+        self._link_or_skip(self.workspace / "linked-dir", outside, directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink or junction"):
+            create_test_snapshot(self.workspace)
+        self.assertFalse((self.root / ".forgeos-exec-task-7").exists())
+        self.assertEqual((outside / "secret.txt").read_text(), "do-not-copy")
+
+    @unittest.skipUnless(os.name == "nt", "Junctions are a Windows reparse point")
+    def test_snapshot_refuses_junction_before_copying_its_target(self):
+        outside = self.root / "outside-junction-target"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("do-not-copy")
+        self._junction_or_skip(self.workspace / "junction", outside)
+        with self.assertRaisesRegex(ValueError, "symlink or junction"):
+            create_test_snapshot(self.workspace)
+        self.assertFalse((self.root / ".forgeos-exec-task-7").exists())
+        self.assertEqual((outside / "secret.txt").read_text(), "do-not-copy")
+
+    @unittest.skipUnless(os.name == "nt", "Junctions are a Windows reparse point")
+    def test_snapshot_refuses_junction_as_workspace_root(self):
+        alias = self.root / "task-junction"
+        self._junction_or_skip(alias, self.workspace)
+        with self.assertRaisesRegex(ValueError, "symlink or junction"):
+            create_test_snapshot(alias)
+        self.assertFalse((self.root / ".forgeos-exec-task-7").exists())
+
+    def test_snapshot_refuses_symlinked_workspace_root(self):
+        alias = self.root / "task-alias"
+        self._link_or_skip(alias, self.workspace, directory=True)
+        with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+            create_test_snapshot(alias)
+        self.assertFalse((self.root / ".forgeos-exec-task-7").exists())
+
+    def test_links_under_excluded_names_do_not_block_snapshot(self):
+        outside = self.root / "outside.txt"
+        outside.write_text("do-not-copy")
+        self._link_or_skip(self.workspace / ".forgeos" / "linked", outside, directory=False)
+        self._link_or_skip(self.workspace / ".ENV.linked", outside, directory=False)
+        runtime = create_test_snapshot(self.workspace)
+        self.addCleanup(remove_test_snapshot, self.workspace)
+        self.assertFalse((runtime.path / ".forgeos").exists())
+        self.assertFalse((runtime.path / ".ENV.linked").exists())
+        self.assertEqual((runtime.path / "app.py").read_text(), "print('source')\n")

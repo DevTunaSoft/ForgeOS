@@ -60,6 +60,17 @@ def _has_ace(text: str, sid: str) -> bool:
     return f"{sid}:(" in text
 
 
+def _acl_diff(before: str, after: str) -> list[str]:
+    """Return the changed ACL lines, so the report shows what actually moved."""
+    if before == after:
+        return []
+    lines = [line.strip() for line in before.splitlines() if line.strip()]
+    after_lines = [line.strip() for line in after.splitlines() if line.strip()]
+    removed = [line for line in lines if line not in after_lines]
+    added = [line for line in after_lines if line not in lines]
+    return [f"- {line}" for line in removed][:8] + [f"+ {line}" for line in added][:8]
+
+
 def _read_text_or_none(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8")
@@ -298,9 +309,19 @@ def _snapshot_probe(scratch: Path) -> dict:
             "junction_copy_secret_read": _contains(
                 runtime.path / "junction-read.txt", "D2-SECRET"),
         }
+        dir_acl_after = _acl(dir_decoy)
+        file_acl_after = _acl(file_decoy)
         report["decoy_acl_unchanged_after_run"] = {
-            "dir": _acl(dir_decoy) == dir_acl_before,
-            "file": _acl(file_decoy) == file_acl_before,
+            "dir": dir_acl_after == dir_acl_before,
+            "file": file_acl_after == file_acl_before,
+        }
+        report["decoy_acl_diff_after_run"] = {
+            "dir": _acl_diff(dir_acl_before, dir_acl_after),
+            "file": _acl_diff(file_acl_before, file_acl_after),
+        }
+        report["appcontainer_sid_ace_left_on_decoys"] = {
+            "dir": "S-1-15-2-" in dir_acl_after,
+            "file": "S-1-15-2-" in file_acl_after,
         }
     except Exception as exc:
         report["error"] = f"{type(exc).__name__}: {exc}"
