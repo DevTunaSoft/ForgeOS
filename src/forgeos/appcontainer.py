@@ -895,10 +895,11 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
             grants.append((path, recursive))
 
         try:
-            grant(root.parent, "RX")
+            # The snapshot's parent folder is deliberately not granted. A non-recursive
+            # grant on a user's project folder rewrites the ACEs of that folder's
+            # children, so unrelated projects beside the workspace would change.
             grant(root, "M", recursive=True)
-            if runner.parent != root.parent:
-                grant(runner.parent, "RX")
+            grant(runner.parent, "RX")
             grant(runner, "RX")
             result = _run_appcontainer_process(
                 sid, argv, cwd=root, env=env, timeout=timeout,
