@@ -93,9 +93,8 @@ def _sid_to_string(sid) -> str:
 
 
 def _icacls(path: Path, *arguments: str) -> None:
-    from .windows_containment import system_exe
     result = subprocess.run(
-        [system_exe("icacls.exe"), str(path), *arguments],
+        ["icacls.exe", str(path), *arguments],
         capture_output=True, text=True, timeout=60, shell=False,
         errors="replace")
     if result.returncode != 0:
@@ -106,7 +105,7 @@ def _icacls(path: Path, *arguments: str) -> None:
 def _grant_path_read_execute(path: Path, sid_string: str) -> None:
     if path.is_dir():
         _icacls(
-            path, "/grant", f"*{sid_string}:(OI)(CI)(RX)", "/T", "/L", "/Q")
+            path, "/grant", f"*{sid_string}:(OI)(CI)(RX)", "/T", "/Q")
     else:
         _icacls(path, "/grant", f"*{sid_string}:(RX)", "/Q")
 
@@ -114,7 +113,7 @@ def _grant_path_read_execute(path: Path, sid_string: str) -> None:
 def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -> None:
     arguments = ["/remove:g", f"*{sid_string}"]
     if recursive and path.is_dir():
-        arguments.extend(["/T", "/L"])
+        arguments.append("/T")
     arguments.append("/Q")
     _icacls(path, *arguments)
 
@@ -154,7 +153,7 @@ def _grant_probe_access(root: Path, allowed: Path, sid_string: str) -> None:
     # child directory gets an inheritable modify ACE and Low mandatory label.
     _icacls(root, "/grant", f"*{sid_string}:(RX)", "/Q")
     _icacls(
-        allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/L", "/Q")
+        allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/Q")
     wc.prepare_low_integrity_workspace(allowed)
 
 
@@ -783,7 +782,6 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
             if not wc.kernel32.TerminateJobObject(job, 124):
                 raise wc._win_error("TerminateJobObject(Secure AppContainer)")
             wc.kernel32.WaitForSingleObject(process, 5000)
-            wc.wait_for_job_empty(job)
             raise subprocess.TimeoutExpired(list(argv), timeout)
         if status == wc.WAIT_FAILED:
             raise wc._win_error("WaitForSingleObject(Secure AppContainer)")
@@ -791,10 +789,6 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
             raise OSError(
                 f"Unexpected secure AppContainer wait status: {status}")
 
-        # The main process has exited, but a child it started may still run in the job.
-        if not wc.kernel32.TerminateJobObject(job, 0):
-            raise wc._win_error("TerminateJobObject(Secure AppContainer cleanup)")
-        wc.wait_for_job_empty(job)
         code = wintypes.DWORD()
         if not wc.kernel32.GetExitCodeProcess(
                 process, ctypes.byref(code)):
@@ -850,12 +844,12 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
     if os.name != "nt":
         raise OSError("Secure AppContainer execution is Windows-only")
     root = Path(cwd).expanduser()
-    if wc.is_reparse_point(root):
-        raise ValueError("Secure execution snapshot must not be a link")
+    if root.is_symlink():
+        raise ValueError("Secure execution snapshot must not be a symlink")
     root = root.resolve(strict=True)
     runner = Path(executable).expanduser()
-    if wc.is_reparse_point(runner):
-        raise ValueError("Secure runner executable must not be a link")
+    if runner.is_symlink():
+        raise ValueError("Secure runner executable must not be a symlink")
     runner = runner.resolve(strict=True)
     if not root.is_dir() or not runner.is_file():
         raise ValueError("Secure execution paths are invalid")
@@ -894,7 +888,7 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                 _icacls(
                     path, "/grant",
                     f"*{sid_string}:(OI)(CI)({permission})",
-                    "/T", "/L", "/Q")
+                    "/T", "/Q")
             else:
                 _icacls(
                     path, "/grant", f"*{sid_string}:({permission})", "/Q")
@@ -911,19 +905,7 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                 watched_outputs=watched)
         finally:
             cleanup_errors = []
-            # The child ran with write access to the snapshot, so it may have created
-            # junctions there. Unlink them first: the recursive revoke walks the tree.
-            links_removed = True
-            try:
-                wc.remove_reparse_points(root)
-            except OSError as exc:
-                links_removed = False
-                cleanup_errors.append(str(exc))
             for path, recursive in reversed(grants):
-                if recursive and not links_removed:
-                    # A recursive revoke could walk a surviving link. The snapshot is
-                    # deleted next, so its ACEs go with it; grants outside it still revoke.
-                    continue
                 try:
                     _revoke_path_grant(
                         path, sid_string, recursive=recursive)
