@@ -7,6 +7,7 @@ the child process starts.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,8 +27,34 @@ class TestRuntime:
     env: dict[str, str]
 
 
-def _runtime_path(workspace: Path) -> Path:
-    return workspace.parent / f".forgeos-exec-{workspace.name}"
+def _runtime_path(workspace: Path, runtime_root: Path | None = None) -> Path:
+    if runtime_root is None:
+        return workspace.parent / f".forgeos-exec-{workspace.name}"
+    # Snapshots that share one folder need names that cannot collide, so the full
+    # workspace path is hashed into the name.
+    digest = hashlib.sha256(
+        str(workspace).casefold().encode("utf-8")).hexdigest()[:16]
+    return runtime_root / f".forgeos-exec-{workspace.name}-{digest}"
+
+
+def secure_runtime_root() -> Path:
+    """Return the ForgeOS-owned folder that holds frozen secure snapshots.
+
+    The AppContainer runner grants read and execute on the snapshot's parent folder.
+    Keeping the snapshots here, rather than beside the user's workspace, means that
+    grant never rewrites a user's project folder.
+    """
+    if os.name != "nt":
+        raise OSError("The secure snapshot root is available only on Windows")
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        raise OSError("LOCALAPPDATA is not set")
+    root = Path(local_app_data) / "ForgeOS" / "secure-runs"
+    root.mkdir(parents=True, exist_ok=True)
+    info = root.lstat()
+    if not stat.S_ISDIR(info.st_mode) or _is_reparse_point(info):
+        raise OSError("The secure snapshot root must be a real directory")
+    return root.resolve(strict=True)
 
 
 def _delete_readonly(func, path, _exc):
@@ -304,9 +331,10 @@ def _remove_snapshot_directory(runtime: Path, identity: _SnapshotIdentity,
             f"Execution runtime parent changed during cleanup: {runtime.parent}")
 
 
-def remove_test_snapshot(workspace: str | Path) -> bool:
+def remove_test_snapshot(
+        workspace: str | Path, *, runtime_root: Path | None = None) -> bool:
     source = Path(workspace).expanduser().resolve(strict=True)
-    runtime = _runtime_path(source)
+    runtime = _runtime_path(source, runtime_root)
     marker = _marker_path(runtime)
     parent_info = _directory_info(runtime.parent, "Execution runtime parent")
     runtime_info = _directory_info(
@@ -422,7 +450,8 @@ def _build_environment(runtime: Path) -> dict[str, str]:
     return env
 
 
-def create_test_snapshot(workspace: str | Path) -> TestRuntime:
+def create_test_snapshot(
+        workspace: str | Path, *, runtime_root: Path | None = None) -> TestRuntime:
     """Create a fresh, guarded copy of one ForgeOS worktree."""
     raw = Path(workspace).expanduser()
     if raw.is_symlink():
@@ -430,12 +459,14 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
     source = raw.resolve(strict=True)
     if not source.is_dir():
         raise ValueError("Workspace must be a real directory")
-    runtime = _runtime_path(source)
+    if runtime_root is not None and not runtime_root.is_dir():
+        raise ValueError("Execution runtime root must be an existing directory")
+    runtime = _runtime_path(source, runtime_root)
     if runtime == source or runtime.is_relative_to(source):
         raise ValueError("Execution runtime must be outside the editable workspace")
     marker = _marker_path(runtime)
     if runtime.exists() or marker.exists():
-        remove_test_snapshot(source)
+        remove_test_snapshot(source, runtime_root=runtime_root)
     runtime.mkdir(parents=False)
     _write_snapshot_marker(marker, {
         "version": VERSION,
@@ -451,24 +482,25 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
         return TestRuntime(path=runtime, env=env)
     except BaseException:
         try:
-            remove_test_snapshot(source)
+            remove_test_snapshot(source, runtime_root=runtime_root)
         except Exception:
             pass
         raise
 
 
-def create_windows_low_integrity_snapshot(workspace: str | Path) -> TestRuntime:
+def create_windows_low_integrity_snapshot(
+        workspace: str | Path, *, runtime_root: Path | None = None) -> TestRuntime:
     """Create and Low-label a disposable Windows execution snapshot."""
     if os.name != "nt":
         raise OSError("Windows Low-integrity snapshots require Windows")
-    runtime = create_test_snapshot(workspace)
+    runtime = create_test_snapshot(workspace, runtime_root=runtime_root)
     from .windows_containment import prepare_low_integrity_workspace
     try:
         prepare_low_integrity_workspace(runtime.path)
         return runtime
     except BaseException:
         try:
-            remove_test_snapshot(workspace)
+            remove_test_snapshot(workspace, runtime_root=runtime_root)
         except Exception:
             pass
         raise

@@ -60,14 +60,17 @@ class SecureRunSiblingAclTests(unittest.TestCase):
         self._icacls(projects, "/grant", f"{users}:(OI)(CI)(RX)")
         self._icacls(sibling, "/grant", f"{users}:(OI)(CI)(RX)")
         before = (self._acl(sibling), self._acl(sibling / "notes.txt"))
-        runtime = create_windows_low_integrity_snapshot(workspace)
+        exec_root = self.tmp / "secure-runs"
+        exec_root.mkdir()
+        runtime = create_windows_low_integrity_snapshot(
+            workspace, runtime_root=exec_root)
         try:
             result = run_secure_appcontainer(
                 [cmd, "/c", "exit 0"], runtime.path,
                 _bootstrap_environment(runtime), executable=cmd, timeout=60)
             self.assertTrue(result["passed"])
         finally:
-            remove_test_snapshot(workspace)
+            remove_test_snapshot(workspace, runtime_root=exec_root)
         after = (self._acl(sibling), self._acl(sibling / "notes.txt"))
         self.assertEqual(before, after)
 
@@ -97,7 +100,10 @@ class SecureRunSiblingAclTests(unittest.TestCase):
             calls.append((Path(path), arguments))
             return original_icacls(path, *arguments)
 
-        runtime = create_windows_low_integrity_snapshot(workspace)
+        exec_root = self.tmp / "secure-runs"
+        exec_root.mkdir()
+        runtime = create_windows_low_integrity_snapshot(
+            workspace, runtime_root=exec_root)
         appcontainer._icacls = recording_icacls
         try:
             result = run_secure_appcontainer(
@@ -106,7 +112,7 @@ class SecureRunSiblingAclTests(unittest.TestCase):
             self.assertTrue(result["passed"])
         finally:
             appcontainer._icacls = original_icacls
-            remove_test_snapshot(workspace)
+            remove_test_snapshot(workspace, runtime_root=exec_root)
         granted = {path.resolve() for path, arguments in calls
                    if "/grant" in arguments}
         self.assertNotIn(projects.resolve(), granted)

@@ -170,10 +170,16 @@ def _run_workspace_tests(workspace: Path, preset: str) -> dict:
         return run_test(str(workspace), preset)
     from .test_runtime import (
         create_windows_low_integrity_snapshot, remove_test_snapshot,
+        secure_runtime_root,
     )
-    runtime = create_windows_low_integrity_snapshot(workspace)
+    frozen = getattr(sys, "frozen", False)
+    # Frozen secure snapshots live in a ForgeOS-owned folder, so the AppContainer grant
+    # never touches the user's project folder. Source-mode snapshots stay beside it.
+    runtime_root = secure_runtime_root() if frozen else None
+    runtime = create_windows_low_integrity_snapshot(
+        workspace, runtime_root=runtime_root)
     try:
-        if getattr(sys, "frozen", False):
+        if frozen:
             from .secure_runner import run_secure_windows_test
             result = run_secure_windows_test(runtime, preset)
             from .diagnostics import optimize_test_result
@@ -187,7 +193,7 @@ def _run_workspace_tests(workspace: Path, preset: str) -> dict:
         return run_test(
             str(runtime.path), preset, low_integrity=True, env=runtime.env)
     finally:
-        remove_test_snapshot(workspace)
+        remove_test_snapshot(workspace, runtime_root=runtime_root)
 
 
 def _execute_task(

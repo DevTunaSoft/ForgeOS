@@ -8,7 +8,10 @@ import tempfile
 import traceback
 
 from .secure_runner import run_secure_windows_test
-from .test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
+from .test_runtime import (
+    create_windows_low_integrity_snapshot, remove_test_snapshot,
+    secure_runtime_root,
+)
 
 
 def _write_report(message: str) -> None:
@@ -68,7 +71,9 @@ def run_secure_smoke() -> int:
                 "            socket.create_connection(('127.0.0.1', PORT), timeout=1)\n",
                 encoding="utf-8",
             )
-            runtime = create_windows_low_integrity_snapshot(workspace)
+            secure_root = secure_runtime_root()
+            runtime = create_windows_low_integrity_snapshot(
+                workspace, runtime_root=secure_root)
             try:
                 results = [
                     ("unittest", run_secure_windows_test(
@@ -77,7 +82,7 @@ def run_secure_smoke() -> int:
                         runtime, "python-pytest", timeout=45)),
                 ]
             finally:
-                remove_test_snapshot(workspace)
+                remove_test_snapshot(workspace, runtime_root=secure_root)
             for label, result in results:
                 if not result.get("passed"):
                     _write_report(

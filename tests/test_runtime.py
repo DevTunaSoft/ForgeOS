@@ -167,3 +167,44 @@ class TestRuntimeTests(unittest.TestCase):
                 create_test_snapshot(self.workspace)
         self.assertTrue(runtime.exists())
         self.assertEqual(marker.read_text(), "operator-owned-marker")
+
+
+class SecureRuntimeRootTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.exec_root = self.root / "secure-runs"
+        self.exec_root.mkdir()
+
+    def _workspace(self, *parts):
+        path = self.root.joinpath(*parts)
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "app.py").write_text("print('source')\n")
+        return path
+
+    def test_snapshot_goes_under_runtime_root_not_beside_workspace(self):
+        workspace = self._workspace("projects", "ForgeOS")
+        runtime = create_test_snapshot(workspace, runtime_root=self.exec_root)
+        self.addCleanup(remove_test_snapshot, workspace, runtime_root=self.exec_root)
+        self.assertEqual(runtime.path.parent, self.exec_root)
+        self.assertFalse((workspace.parent / ".forgeos-exec-ForgeOS").exists())
+        self.assertEqual((runtime.path / "app.py").read_text(), "print('source')\n")
+
+    def test_same_named_workspaces_get_distinct_runtimes(self):
+        first = self._workspace("a", "ForgeOS")
+        second = self._workspace("b", "ForgeOS")
+        self.assertNotEqual(
+            test_runtime._runtime_path(first, self.exec_root),
+            test_runtime._runtime_path(second, self.exec_root))
+
+    def test_remove_uses_the_same_runtime_root(self):
+        workspace = self._workspace("projects", "ForgeOS")
+        runtime = create_test_snapshot(workspace, runtime_root=self.exec_root)
+        self.assertTrue(remove_test_snapshot(workspace, runtime_root=self.exec_root))
+        self.assertFalse(runtime.path.exists())
+
+    def test_missing_runtime_root_is_refused(self):
+        workspace = self._workspace("projects", "ForgeOS")
+        with self.assertRaises(ValueError):
+            create_test_snapshot(workspace, runtime_root=self.root / "absent")
