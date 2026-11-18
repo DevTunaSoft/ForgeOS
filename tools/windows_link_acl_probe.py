@@ -256,9 +256,16 @@ def _snapshot_probe(scratch: Path) -> dict:
         report["junction_copy_contains_d2_secret"] = _contains(
             runtime.path / "junction" / "d2-secret.txt", "D2-SECRET")
 
-        cmd = Path(os.environ.get("ComSpec") or (
+        # Run a copy of cmd.exe from a scratch folder. ForgeOS grants RX on the
+        # runner's parent folder, which must not be a system folder such as
+        # System32: the runner account cannot change that ACL.
+        system_cmd = Path(os.environ.get("ComSpec") or (
             Path(os.environ.get("SystemRoot", r"C:\Windows"))
             / "System32" / "cmd.exe"))
+        runner_dir = scratch / "runner"
+        runner_dir.mkdir()
+        cmd = runner_dir / "cmd.exe"
+        shutil.copy2(system_cmd, cmd)
         # No spaces: the whole command is one argv element, read by cmd.exe.
         script = "&".join([
             "echo control>control.txt",
@@ -342,6 +349,22 @@ def _summarize(report: dict) -> dict:
     }
 
 
+def _table_line(case: dict) -> str:
+    fields = [
+        case.get("name", "?"),
+        f"exit={case.get('icacls_exit', '-')}",
+        f"target_changed={case.get('target_changed', '-')}",
+        f"child_changed={case.get('outside_child_changed', '-')}",
+        f"real_child={case.get('real_child_granted', '-')}",
+        f"link_created={case.get('link_created', '-')}",
+    ]
+    if case.get("error"):
+        fields.append(f"error={str(case['error'])[:160]}")
+    if case.get("skipped"):
+        fields.append(f"skipped={str(case['skipped'])[:160]}")
+    return " | ".join(str(field) for field in fields)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -385,6 +408,14 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(scratch, ignore_errors=True)
 
     text = json.dumps(report, indent=2, sort_keys=True)
+    print("FORGEOS_LINK_ACL_TABLE")
+    for case in report.get("icacls_matrix", []):
+        print(_table_line(case))
+    summary = report.get("summary", {})
+    print("SNAPSHOT_COPY_KINDS " + json.dumps(summary.get("snapshot_copy_kinds")))
+    print("APPCONTAINER_OUTCOME " + json.dumps(summary.get("appcontainer_outcome")))
+    print("PROBE_ERROR " + json.dumps(report.get("probe_error")
+          or report.get("snapshot", {}).get("error")))
     print("FORGEOS_LINK_ACL_PROBE_BEGIN")
     print(text)
     print("FORGEOS_LINK_ACL_PROBE_END")
