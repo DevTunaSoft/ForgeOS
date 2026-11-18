@@ -535,9 +535,10 @@ def _owner_grant_arguments(path: Path, sid: str) -> list[str]:
     Setting a Low integrity label needs WRITE_OWNER on the folder. On some roots the
     account owns the folder but inherits no grant of that right, so labelling fails
     with "Access is denied". An explicit full-control grant to the same account,
-    applied recursively, supplies the right. It covers only this tree.
+    applied recursively, supplies the right. It covers only this tree; /L makes the
+    grant change a link itself, so a link inside the tree cannot carry it outside.
     """
-    return ["icacls.exe", str(path), "/grant:r", f"*{sid}:(OI)(CI)F", "/T", "/C", "/Q"]
+    return ["icacls.exe", str(path), "/grant:r", f"*{sid}:(OI)(CI)F", "/T", "/C", "/L", "/Q"]
 
 
 def prepare_low_integrity_workspace(root: str | Path):

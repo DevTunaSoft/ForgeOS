@@ -3966,3 +3966,13 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-18 — account grant on Windows snapshots cannot follow links (PR #158)
+
+- **Problem found in review.** `prepare_low_integrity_workspace` granted the current account full control with `icacls /grant:r ... /T` and no `/L`. `icacls` acts on link targets unless `/L` is given, so a link copied into the snapshot could carry the grant to a file outside it. The label call already passed `/L`.
+- **Change.** The grant now passes `/L` (`src/forgeos/windows_containment.py`, `_owner_grant_arguments`). `tests/test_windows_workspace_grant.py` asserts it.
+- **Security review result (code reading; not yet run on Windows).** In the source-mode runner the contained child keeps the account SID enabled, because `CreateRestrictedToken` with `DISABLE_MAX_PRIVILEGE` removes privileges but no SIDs. The child also runs at Low integrity, so it can write only to Low-labelled objects, and ForgeOS labels only disposable trees. The grant therefore gives the child nothing outside the snapshot that it does not already have. Recorded in [ARCHITECTURE](ARCHITECTURE.md), Windows Low-integrity paragraph.
+- **Open, not changed here.** The AppContainer runner's recursive `icacls ... /T` grants in `src/forgeos/appcontainer.py` (`_grant_probe_access`, the secure-path `grant()`, `_revoke_path_grant`, `_grant_path_read_execute`) do not pass `/L`. `test_runtime.create_test_snapshot` copies with `symlinks=True`, so links from the worktree reach those grants. This exposure is on `main`. A fix changes the frozen runtime, so it needs Windows acceptance before merge.
+- **Verified here (Linux, Python 3.12 with Tk under Xvfb).** Full suite: 819 tests OK, 23 Windows-only skips. Grant tests: 3 of 3. `tools/check_documentation.py --links` and `--base origin/main --head HEAD`: PASS.
+- **Not verified.** Labelling a folder outside the profile on Windows without the harness grant. `pc/windows-pc-acceptance.ps1` still grants its own test folder, so a run as it stands would not isolate the product fix. The GitHub connector was unavailable in this session (proxy 403), so no workflow was dispatched.
+- **Rollback.** Revert the commit. No data, schema or stored-format change.

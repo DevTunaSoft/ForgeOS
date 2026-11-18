@@ -20,6 +20,7 @@ class WorkspaceGrantTests(unittest.TestCase):
         self.assertIn("/grant:r", args)
         self.assertIn(f"*{sid}:(OI)(CI)F", args)
         self.assertIn("/T", args)
+        self.assertIn("/L", args)
         self.assertNotIn("Everyone", " ".join(args))
 
 
