@@ -108,3 +108,44 @@ jobs:
           path: dist/ForgeOS.exe
           if-no-files-found: error
           retention-days: 14
+  # Temporary evidence job for the link-following question (see
+  # docs/ARCHITECTURE.md). Runs only on manual dispatch, never on push or
+  # pull_request. Each target is measured with identical probe code.
+  link-acl-probe:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+        target:
+          - label: main-5107d46
+            sha: 5107d467db96e7512f5d7126af745fb9c5c1bcdf
+          - label: pr158-head-9581162
+            sha: 9581162fb158e0c54b2e9e6ee510f811de3fd997
+    steps:
+      - name: Checkout probe tools (dispatched branch)
+        uses: actions/checkout@v4
+        with:
+          path: probe
+      - name: Checkout code under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.target.sha }}
+          path: code
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run link-following and snapshot probe
+        shell: pwsh
+        run: python probe/tools/windows_link_acl_probe.py --src code/src --label "${{ matrix.target.label }}-py${{ matrix.python-version }}" --out "${{ runner.temp }}/link-acl-probe.json"
+      - name: Upload probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: link-acl-probe-${{ matrix.target.label }}-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/link-acl-probe.json
+          if-no-files-found: warn
+          retention-days: 14
