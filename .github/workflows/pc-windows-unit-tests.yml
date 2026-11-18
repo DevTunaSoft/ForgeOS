@@ -7,6 +7,7 @@ name: PC Windows unit tests
 # the way the harness creates them.
 # Runs when this file changes on the designated branch, or on manual dispatch with
 # the ref input. Default ref: the PR #158 branch. Logs are public: print no personal paths.
+# Re-run for PR #158 narrowed to the labelling fix (commit cdc2771).
 
 on:
   push:
