@@ -1,16 +1,21 @@
 name: PC Windows unit tests
 
-# Dispatch-only. Runs the unit suite on the self-hosted Windows PC runner with the
-# temporary folder set to the runner temp folder, which is outside the user profile.
-# That is the condition that broke Windows labelling before PR #158.
-# Dispatch from this branch and set the input ref to the branch under test.
+# Runs the unit suite on the self-hosted Windows PC runner with the temporary folder
+# set to the runner temp folder, which is outside the user profile. That is the
+# condition that broke Windows labelling before PR #158.
+# Runs when this file changes on the designated branch, or on manual dispatch with
+# the ref input. Default ref: the PR #158 branch. Logs are public: print no personal paths.
 
 on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/pc-windows-unit-tests.yml"
   workflow_dispatch:
     inputs:
       ref:
         description: Branch or commit to test
-        required: true
+        required: false
         type: string
 
 permissions:
@@ -24,7 +29,7 @@ jobs:
       - name: Check out the tested ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || 'fix/windows-labelling-outside-profile' }}
 
       - name: Run the unit suite with temp outside the user profile
         shell: powershell
