@@ -62,7 +62,7 @@ jobs:
           import time
           from pathlib import Path
 
-          from forgeos import windows_containment as wc
+          from forgeos import appcontainer, windows_containment as wc
           from forgeos.appcontainer import run_secure_appcontainer
           from forgeos.secure_runner import _bootstrap_environment
           from forgeos.test_runtime import create_windows_low_integrity_snapshot, remove_test_snapshot
@@ -109,6 +109,26 @@ jobs:
               trace_installed = True
           except Exception:
               trace_installed = False
+
+
+          # Trace the cleanup that runs inside the call, before it returns: link removal and
+          # each grant revoke. Growth across a call means a process wrote during cleanup.
+          cleanup_calls = []
+
+
+          def traced_cleanup(fn):
+              def wrapper(*args, **kwargs):
+                  before = size_of(background)
+                  try:
+                      return fn(*args, **kwargs)
+                  finally:
+                      if "returned_at" not in state:
+                          cleanup_calls.append((fn.__name__, before, size_of(background)))
+              return wrapper
+
+
+          wc.remove_reparse_points = traced_cleanup(wc.remove_reparse_points)
+          appcontainer._revoke_path_grant = traced_cleanup(appcontainer._revoke_path_grant)
 
 
           def run_child():
@@ -158,6 +178,8 @@ jobs:
           print("BG-BYTES-AFTER-RETURN", samples)
           print("WRITES-BETWEEN-KILL-AND-RETURN", kill_return_size is not None and at_return > kill_return_size)
           print("WRITE-AFTER-RETURN", any(s > at_return for s in samples))
+          print("CLEANUP-CALLS (name, bytes before, bytes after)", cleanup_calls)
+          print("WRITES-DURING-CLEANUP", any(after > before for _, before, after in cleanup_calls))
           try:
               remove_test_snapshot(workspace)
               print("CLEANUP-OK", True)
