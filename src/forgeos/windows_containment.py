@@ -6,13 +6,17 @@ sandbox: it does not isolate the filesystem or block network access.
 """
 from __future__ import annotations
 
+import csv
 import ctypes
 from ctypes import wintypes
+import io
 import locale
+import ntpath
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 
 if os.name == "nt":
     import msvcrt
@@ -36,6 +40,7 @@ if os.name == "nt":
     JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
     JobObjectBasicUIRestrictions = 4
+    JobObjectBasicAccountingInformation = 1
     JobObjectExtendedLimitInformation = 9
 
     JOB_OBJECT_UILIMIT_HANDLES = 0x00000001
@@ -143,6 +148,18 @@ if os.name == "nt":
             ("hThread", wintypes.HANDLE),
             ("dwProcessId", wintypes.DWORD),
             ("dwThreadId", wintypes.DWORD),
+        ]
+
+    class JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("TotalUserTime", ctypes.c_longlong),
+            ("TotalKernelTime", ctypes.c_longlong),
+            ("ThisPeriodTotalUserTime", ctypes.c_longlong),
+            ("ThisPeriodTotalKernelTime", ctypes.c_longlong),
+            ("TotalPageFaultCount", wintypes.DWORD),
+            ("TotalProcesses", wintypes.DWORD),
+            ("ActiveProcesses", wintypes.DWORD),
+            ("TotalTerminatedProcesses", wintypes.DWORD),
         ]
 
     kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
@@ -334,6 +351,28 @@ def _apply_ui_restrictions(job, enabled: bool) -> int:
     return int(actual.UIRestrictionsClass)
 
 
+def wait_for_job_empty(job, timeout_ms: int = 5000) -> None:
+    """Wait until no process is active in the job, or raise.
+
+    A process the main child started can outlive it. Cleanup must not race such a
+    writer, so the caller ends the job first; this waits for the end to take effect.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+        returned = wintypes.DWORD()
+        if not kernel32.QueryInformationJobObject(
+                job, JobObjectBasicAccountingInformation,
+                ctypes.byref(info), ctypes.sizeof(info), ctypes.byref(returned)):
+            raise _win_error("QueryInformationJobObject")
+        if info.ActiveProcesses == 0:
+            return
+        if time.monotonic() >= deadline:
+            raise OSError(
+                f"{info.ActiveProcesses} process(es) still active in the job after cleanup")
+        time.sleep(0.05)
+
+
 def run_contained(argv, cwd: str | Path, *, timeout: int,
                   active_process_limit: int = 64,
                   process_memory_bytes: int = 1024 * 1024 * 1024,
@@ -459,11 +498,16 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
             if not kernel32.TerminateJobObject(job, 124):
                 raise _win_error("TerminateJobObject")
             kernel32.WaitForSingleObject(process, 5000)
+            wait_for_job_empty(job)
             raise subprocess.TimeoutExpired(list(argv), timeout)
         if status == WAIT_FAILED:
             raise _win_error("WaitForSingleObject")
         if status != WAIT_OBJECT_0:
             raise OSError(f"Unexpected Windows wait status: {status}")
+        # The main process has exited, but a child it started may still run in the job.
+        if not kernel32.TerminateJobObject(job, 0):
+            raise _win_error("TerminateJobObject(cleanup)")
+        wait_for_job_empty(job)
 
         code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(process, ctypes.byref(code)):
@@ -507,6 +551,85 @@ def run_contained(argv, cwd: str | Path, *, timeout: int,
         output.close()
 
 
+def _parse_whoami_sid(csv_output: str) -> str:
+    """Return the account SID from `whoami /user /fo csv /nh` output."""
+    fields = next(csv.reader(io.StringIO(csv_output.strip())), [])
+    sid = fields[1].strip() if len(fields) > 1 else ""
+    if not sid.startswith("S-1-"):
+        raise OSError("Could not read the account SID for the workspace grant")
+    return sid
+
+
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
+def system_exe(name: str) -> str:
+    """A System32 program by absolute path, so a file in the working directory cannot shadow it."""
+    return ntpath.join(os.environ.get("SystemRoot") or r"C:\Windows", "System32", name)
+
+
+def is_reparse_point(path: Path) -> bool:
+    """True for a symbolic link, a junction or another reparse point."""
+    return path.is_symlink() or bool(
+        getattr(os.lstat(path), "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def remove_reparse_points(root: Path) -> None:
+    """Unlink the links under root without following them, so tree operations stay inside root.
+
+    A junction is removed as a link, not walked: shutil.rmtree on Python 3.11 treats a
+    junction as a directory, so it must be gone before the tree is deleted or icacls runs.
+    Raises if a directory cannot be read, instead of skipping it.
+    """
+    if is_reparse_point(root):
+        raise ValueError("Refusing to clean a link as if it were a tree")
+
+    def fail(exc):
+        raise exc
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=fail):
+        for name in list(dirnames):
+            path = Path(dirpath, name)
+            if is_reparse_point(path):
+                _unlink_link(path)
+                dirnames.remove(name)
+        for name in filenames:
+            path = Path(dirpath, name)
+            if is_reparse_point(path):
+                _unlink_link(path)
+
+
+def _unlink_link(path: Path) -> None:
+    try:
+        os.rmdir(path)  # directory junctions and directory symlinks
+    except OSError:
+        os.unlink(path)  # file symlinks
+
+
+def _current_account_sid() -> str:
+    result = subprocess.run(
+        [system_exe("whoami.exe"), "/user", "/fo", "csv", "/nh"],
+        capture_output=True, text=True, timeout=30, shell=False,
+        errors="replace",
+    )
+    if result.returncode != 0:
+        raise OSError("Could not run whoami to read the account SID for the workspace grant")
+    return _parse_whoami_sid(result.stdout)
+
+
+def _owner_grant_arguments(path: Path, sid: str) -> list[str]:
+    """Arguments that give the account full control of a disposable tree.
+
+    Setting a Low integrity label needs WRITE_OWNER on the folder. On some roots the
+    account owns the folder but inherits no grant of that right, so labelling fails
+    with "Access is denied". An explicit full-control grant to the same account,
+    applied recursively, supplies the right. It covers only this tree. /L stops the grant
+    at a link's target, but icacls still walks into the target, so links are refused
+    before the grant (see test_runtime._refuse_links).
+    """
+    return [system_exe("icacls.exe"), str(path), "/grant:r", f"*{sid}:(OI)(CI)F", "/T", "/C", "/L", "/Q"]
+
+
 def prepare_low_integrity_workspace(root: str | Path):
     """Label a disposable workspace tree Low integrity for Low-IL writers.
 
@@ -518,8 +641,18 @@ def prepare_low_integrity_workspace(root: str | Path):
     path = Path(root).resolve(strict=True)
     if not path.is_dir() or Path(root).is_symlink():
         raise ValueError("Low-integrity workspace must be a real directory")
+    grant = subprocess.run(
+        _owner_grant_arguments(path, _current_account_sid()),
+        capture_output=True, text=True, timeout=120, shell=False,
+        errors="replace",
+    )
+    if grant.returncode != 0:
+        detail = (grant.stdout + "\n" + grant.stderr)[-4000:]
+        raise OSError(
+            f"Failed to grant the account full control of the disposable workspace: {detail}"
+        )
     result = subprocess.run(
-        ["icacls.exe", str(path), "/setintegritylevel", "(OI)(CI)L",
+        [system_exe("icacls.exe"), str(path), "/setintegritylevel", "(OI)(CI)L",
          "/T", "/L", "/Q"],
         capture_output=True, text=True, timeout=60, shell=False,
         errors="replace",

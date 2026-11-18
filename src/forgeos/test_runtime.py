@@ -287,6 +287,8 @@ def _remove_snapshot_directory(runtime: Path, identity: _SnapshotIdentity,
     _check_snapshot_identity(
         runtime, identity, parent_info, "Execution runtime directory",
         directory=True)
+    from .windows_containment import remove_reparse_points
+    remove_reparse_points(runtime)
     shutil.rmtree(runtime, onerror=_delete_readonly)
     try:
         runtime.lstat()
@@ -457,13 +459,36 @@ def create_test_snapshot(workspace: str | Path) -> TestRuntime:
         raise
 
 
+def _refuse_links(root: Path) -> None:
+    """Refuse a snapshot holding links: a recursive icacls run walks into link targets."""
+    from .windows_containment import is_reparse_point
+
+    if is_reparse_point(root):
+        raise ValueError("Windows test snapshot must not be a link")
+
+    def fail(exc):
+        raise exc
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=fail):
+        for name in dirnames + filenames:
+            if is_reparse_point(Path(dirpath, name)):
+                raise ValueError("Windows test snapshot must not contain links")
+
+
 def create_windows_low_integrity_snapshot(workspace: str | Path) -> TestRuntime:
     """Create and Low-label a disposable Windows execution snapshot."""
     if os.name != "nt":
         raise OSError("Windows Low-integrity snapshots require Windows")
+    from .windows_containment import is_reparse_point
+    raw = Path(workspace).expanduser()
+    if is_reparse_point(raw):
+        raise ValueError("Windows test workspace must not be a link")
+    # Refuse links before copying: copytree follows a junction and copies its target.
+    _refuse_links(raw.resolve(strict=True))
     runtime = create_test_snapshot(workspace)
     from .windows_containment import prepare_low_integrity_workspace
     try:
+        _refuse_links(runtime.path)
         prepare_low_integrity_workspace(runtime.path)
         return runtime
     except BaseException:
