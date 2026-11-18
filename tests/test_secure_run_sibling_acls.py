@@ -22,6 +22,12 @@ class SecureRunSiblingAclTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="forgeos-sibling-acl-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
+    def _icacls(self, path, *arguments):
+        icacls = os.path.join(os.environ["SystemRoot"], "System32", "icacls.exe")
+        subprocess.run(
+            [icacls, str(path), *arguments, "/Q"],
+            capture_output=True, text=True, check=True)
+
     def _acl(self, path):
         icacls = os.path.join(os.environ["SystemRoot"], "System32", "icacls.exe")
         result = subprocess.run(
@@ -47,6 +53,12 @@ class SecureRunSiblingAclTests(unittest.TestCase):
         shutil.copy2(
             os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe"), cmd)
 
+        # The parent gets an inheritable ACE for Users, and the sibling gets an explicit
+        # copy of it. A re-inheritance pass turns that explicit copy into an inherited
+        # one, which changes the icacls output.
+        users = "*S-1-5-32-545"
+        self._icacls(projects, "/grant", f"{users}:(OI)(CI)(RX)")
+        self._icacls(sibling, "/grant", f"{users}:(OI)(CI)(RX)")
         before = (self._acl(sibling), self._acl(sibling / "notes.txt"))
         runtime = create_windows_low_integrity_snapshot(workspace)
         try:
