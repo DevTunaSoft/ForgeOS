@@ -56,8 +56,7 @@ jobs:
           cmd = str(bin_dir / "cmd.exe")
           shutil.copy2(os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe"), cmd)
           runtime = create_windows_low_integrity_snapshot(workspace)
-          spin = runtime.path / "spin.txt"
-          command = 'start /b cmd /c "for /l %i in (1,1,400000) do @echo %i >> spin.txt"'
+          command = 'start /b cmd /c echo START^>started.txt ^& for /l %i in (1,1,3000000) do @rem ^& echo LATE^>late.txt'
           error = None
           result = {}
           try:
@@ -68,18 +67,30 @@ jobs:
               error = repr(exc)
 
 
-          def size():
-              return spin.stat().st_size if spin.exists() else -1
+          def present(name):
+              return (runtime.path / name).exists()
 
 
           print("RUN-ERROR", error)
           print("RETURNED-PASSED", result.get("passed"), "RETURNCODE", result.get("returncode"))
-          at_return = size()
-          time.sleep(10)
-          later = size()
-          print("SIZE-AT-RETURN", at_return)
-          print("SIZE-10S-LATER", later)
-          print("SPIN-GREW-AFTER-RETURN", later > at_return)
+          print("OUTPUT-BEGIN")
+          print(result.get("output", ""))
+          print("OUTPUT-END")
+          started = False
+          for _ in range(50):
+              if present("started.txt"):
+                  started = True
+                  break
+              time.sleep(0.1)
+          print("STARTED-FILE-AFTER-RETURN", started)
+          late_after = None
+          t0 = time.monotonic()
+          while time.monotonic() - t0 < 60:
+              if present("late.txt"):
+                  late_after = round(time.monotonic() - t0, 1)
+                  break
+              time.sleep(0.5)
+          print("LATE-FILE-SECONDS-AFTER-RETURN", late_after)
           try:
               remove_test_snapshot(workspace)
           except Exception as exc:
