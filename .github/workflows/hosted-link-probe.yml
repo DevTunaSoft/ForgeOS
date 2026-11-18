@@ -1,0 +1,52 @@
+name: Hosted link probe
+
+# Does icacls /T follow a junction or a directory symlink inside a tree, with and
+# without /L? Runs on a GitHub-hosted Windows runner. Decoys live under the runner
+# temp folder. Runs when this file changes on the designated branch.
+# Logs are public: print no personal paths.
+
+on:
+  push:
+    branches: [claude/exciting-bohr-wr08bs]
+    paths:
+      - ".github/workflows/hosted-link-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  link-probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe icacls recursion through links
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $root = Join-Path $env:RUNNER_TEMP ('link-probe-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          New-Item -ItemType Directory -Path $root | Out-Null
+          $sid = '*S-1-5-32-546'
+          $cases = @(
+            @{ label = 'without /L'; flags = @() },
+            @{ label = 'with /L'; flags = @('/L') }
+          )
+          foreach ($case in $cases) {
+            $tag = $case.label -replace '[^A-Za-z]', ''
+            $decoy = Join-Path $root ("decoy-$tag")
+            $snap = Join-Path $root ("snap-$tag")
+            New-Item -ItemType Directory -Path $decoy, $snap | Out-Null
+            Set-Content -Path (Join-Path $decoy 'secret.txt') -Value 'decoy'
+            $junction = Join-Path $snap 'junction'
+            $symlink = Join-Path $snap 'symlink'
+            cmd /c mklink /J $junction $decoy | Out-Null
+            cmd /c mklink /D $symlink $decoy | Out-Null
+            $before = (& icacls.exe $decoy | Out-String) + (& icacls.exe (Join-Path $decoy 'secret.txt') | Out-String)
+            $grant = @($snap, '/grant:r', ($sid + ':(OI)(CI)R'), '/T', '/C') + $case.flags + @('/Q')
+            & icacls.exe @grant | Out-Null
+            $code = $LASTEXITCODE
+            $after = (& icacls.exe $decoy | Out-String) + (& icacls.exe (Join-Path $decoy 'secret.txt') | Out-String)
+            Write-Host "icacls grant $($case.label): exit $code; decoy ACL changed: $($before -ne $after)"
+            cmd /c rmdir $junction | Out-Null
+            cmd /c rmdir $symlink | Out-Null
+          }
+          Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
