@@ -116,3 +116,84 @@ class SecureRunSiblingAclTests(unittest.TestCase):
         granted = {path.resolve() for path, arguments in calls
                    if "/grant" in arguments}
         self.assertNotIn(projects.resolve(), granted)
+
+    def test_secure_run_leaves_runner_folder_unchanged(self):
+        # The runner is a user-owned executable: here, a copy of cmd.exe in a
+        # Downloads-like folder that holds other files. A secure run must leave
+        # that folder, and the files in it, exactly as they were.
+        from forgeos.appcontainer import run_secure_appcontainer
+        from forgeos.secure_runner import _bootstrap_environment
+        from forgeos.test_runtime import (
+            create_windows_low_integrity_snapshot, remove_test_snapshot)
+
+        downloads = self.tmp / "downloads"
+        downloads.mkdir()
+        (downloads / "notes.txt").write_text("keep", encoding="utf-8")
+        (downloads / "other.txt").write_text("keep", encoding="utf-8")
+        cmd = str(downloads / "cmd.exe")
+        shutil.copy2(
+            os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe"), cmd)
+        workspace = self.tmp / "projects" / "ForgeOS"
+        workspace.mkdir(parents=True)
+        (workspace / "app.txt").write_text("workspace", encoding="utf-8")
+        exec_root = self.tmp / "secure-runs"
+        exec_root.mkdir()
+        watched = (downloads, downloads / "notes.txt", downloads / "other.txt")
+        before = {path: self._acl(path) for path in watched}
+        runtime = create_windows_low_integrity_snapshot(
+            workspace, runtime_root=exec_root)
+        try:
+            result = run_secure_appcontainer(
+                [cmd, "/c", "exit 0"], runtime.path,
+                _bootstrap_environment(runtime), executable=cmd, timeout=60)
+            self.assertTrue(result["passed"])
+        finally:
+            remove_test_snapshot(workspace, runtime_root=exec_root)
+        after = {path: self._acl(path) for path in watched}
+        self.assertEqual(before, after)
+
+    def test_folder_grant_churn_diagnostic(self):
+        # Evidence, not a gate. For each fixture and permission, records whether a
+        # non-recursive grant on a folder changes the ACLs of its children. The
+        # result is printed to the log; the test passes when icacls succeeds.
+        import json
+        report = {}
+        for fixture in ("inherited", "explicit"):
+            for permission in ("RX", "X"):
+                report[f"{fixture}:{permission}"] = self._folder_grant_churn(
+                    fixture, permission)
+        print("FOLDER_GRANT_CHURN " + json.dumps(report, sort_keys=True))
+
+    def _folder_grant_churn(self, fixture, permission):
+        sid = ("*S-1-15-2-2965108426-1543893344-1388394524-"
+               "1232123468-2134956741-1185458015-2187893000")
+        users = "*S-1-5-32-545"
+        parent = self.tmp / f"{fixture}-{permission}" / "parent"
+        child = parent / "child"
+        inner = child / "inner.txt"
+        sibling = parent / "sibling.txt"
+        child.mkdir(parents=True)
+        inner.write_text("x", encoding="ascii")
+        sibling.write_text("y", encoding="ascii")
+        if fixture == "explicit":
+            # An inheritable Users ACE on the parent, with explicit copies on the children.
+            self._icacls(parent, "/grant", f"{users}:(OI)(CI)(RX)")
+            for path in (child, inner, sibling):
+                self._icacls(path, "/grant", f"{users}:(RX)")
+        objects = {"child": child, "inner": inner, "sibling": sibling}
+        before = {name: self._acl(path) for name, path in objects.items()}
+        self._icacls(parent, "/grant", f"{sid}:({permission})")
+        after_grant = {name: self._acl(path) for name, path in objects.items()}
+        self._icacls(parent, "/remove:g", sid)
+        after_revoke = {name: self._acl(path) for name, path in objects.items()}
+        samples = {}
+        for name in objects:
+            if before[name] != after_revoke[name]:
+                changed = sorted(set(before[name].splitlines())
+                                 ^ set(after_revoke[name].splitlines()))
+                samples[name] = [line.strip()[:160] for line in changed[:4]]
+        return {
+            "changed_by_grant": {n: before[n] != after_grant[n] for n in objects},
+            "changed_overall": {n: before[n] != after_revoke[n] for n in objects},
+            "sample": samples,
+        }
