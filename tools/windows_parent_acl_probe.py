@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
-"""Windows probe: does a non-recursive AppContainer grant rewrite child ACLs?
+"""Windows probe: does a folder grant rewrite its children, and is one needed?
 
-The secure runner grants read and execute on a snapshot's parent folder and on
-the runner's folder. Those folders can be a user's project folder, so a grant
-there must leave every child exactly as it was. Each sequence below builds a
-fresh fixture, applies a grant method and then a revoke method, and compares the
-DACL SDDL of every child before and after.
+The secure runner used to grant read and execute on a snapshot's parent folder,
+which is the user's folder beside the workspace. A non-recursive icacls /grant
+on that folder was measured to re-inherit the explicit ACEs of its children
+(run 44366365038). This probe answers three questions on hosted Windows:
 
-The fixture gives each child an explicit copy of the parent's inheritable Users
-ACE. A re-inheritance pass converts such copies into inherited ones, so the
-icacls control sequence should show a change. Without that sensitivity the
-unchanged-children result would prove nothing.
+  1. Control. Does icacls /grant (non-recursive) change a child's ACL on a
+     fixture built the way the measured folder was built?  (G0+R0)
+  2. Candidate. Does a DACL-only SetNamedSecurityInfoW write, with no
+     auto-inheritance request, leave the children unchanged on the grant and on
+     the revoke?  (G1+R1, and the other write APIs as characterization.)
+  3. Traversal. Can a zero-capability AppContainer read a snapshot file through
+     its full path with no ACE on the parent folder? An explicit deny of
+     traversal on that folder is set in a separate fixture, so a read that still
+     succeeds shows the traverse check is not applied to the parent at all.
+     Listing the parent is measured separately: it needs a grant.
 
-  G0+R0    icacls /grant and icacls /remove:g, non-recursive (control: the
-           production path before this change)
-  G1+R1    appcontainer._grant/_revoke_read_execute_no_propagation (candidate)
+Each DACL sequence builds a fresh fixture, applies a grant method and then a
+revoke method, and compares the DACL SDDL of every child before and after.
+
+  G0+R0    icacls /grant and icacls /remove:g, non-recursive (control)
+  G1+R1    SetNamedSecurityInfoW, DACL only (candidate)
   G1+R0    candidate grant, icacls revoke
   G2+R1    SetNamedSecurityInfoW with UNPROTECTED_DACL added (characterization)
   G3+R3    SetFileSecurityW with a fresh security descriptor (characterization)
   none+R0  icacls revoke on a fixture without any grant
   none+R1  candidate revoke on a fixture without any grant
-
-Functional sequences run real zero-capability AppContainer children: a read of
-a snapshot below the parent before any parent grant, a read after the grant, a
-read of an ungranted sibling, and a read after the revoke.
 
 Windows only. Writes a JSON report and prints a summary. With --assert the exit
 status is nonzero unless the acceptance checks hold.
@@ -52,8 +55,31 @@ DACL_SECURITY_INFORMATION = 0x00000004
 UNPROTECTED_DACL_SECURITY_INFORMATION = 0x20000000
 SE_FILE_OBJECT = 1
 SDDL_REVISION_1 = 1
+GRANT_ACCESS = 1
+REVOKE_ACCESS = 4
+NO_INHERITANCE = 0
+TRUSTEE_IS_SID = 0
+TRUSTEE_IS_UNKNOWN = 0
+READ_EXECUTE_MASK = 0x001200A9  # icacls RX
 
 if os.name == "nt":
+    class TRUSTEE_W(ctypes.Structure):
+        _fields_ = [
+            ("pMultipleTrustee", ctypes.c_void_p),
+            ("MultipleTrusteeOperation", ctypes.c_int),
+            ("TrusteeForm", ctypes.c_int),
+            ("TrusteeType", ctypes.c_int),
+            ("ptstrName", ctypes.c_void_p),
+        ]
+
+    class EXPLICIT_ACCESS_W(ctypes.Structure):
+        _fields_ = [
+            ("grfAccessPermissions", wintypes.DWORD),
+            ("grfAccessMode", ctypes.c_int),
+            ("grfInheritance", wintypes.DWORD),
+            ("Trustee", TRUSTEE_W),
+        ]
+
     ADVAPI = ctypes.WinDLL("advapi32", use_last_error=True)
     KERNEL = ctypes.WinDLL("kernel32", use_last_error=True)
     ADVAPI.GetNamedSecurityInfoW.argtypes = [
@@ -63,7 +89,7 @@ if os.name == "nt":
         ctypes.POINTER(ctypes.c_void_p)]
     ADVAPI.GetNamedSecurityInfoW.restype = wintypes.DWORD
     ADVAPI.SetEntriesInAclW.argtypes = [
-        wintypes.DWORD, ctypes.POINTER(appcontainer.EXPLICIT_ACCESS_W),
+        wintypes.DWORD, ctypes.POINTER(EXPLICIT_ACCESS_W),
         ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
     ADVAPI.SetEntriesInAclW.restype = wintypes.DWORD
     ADVAPI.SetNamedSecurityInfoW.argtypes = [
@@ -124,7 +150,7 @@ def sddl(path: Path) -> str:
 def _rewrite_dacl(path: Path, sid, *, grant: bool, method: str) -> None:
     """Add or remove this SID's read/execute ACE with the chosen write API.
 
-    "named" is the candidate SetNamedSecurityInfoW with DACL only.
+    "named" is SetNamedSecurityInfoW with DACL only (the candidate).
     "named_unprotected" adds UNPROTECTED_DACL. "file_security" writes a fresh
     security descriptor with SetFileSecurityW.
     """
@@ -137,14 +163,12 @@ def _rewrite_dacl(path: Path, sid, *, grant: bool, method: str) -> None:
     try:
         if not current.value:
             raise OSError(f"{path} has no DACL")
-        entry = appcontainer.EXPLICIT_ACCESS_W()
-        entry.grfAccessPermissions = (
-            appcontainer.READ_EXECUTE_MASK if grant else 0)
-        entry.grfAccessMode = (
-            appcontainer.GRANT_ACCESS if grant else appcontainer.REVOKE_ACCESS)
-        entry.grfInheritance = appcontainer.NO_INHERITANCE
-        entry.Trustee.TrusteeForm = appcontainer.TRUSTEE_IS_SID
-        entry.Trustee.TrusteeType = appcontainer.TRUSTEE_IS_UNKNOWN
+        entry = EXPLICIT_ACCESS_W()
+        entry.grfAccessPermissions = READ_EXECUTE_MASK if grant else 0
+        entry.grfAccessMode = GRANT_ACCESS if grant else REVOKE_ACCESS
+        entry.grfInheritance = NO_INHERITANCE
+        entry.Trustee.TrusteeForm = TRUSTEE_IS_SID
+        entry.Trustee.TrusteeType = TRUSTEE_IS_UNKNOWN
         entry.Trustee.ptstrName = sid.value
         new_dacl = ctypes.c_void_p()
         _check(ADVAPI.SetEntriesInAclW(
@@ -195,11 +219,11 @@ def _icacls_revoke(path: Path, sid, sid_string: str) -> None:
 
 
 def _candidate_grant(path: Path, sid, sid_string: str) -> None:
-    appcontainer._grant_read_execute_no_propagation(path, sid)
+    _rewrite_dacl(path, sid, grant=True, method="named")
 
 
 def _candidate_revoke(path: Path, sid, sid_string: str) -> None:
-    appcontainer._revoke_read_execute_no_propagation(path, sid)
+    _rewrite_dacl(path, sid, grant=False, method="named")
 
 
 def _unprotected_grant(path: Path, sid, sid_string: str) -> None:
@@ -224,36 +248,30 @@ SEQUENCES = (
     ("none+R1", None, _candidate_revoke),
 )
 FUNCTIONAL = (
+    ("F-none", None, None),
+    ("F-deny", None, None),
     ("F-G1", _candidate_grant, _candidate_revoke),
     ("F-G3", _file_security_grant, _file_security_revoke),
 )
 
 
-def build_fixture(base: Path, name: str) -> dict[str, Path]:
-    root = base / name
+def build_fixture(base: Path, index: int) -> dict[str, Path]:
+    """The folder shape of the measured probe: plain creation, no ACL writes."""
+    root = base / f"fixture-{index}"
     parent = root / "parent"
-    parent.mkdir(parents=True)
-    # The parent gets an inheritable Users ACE before any child exists.
-    appcontainer._icacls(
-        parent, "/grant", f"*{USERS_SID}:(OI)(CI)(RX)", "/Q")
     child = parent / "child"
-    child.mkdir()
+    child.mkdir(parents=True)
     inner = child / "inner.txt"
     inner.write_text("inner", encoding="ascii")
     sibling = parent / "sibling.txt"
     sibling.write_text("sibling", encoding="ascii")
-    # Each child then gets an explicit copy of the inherited Users ACE.
-    appcontainer._icacls(
-        child, "/grant", f"*{USERS_SID}:(OI)(CI)(RX)", "/Q")
-    appcontainer._icacls(inner, "/grant", f"*{USERS_SID}:(RX)", "/Q")
-    appcontainer._icacls(sibling, "/grant", f"*{USERS_SID}:(RX)", "/Q")
     return {"parent": parent, "child": child,
             "inner": inner, "sibling": sibling}
 
 
 def run_sequence(base: Path, index: int, name: str, sid, sid_string: str,
                  grant, revoke) -> dict:
-    paths = build_fixture(base, f"fixture-{index}")
+    paths = build_fixture(base, index)
     keys = ("parent",) + CHILDREN
     row = {"sequence": name, "grant_error": "", "revoke_error": ""}
     before = {key: sddl(paths[key]) for key in keys}
@@ -290,9 +308,24 @@ def child_exit(sid, command: str, command_text: str, cwd: Path) -> dict:
     return {"returncode": launched["returncode"], "error": ""}
 
 
+def _stage(sid, command: str, snap: Path, parent: Path, app: Path,
+           sibling: Path) -> dict:
+    # Output goes into the snapshot, which the child may write, so a failed
+    # read or listing is the only reason for a nonzero exit.
+    return {
+        "read_snap": child_exit(
+            sid, command, f"type {app} > {snap / 'out-app.txt'}", snap),
+        "read_sibling": child_exit(
+            sid, command, f"type {sibling} > {snap / 'out-sibling.txt'}",
+            snap),
+        "list_parent": child_exit(
+            sid, command, f"dir /b {parent} > {snap / 'out-list.txt'}", snap),
+    }
+
+
 def functional_sequence(base: Path, index: int, name: str, sid,
-                        sid_string: str, command: str, grant,
-                        revoke) -> dict:
+                        sid_string: str, command: str, grant, revoke,
+                        *, deny: bool = False) -> dict:
     root = base / f"functional-{index}"
     parent = root / "parent"
     snap = parent / "snap"
@@ -304,24 +337,31 @@ def functional_sequence(base: Path, index: int, name: str, sid,
     # The snapshot gets the same recursive modify grant the secure runner uses.
     appcontainer._icacls(
         snap, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/Q")
-    # Output goes into the snapshot, which the child may write, rather than to
-    # NUL, so a failed read is the only reason for a nonzero exit.
-    read_app = f"type {app} > {snap / 'out-app.txt'}"
-    read_sibling = f"type {sibling} > {snap / 'out-sibling.txt'}"
-    row = {"sequence": name, "grant_error": "", "revoke_error": ""}
-    row["before_grant_read_snap"] = child_exit(sid, command, read_app, snap)
-    try:
-        grant(parent, sid, sid_string)
-    except OSError as exc:
-        row["grant_error"] = str(exc)[-300:]
-    row["after_grant_read_snap"] = child_exit(sid, command, read_app, snap)
-    row["after_grant_read_sibling"] = child_exit(
-        sid, command, read_sibling, snap)
-    try:
-        revoke(parent, sid, sid_string)
-    except OSError as exc:
-        row["revoke_error"] = str(exc)[-300:]
-    row["after_revoke_read_snap"] = child_exit(sid, command, read_app, snap)
+    row = {"sequence": name, "grant_error": "", "revoke_error": "",
+           "deny_error": "", "stages": {}}
+    row["stages"]["initial"] = _stage(sid, command, snap, parent, app, sibling)
+    if deny:
+        try:
+            appcontainer._icacls(
+                parent, "/deny", f"*{sid_string}:(X)", "/Q")
+        except OSError as exc:
+            row["deny_error"] = str(exc)[-300:]
+        row["stages"]["denied"] = _stage(
+            sid, command, snap, parent, app, sibling)
+    if grant is not None:
+        try:
+            grant(parent, sid, sid_string)
+        except OSError as exc:
+            row["grant_error"] = str(exc)[-300:]
+        row["stages"]["granted"] = _stage(
+            sid, command, snap, parent, app, sibling)
+    if revoke is not None:
+        try:
+            revoke(parent, sid, sid_string)
+        except OSError as exc:
+            row["revoke_error"] = str(exc)[-300:]
+        row["stages"]["revoked"] = _stage(
+            sid, command, snap, parent, app, sibling)
     return row
 
 
@@ -342,12 +382,17 @@ def run_probe(base: Path) -> dict:
                 base, index, name, sid, sid_string, grant, revoke))
         for index, (name, grant, revoke) in enumerate(FUNCTIONAL):
             report["functional"].append(functional_sequence(
-                base, index, name, sid, sid_string, command, grant, revoke))
+                base, 100 + index, name, sid, sid_string, command, grant,
+                revoke, deny=(name == "F-deny")))
     return report
 
 
-def _blocked(row: dict) -> bool:
-    return isinstance(row["returncode"], int) and row["returncode"] != 0
+def _blocked(stage: dict) -> bool:
+    return isinstance(stage["returncode"], int) and stage["returncode"] != 0
+
+
+def _allowed(stage: dict) -> bool:
+    return stage["returncode"] == 0
 
 
 def acceptance(report: dict) -> dict:
@@ -355,7 +400,9 @@ def acceptance(report: dict) -> dict:
     functional = {row["sequence"]: row for row in report["functional"]}
     control = fixtures["G0+R0"]
     candidate = fixtures["G1+R1"]
-    grant_result = functional["F-G1"]
+    none = functional["F-none"]["stages"]["initial"]
+    denied = functional["F-deny"]["stages"]["denied"]
+    granted = functional["F-G1"]["stages"]["granted"]
     checks = {
         "control_grant_rewrites_children": any(
             control["changed_by_grant"].values()),
@@ -366,21 +413,19 @@ def acceptance(report: dict) -> dict:
         "candidate_parent_restored": candidate["parent_restored"],
         "candidate_fixture_clean": (
             not candidate["grant_error"] and not candidate["revoke_error"]),
-        "functional_candidate_reads_snapshot": (
-            grant_result["after_grant_read_snap"]["returncode"] == 0),
-        "functional_candidate_blocks_sibling": _blocked(
-            grant_result["after_grant_read_sibling"]),
-        "functional_candidate_blocked_after_revoke": _blocked(
-            grant_result["after_revoke_read_snap"]),
-        "functional_candidate_clean": (
-            not grant_result["grant_error"]
-            and not grant_result["revoke_error"]),
+        "traversal_read_without_parent_ace": _allowed(none["read_snap"]),
+        "traversal_sibling_blocked_without_grant": _blocked(
+            none["read_sibling"]),
+        "traversal_read_with_deny_on_parent": _allowed(denied["read_snap"]),
+        "candidate_grant_blocks_sibling": _blocked(granted["read_sibling"]),
     }
     info = {
-        "traverse_grant_needed": _blocked(
-            grant_result["before_grant_read_snap"]),
-        "read_without_parent_grant": (
-            grant_result["before_grant_read_snap"]["returncode"] == 0),
+        "listing_blocked_without_grant": _blocked(none["list_parent"]),
+        "listing_allowed_with_candidate_grant": _allowed(
+            granted["list_parent"]),
+        "listing_blocked_after_candidate_revoke": _blocked(
+            functional["F-G1"]["stages"]["revoked"]["list_parent"]),
+        "deny_error": functional["F-deny"]["deny_error"],
     }
     return {"checks": checks, "info": info}
 
@@ -403,24 +448,27 @@ def summarize(report: dict, result: dict) -> list[str]:
         for stage in ("before", "after_grant", "after_revoke"):
             lines.append(
                 f"SDDL {row['sequence']} {stage} "
-                f"sibling={row['sddl'][stage]['sibling']} "
-                f"inner={row['sddl'][stage]['inner']}")
+                f"parent={row['sddl'][stage]['parent']}")
+            lines.append(
+                f"SDDL {row['sequence']} {stage} "
+                f"child={row['sddl'][stage]['child']} "
+                f"inner={row['sddl'][stage]['inner']} "
+                f"sibling={row['sddl'][stage]['sibling']}")
     for row in report["functional"]:
+        for stage_name, stage in row["stages"].items():
+            lines.append(
+                f"FUNCTIONAL {row['sequence']:<7} {stage_name:<8} "
+                f"read_snap={stage['read_snap']['returncode']} "
+                f"read_sibling={stage['read_sibling']['returncode']} "
+                f"list_parent={stage['list_parent']['returncode']} "
+                f"child_error={stage['read_snap']['error'][:100]!r}")
         lines.append(
-            f"FUNCTIONAL {row['sequence']:<8} "
-            f"before_grant_read_snap="
-            f"{row['before_grant_read_snap']['returncode']} "
-            f"after_grant_read_snap="
-            f"{row['after_grant_read_snap']['returncode']} "
-            f"after_grant_read_sibling="
-            f"{row['after_grant_read_sibling']['returncode']} "
-            f"after_revoke_read_snap="
-            f"{row['after_revoke_read_snap']['returncode']} "
+            f"FUNCTIONAL {row['sequence']:<7} errors "
             f"grant_error={row['grant_error'][:120]!r} "
             f"revoke_error={row['revoke_error'][:120]!r} "
-            f"child_error={row['after_grant_read_snap']['error'][:120]!r}")
+            f"deny_error={row['deny_error'][:120]!r}")
     for key, value in result["info"].items():
-        lines.append(f"INFO {key}={value}")
+        lines.append(f"INFO {key}={value!r}")
     for key, value in result["checks"].items():
         lines.append(f"CHECK {key}={value}")
     lines.append(f"ACCEPTANCE={all(result['checks'].values())}")
