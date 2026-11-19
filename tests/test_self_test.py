@@ -98,6 +98,11 @@ class SelfTestFailureSummaryTests(unittest.TestCase):
         self.assertNotIn("C:", summary["causes"][0]["cause"])
 
 
+class SelfTestProbeTests(unittest.TestCase):
+    def test_generated_probe_is_valid_python(self):
+        compile(self_test._PROBE_SOURCE, self_test.PROBE_NAME, "exec")
+
+
 @unittest.skipIf(getattr(sys, "frozen", False),
                  "the refusal is checked from source mode")
 class SelfTestRefusalTests(unittest.TestCase):

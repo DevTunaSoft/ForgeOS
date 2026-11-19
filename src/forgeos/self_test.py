@@ -21,6 +21,10 @@ SELF_TEST_TIMEOUT_SECONDS = 900
 EXCLUDED_MODULES = {
     "test_acceptance.py": "spawns the Python interpreter",
     "test_appcontainer.py": "runs a Python interpreter inside AppContainer",
+    "test_build_info.py": "imports repository build tooling",
+    "test_cloud_supervisor.py": "imports repository scripts",
+    "test_secure_run_sibling_acls.py": "launches an AppContainer; nested AppContainers are not allowed",
+    "test_secure_run_deep_paths.py": "measures host path limits, not product behaviour",
     "test_managed_llama.py": "spawns the Python interpreter",
     "test_memory_benchmark.py": "spawns the Python interpreter",
     "test_output_capture.py": "spawns the Python interpreter",
@@ -38,6 +42,46 @@ EXCLUDED_MODULES = {
 
 _RAN = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
 _OUTCOME = re.compile(r"^(OK|FAILED)(?: \((.*)\))?$", re.MULTILINE)
+
+
+# A diagnostic module generated only for the packaged self-test. It always fails
+# and reports which folders the sandboxed child can write, so the cause shows in
+# the report's failure list and output tail.
+PROBE_NAME = "test_zz_packaged_sandbox_probe.py"
+_PROBE_SOURCE = '''\
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+
+def _code(exc):
+    return type(exc).__name__ + "/" + str(getattr(exc, "winerror", ""))
+
+
+class PackagedSandboxProbe(unittest.TestCase):
+    def test_report_sandbox_directories(self):
+        notes = []
+        for name in ("TEMP", "TMP", "HOME", "LOCALAPPDATA", "APPDATA", "cwd"):
+            value = os.getcwd() if name == "cwd" else os.environ.get(name, "")
+            if not value:
+                notes.append(name + "=unset")
+                continue
+            try:
+                probe = Path(value) / "forgeos-write-probe.txt"
+                probe.write_text("x", encoding="ascii")
+                probe.unlink()
+                notes.append(name + "=file-ok")
+            except OSError as exc:
+                notes.append(name + "=" + _code(exc))
+        try:
+            folder = tempfile.mkdtemp(prefix="forgeos-probe-")
+            os.rmdir(folder)
+            notes.append("mkdtemp=ok")
+        except OSError as exc:
+            notes.append("mkdtemp=" + _code(exc))
+        self.fail("PROBE " + " ".join(notes))
+'''
 
 
 def bundled_tests_root() -> Path:
@@ -133,6 +177,8 @@ def run_self_test(report_path: Path) -> int:
         secure_root = secure_runtime_root()
         workspace = secure_root / f"self-test-{uuid.uuid4().hex}"
         report.update(stage_test_modules(bundled_tests_root(), workspace))
+        (workspace / PROBE_NAME).write_text(_PROBE_SOURCE, encoding="utf-8")
+        report["diagnostic_probe"] = PROBE_NAME
         runtime = create_windows_low_integrity_snapshot(
             workspace, runtime_root=secure_root)
         try:
