@@ -4015,3 +4015,58 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 2. Order this change with #160 (refusal at snapshot creation) and #158 (`/L` on the grant) as one series, then re-run this probe on the combined branch.
 3. Before the pull request is marked ready, remove the `revoke-acceptance-temporary` job. Decide whether the probe stays as evidence tooling.
 4. Decide the probe path's revoke policy, apply the object-by-object revoke there if appropriate, and add hosted coverage.
+
+## 2026-11-19 — Python runtime probe grants and revocation must not follow links on Windows
+
+**Checkpoint:** `2026-11-19-probe-runtime-links`. **Repository / branch:** DevTunaSoft/ForgeOS, `claude/clever-gauss-azjxkz`, created from the head of PR #161 (`claude/festive-albattani-a6ggji` at `e61e2a4`). It is a draft pull request based on `claude/festive-albattani-a6ggji`, not ready for review. **Hosted evidence:** runs 44426923934 (commit `2175cff`) and 44428105102 (commit `64eff25`, the final acceptance tool). The temporary job is removed in the commit after run 44428105102.
+
+**Starting state.** PR #161 was an open draft, not merged into `main`, so this branch starts from its head. PR #158 and PR #160 were not changed. The temporary job `revoke-acceptance-temporary` from PR #161 is still in `windows-exe.yml`. It must be removed before PR #161 is marked ready, and this branch inherits it.
+
+**Problem.** `probe_appcontainer_python_runtime` granted read and execute on the Python runtime trees with `icacls /grant ... /T`, and revoked them with `icacls /remove:g SID /T`. Recursion follows directory links and junctions, so a link inside a granted tree could carry the grant to an outside object during the probe. This is the same defect class as the snapshot path in 2026-11-18. No hosted acceptance covered the probe path.
+
+**Decision.** Object by object, as on the snapshot path. The grant lists each tree without entering a link, and names each real object alone with `/L` and without `/T`, using the same ACE the recursive form gave it. A link is not granted, so the grant never reaches its target. The revoke reuses `_revoke_snapshot_grant`. Rejected: a non-recursive grant on each tree root. Without `/T` the existing children would not receive the ACE, so the probe would prove something different. The 2026-11-18 evidence also showed that non-recursive grants rewrite the children of the directory they name.
+
+**Changes.**
+
+- `src/forgeos/appcontainer.py`: `_grant_path_read_execute` lists objects without entering links, grants each real object alone, and returns the links it left ungranted. `_revoke_runtime_target_grant` and `_revoke_probe_runtime_targets` revoke object by object, in reverse order, and report every failure together. `_refuse_linked_runtime_targets` refuses a linked required path before any runtime ACL change. `_grant_probe_access` names the probe's empty workspace directory without `/T`. `probe_appcontainer_python_runtime` records each target before its grant, so a partial grant is revoked, and reports `runtime_links_not_granted`. `_revoke_path_grant` is unchanged.
+- `tests/test_appcontainer_probe_revoke.py`: 14 tests. Twelve run on Linux: command shape for grant and revoke, link refusal, the workspace grant, cleanup order and error aggregation. Two are Windows-only and use real junctions and directory symlinks.
+- `tools/windows_runtime_probe_acceptance.py`: the hosted acceptance tool. It plants links inside `Lib`, runs the real probe, compares every outside object and every `Lib` object with per-object `icacls`, repeats the probe on a tree with no links, and runs a legacy `/T` control on a separate fixture.
+- `.github/workflows/windows-exe.yml`: a temporary, dispatch-only job `runtime-probe-acceptance-temporary`. The final commit removes it.
+- `docs/ARCHITECTURE.md`: section "Windows AppContainer Python runtime probe grant and revocation (2026-11-19)".
+
+**Hosted results.** Both runs used `windows-latest`, Python 3.10.11 and 3.12.10.
+
+- Acceptance: the probe verified on both versions in both runs. The four outside objects had unchanged `icacls` text in every pass. Every planted link was reported as ungranted and was still a link afterwards.
+- Control: the legacy `/T` grant gave the outside objects the probe SID on both versions. The new helpers never did.
+- Unit suites: `python -m unittest discover -s tests -v` passed on both versions, including the new Windows tests.
+- Frozen smoke test: `package-windows` passed in both runs, including the frozen secure AppContainer boundary smoke test.
+- PR #161's snapshot probe in `revoke-acceptance-temporary` passed on both versions in both runs.
+
+In-tree: on the linked pass, three `Lib` objects changed `icacls` text on both versions (two `.pyc` files and the planted file symlink). The cause is not established, and the clean-tree pass ran after the linked pass, so the order is a confound (risk 5). Measured durations are in ARCHITECTURE.
+
+**Verification.**
+
+- Linux, `PYTHONPATH=src python -m unittest discover -s tests`: 810 tests, 10 errors, 28 skipped. The same 10 errors occur on clean `main` and on PR #161: this container has no `tkinter`, and the managed-llama process test fails here. The two Windows-only tests are skipped on Linux.
+- The ARCHITECTURE and HANDOFF changes were checked with the documentation and handoff tests.
+
+**Remaining risks.**
+
+1. `run_secure_appcontainer` still grants `/T` on the snapshot root, and its non-recursive grants on parent directories rewrote sibling objects in the 2026-11-18 evidence. This change does not touch those paths.
+2. `prepare_low_integrity_workspace` passes `/T /L`. It is safe only for the empty directory this probe creates.
+3. `_revoke_path_grant` still defaults to recursion. No probe caller uses it now.
+4. The listing and the per-object grant are not atomic. A process that can write inside the Python installation could change the tree between them.
+5. In-tree side effects are not explained. The linked pass changed three `Lib` objects on both versions: two `.pyc` files and the planted file symlink. The clean-tree pass ran after it in the same job, so the order is a confound.
+6. Cost: about 9,000 `icacls` processes per pass over a tree of about 4,500 objects, roughly a minute per pass on hosted runners. ARCHITECTURE has the measurements.
+7. A runtime that needs a linked path now fails closed. The hosted runners did not need one.
+8. The evidence is from hosted `windows-latest` only, not physical Windows acceptance.
+
+**Rollback.** Revert the commits on this branch. No data, schema or stored-format change.
+
+**Next actions.**
+
+1. Remove the temporary `revoke-acceptance-temporary` job from `windows-exe.yml` before PR #161 is marked ready. This branch inherits it.
+2. Fix the grant-side propagation in `run_secure_appcontainer` before the AppContainer path is used on real workspaces.
+3. Replace the recursive Low-integrity label in `prepare_low_integrity_workspace` with an object-by-object form, or document that it is limited to an empty directory.
+4. Decide whether `_revoke_path_grant` should lose its recursive default.
+5. Combine this branch with PR #158 and PR #160, then rerun `tools/windows_runtime_probe_acceptance.py` on the combined branch.
+6. Explain the three in-tree changes. Run the clean-tree pass first, before any link is planted, and report whether those objects still change. If they do, find which probe call writes them.
