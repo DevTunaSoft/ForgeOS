@@ -40,3 +40,11 @@ class SandboxTempTests(unittest.TestCase):
         folder = Path(tempfile.mkdtemp())
         self.assertTrue(folder.is_dir())
         self.assertTrue(folder.is_relative_to(expected))
+
+
+@unittest.skipIf(os.name == "nt", "the shim is installed only on Windows")
+class TempfileCleanupShimTests(unittest.TestCase):
+    def test_shim_is_a_no_op_outside_windows(self):
+        original = tempfile._resetperms
+        sandbox_runner._install_tempfile_cleanup_shim()
+        self.assertIs(tempfile._resetperms, original)

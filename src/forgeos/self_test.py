@@ -93,6 +93,18 @@ class PackagedSandboxProbe(unittest.TestCase):
         notes.append(_op("rmdir_nested", (base / "n").rmdir))
         notes.append(_op("chmod_dir", lambda: os.chmod(base, 0o700)))
         notes.append(_op("rmdir_base", base.rmdir))
+        base4 = Path(os.getcwd()) / "probe-ops2"
+        notes.append(_op("mkdir2", base4.mkdir))
+        notes.append(_op("chmod_nofollow", lambda: os.chmod(base4, 0o700, follow_symlinks=False)))
+        notes.append(_op("scandir", lambda: list(os.scandir(base4))))
+        notes.append(_op("rmdir2", base4.rmdir))
+
+        def temp_cleanup():
+            folder = tempfile.TemporaryDirectory()
+            (Path(folder.name) / "inner").mkdir()
+            folder.cleanup()
+
+        notes.append(_op("tempdir_cleanup", temp_cleanup))
         temp_dir = Path(os.environ.get("TEMP", os.getcwd()))
         notes.append(_op("temp_mkdir", (temp_dir / "probe-temp").mkdir))
         notes.append(_op("temp_rmdir", (temp_dir / "probe-temp").rmdir))

@@ -64,6 +64,37 @@ class _TraceResult(unittest.TextTestResult):
         self.stream.flush()
 
 
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
+def _install_tempfile_cleanup_shim() -> None:
+    """Let tempfile cleanup finish inside the sandbox without following links.
+
+    tempfile resets a folder's permissions with chmod(follow_symlinks=False),
+    which opens the folder with the reparse flag. The sandboxed child is denied
+    that open for folders it created, so every TemporaryDirectory cleanup failed.
+    The replacement skips reparse points, so it never follows a link, and sets
+    the same permissions on a plain folder without the reparse-flag open.
+    """
+    if os.name != "nt":
+        return
+    import tempfile
+
+    def _resetperms(path):
+        try:
+            info = os.lstat(path)
+        except OSError:
+            return
+        if getattr(info, "st_file_attributes", 0) & _FILE_ATTRIBUTE_REPARSE_POINT:
+            return
+        try:
+            os.chmod(path, 0o700)
+        except OSError:
+            pass
+
+    tempfile._resetperms = _resetperms
+
+
 def run_unittest() -> int:
     """Discover and run unittest tests from the granted execution snapshot."""
     if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
@@ -74,6 +105,7 @@ def run_unittest() -> int:
     original_path = list(sys.path)
     try:
         _scrub_bootstrap_environment(root)
+        _install_tempfile_cleanup_shim()
         sys.path.insert(0, str(root))
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
@@ -120,6 +152,7 @@ def run_pytest() -> int:
     original_path = list(sys.path)
     try:
         _scrub_bootstrap_environment(root)
+        _install_tempfile_cleanup_shim()
         from .test_runtime import RUNTIME_DIR
         logfile = root / RUNTIME_DIR / "pytest-log.txt"
         raw_log = os.environ.get("FORGEOS_TEST_LOG_FILE", "")
