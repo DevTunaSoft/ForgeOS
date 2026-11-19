@@ -4018,7 +4018,7 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 
 ## 2026-11-19 — Python runtime probe grants and revocation must not follow links on Windows
 
-**Checkpoint:** `2026-11-19-probe-runtime-links`. **Repository / branch:** DevTunaSoft/ForgeOS, `claude/clever-gauss-azjxkz`, created from the head of PR #161 (`claude/festive-albattani-a6ggji` at `e61e2a4`). It is a draft pull request based on `claude/festive-albattani-a6ggji`, not ready for review. **Hosted evidence:** runs 44426923934 (commit `2175cff`) and 44428105102 (commit `64eff25`, the final acceptance tool). The temporary job is removed in the commit after run 44428105102.
+**Checkpoint:** `2026-11-19-probe-runtime-links`. **Repository / branch:** DevTunaSoft/ForgeOS, `claude/clever-gauss-azjxkz`, created from the head of PR #161 (`claude/festive-albattani-a6ggji` at `e61e2a4`). It is a draft pull request based on `claude/festive-albattani-a6ggji`, not ready for review. **Hosted evidence:** runs 44426923934 (commit `2175cff`), 44428105102 (commit `64eff25`) and 44472294813 (commit `ac96d04`, the clean-tree-first order). The temporary jobs are removed in the commit that records run 44472294813.
 
 **Starting state.** PR #161 was an open draft, not merged into `main`, so this branch starts from its head. PR #158 and PR #160 were not changed. The temporary job `revoke-acceptance-temporary` from PR #161 is still in `windows-exe.yml`. It must be removed before PR #161 is marked ready, and this branch inherits it.
 
@@ -4042,7 +4042,7 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Frozen smoke test: `package-windows` passed in both runs, including the frozen secure AppContainer boundary smoke test.
 - PR #161's snapshot probe in `revoke-acceptance-temporary` passed on both versions in both runs.
 
-In-tree: on the linked pass, three `Lib` objects changed `icacls` text on both versions (two `.pyc` files and the planted file symlink). The cause is not established, and the clean-tree pass ran after the linked pass, so the order is a confound (risk 5). Measured durations are in ARCHITECTURE.
+In-tree: with no link present, the probe changed the `icacls` text of most runtime objects: 3,831 of 4,272 on Python 3.10 and 3,913 of 4,433 on 3.12 (run 44472294813). The idle control changed none, and the linked pass changed only the planted file symlink. Two earlier runs changed three objects in their first, linked pass; that difference is not explained (risk 5). Measured durations are in ARCHITECTURE.
 
 **Verification.**
 
@@ -4055,7 +4055,7 @@ In-tree: on the linked pass, three `Lib` objects changed `icacls` text on both v
 2. `prepare_low_integrity_workspace` passes `/T /L`. It is safe only for the empty directory this probe creates.
 3. `_revoke_path_grant` still defaults to recursion. No probe caller uses it now.
 4. The listing and the per-object grant are not atomic. A process that can write inside the Python installation could change the tree between them.
-5. In-tree side effects are not explained. The linked pass changed three `Lib` objects on both versions: two `.pyc` files and the planted file symlink. The clean-tree pass ran after it in the same job, so the order is a confound.
+5. The probe rewrites the inheritance metadata of most runtime objects. Measured with no link present: 3,831 of 4,272 `Lib` objects on Python 3.10, and 3,913 of 4,433 on 3.12. Effective access was not measured. This is the grant-side propagation risk from 2026-11-18, now seen inside the runtime tree. Earlier runs changed only three objects, and the reason for the difference is not known.
 6. Cost: about 9,000 `icacls` processes per pass over a tree of about 4,500 objects, roughly a minute per pass on hosted runners. ARCHITECTURE has the measurements.
 7. A runtime that needs a linked path now fails closed. The hosted runners did not need one.
 8. The evidence is from hosted `windows-latest` only, not physical Windows acceptance.
@@ -4069,4 +4069,4 @@ In-tree: on the linked pass, three `Lib` objects changed `icacls` text on both v
 3. Replace the recursive Low-integrity label in `prepare_low_integrity_workspace` with an object-by-object form, or document that it is limited to an empty directory.
 4. Decide whether `_revoke_path_grant` should lose its recursive default.
 5. Combine this branch with PR #158 and PR #160, then rerun `tools/windows_runtime_probe_acceptance.py` on the combined branch.
-6. Explain the three in-tree changes. Run the clean-tree pass first, before any link is planted, and report whether those objects still change. If they do, find which probe call writes them.
+6. Explain the in-tree rewrite. Test whether the unit suite that ran before the probe in the earlier runs explains the difference, by running the clean-first order with and without it. Then find which probe call rewrites the inheritance metadata: the directory grant with inheritance flags, or the per-object revoke.
