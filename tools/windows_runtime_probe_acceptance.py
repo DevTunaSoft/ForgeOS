@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -122,53 +123,70 @@ def plant_links(lib: Path, fixture: dict) -> dict:
     return planted
 
 
-def acceptance(work: Path) -> dict:
-    lib = Path(sys.base_prefix) / "Lib"
-    fixture = build_fixture(work / "acceptance")
-    outside_paths = [fixture[key] for key in ("outside", "sub", "secret",
-                                              "nested")]
+def probe_pass(lib: Path, outside_paths: list, planted: dict) -> dict:
+    """Run the real probe once and compare every object before and after it."""
     outside_before = {str(path): acl(path) for path in outside_paths}
-    planted = plant_links(lib, fixture)
-    section = {
-        "lib": str(lib),
-        "planted": {kind: str(link) for kind, link in planted.items()},
-    }
-    try:
-        # Taken with the links present, so the tree listing includes them and
-        # the link objects themselves are compared too.
-        lib_before = tree_acl(lib)
-        probe = appcontainer.probe_appcontainer_python_runtime()
-        outside_after = {str(path): acl(path) for path in outside_paths}
-        lib_after = tree_acl(lib)
-        links_intact = all(is_link(link) for link in planted.values())
-    finally:
-        for link in planted.values():
-            remove_link(link)
+    lib_before = tree_acl(lib)
+    started = time.monotonic()
+    probe = appcontainer.probe_appcontainer_python_runtime()
+    probe_seconds = round(time.monotonic() - started, 1)
+    outside_after = {str(path): acl(path) for path in outside_paths}
+    lib_after = tree_acl(lib)
+    links = {str(link) for link in planted.values()}
+    skipped = set(probe.get("runtime_links_not_granted", []))
     changed_outside = sorted(
         key for key in outside_before
         if outside_before[key] != outside_after[key])
     changed_lib = sorted(
         key for key in set(lib_before) | set(lib_after)
         if lib_before.get(key) != lib_after.get(key))
-    skipped = set(probe.get("runtime_links_not_granted", []))
-    section.update({
+    return {
         "probe": probe,
+        "probe_seconds": probe_seconds,
         "probe_verified": probe.get("verified") is True,
-        "junction_planted": "junction" in planted,
-        "links_skipped_by_probe": all(
-            str(link) in skipped for link in planted.values()),
-        "planted_links_intact_after_probe": links_intact,
+        "links_skipped_by_probe": links <= skipped,
+        "planted_links_intact_after_probe": all(
+            is_link(link) for link in planted.values()),
         "outside_objects_checked": len(outside_before),
         "outside_changed": changed_outside,
         "lib_objects_compared": len(lib_before),
         "lib_objects_changed_count": len(changed_lib),
-        "lib_objects_changed_sample": changed_lib[:25],
-    })
+        "changed_lib_objects_all_planted_links": set(changed_lib) <= links,
+        "lib_changed_sample": [
+            {"path": key, "before": lib_before.get(key),
+             "after": lib_after.get(key)}
+            for key in changed_lib[:5]],
+    }
+
+
+def acceptance(work: Path) -> dict:
+    lib = Path(sys.base_prefix) / "Lib"
+    fixture = build_fixture(work / "acceptance")
+    outside_paths = [fixture[key] for key in ("outside", "sub", "secret",
+                                              "nested")]
+    planted = plant_links(lib, fixture)
+    section = {
+        "lib": str(lib),
+        "planted": {kind: str(link) for kind, link in planted.items()},
+    }
+    try:
+        # The baseline is taken with the links present, so the tree listing
+        # includes them and the link objects themselves are compared.
+        section["with_planted_links"] = probe_pass(
+            lib, outside_paths, planted)
+    finally:
+        for link in planted.values():
+            remove_link(link)
+    # The same tree with no links: any change here is the probe's own effect.
+    section["without_links"] = probe_pass(lib, [], {})
+    linked = section["with_planted_links"]
+    section["junction_planted"] = "junction" in planted
     section["passed"] = bool(
-        section["probe_verified"] and section["junction_planted"]
-        and section["links_skipped_by_probe"]
-        and section["planted_links_intact_after_probe"]
-        and not changed_outside)
+        linked["probe_verified"] and section["junction_planted"]
+        and linked["links_skipped_by_probe"]
+        and linked["planted_links_intact_after_probe"]
+        and not linked["outside_changed"]
+        and section["without_links"]["probe_verified"])
     return section
 
 
@@ -248,14 +266,35 @@ def main(argv=None) -> int:
     args.report.write_text(json.dumps(report, indent=2) + "\n",
                            encoding="utf-8")
     acc = report.get("acceptance", {})
+    linked = acc.get("with_planted_links", {})
+    clean = acc.get("without_links", {})
     ctl = report.get("control", {})
     print(f"Python {report['python']}: passed={report['passed']}")
-    print(f"  probe verified: {acc.get('probe_verified')}")
-    print(f"  outside objects checked: {acc.get('outside_objects_checked')}; "
-          f"changed: {acc.get('outside_changed')}")
-    print(f"  Lib objects compared: {acc.get('lib_objects_compared')}; "
-          f"changed: {acc.get('lib_objects_changed_count')}")
-    print(f"  links skipped by probe: {acc.get('links_skipped_by_probe')}")
+    print("  with planted links: probe verified="
+          f"{linked.get('probe_verified')} in {linked.get('probe_seconds')} s")
+    print("    outside objects checked="
+          f"{linked.get('outside_objects_checked')}; changed="
+          f"{linked.get('outside_changed')}")
+    print("    Lib objects compared="
+          f"{linked.get('lib_objects_compared')}; changed="
+          f"{linked.get('lib_objects_changed_count')}; all changed are "
+          "planted links="
+          f"{linked.get('changed_lib_objects_all_planted_links')}")
+    print("    links skipped by probe="
+          f"{linked.get('links_skipped_by_probe')}; planted links intact="
+          f"{linked.get('planted_links_intact_after_probe')}")
+    for sample in linked.get("lib_changed_sample", []):
+        print(f"    changed object: {sample['path']}")
+        print(f"      before: {sample['before']!r}")
+        print(f"      after:  {sample['after']!r}")
+    print("  without links: probe verified="
+          f"{clean.get('probe_verified')} in {clean.get('probe_seconds')} s; "
+          f"Lib objects compared={clean.get('lib_objects_compared')}; "
+          f"changed={clean.get('lib_objects_changed_count')}")
+    for sample in clean.get("lib_changed_sample", []):
+        print(f"    changed object: {sample['path']}")
+        print(f"      before: {sample['before']!r}")
+        print(f"      after:  {sample['after']!r}")
     print("  control, legacy /T grant leaked to outside: "
           f"{ctl.get('legacy', {}).get('outside_gained_probe_sid')}")
     print("  control, legacy /T outside identical after revoke: "
