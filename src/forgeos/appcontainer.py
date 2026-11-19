@@ -117,14 +117,6 @@ def _icacls(path: Path, *arguments: str) -> None:
         raise OSError(f"icacls failed for {path}: {detail}")
 
 
-def _grant_path_read_execute(path: Path, sid_string: str) -> None:
-    if path.is_dir():
-        _icacls(
-            path, "/grant", f"*{sid_string}:(OI)(CI)(RX)", "/T", "/Q")
-    else:
-        _icacls(path, "/grant", f"*{sid_string}:(RX)", "/Q")
-
-
 def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -> None:
     arguments = ["/remove:g", f"*{sid_string}"]
     if recursive and path.is_dir():
@@ -199,6 +191,103 @@ def _revoke_snapshot_grant(root: Path, sid_string: str, *,
             + (f" (and {more} more)" if more > 0 else ""))
 
 
+def _refuse_linked_runtime_targets(
+        targets, *, is_reparse_point=_is_reparse_point) -> None:
+    """Refuse a required runtime path that is a link, before any ACL change."""
+    for target in targets:
+        if is_reparse_point(os.lstat(target)):
+            raise OSError(
+                f"Python runtime target is a link or junction: {target}")
+
+
+def _grant_path_read_execute(path: Path, sid_string: str, *,
+                             is_reparse_point=_is_reparse_point,
+                             run_icacls=None) -> list[Path]:
+    """Grant read/execute on one Python runtime target without following links.
+
+    A recursive icacls grant follows directory links and junctions, so this
+    never passes /T. A file is named alone. A directory is listed by
+    _snapshot_objects, which lists a link without entering it, and each real
+    object is then granted alone with /L and without /T. A directory gets the
+    (OI)(CI)(RX) ACE that the recursive form gave it, and a file gets (RX).
+    A link is never granted, so its target is never reached. Returns the links
+    left ungranted, so the probe can report them.
+    """
+    run = run_icacls or _icacls
+    info = os.lstat(path)
+    if is_reparse_point(info):
+        raise OSError(f"Python runtime target is a link or junction: {path}")
+    if not stat.S_ISDIR(info.st_mode):
+        run(path, "/grant", f"*{sid_string}:(RX)", "/L", "/Q")
+        return []
+    skipped: list[Path] = []
+    errors: list[str] = []
+    for entry in _snapshot_objects(path, is_reparse_point=is_reparse_point):
+        entry_info = os.lstat(entry)
+        if is_reparse_point(entry_info):
+            skipped.append(entry)
+            continue
+        permission = ("(OI)(CI)(RX)" if stat.S_ISDIR(entry_info.st_mode)
+                      else "(RX)")
+        try:
+            run(entry, "/grant", f"*{sid_string}:{permission}", "/L", "/Q")
+        except OSError as exc:
+            errors.append(str(exc))
+    if errors:
+        more = len(errors) - 10
+        raise OSError(
+            f"{len(errors)} runtime objects were not granted: "
+            + "; ".join(errors[:10])
+            + (f" (and {more} more)" if more > 0 else ""))
+    return skipped
+
+
+def _revoke_runtime_target_grant(path: Path, sid_string: str, *,
+                                 is_reparse_point=_is_reparse_point,
+                                 run_icacls=None) -> None:
+    """Remove the probe SID's grant from one runtime target, never through links.
+
+    A directory is revoked object by object by _revoke_snapshot_grant, with /L
+    and without /T. A file is named alone with /L. A target that has become a
+    link is refused before any icacls call, so its grant is reported rather
+    than revoked through the link.
+    """
+    run = run_icacls or _icacls
+    info = os.lstat(path)
+    if is_reparse_point(info):
+        raise OSError(
+            "Python runtime target became a link or junction; its grant was "
+            f"not revoked: {path}")
+    if not stat.S_ISDIR(info.st_mode):
+        run(path, "/remove:g", f"*{sid_string}", "/L", "/Q")
+        return
+    try:
+        _revoke_snapshot_grant(path, sid_string,
+                               is_reparse_point=is_reparse_point,
+                               run_icacls=run)
+    except OSError as exc:
+        raise OSError(
+            f"Runtime tree {path} was not fully revoked: {exc}") from exc
+
+
+def _revoke_probe_runtime_targets(granted, sid_string: str, *,
+                                  is_reparse_point=_is_reparse_point,
+                                  run_icacls=None) -> None:
+    """Revoke runtime grants in reverse order and report every failure."""
+    errors = []
+    for target in reversed(granted):
+        try:
+            _revoke_runtime_target_grant(
+                target, sid_string, is_reparse_point=is_reparse_point,
+                run_icacls=run_icacls)
+        except OSError as exc:
+            errors.append(str(exc))
+    if errors:
+        raise OSError(
+            "Failed to revoke temporary Python runtime ACEs: "
+            + "; ".join(errors))
+
+
 def _revoke_secure_grants(grants, sid_string: str) -> None:
     """Revoke every grant in reverse order and report all failures together."""
     cleanup_errors = []
@@ -249,9 +338,12 @@ def _python_runtime_acl_targets() -> list[Path]:
 def _grant_probe_access(root: Path, allowed: Path, sid_string: str) -> None:
     # Root gets traverse/read attributes only, without inheritance. The writable
     # child directory gets an inheritable modify ACE and Low mandatory label.
-    _icacls(root, "/grant", f"*{sid_string}:(RX)", "/Q")
+    # Both are named without /T: the probe creates allowed empty just before
+    # this call, so the directory itself is the whole grant. The Low label call
+    # in windows_containment still passes /T; it reaches nothing here.
+    _icacls(root, "/grant", f"*{sid_string}:(RX)", "/L", "/Q")
     _icacls(
-        allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/Q")
+        allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/L", "/Q")
     wc.prepare_low_integrity_workspace(allowed)
 
 
@@ -619,6 +711,11 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
     AppContainer, grants this one temporary AppContainer SID read/execute on the
     minimum runtime roots needed by CPython, then removes those ACEs and checks
     that visibility returns to its pre-probe state.
+
+    Every grant and revoke is applied object by object and never follows a link
+    or junction. A link inside a runtime tree is not granted; it is listed in
+    runtime_links_not_granted, and the startup check shows whether CPython
+    needed it.
     """
     if os.name != "nt":
         return {
@@ -654,11 +751,16 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
                 targets = _python_runtime_acl_targets()
                 if not targets:
                     raise OSError("No Python runtime ACL targets were found")
+                # Refuse a linked required path before any runtime ACL change.
+                _refuse_linked_runtime_targets(targets)
                 granted = []
+                skipped_links: list[Path] = []
                 try:
                     for target in targets:
-                        _grant_path_read_execute(target, sid_string)
+                        # Recorded first, so a partial grant is still revoked.
                         granted.append(target)
+                        skipped_links.extend(
+                            _grant_path_read_execute(target, sid_string))
 
                     startup = _launch_appcontainer_process(
                         sid, command, cwd=allowed, timeout=timeout)
@@ -678,16 +780,7 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
                             f"AppContainer workspace (exit {writer['returncode']})")
                     _verify_probe_marker(created)
                 finally:
-                    cleanup_errors = []
-                    for target in reversed(granted):
-                        try:
-                            _revoke_path_grant(target, sid_string)
-                        except OSError as exc:
-                            cleanup_errors.append(str(exc))
-                    if cleanup_errors:
-                        raise OSError(
-                            "Failed to revoke temporary Python runtime ACEs: "
-                            + "; ".join(cleanup_errors))
+                    _revoke_probe_runtime_targets(granted, sid_string)
 
                 after = _launch_appcontainer_process(
                     sid, command, cwd=allowed, timeout=timeout)
@@ -704,6 +797,8 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
             "workspace_write": True,
             "host_runtime_preexposed": pregrant_visible,
             "runtime_acl_targets": [str(path) for path in targets],
+            "runtime_links_not_granted": [
+                str(path) for path in skipped_links],
             "temporary_runtime_grants_revoked": True,
             "token_is_appcontainer": True,
             "capability_count": 0,
