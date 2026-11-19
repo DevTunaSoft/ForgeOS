@@ -98,6 +98,24 @@ class SelfTestFailureSummaryTests(unittest.TestCase):
         self.assertNotIn("C:", summary["causes"][0]["cause"])
 
 
+class SandboxTraceTests(unittest.TestCase):
+    def test_trace_result_names_each_test_when_it_starts(self):
+        import io
+        from forgeos import sandbox_runner
+
+        class Probe(unittest.TestCase):
+            def test_one(self):
+                pass
+
+        stream = io.StringIO()
+        unittest.TextTestRunner(
+            stream=stream, verbosity=2,
+            resultclass=sandbox_runner._TraceResult,
+        ).run(unittest.defaultTestLoader.loadTestsFromTestCase(Probe))
+        self.assertIn("STARTED ", stream.getvalue())
+        self.assertIn("test_one", stream.getvalue())
+
+
 class SelfTestProbeTests(unittest.TestCase):
     def test_generated_probe_is_valid_python(self):
         compile(self_test._PROBE_SOURCE, self_test.PROBE_NAME, "exec")

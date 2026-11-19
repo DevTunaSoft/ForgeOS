@@ -36,6 +36,15 @@ def _scrub_bootstrap_environment(root: Path) -> None:
     os.environ["APPDATA"] = str(roaming)
 
 
+class _TraceResult(unittest.TextTestResult):
+    """Name each test as it starts, so a test that never finishes is visible."""
+
+    def startTest(self, test):
+        super().startTest(test)
+        self.stream.write("STARTED " + test.id() + "\n")
+        self.stream.flush()
+
+
 def run_unittest() -> int:
     """Discover and run unittest tests from the granted execution snapshot."""
     if os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") != "1":
@@ -50,8 +59,11 @@ def run_unittest() -> int:
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
             suite = loader.discover(str(root))
+            trace = os.environ.get("FORGEOS_SELF_TEST_TRACE") == "1"
             result = unittest.TextTestRunner(
-                stream=stream, verbosity=2).run(suite)
+                stream=stream, verbosity=2,
+                resultclass=_TraceResult if trace else unittest.TextTestResult,
+            ).run(suite)
             stream.flush()
             return 0 if result.wasSuccessful() else 1
     except BaseException as exc:

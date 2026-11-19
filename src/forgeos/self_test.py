@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 
 BUNDLE_NAME = "forgeos_selftest"
-SELF_TEST_TIMEOUT_SECONDS = 900
+SELF_TEST_TIMEOUT_SECONDS = 420
 
 EXCLUDED_MODULES = {
     "test_acceptance.py": "spawns the Python interpreter",
@@ -160,6 +160,20 @@ def stage_test_modules(source: Path, target: Path) -> dict:
     return {"modules_run": copied, "modules_excluded": excluded}
 
 
+def _trace_from_snapshot(runtime) -> dict:
+    """Read the child's start-of-test trace through the verified output path."""
+    from .output_capture import open_verified_output
+    from .test_runtime import RUNTIME_DIR
+    output_file = runtime.path / RUNTIME_DIR / "test-output.txt"
+    try:
+        with open_verified_output(runtime.path, output_file) as stream:
+            text = stream.read(4_000_000).decode("utf-8", errors="replace")
+    except (OSError, ValueError) as exc:
+        return {"trace_error": type(exc).__name__ + ": " + str(exc)[:200]}
+    started = [line for line in text.splitlines() if line.startswith("STARTED ")]
+    return {"last_started": started[-3:], "trace_tail": text[-3000:]}
+
+
 def run_self_test(report_path: Path) -> int:
     """Run the bundled suite in the secure sandbox and write a JSON report."""
     from .secure_runner import run_secure_windows_test
@@ -181,9 +195,14 @@ def run_self_test(report_path: Path) -> int:
         report["diagnostic_probe"] = PROBE_NAME
         runtime = create_windows_low_integrity_snapshot(
             workspace, runtime_root=secure_root)
+        runtime.env["FORGEOS_SELF_TEST_TRACE"] = "1"
         try:
-            result = run_secure_windows_test(
-                runtime, "python-unittest", timeout=SELF_TEST_TIMEOUT_SECONDS)
+            try:
+                result = run_secure_windows_test(
+                    runtime, "python-unittest", timeout=SELF_TEST_TIMEOUT_SECONDS)
+            except BaseException:
+                report.update(_trace_from_snapshot(runtime))
+                raise
         finally:
             remove_test_snapshot(workspace, runtime_root=secure_root)
         output = result.get("output") if isinstance(result.get("output"), str) else ""
