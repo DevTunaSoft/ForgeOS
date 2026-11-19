@@ -32,7 +32,7 @@ jobs:
       # same suite again here; this workflow owns frozen-Windows packaging
       # and executable/security acceptance.
       - name: Package GUI executable
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" forgeos_build/launcher.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForgeOS --paths src --add-data "docs/USER_GUIDE.md;forgeos" --add-data "forgeos_build/build_info.json;forgeos" --add-data "tests;forgeos_selftest" --collect-submodules forgeos forgeos_build/launcher.py
       - name: Check executable exists and is nonempty
         shell: pwsh
         run: |
@@ -101,6 +101,26 @@ jobs:
           }
           if (Test-Path $report) { Get-Content $report }
           if ($process.ExitCode -ne 0) { throw "Frozen secure AppContainer smoke failed: $($process.ExitCode)" }
+      - name: Run the packaged app's own tests in the secure sandbox
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'forgeos-self-test.json'
+          $process = Start-Process -FilePath "$PWD/dist/ForgeOS.exe" -ArgumentList ('--self-test --self-test-report "' + $report + '"') -PassThru
+          if (-not $process.WaitForExit(1500000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path $report) { Get-Content $report }
+            throw 'Packaged self-test exceeded the 25-minute watchdog'
+          }
+          if (Test-Path $report) { Get-Content $report }
+          if ($process.ExitCode -ne 0) { throw "Packaged self-test failed: $($process.ExitCode)" }
+      - name: Upload the self-test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForgeOS-self-test-report
+          path: ${{ runner.temp }}/forgeos-self-test.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:

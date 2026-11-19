@@ -49,7 +49,16 @@ def main(argv=None):
                         help=argparse.SUPPRESS)
     parser.add_argument("--secure-sandbox-smoke", action="store_true",
                         help=argparse.SUPPRESS)
+    parser.add_argument("--self-test", action="store_true",
+                        help="Run ForgeOS's own tests in the secure sandbox")
+    parser.add_argument("--self-test-report", metavar="PATH",
+                        help="JSON report written by --self-test")
     args = parser.parse_args(argv)
+    if args.self_test:
+        if not args.self_test_report:
+            parser.error("--self-test requires --self-test-report PATH")
+        from forgeos.self_test import run_self_test
+        return run_self_test(Path(args.self_test_report))
     if args.sandbox_unittest:
         from forgeos.sandbox_runner import run_unittest
         return run_unittest()

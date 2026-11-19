@@ -1,0 +1,126 @@
+"""Run ForgeOS's own test suite from the packaged app, inside the secure sandbox.
+
+windows-exe.yml bundles the test modules as data. Running them uses the same
+zero-capability runner as project tests, so the self-test exercises the sandbox
+as well as the code. Modules that read repository files or spawn the Python
+interpreter cannot run from the packaged app. The report lists each one with its
+reason. They still run in source mode (CI and the PC unit suite).
+"""
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import sys
+import uuid
+from pathlib import Path
+
+BUNDLE_NAME = "forgeos_selftest"
+SELF_TEST_TIMEOUT_SECONDS = 900
+
+EXCLUDED_MODULES = {
+    "test_acceptance.py": "spawns the Python interpreter",
+    "test_managed_llama.py": "spawns the Python interpreter",
+    "test_memory_benchmark.py": "spawns the Python interpreter",
+    "test_output_capture.py": "spawns the Python interpreter",
+    "test_windows_containment.py": "spawns the Python interpreter",
+    "test_ci_policy.py": "reads repository files",
+    "test_documentation.py": "reads repository files",
+    "test_enhancement_audit.py": "reads repository files",
+    "test_handoff_check.py": "reads repository files",
+    "test_handoff_pdf_wrapping.py": "reads repository files",
+    "test_handoff_snapshot.py": "reads repository files",
+    "test_handoff_takeover.py": "reads repository files",
+    "test_multillm_roadmap.py": "reads repository files",
+    "test_package_handoff.py": "reads repository files",
+}
+
+_RAN = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
+_OUTCOME = re.compile(r"^(OK|FAILED)(?: \((.*)\))?$", re.MULTILINE)
+
+
+def bundled_tests_root() -> Path:
+    """Return the folder that holds the bundled test modules."""
+    base = getattr(sys, "_MEIPASS", None)
+    if not getattr(sys, "frozen", False) or not base:
+        raise RuntimeError("The self-test runs only from the packaged ForgeOS app")
+    root = Path(base) / BUNDLE_NAME
+    if (root / "tests").is_dir():
+        root = root / "tests"
+    if not any(root.glob("test_*.py")):
+        raise RuntimeError("The packaged app carries no test modules")
+    return root
+
+
+def parse_unittest_output(text: str) -> dict:
+    """Read the unittest summary. Missing summary is never a pass."""
+    ran = _RAN.findall(text)
+    outcomes = _OUTCOME.findall(text)
+    outcome, details = outcomes[-1] if outcomes else ("", "")
+    return {
+        "tests_run": int(ran[-1]) if ran else None,
+        "outcome": outcome or None,
+        "outcome_details": details,
+    }
+
+
+def stage_test_modules(source: Path, target: Path) -> dict:
+    """Copy the runnable test modules and their helpers into a fresh folder."""
+    target.mkdir(parents=True, exist_ok=False)
+    copied: list[str] = []
+    excluded: dict[str, str] = {}
+    for path in sorted(source.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        relative = path.relative_to(source)
+        name = relative.as_posix()
+        if len(relative.parts) == 1 and name in EXCLUDED_MODULES:
+            excluded[name] = EXCLUDED_MODULES[name]
+            continue
+        destination = target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, destination)
+        if len(relative.parts) == 1 and name.startswith("test_") and path.suffix == ".py":
+            copied.append(name)
+    return {"modules_run": copied, "modules_excluded": excluded}
+
+
+def run_self_test(report_path: Path) -> int:
+    """Run the bundled suite in the secure sandbox and write a JSON report."""
+    from .secure_runner import run_secure_windows_test
+    from .test_runtime import (
+        create_windows_low_integrity_snapshot, remove_test_snapshot,
+        secure_runtime_root)
+
+    report: dict = {
+        "suite": "ForgeOS packaged tests",
+        "runner": "secure AppContainer",
+        "passed": False,
+    }
+    workspace = None
+    try:
+        secure_root = secure_runtime_root()
+        workspace = secure_root / f"self-test-{uuid.uuid4().hex}"
+        report.update(stage_test_modules(bundled_tests_root(), workspace))
+        runtime = create_windows_low_integrity_snapshot(
+            workspace, runtime_root=secure_root)
+        try:
+            result = run_secure_windows_test(
+                runtime, "python-unittest", timeout=SELF_TEST_TIMEOUT_SECONDS)
+        finally:
+            remove_test_snapshot(workspace, runtime_root=secure_root)
+        output = result.get("output") if isinstance(result.get("output"), str) else ""
+        report.update(parse_unittest_output(output))
+        report["sandbox_passed"] = result.get("passed") is True
+        report["passed"] = report["sandbox_passed"] and report.get("outcome") == "OK"
+        report["output_tail"] = output[-4000:]
+    except BaseException as exc:  # the report must record every failure
+        report["error"] = type(exc).__name__ + ": " + str(exc)[:500]
+    finally:
+        if workspace is not None:
+            shutil.rmtree(workspace, ignore_errors=True)
+        try:
+            report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+    return 0 if report.get("passed") is True else 1
