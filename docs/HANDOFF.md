@@ -4076,3 +4076,13 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 **Read with care.** The probe's `parent_write` rows still show the grant-side change, because that probe grants its own parent folder. Production no longer grants a user folder, so this is expected. The probe's AppContainer child could not create a junction from outside its snapshot (`Access is denied`). It did create one inside its snapshot.
 
 **Recommended merge order.** 1. #160, which refuses links at snapshot creation. 2. #161, the object-by-object revoke and the drain. 3. The relocation fix (`752e941`, `e2c88f4`), which conflicts with #160 in `create_test_snapshot` and `tests/test_runtime.py`. The resolution used here applies. 4. #158 last, rebased on the three, with its docs conflicts resolved by hand. Nothing here merges into `main`.
+
+## 2026-11-19 — designated branch restored to the verified relocation code
+
+**What changed.** The merge test above put PR #160 (`1473994`) and PR #161 (`e61e2a4`) onto this branch. Those PRs are separate reviews, so their code is removed again. `src/`, `tests/`, `tools/`, `.github/` and `docs/ARCHITECTURE.md` now match `0c6a698`. The three files #161 added are removed: `tests/test_appcontainer_revoke.py`, `tools/windows_link_acl_probe.py` and `tools/windows_snapshot_revoke_probe.py`. The merge commits stay in history, and the records above are kept.
+
+**Why this state.** `git diff e2c88f4 0c6a698 -- src tests tools .github` is empty, so the restored code is the code verified for the relocation fix: the PC unit suite passed with 822 tests, OK, 10 skipped (run 44407570153, `e2c88f4`), and the hosted sibling and EXE runs above passed.
+
+**Linux suite on the restored tree** (`PYTHONPATH=src python -m unittest discover -s tests`): 789 tests, 25 skipped, 10 errors. All 10 errors trace to `tkinter`, which this container does not have. They are the GUI acceptance and launcher tests, and the managed-llama process test, which imports the GUI modules. There are no other failures.
+
+**Still open.** PR #158, #160 and #161 are unchanged. The merge order above still applies to any combined review. The runner-parent grant (`grant(runner.parent, "RX")`) is still open, as recorded for the relocation fix. The decision on keeping `.github/workflows/hosted-sibling-acl.yml` is open.

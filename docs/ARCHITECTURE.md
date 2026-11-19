@@ -603,61 +603,6 @@ existing bounded evidence reader. A hard-link, reparse point or replacement
 during the final open therefore fails closed instead of redirecting diagnostic
 capture; the reader still uses the existing disk-bounded memory contract.
 
-**Snapshot link refusal (Windows, 2026-11-18).** `create_test_snapshot` refuses a
-worktree that contains a symbolic link, junction or other reparse point, and a
-reparse-point workspace root, before any entry is copied. The earlier copy used
-`symlinks=True`: a symlink was recreated inside the snapshot, and a junction was
-followed, copying its outside contents into the sandbox-readable tree. Names
-excluded by the metadata rules (for example `.env*`) are never copied, so a link
-under such a name is not inspected. The copy still uses `symlinks=True`, so a
-symlink that slipped past the guard would be recreated, not followed. The guard
-is what stops junctions, which `copytree` follows.
-
-Hosted probe evidence (`tools/windows_link_acl_probe.py` on `windows-latest`,
-Python 3.10.11 and 3.12.10). [Run 44351478456](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44351478456)
-recorded it on the code before this change. [Run 44352711913](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44352711913)
-repeated the same ACL results on the changed branch, with ACL deltas and a
-corrected `os.walk` check. For a directory symlink, absolute or relative,
-`icacls /grant *SID:(OI)(CI)(M) /T` without `/L` applied the grant to the
-outside directory and its contents. The same call with `/L` did not grant the
-target directory, but `/T` still rewrote the DACLs of its child files, adding
-inherited default entries and no SID. The direct form `icacls <link> /grant`
-without `/L` also reached the target. A recursive `/remove:g` without `/L` removed
-the SID's ACE from the outside directory. `/setintegritylevel (OI)(CI)L /T`
-without `/L` labelled the outside directory Low. For a junction or file symlink
-the SID was not applied to the target, but `/T` still rewrote its contents.
-`copytree(symlinks=True)` recreated directory and file symlinks as symlinks and
-copied a junction's outside contents into the copy. `shutil.rmtree` deleted no
-outside target for any shape tested, and `os.walk` descended into junctions.
-
-The probe covers one shape per link type on hosted runners. It does not establish
-behaviour for nested trees or other Windows releases.
-
-Verification of the refusal: on commit `9a97973`
-([run 44352711913](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44352711913)),
-the Windows unit suite passed on Python 3.10 and 3.12 with 825 tests and 10
-skipped, the same skip count as before the change. The nine new tests executed,
-including real junction and directory-symlink refusal tests. The frozen secure
-AppContainer smoke test passed in the same run. The AppContainer grant code in
-`appcontainer.py` is unchanged in this branch. Commit `9a97973` is a pre-squash
-commit on this branch; its source, test and tool files are identical to this
-PR's.
-
-Residual risks, not closed by this change:
-
-- A link created by the sandboxed process during a run is not seen by the
-  creation check. Post-run cleanup (`/remove:g ... /T` without `/L`) traverses
-  such a link and can remove the temporary SID's ACE from the outside target. It
-  grants nothing, but it still changes an outside ACL. The probe showed that `/L`
-  on the same call still rewrites child DACLs, so that fix needs its own design
-  and Windows acceptance evidence before it is made.
-- A worktree that contains any link or junction now fails to snapshot, with a
-  message naming the first offending path. This is a deliberate fail-closed
-  behaviour change.
-- The check and the copy are not atomic. A same-user process that edits the
-  worktree during snapshot creation could race them. That process is outside the
-  sandbox threat model.
-
 Docker is **not required**. Git worktrees are version-control isolation, not operating-system security isolation. No test runner is allowed to claim full untrusted-code containment without real runtime proof.
 
 ## Sensitive data and storage
@@ -765,26 +710,6 @@ read leaves the installed files and any substituted record available for
 inspection; ForgeOS does not silently delete or repair them. The bounded
 metadata read preserves the low-memory contract without changing the existing
 streaming behavior for large runtime files.
-
-## Windows snapshot grant revocation (2026-11-18)
-
-`run_secure_appcontainer` grants the temporary AppContainer SID `(OI)(CI)(M)` on the disposable snapshot root with a recursive `icacls /grant ... /T`, runs the contained process, and then revokes that grant. The grant itself is unchanged here. The revoke no longer uses a recursive `icacls /remove:g SID /T`, because that form follows directory symlinks: a link a contained process creates inside the snapshot could carry the revoke to an object outside it. Hosted probe run 44352711913 (PR #160 branch, Python 3.10 and 3.12) showed the legacy form removing the SID from an outside directory and its child, and rewriting an outside file. Adding `/L` to the recursive form left the outside directory unchanged but still rewrote the outside child.
-
-The revoke lists the snapshot without entering any reparse point. A symbolic link or junction is listed as an object; its target is never listed or entered. `os.walk` is not used, because on Windows it enters junctions, so the walker checks the reparse attribute itself. Each listed object is then named to `icacls` alone, with `/L` and without `/T`, so a link is changed as itself. The snapshot root must be a real directory. Before the walk, the contained Job Object is terminated and drained, and a process that has not exited within 10 seconds fails the run closed. Every object is attempted, and failures are raised together.
-
-Hosted measurements (`tools/windows_snapshot_revoke_probe.py` on `windows-latest`, build 10.0.26100, Python 3.10 and 3.12; runs 44362074831 and 44364847892):
-
-- Legacy recursive revoke: with a directory symlink, absolute or relative, it removed the SID from the outside directory and rewrote the outside child and file. With a file symlink it rewrote the outside file. With a junction it rewrote the outside child. Adding `/L` still rewrote the outside child in the directory-link and junction fixtures.
-- Object-by-object revoke: no outside object changed in any of the four fixtures, no SID remained on an in-tree object, and every object remained readable.
-- `os.walk` entered the junction; the walker did not. `shutil.rmtree` left the outside target intact in every fixture.
-- Sandbox junction creation: the AppContainer child, which holds Modify on its snapshot, created a junction whose target lies inside the snapshot (`mklink /J` exit 0). It was refused a junction to an outside target with `Access is denied.`. That refusal comes from `mklink` reading the target, which the SID cannot read. It is not a control on junction creation, because a direct reparse-point call may not check the target, so the revoke's no-follow property is the control that matters.
-- Cost: 404 objects took about 3.3 s on both Python versions, roughly 8 ms per object, so the revoke runs one `icacls` process per object.
-
-Not covered by this section, and recorded as remaining risks in HANDOFF:
-
-- The non-recursive `RX` grant on the snapshot's parent directory, and on the runner's parent, rewrote the children of that directory, including objects outside the snapshot. Their explicit ACEs became inherited copies with the same rights, and the revoke did not restore them. This grant-side effect is not fixed here.
-- The probe path (`probe_appcontainer_python_runtime`) still grants and revokes recursively with `/T` on Python runtime trees. Hosted secure acceptance does not cover it.
-- On `main`, `create_test_snapshot` copies links with `symlinks=True`, and `copytree` materialises junction contents. The recursive grant reaches a link that exists before it. PR #160 refuses such worktrees, and PR #158 adds `/L` to the grant. Neither is in this branch.
 
 ## Windows AppContainer Python runtime probe (PR #69)
 
