@@ -53,12 +53,21 @@ PROBE_NAME = "test_zz_packaged_sandbox_probe.py"
 _PROBE_SOURCE = '''\
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
 
 def _code(exc):
     return type(exc).__name__ + "/" + str(getattr(exc, "winerror", ""))
+
+
+def _op(label, action):
+    try:
+        action()
+        return label + "=ok"
+    except OSError as exc:
+        return label + "=" + _code(exc)
 
 
 class PackagedSandboxProbe(unittest.TestCase):
@@ -76,12 +85,32 @@ class PackagedSandboxProbe(unittest.TestCase):
                 notes.append(name + "=file-ok")
             except OSError as exc:
                 notes.append(name + "=" + _code(exc))
-        try:
-            folder = tempfile.mkdtemp(prefix="forgeos-probe-")
-            os.rmdir(folder)
-            notes.append("mkdtemp=ok")
-        except OSError as exc:
-            notes.append("mkdtemp=" + _code(exc))
+        base = Path(os.getcwd()) / "probe-ops"
+        notes.append(_op("mkdir", base.mkdir))
+        notes.append(_op("write", lambda: (base / "f.txt").write_text("x", encoding="ascii")))
+        notes.append(_op("unlink", lambda: (base / "f.txt").unlink()))
+        notes.append(_op("mkdir_nested", (base / "n").mkdir))
+        notes.append(_op("rmdir_nested", (base / "n").rmdir))
+        notes.append(_op("chmod_dir", lambda: os.chmod(base, 0o700)))
+        notes.append(_op("rmdir_base", base.rmdir))
+        temp_dir = Path(os.environ.get("TEMP", os.getcwd()))
+        notes.append(_op("temp_mkdir", (temp_dir / "probe-temp").mkdir))
+        notes.append(_op("temp_rmdir", (temp_dir / "probe-temp").rmdir))
+        outcome = {}
+
+        def run_keygen():
+            try:
+                from forgeos.recovery_auth import generate_recovery_bundle_auth_key
+                generate_recovery_bundle_auth_key(
+                    Path(os.getcwd()) / "probe-key.bin", size=48)
+                outcome["keygen"] = "ok"
+            except BaseException as exc:
+                outcome["keygen"] = type(exc).__name__ + ":" + str(exc)[:120]
+
+        worker = threading.Thread(target=run_keygen, daemon=True)
+        worker.start()
+        worker.join(20)
+        notes.append("keygen=" + outcome.get("keygen", "timeout"))
         self.fail("PROBE " + " ".join(notes))
 '''
 
