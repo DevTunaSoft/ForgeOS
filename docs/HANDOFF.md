@@ -3966,3 +3966,49 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## Parent-folder grant without re-processing children — 2026-11-19
+
+**Status.** Branch `claude/vibrant-pascal-1wf6fc`, cut from `origin/main` `5107d46`. Draft pull request to `main`; not ready for review, not merged. The temporary dispatch-only job in `windows-exe.yml` was removed before the pull request was opened.
+
+**Problem.** `run_secure_appcontainer` granted the AppContainer read and execute on the snapshot's parent folder with a non-recursive `icacls /grant`. For the production layout that folder is the user's project folder beside the workspace. Run 44366365038 (PR #161 branch, commit `e61e2a4`) showed that the grant rewrote the children's explicit ACEs as inherited copies, and that the revoke could not restore them: sibling file, child folder and grandchild file all changed.
+
+**What changed.**
+- `src/forgeos/appcontainer.py`: folder grants (the snapshot's parent and the runner's folder) and the capability probe's temporary root now go through `_grant_directory_read_execute` and `_revoke_directory_read_execute`, a folder writer that merges the ACE with `SetEntriesInAclW` and writes it with `SetFileSecurityW` from a fresh security descriptor without an auto-inheritance request. The snapshot tree keeps `icacls /grant … /T`; the runner file keeps `icacls`.
+- `tools/windows_parent_acl_probe.py`: new hosted probe for the write APIs, traversal and listing behavior, and a real secure run beside a sibling project (`--assert` for acceptance).
+- `tests/test_secure_run_sibling_acls.py`: sibling-folder regression, a check that the parent is written only by the folder writer, and a grant/revoke unit check with an icacls control.
+- `docs/ARCHITECTURE.md`: "Secure-run folder grants and the non-propagating folder writer".
+
+**Evidence (hosted, windows-latest; Windows Server 2025 build 26100).**
+- Run 44366365038 (baseline, commit `e61e2a4`): icacls folder grant rewrote the children; revoke did not restore them.
+- Run 44427344770 (commit `bbfc20b`, `SetNamedSecurityInfoW` DACL only): the frozen smoke passed, but the grant and revoke still set the auto-inherited flag on the children, and the revoke left the folder changed. Rejected as the writer.
+- Run 44428114422 (commit `673dbaa`, no folder grant at all): the frozen secure smoke failed. pytest's conftest discovery was denied on the snapshot's parent, so the child needs attribute reads there. The probe had shown that reads succeed without the grant. That reading was correct for file reads only; the failure is the reason the folder ACE stays. Rejected as the approach.
+- Run 44428821861 (commit `07dfba4`): folder writer clean on 3.10 and 3.12 (children unchanged by grant and by revoke, folder restored exactly). Production secure run beside a sibling: parent folder, sibling, notes file and workspace unchanged by full SDDL on both. Probe `ACCEPTANCE=True` on both. Unit tests 3 of 3 on both. Run against `origin/main`'s code, the sibling test fails. Frozen secure AppContainer boundary smoke test passed.
+- Run 44429166577 (commit `7b6951d`, final code): probe `ACCEPTANCE=True` on 3.10 and 3.12; the AppContainer test file, the sibling tests and the folder-writer tests passed on both; the frozen secure AppContainer boundary smoke test passed in `package-windows`. The red-on-main step failed as expected on `origin/main`'s code.
+
+**Options considered.**
+1. Run snapshots under a ForgeOS-owned folder. Alone it does not meet the acceptance: an icacls grant on that folder still re-processes its children, and the check counts children of any folder. Not chosen as the fix; still a useful future mitigation.
+2. Non-propagating DACL write. `SetNamedSecurityInfoW` (DACL only, or UNPROTECTED) re-processes children. `SetFileSecurityW` does not. Chosen.
+3. Another traversal mechanism, with no folder grant. The AppContainer reads through folders without an ACE, but pytest's conftest discovery still needs attribute reads on the snapshot's parent; the frozen smoke failed without it. Rejected for now.
+
+**Acceptance against the request.**
+- (a) Parent-directory check: passed on Python 3.10 and 3.12 on windows-latest (above).
+- (b) Frozen secure AppContainer boundary smoke test: passed in `package-windows` (runs 44428821861 and 44429166577).
+- (c) Linux `python -m unittest discover -s tests`: the same 10 errors as `origin/main` (tkinter and the managed-llama test); no new failure. The Windows-only tests skip on Linux.
+- (d) Documentation: `docs/ARCHITECTURE.md` section above; this entry. `python tools/check_documentation.py --links` and `python scripts/check_handoff.py` pass.
+
+**Premise correction.** The request said the PR #161 object-by-object revoke helpers were already the way this branch revokes snapshot grants. They are not on `main`. They exist only on `claude/festive-albattani-a6ggji` (PR #161). This branch does not include them, and the snapshot-tree revoke here is still `icacls /remove:g … /T`, which follows junctions inside a snapshot. The link-safe revoke is therefore still open on `main`. The branches of PRs #158, #160 and #161 were not changed.
+
+**Risks that remain.**
+- One hosted image (build 26100). Other Windows builds need the probe run before the result is relied on there.
+- `SetFileSecurityW` is a legacy API; a future Windows change could alter its behavior. The probe and the sibling test are the regression checks.
+- A grant still writes a user-owned folder's DACL for the duration of a run. The revoke runs in a `finally` block; a hard kill leaves a SID-only ACE behind on that folder. Startup cleanup is not implemented.
+- The folder ACE carries the listing right, as before. A narrower mask (attribute reads) is untested.
+- Per-object `icacls /remove:g` on folders, as used by the PR #161 design, re-processes children. Harmless inside a disposable snapshot; check it when that revoke lands.
+- Capability probes' Python-runtime grants still use recursive `icacls` on Python's own folders. They are probes, not the production path.
+
+**Next actions.**
+1. Review the draft pull request. Decide how PR #161's link-safe revoke lands relative to this change; the two touch the same function.
+2. Run `tools/windows_parent_acl_probe.py --assert` on another Windows build (for example a Windows 11 client) and on Server 2022 before relying on it there.
+3. Measure whether a read-attributes-only mask passes the frozen smoke test; narrow only if it does.
+4. Add startup cleanup for SID-only folder ACEs left by a hard kill.
