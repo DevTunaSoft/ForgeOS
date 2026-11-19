@@ -11,8 +11,10 @@ import locale
 from contextlib import contextmanager
 from ctypes import wintypes
 import os
+import shutil
 import socket
 import sys
+import time
 from pathlib import Path
 import subprocess
 import tempfile
@@ -830,6 +832,62 @@ def _run_appcontainer_process(appcontainer_sid, argv, *, cwd: Path,
         output.close()
 
 
+def _stage_runner(runner: Path, stage_dir: Path) -> Path:
+    """Copy the secure runner into a ForgeOS-owned folder and return the copy.
+
+    The AppContainer needs read and execute on the runner. Granting that on the
+    runner's own folder rewrites the ACLs of that folder's children, and the
+    folder is usually the user's. The copy is granted instead and removed after
+    the run.
+    """
+    staged = stage_dir / f"forgeos-runner-{uuid.uuid4().hex}{runner.suffix}"
+    with runner.open("rb") as source, staged.open("xb") as target:
+        shutil.copyfileobj(source, target)
+    return staged
+
+
+def _runner_argv(argv, runner: Path, staged: Path) -> list[str]:
+    """Point argv[0] at the staged copy. argv[0] must be the runner itself."""
+    if not argv:
+        raise ValueError("Secure execution argv must start with the runner")
+    try:
+        first = Path(os.fspath(argv[0])).expanduser().resolve(strict=True)
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError("Secure execution argv[0] must be the runner") from exc
+    if os.path.normcase(str(first)) != os.path.normcase(str(runner)):
+        raise ValueError("Secure execution argv[0] must be the runner")
+    return [str(staged), *(str(item) for item in argv[1:])]
+
+
+def _secure_grant_plan(root: Path, runner: Path) -> list[tuple[Path, str, bool]]:
+    """Return the grants one secure run needs, in order.
+
+    The runner must sit beside the snapshot, in the snapshot's parent folder, so
+    that no grant reaches the runner's own folder.
+    """
+    if runner.parent != root.parent:
+        raise ValueError("Secure runner must be staged beside the snapshot")
+    return [
+        (root.parent, "RX", False),
+        (root, "M", True),
+        (runner, "RX", False),
+    ]
+
+
+def _remove_staged_runner(staged: Path) -> None:
+    last_error = None
+    for _ in range(5):
+        try:
+            staged.unlink()
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last_error = exc
+            time.sleep(0.2)
+    raise OSError("Failed to remove the staged secure runner") from last_error
+
+
 def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                             executable: str | Path,
                             timeout: int = 180,
@@ -837,9 +895,11 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                             watched_extra_outputs: tuple[Path, ...] = ()) -> dict:
     """Run autonomous code with zero capabilities and no weaker fallback.
 
-    Only the disposable execution snapshot and the ForgeOS-owned executable are
-    explicitly granted to the temporary AppContainer SID. Grants are revoked
-    before the temporary profile is deleted.
+    Only the disposable execution snapshot, its parent folder and a copy of the
+    runner are explicitly granted to the temporary AppContainer SID. The runner's
+    own folder is never granted: when the runner lives elsewhere, a copy is
+    staged beside the snapshot. Grants are revoked before the temporary profile
+    is deleted, and the copy is removed afterwards.
     """
     if os.name != "nt":
         raise OSError("Secure AppContainer execution is Windows-only")
@@ -873,48 +933,56 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                 raise ValueError("Only the owned pytest log is an extra watch")
             watched += (extra,)
 
+    staged = None
     result = None
-    with _temporary_probe_profile() as (_profile_name, sid):
-        sid_string = _sid_to_string(sid)
-        grants: list[tuple[Path, bool]] = []
-        seen = set()
+    try:
+        if runner.parent != root.parent:
+            # The runner's own folder is usually the user's. Grant a ForgeOS-owned
+            # copy beside the snapshot instead, so that folder is never written.
+            staged = _stage_runner(runner, root.parent)
+            argv = _runner_argv(argv, runner, staged)
+            runner = staged
+        with _temporary_probe_profile() as (_profile_name, sid):
+            sid_string = _sid_to_string(sid)
+            grants: list[tuple[Path, bool]] = []
+            seen = set()
 
-        def grant(path: Path, permission: str, *, recursive: bool = False):
-            key = (str(path).casefold(), permission, recursive)
-            if key in seen:
-                return
-            seen.add(key)
-            if recursive:
-                _icacls(
-                    path, "/grant",
-                    f"*{sid_string}:(OI)(CI)({permission})",
-                    "/T", "/Q")
-            else:
-                _icacls(
-                    path, "/grant", f"*{sid_string}:({permission})", "/Q")
-            grants.append((path, recursive))
+            def grant(path: Path, permission: str, *, recursive: bool = False):
+                key = (str(path).casefold(), permission, recursive)
+                if key in seen:
+                    return
+                seen.add(key)
+                if recursive:
+                    _icacls(
+                        path, "/grant",
+                        f"*{sid_string}:(OI)(CI)({permission})",
+                        "/T", "/Q")
+                else:
+                    _icacls(
+                        path, "/grant", f"*{sid_string}:({permission})", "/Q")
+                grants.append((path, recursive))
 
-        try:
-            grant(root.parent, "RX")
-            grant(root, "M", recursive=True)
-            if runner.parent != root.parent:
-                grant(runner.parent, "RX")
-            grant(runner, "RX")
-            result = _run_appcontainer_process(
-                sid, argv, cwd=root, env=env, timeout=timeout,
-                watched_outputs=watched)
-        finally:
-            cleanup_errors = []
-            for path, recursive in reversed(grants):
-                try:
-                    _revoke_path_grant(
-                        path, sid_string, recursive=recursive)
-                except OSError as exc:
-                    cleanup_errors.append(str(exc))
-            if cleanup_errors:
-                raise OSError(
-                    "Failed to revoke secure AppContainer grants: "
-                    + "; ".join(cleanup_errors))
+            try:
+                for path, permission, recursive in _secure_grant_plan(root, runner):
+                    grant(path, permission, recursive=recursive)
+                result = _run_appcontainer_process(
+                    sid, argv, cwd=root, env=env, timeout=timeout,
+                    watched_outputs=watched)
+            finally:
+                cleanup_errors = []
+                for path, recursive in reversed(grants):
+                    try:
+                        _revoke_path_grant(
+                            path, sid_string, recursive=recursive)
+                    except OSError as exc:
+                        cleanup_errors.append(str(exc))
+                if cleanup_errors:
+                    raise OSError(
+                        "Failed to revoke secure AppContainer grants: "
+                        + "; ".join(cleanup_errors))
+    finally:
+        if staged is not None:
+            _remove_staged_runner(staged)
     if result is None:
         raise OSError("Secure AppContainer did not produce a result")
     result["profile_deleted"] = True
