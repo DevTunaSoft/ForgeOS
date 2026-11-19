@@ -720,3 +720,51 @@ The probe creates a temporary AppContainer SID, checks interpreter startup and a
 The contained child's write marker is untrusted input to the parent. `_verify_probe_marker` reads it through the shared bounded identity reader (`file_security.read_bounded_file`). The marker must be an unlinked regular file of at most 16 bytes whose content is exactly `ok`. A symlink, hard link, reparse point, oversized or substituted marker fails closed before any content is buffered. Before this change the probe read the marker with an unbounded `read_text`, which followed links and buffered whatever the contained process wrote. Linux tests cover the verification helper; the Windows probe that calls it was reviewed by reading and has not been run in this checkpoint.
 
 On a Windows 11 Python 3.12.10 virtual environment, the targeted test files passed (29 passed, 1 skipped, 15 subtests passed), followed by the full local suite (591 passed, 7 skipped, 397 subtests passed). These are operator-reported local results; hosted CI must pass independently. The related pytest collection correction aliases an imported `test_task` helper in the test module, without changing production task behavior.
+
+## Secure-run folder grants and the non-propagating folder writer (2026-11-19)
+
+The secure runner gives the temporary AppContainer SID the grants below and no others.
+
+| Object | Grant | How it is written | Why |
+|---|---|---|---|
+| Disposable snapshot tree | read, execute, modify (inheritable) | `icacls /grant … /T`; revoked with `icacls /remove:g … /T` | the contained process edits and runs only the copy |
+| Runner executable (file) | read, execute | `icacls /grant` (a file has no children) | the contained process starts the frozen runner |
+| Snapshot's parent folder and the runner's folder | read, execute, not inheritable | `appcontainer._grant_directory_read_execute` (folder writer) | pytest's conftest discovery reads the attributes of the snapshot's parent |
+
+The folder writer (`_rewrite_directory_dacl`) merges the SID's ACE into the folder's current DACL with `SetEntriesInAclW` and writes it with `SetFileSecurityW`, from a fresh security descriptor that makes no auto-inheritance request. Its revoke uses the same writer. It is used only for folders outside the snapshot. Folder grants through `icacls` are no longer used.
+
+### Why this writer
+
+`tools/windows_parent_acl_probe.py` compares the full security descriptor (SDDL) of a plain folder's children before and after each write. The measured results on windows-latest (Windows Server 2025, build 26100), identical on Python 3.10 and 3.12 in run 44428821861:
+
+| Write applied to the folder | Children changed by the grant | Children changed by the revoke | Folder restored after the revoke |
+|---|---|---|---|
+| `icacls /grant` (the control; the production path before this change) | yes | not applicable | no |
+| `SetNamedSecurityInfoW`, DACL only | yes | no, when already changed by the grant | no |
+| `SetNamedSecurityInfoW` with the UNPROTECTED flag | yes | not applicable | no |
+| `icacls /remove:g` on a folder that was never granted | not applicable | yes | not applicable |
+| `SetNamedSecurityInfoW` removal on a folder that was never granted | not applicable | yes | not applicable |
+| `SetFileSecurityW` (the folder writer) | no | no | yes |
+
+The changed children differ only in the auto-inherited flag on their security descriptor. The ACE text is the same. The earlier measurement in run 44366365038 showed explicit child ACEs rewritten to inherited copies, which is the same re-processing on a folder whose children held explicit copies. Both count as a change to a child object's ACL.
+
+### What the folder ACE is for
+
+- Traversal is not the constraint. The contained process read `snapshot\app.txt` through a parent folder with no ACE for it, and it still read through that folder with an explicit deny-traverse ACE on it. The sibling file stayed unreadable (run 44428821861, `F-none` and `F-deny`).
+- Without the folder ACE, the frozen secure smoke test failed: pytest's conftest discovery was denied on the snapshot's parent, and the packaged smoke step failed with exit code 3 (run 44428114422). The folder ACE therefore stays, through the folder writer.
+- Listing the folder with the grant still returned an error in the probe, so the grant's listing right has not been shown to be needed. A narrower mask (attribute reads only) is untested and would need its own frozen smoke evidence.
+
+### Acceptance evidence
+
+- Parent-directory check (run 44428821861 at commit `07dfba4` and run 44429166577 at commit `7b6951d`): the production secure run beside a sibling project leaves the workspace's parent folder, the sibling folder, its notes file and the workspace unchanged, by full SDDL. The folder writer's grant and revoke leave the children unchanged and restore the folder exactly, on Python 3.10 and 3.12.
+- Frozen secure AppContainer boundary smoke test: passed in the `package-windows` job of runs 44428821861 and 44429166577.
+- Sibling and folder-writer tests (`tests/test_secure_run_sibling_acls.py`): 3 of 3 pass on Python 3.10 and 3.12. Run against `origin/main`'s code, the sibling test fails, because the sibling's ACL text changes under main's icacls grant.
+
+### Remaining risks
+
+- Measured on one hosted image (windows-latest, build 26100). Re-run `tools/windows_parent_acl_probe.py --assert` on other Windows builds before relying on the result there.
+- `SetFileSecurityW` is a legacy API. A future Windows change could alter its behavior. The probe and the sibling test are the regression checks.
+- The grant still writes a user-owned folder's DACL for the duration of a run. The revoke runs in a `finally` block. A hard kill leaves a SID-only ACE on that folder; the SID belongs to a deleted temporary profile. Startup cleanup of such residue is not implemented.
+- The folder ACE grants the listing right, as before. It is not yet narrowed to attribute reads.
+- The snapshot-tree revoke is still `icacls /remove:g … /T` on `main`, which follows junctions inside the snapshot. The object-by-object revoke that avoids links is in PR #161 and is not on `main`. Per-object `icacls /remove:g` on folders also re-processes their children (see the table above). Inside a disposable snapshot that is harmless, but it should be checked when that revoke lands.
+- The capability probes' Python-runtime grants (`probe_appcontainer_python_runtime`) still apply recursive `icacls` grants to Python's own folders. They are probes, not the production secure path, and they revoke their grants in a `finally` block.
