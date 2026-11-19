@@ -8,6 +8,15 @@ directory symlink and a file symlink inside the interpreter's Lib directory,
 each pointing at a fixture outside it, then runs the real probe. The planted
 links are removed afterwards.
 
+Three passes run in a fixed order on the same Lib tree:
+
+  idle_control    the tree is listed twice with nothing run in between; any
+                  change here means reading the tree alters its ACL text
+  clean_first     the real probe with no link anywhere in the tree; it runs
+                  before any link is planted, so the order of the passes
+                  cannot explain its result
+  with_planted_links  the real probe with the three links planted
+
 A control replays the legacy recursive grant and revoke (icacls /T) on a
 separate fixture, to show whether this runner's icacls follows the same planted
 junction. Without that, a clean probe result would prove little.
@@ -123,6 +132,33 @@ def plant_links(lib: Path, fixture: dict) -> dict:
     return planted
 
 
+def changed_between(before: dict, after: dict) -> list:
+    return sorted(
+        key for key in set(before) | set(after)
+        if before.get(key) != after.get(key))
+
+
+def samples(before: dict, after: dict, changed: list) -> list:
+    return [{"path": key, "before": before.get(key), "after": after.get(key)}
+            for key in changed[:5]]
+
+
+def idle_pass(lib: Path) -> dict:
+    """List the tree twice with nothing run in between.
+
+    A change here is not the probe's. It would mean that reading the tree
+    alters its ACL text, and the other passes could not be trusted.
+    """
+    first = tree_acl(lib)
+    second = tree_acl(lib)
+    changed = changed_between(first, second)
+    return {
+        "lib_objects_compared": len(first),
+        "lib_objects_changed_count": len(changed),
+        "lib_changed_sample": samples(first, second, changed),
+    }
+
+
 def probe_pass(lib: Path, outside_paths: list, planted: dict) -> dict:
     """Run the real probe once and compare every object before and after it."""
     outside_before = {str(path): acl(path) for path in outside_paths}
@@ -134,12 +170,8 @@ def probe_pass(lib: Path, outside_paths: list, planted: dict) -> dict:
     lib_after = tree_acl(lib)
     links = {str(link) for link in planted.values()}
     skipped = set(probe.get("runtime_links_not_granted", []))
-    changed_outside = sorted(
-        key for key in outside_before
-        if outside_before[key] != outside_after[key])
-    changed_lib = sorted(
-        key for key in set(lib_before) | set(lib_after)
-        if lib_before.get(key) != lib_after.get(key))
+    changed_outside = changed_between(outside_before, outside_after)
+    changed_lib = changed_between(lib_before, lib_after)
     return {
         "probe": probe,
         "probe_seconds": probe_seconds,
@@ -152,10 +184,7 @@ def probe_pass(lib: Path, outside_paths: list, planted: dict) -> dict:
         "lib_objects_compared": len(lib_before),
         "lib_objects_changed_count": len(changed_lib),
         "changed_lib_objects_all_planted_links": set(changed_lib) <= links,
-        "lib_changed_sample": [
-            {"path": key, "before": lib_before.get(key),
-             "after": lib_after.get(key)}
-            for key in changed_lib[:5]],
+        "lib_changed_sample": samples(lib_before, lib_after, changed_lib),
     }
 
 
@@ -164,11 +193,13 @@ def acceptance(work: Path) -> dict:
     fixture = build_fixture(work / "acceptance")
     outside_paths = [fixture[key] for key in ("outside", "sub", "secret",
                                               "nested")]
+    section = {"lib": str(lib)}
+    section["idle_control"] = idle_pass(lib)
+    # Runs before any link exists, so the order of the passes cannot explain
+    # what it finds.
+    section["clean_first"] = probe_pass(lib, [], {})
     planted = plant_links(lib, fixture)
-    section = {
-        "lib": str(lib),
-        "planted": {kind: str(link) for kind, link in planted.items()},
-    }
+    section["planted"] = {kind: str(link) for kind, link in planted.items()}
     try:
         # The baseline is taken with the links present, so the tree listing
         # includes them and the link objects themselves are compared.
@@ -177,16 +208,16 @@ def acceptance(work: Path) -> dict:
     finally:
         for link in planted.values():
             remove_link(link)
-    # The same tree with no links: any change here is the probe's own effect.
-    section["without_links"] = probe_pass(lib, [], {})
     linked = section["with_planted_links"]
     section["junction_planted"] = "junction" in planted
     section["passed"] = bool(
-        linked["probe_verified"] and section["junction_planted"]
+        section["idle_control"]["lib_objects_changed_count"] == 0
+        and section["clean_first"]["probe_verified"]
+        and linked["probe_verified"]
+        and section["junction_planted"]
         and linked["links_skipped_by_probe"]
         and linked["planted_links_intact_after_probe"]
-        and not linked["outside_changed"]
-        and section["without_links"]["probe_verified"])
+        and not linked["outside_changed"])
     return section
 
 
@@ -266,10 +297,26 @@ def main(argv=None) -> int:
     args.report.write_text(json.dumps(report, indent=2) + "\n",
                            encoding="utf-8")
     acc = report.get("acceptance", {})
+    idle = acc.get("idle_control", {})
+    clean = acc.get("clean_first", {})
     linked = acc.get("with_planted_links", {})
-    clean = acc.get("without_links", {})
     ctl = report.get("control", {})
     print(f"Python {report['python']}: passed={report['passed']}")
+    print("  idle control, two listings with nothing run between: changed="
+          f"{idle.get('lib_objects_changed_count')} of "
+          f"{idle.get('lib_objects_compared')}")
+    for sample in idle.get("lib_changed_sample", []):
+        print(f"    changed object: {sample['path']}")
+        print(f"      before: {sample['before']!r}")
+        print(f"      after:  {sample['after']!r}")
+    print("  clean tree first, no links: probe verified="
+          f"{clean.get('probe_verified')} in {clean.get('probe_seconds')} s; "
+          f"Lib objects compared={clean.get('lib_objects_compared')}; "
+          f"changed={clean.get('lib_objects_changed_count')}")
+    for sample in clean.get("lib_changed_sample", []):
+        print(f"    changed object: {sample['path']}")
+        print(f"      before: {sample['before']!r}")
+        print(f"      after:  {sample['after']!r}")
     print("  with planted links: probe verified="
           f"{linked.get('probe_verified')} in {linked.get('probe_seconds')} s")
     print("    outside objects checked="
@@ -284,14 +331,6 @@ def main(argv=None) -> int:
           f"{linked.get('links_skipped_by_probe')}; planted links intact="
           f"{linked.get('planted_links_intact_after_probe')}")
     for sample in linked.get("lib_changed_sample", []):
-        print(f"    changed object: {sample['path']}")
-        print(f"      before: {sample['before']!r}")
-        print(f"      after:  {sample['after']!r}")
-    print("  without links: probe verified="
-          f"{clean.get('probe_verified')} in {clean.get('probe_seconds')} s; "
-          f"Lib objects compared={clean.get('lib_objects_compared')}; "
-          f"changed={clean.get('lib_objects_changed_count')}")
-    for sample in clean.get("lib_changed_sample", []):
         print(f"    changed object: {sample['path']}")
         print(f"      before: {sample['before']!r}")
         print(f"      after:  {sample['after']!r}")

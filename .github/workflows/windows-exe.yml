@@ -140,3 +140,28 @@ jobs:
           name: snapshot-revoke-probe-${{ matrix.python-version }}
           path: snapshot-revoke-probe-${{ matrix.python-version }}.json
           if-no-files-found: warn
+  # TEMPORARY verification job for the clean-tree-first check. It runs only on
+  # manual dispatch, on hosted Windows, and must be removed once its evidence is
+  # recorded.
+  runtime-order-acceptance-temporary:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Probe a clean tree first, then with planted links
+        run: python tools/windows_runtime_probe_acceptance.py --report runtime-order-acceptance-${{ matrix.python-version }}.json
+      - name: Upload acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-order-acceptance-${{ matrix.python-version }}
+          path: runtime-order-acceptance-${{ matrix.python-version }}.json
+          if-no-files-found: warn
