@@ -20,6 +20,7 @@ SELF_TEST_TIMEOUT_SECONDS = 900
 
 EXCLUDED_MODULES = {
     "test_acceptance.py": "spawns the Python interpreter",
+    "test_appcontainer.py": "runs a Python interpreter inside AppContainer",
     "test_managed_llama.py": "spawns the Python interpreter",
     "test_memory_benchmark.py": "spawns the Python interpreter",
     "test_output_capture.py": "spawns the Python interpreter",
@@ -61,6 +62,36 @@ def parse_unittest_output(text: str) -> dict:
         "tests_run": int(ran[-1]) if ran else None,
         "outcome": outcome or None,
         "outcome_details": details,
+    }
+
+
+_SEPARATOR = "=" * 70
+_SUMMARY_PREFIXES = ("Ran ", "OK", "FAILED")
+_PATH = re.compile(r"[A-Za-z]:[\\/][^\s'\"]*")
+
+
+def summarize_failures(text: str, group_limit: int = 25) -> dict:
+    """Group failing tests by the last line of their traceback."""
+    causes: dict[str, dict] = {}
+    names: list[str] = []
+    for block in text.split(_SEPARATOR)[1:]:
+        lines = [line.rstrip() for line in block.splitlines() if line.strip()]
+        if not lines or not lines[0].startswith(("ERROR: ", "FAIL: ")):
+            continue
+        name = lines[0].split(": ", 1)[1]
+        names.append(name)
+        body = [line for line in lines[1:]
+                if not set(line.strip()) <= {"-"}
+                and not line.startswith(_SUMMARY_PREFIXES)]
+        cause = _PATH.sub("<path>", body[-1] if body else "unknown")[:240]
+        entry = causes.setdefault(cause, {"count": 0, "example": name})
+        entry["count"] += 1
+    ranked = sorted(causes.items(), key=lambda item: -item[1]["count"])[:group_limit]
+    return {
+        "failing_tests": len(names),
+        "causes": [{"count": v["count"], "cause": k, "example": v["example"]}
+                   for k, v in ranked],
+        "first_failing_tests": names[:40],
     }
 
 
@@ -111,6 +142,7 @@ def run_self_test(report_path: Path) -> int:
             remove_test_snapshot(workspace, runtime_root=secure_root)
         output = result.get("output") if isinstance(result.get("output"), str) else ""
         report.update(parse_unittest_output(output))
+        report.update(summarize_failures(output))
         report["sandbox_passed"] = result.get("passed") is True
         report["passed"] = report["sandbox_passed"] and report.get("outcome") == "OK"
         report["output_tail"] = output[-4000:]

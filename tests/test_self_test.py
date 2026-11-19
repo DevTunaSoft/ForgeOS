@@ -1,5 +1,6 @@
 """Linux-runnable checks for the packaged self-test's staging and parsing."""
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -55,6 +56,50 @@ class SelfTestParsingTests(unittest.TestCase):
         self.assertIsNone(parsed["tests_run"])
 
 
+class SelfTestFailureSummaryTests(unittest.TestCase):
+    def test_groups_failures_by_their_final_traceback_line(self):
+        text = (
+            "======================================================================\n"
+            "ERROR: test_a (test_mod.A.test_a)\n"
+            "----------------------------------------------------------------------\n"
+            "Traceback (most recent call last):\n"
+            "  File \"x.py\", line 1, in test_a\n"
+            "ModuleNotFoundError: No module named 'tkinter'\n"
+            "\n"
+            "======================================================================\n"
+            "FAIL: test_b (test_mod.B.test_b)\n"
+            "----------------------------------------------------------------------\n"
+            "Traceback (most recent call last):\n"
+            "AssertionError: False is not true\n"
+            "\n"
+            "----------------------------------------------------------------------\n"
+            "Ran 2 tests in 0.1s\n"
+            "\n"
+            "FAILED (failures=1, errors=1)\n")
+        summary = self_test.summarize_failures(text)
+        self.assertEqual(summary["failing_tests"], 2)
+        self.assertEqual(
+            [entry["cause"] for entry in summary["causes"]],
+            ["ModuleNotFoundError: No module named 'tkinter'",
+             "AssertionError: False is not true"])
+        self.assertEqual(
+            summary["first_failing_tests"],
+            ["test_a (test_mod.A.test_a)", "test_b (test_mod.B.test_b)"])
+
+    def test_windows_paths_in_causes_are_generalised(self):
+        text = (
+            "======================================================================\n"
+            "ERROR: test_c (test_mod.C.test_c)\n"
+            "----------------------------------------------------------------------\n"
+            "PermissionError: [WinError 5] Access is denied: 'C:\\Users\\x\\tmp'\n"
+            "\n")
+        summary = self_test.summarize_failures(text)
+        self.assertIn("<path>", summary["causes"][0]["cause"])
+        self.assertNotIn("C:", summary["causes"][0]["cause"])
+
+
+@unittest.skipIf(getattr(sys, "frozen", False),
+                 "the refusal is checked from source mode")
 class SelfTestRefusalTests(unittest.TestCase):
     def test_refuses_outside_the_packaged_app(self):
         with self.assertRaises(RuntimeError):
