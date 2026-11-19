@@ -46,6 +46,13 @@ def _scrub_bootstrap_environment(root: Path) -> None:
     roaming.mkdir(parents=True, exist_ok=True)
     os.environ["LOCALAPPDATA"] = str(local)
     os.environ["APPDATA"] = str(roaming)
+    # The snapshot's own temp folder accepts files but refuses new subfolders for
+    # the sandboxed child, so tempfile.mkdtemp failed there. A Temp folder under
+    # the child's AppData, which it can create subfolders in, is used instead.
+    temp = local / "Temp"
+    temp.mkdir(parents=True, exist_ok=True)
+    for name in ("TEMP", "TMP", "TMPDIR"):
+        os.environ[name] = str(temp)
 
 
 class _TraceResult(unittest.TextTestResult):
