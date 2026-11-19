@@ -4086,3 +4086,27 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 **Linux suite on the restored tree** (`PYTHONPATH=src python -m unittest discover -s tests`): 789 tests, 25 skipped, 10 errors. All 10 errors trace to `tkinter`, which this container does not have. They are the GUI acceptance and launcher tests, and the managed-llama process test, which imports the GUI modules. There are no other failures.
 
 **Still open.** PR #158, #160 and #161 are unchanged. The merge order above still applies to any combined review. The runner-parent grant (`grant(runner.parent, "RX")`) is still open, as recorded for the relocation fix. The decision on keeping `.github/workflows/hosted-sibling-acl.yml` is open.
+
+## 2026-11-19 — secure runner staged beside the snapshot
+
+**Problem.** `run_secure_appcontainer` granted read and execute, non-recursively, on the runner's own folder. In the frozen product the runner is the ForgeOS EXE, so that folder is wherever the user runs it from, often Downloads or Desktop. The relocation fix moved only the snapshot's parent.
+
+**Evidence.**
+- Diagnostic (`test_folder_grant_churn_diagnostic`) on hosted `windows-latest`, run [44435881998](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44435881998) at `a3f6b12`: for inherited-only children, a non-recursive grant changed the children's inheritance entries (`BUILTIN\Administrators` and `OWNER RIGHTS` moved between inherited `(I)` and explicit forms). It did so with `RX` and with traverse-only `X`. Children with explicit copies did not change.
+- The same diagnostic on the PC, run [44436152783](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44436152783) at `d9e4acd`: no change for any fixture, including inherited-only children with `RX`. The effect depends on the machine's folder ACLs. It is not a universal property of the grant, so this record does not claim it happens on every PC.
+- Red: `test_secure_run_leaves_runner_folder_unchanged` failed on hosted at `a3f6b12` (run 44435881998). The runner's folder changed during a secure run.
+
+**Change.** The runner is copied into the snapshot's parent folder (in the frozen product, `LOCALAPPDATA\ForgeOS\secure-runs`). Only that copy is granted. `_secure_grant_plan` refuses any runner outside that folder. `argv[0]` must be the runner and is replaced by the copy. The copy is removed after the grants are revoked, with short retries. Linux tests: `tests/test_appcontainer_staging.py`.
+
+**Verification at `d9e4acd`.**
+- Hosted sibling test (run [44436143904](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44436143904)): 4 tests OK, including `test_secure_run_leaves_runner_folder_unchanged`.
+- Hosted EXE build (run [44436148615](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44436148615)): every step passed, including the frozen secure AppContainer boundary smoke test. Artifact `ForgeOS-Windows-EXE` uploaded.
+- PC unit suite (run [44436152783](https://github.com/DevTunaSoft/ForgeOS/actions/runs/44436152783)): 831 tests, OK, 10 skipped.
+- Linux suite: 798 tests, 27 skipped, 10 errors, all from `tkinter` missing in this container.
+
+**Still open.**
+- The AppContainer probe path (`probe_appcontainer_python_runtime`) still grants and revokes recursively on runtime trees. It does not go through `run_secure_appcontainer`, and this record does not change it.
+- Each frozen secure run now copies the runner EXE once, so the cost scales with the EXE's size.
+- The decision on keeping `.github/workflows/hosted-sibling-acl.yml` is still open.
+
+**Rollback.** Revert `d9e4acd` and the record commit that follows it. No data or stored-format change.
