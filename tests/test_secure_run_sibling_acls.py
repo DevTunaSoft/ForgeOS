@@ -14,8 +14,9 @@ class SecureRunSiblingAclTests(unittest.TestCase):
     """A secure run must not change folders beside the workspace.
 
     The workspace's parent is the user's folder. A non-recursive icacls grant on
-    that folder re-inherits the explicit ACEs of its children, and a later revoke
-    cannot undo it. The secure run therefore grants nothing on that folder.
+    that folder re-processes the security descriptors of its children, and a
+    later revoke cannot undo it. The secure run therefore writes the parent's
+    read/execute ACE with the folder writer, which leaves the children alone.
     """
 
     def setUp(self):
@@ -70,7 +71,7 @@ class SecureRunSiblingAclTests(unittest.TestCase):
         after = (self._acl(sibling), self._acl(sibling / "notes.txt"))
         self.assertEqual(before, after)
 
-    def test_secure_run_grants_nothing_on_the_workspace_parent(self):
+    def test_secure_run_writes_the_parent_only_through_the_folder_writer(self):
         from forgeos import appcontainer
         from forgeos.appcontainer import run_secure_appcontainer
         from forgeos.secure_runner import _bootstrap_environment
@@ -83,15 +84,23 @@ class SecureRunSiblingAclTests(unittest.TestCase):
         (workspace / "app.txt").write_text("workspace", encoding="utf-8")
         cmd = self._copy_cmd(self.tmp / "bin")
 
-        calls = []
+        icacls_grants = []
+        folder_grants = []
         original_icacls = appcontainer._icacls
+        original_folder = appcontainer._grant_directory_read_execute
 
         def recording_icacls(path, *arguments):
-            calls.append((Path(path), arguments))
+            if "/grant" in arguments:
+                icacls_grants.append(Path(path).resolve())
             return original_icacls(path, *arguments)
+
+        def recording_folder(path, sid):
+            folder_grants.append(Path(path).resolve())
+            return original_folder(path, sid)
 
         runtime = create_windows_low_integrity_snapshot(workspace)
         appcontainer._icacls = recording_icacls
+        appcontainer._grant_directory_read_execute = recording_folder
         try:
             result = run_secure_appcontainer(
                 [cmd, "/c", "exit 0"], runtime.path,
@@ -99,28 +108,37 @@ class SecureRunSiblingAclTests(unittest.TestCase):
             self.assertTrue(result["passed"])
         finally:
             appcontainer._icacls = original_icacls
+            appcontainer._grant_directory_read_execute = original_folder
             remove_test_snapshot(workspace)
-        granted = {path.resolve() for path, arguments in calls
-                   if "/grant" in arguments}
-        self.assertNotIn(projects.resolve(), granted)
+        self.assertNotIn(projects.resolve(), icacls_grants)
+        self.assertIn(projects.resolve(), folder_grants)
 
-    def test_non_recursive_grant_changes_children_on_this_fixture(self):
-        # Control for the sibling test: the same folder shape must show the
-        # re-inheritance that the old parent grant caused, or the unchanged-sibling
-        # assertion above proves nothing on this host.
+    def test_folder_grant_and_revoke_leave_children_unchanged(self):
+        # Control: the same folder shape must show the re-processing that icacls
+        # causes, or the unchanged-children assertions below prove nothing here.
         from forgeos import appcontainer
 
-        folder = self.tmp / "control" / "parent"
-        child = folder / "child"
-        child.mkdir(parents=True)
-        (child / "inner.txt").write_text("inner", encoding="utf-8")
-        (folder / "sibling.txt").write_text("sibling", encoding="utf-8")
-        watched = (child, child / "inner.txt", folder / "sibling.txt")
-        before = [self._acl(path) for path in watched]
+        def build(name):
+            folder = self.tmp / name / "parent"
+            child = folder / "child"
+            child.mkdir(parents=True)
+            (child / "inner.txt").write_text("inner", encoding="utf-8")
+            (folder / "sibling.txt").write_text("sibling", encoding="utf-8")
+            return folder, (child, child / "inner.txt", folder / "sibling.txt")
+
         with appcontainer._temporary_probe_profile() as (_profile, sid):
             sid_string = appcontainer._sid_to_string(sid)
+
+            folder, watched = build("control")
+            before = [self._acl(path) for path in watched]
             self._icacls(folder, "/grant", f"*{sid_string}:(RX)")
-        after = [self._acl(path) for path in watched]
-        self.assertNotEqual(
-            before, after,
-            "fixture is not sensitive to re-inheritance on this host")
+            self.assertNotEqual(
+                before, [self._acl(path) for path in watched],
+                "fixture is not sensitive to re-processing on this host")
+
+            folder, watched = build("candidate")
+            before = [self._acl(path) for path in watched]
+            appcontainer._grant_directory_read_execute(folder, sid)
+            self.assertEqual(before, [self._acl(path) for path in watched])
+            appcontainer._revoke_directory_read_execute(folder, sid)
+            self.assertEqual(before, [self._acl(path) for path in watched])

@@ -1,35 +1,29 @@
 #!/usr/bin/env python3
-"""Windows probe: does a folder grant rewrite its children, and is one needed?
+"""Windows probe: does a folder grant rewrite its children, and what must it grant?
 
-The secure runner used to grant read and execute on a snapshot's parent folder,
-which is the user's folder beside the workspace. A non-recursive icacls /grant
-on that folder was measured to re-inherit the explicit ACEs of its children
-(run 44366365038). This probe answers three questions on hosted Windows:
+The secure runner grants the AppContainer read and execute on the snapshot's
+parent folder and on the runner's folder. Those are often the user's folders,
+so a grant there must leave every child exactly as it was. This probe answers
+four questions on hosted Windows:
 
-  1. Control. Does icacls /grant (non-recursive) change a child's ACL on a
-     fixture built the way the measured folder was built?  (G0+R0)
-  2. Candidate. Does a DACL-only SetNamedSecurityInfoW write, with no
-     auto-inheritance request, leave the children unchanged on the grant and on
-     the revoke?  (G1+R1, and the other write APIs as characterization.)
-  3. Traversal. Can a zero-capability AppContainer read a snapshot file through
-     its full path with no ACE on the parent folder? An explicit deny of
-     traversal on that folder is set in a separate fixture, so a read that still
-     succeeds shows the traverse check is not applied to the parent at all.
-     Listing the parent is measured separately: it needs a grant.
+  1. Control. Does icacls /grant (non-recursive) change a child's security
+     descriptor on a plain fixture? (G0+R0) If not, the other results prove
+     nothing.
+  2. Shipped writer. Does appcontainer._grant/_revoke_directory_read_execute,
+     the writer that ships, leave the children and the folder unchanged through
+     a grant and a revoke? (PROD+PROD)
+  3. Alternatives, for the record. SetNamedSecurityInfoW with DACL only
+     (G1+R1), with UNPROTECTED_DACL added (G2+R1), and icacls revoke on a
+     folder that was never granted (none+R0).
+  4. Production path. Does a real secure run beside a sibling project leave the
+     parent folder, the sibling and the workspace unchanged? Does the sandboxed
+     process still read, list and fail to read as expected? (PROD and F-*)
 
-Each DACL sequence builds a fresh fixture, applies a grant method and then a
-revoke method, and compares the DACL SDDL of every child before and after.
-
-  G0+R0    icacls /grant and icacls /remove:g, non-recursive (control)
-  G1+R1    SetNamedSecurityInfoW, DACL only (candidate)
-  G1+R0    candidate grant, icacls revoke
-  G2+R1    SetNamedSecurityInfoW with UNPROTECTED_DACL added (characterization)
-  G3+R3    SetFileSecurityW with a fresh security descriptor (characterization)
-  none+R0  icacls revoke on a fixture without any grant
-  none+R1  candidate revoke on a fixture without any grant
+A child is compared by its full security descriptor (SDDL), so a change to the
+auto-inherited flag counts even when the ACE list reads the same.
 
 Windows only. Writes a JSON report and prints a summary. With --assert the exit
-status is nonzero unless the acceptance checks hold.
+status is nonzero unless the required checks hold.
 """
 from __future__ import annotations
 
@@ -101,15 +95,6 @@ if os.name == "nt":
         ctypes.POINTER(wintypes.LPWSTR), ctypes.POINTER(wintypes.DWORD)]
     ADVAPI.ConvertSecurityDescriptorToStringSecurityDescriptorW.restype = (
         wintypes.BOOL)
-    ADVAPI.InitializeSecurityDescriptor.argtypes = [
-        ctypes.c_void_p, wintypes.DWORD]
-    ADVAPI.InitializeSecurityDescriptor.restype = wintypes.BOOL
-    ADVAPI.SetSecurityDescriptorDacl.argtypes = [
-        ctypes.c_void_p, wintypes.BOOL, ctypes.c_void_p, wintypes.BOOL]
-    ADVAPI.SetSecurityDescriptorDacl.restype = wintypes.BOOL
-    ADVAPI.SetFileSecurityW.argtypes = [
-        wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p]
-    ADVAPI.SetFileSecurityW.restype = wintypes.BOOL
     KERNEL.LocalFree.argtypes = [ctypes.c_void_p]
     KERNEL.LocalFree.restype = ctypes.c_void_p
 
@@ -119,13 +104,8 @@ def _check(status: int, what: str) -> None:
         raise OSError(f"{what} failed with Win32 error {status}")
 
 
-def _win_check(ok, what: str) -> None:
-    if not ok:
-        raise ctypes.WinError(ctypes.get_last_error(), what)
-
-
 def sddl(path: Path) -> str:
-    """Return the object's DACL as SDDL, where (ID) marks inherited ACEs."""
+    """Return the object's full DACL as SDDL, where (ID) marks inherited ACEs."""
     descriptor = ctypes.c_void_p()
     _check(ADVAPI.GetNamedSecurityInfoW(
         str(path), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
@@ -134,11 +114,10 @@ def sddl(path: Path) -> str:
     try:
         text = wintypes.LPWSTR()
         length = wintypes.DWORD()
-        _win_check(
-            ADVAPI.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        if not ADVAPI.ConvertSecurityDescriptorToStringSecurityDescriptorW(
                 descriptor, SDDL_REVISION_1, DACL_SECURITY_INFORMATION,
-                ctypes.byref(text), ctypes.byref(length)),
-            f"ConvertSecurityDescriptorToStringSecurityDescriptorW({path})")
+                ctypes.byref(text), ctypes.byref(length)):
+            raise ctypes.WinError(ctypes.get_last_error())
         try:
             return text.value
         finally:
@@ -147,13 +126,8 @@ def sddl(path: Path) -> str:
         KERNEL.LocalFree(descriptor)
 
 
-def _rewrite_dacl(path: Path, sid, *, grant: bool, method: str) -> None:
-    """Add or remove this SID's read/execute ACE with the chosen write API.
-
-    "named" is SetNamedSecurityInfoW with DACL only (the candidate).
-    "named_unprotected" adds UNPROTECTED_DACL. "file_security" writes a fresh
-    security descriptor with SetFileSecurityW.
-    """
+def _rewrite_dacl(path: Path, sid, *, grant: bool, unprotected: bool) -> None:
+    """Characterization writer: SetNamedSecurityInfoW, optionally UNPROTECTED."""
     descriptor = ctypes.c_void_p()
     current = ctypes.c_void_p()
     _check(ADVAPI.GetNamedSecurityInfoW(
@@ -175,35 +149,12 @@ def _rewrite_dacl(path: Path, sid, *, grant: bool, method: str) -> None:
             1, ctypes.byref(entry), current, ctypes.byref(new_dacl)),
             f"SetEntriesInAclW({path})")
         try:
-            if method == "named":
-                _check(ADVAPI.SetNamedSecurityInfoW(
-                    str(path), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-                    None, None, new_dacl, None),
-                    f"SetNamedSecurityInfoW({path})")
-            elif method == "named_unprotected":
-                _check(ADVAPI.SetNamedSecurityInfoW(
-                    str(path), SE_FILE_OBJECT,
-                    DACL_SECURITY_INFORMATION
-                    | UNPROTECTED_DACL_SECURITY_INFORMATION,
-                    None, None, new_dacl, None),
-                    f"SetNamedSecurityInfoW(unprotected, {path})")
-            elif method == "file_security":
-                security = ctypes.create_string_buffer(256)
-                security_pointer = ctypes.cast(security, ctypes.c_void_p)
-                _win_check(
-                    ADVAPI.InitializeSecurityDescriptor(security_pointer, 1),
-                    "InitializeSecurityDescriptor")
-                _win_check(
-                    ADVAPI.SetSecurityDescriptorDacl(
-                        security_pointer, True, new_dacl, False),
-                    "SetSecurityDescriptorDacl")
-                _win_check(
-                    ADVAPI.SetFileSecurityW(
-                        str(path), DACL_SECURITY_INFORMATION,
-                        security_pointer),
-                    f"SetFileSecurityW({path})")
-            else:
-                raise ValueError(f"unknown write method: {method}")
+            flags = DACL_SECURITY_INFORMATION
+            if unprotected:
+                flags |= UNPROTECTED_DACL_SECURITY_INFORMATION
+            _check(ADVAPI.SetNamedSecurityInfoW(
+                str(path), SE_FILE_OBJECT, flags, None, None, new_dacl, None),
+                f"SetNamedSecurityInfoW({path})")
         finally:
             KERNEL.LocalFree(new_dacl)
     finally:
@@ -218,40 +169,39 @@ def _icacls_revoke(path: Path, sid, sid_string: str) -> None:
     appcontainer._icacls(path, "/remove:g", f"*{sid_string}", "/Q")
 
 
-def _candidate_grant(path: Path, sid, sid_string: str) -> None:
-    _rewrite_dacl(path, sid, grant=True, method="named")
+def _named_grant(path: Path, sid, sid_string: str) -> None:
+    _rewrite_dacl(path, sid, grant=True, unprotected=False)
 
 
-def _candidate_revoke(path: Path, sid, sid_string: str) -> None:
-    _rewrite_dacl(path, sid, grant=False, method="named")
+def _named_revoke(path: Path, sid, sid_string: str) -> None:
+    _rewrite_dacl(path, sid, grant=False, unprotected=False)
 
 
-def _unprotected_grant(path: Path, sid, sid_string: str) -> None:
-    _rewrite_dacl(path, sid, grant=True, method="named_unprotected")
+def _named_unprotected_grant(path: Path, sid, sid_string: str) -> None:
+    _rewrite_dacl(path, sid, grant=True, unprotected=True)
 
 
-def _file_security_grant(path: Path, sid, sid_string: str) -> None:
-    _rewrite_dacl(path, sid, grant=True, method="file_security")
+def _shipped_grant(path: Path, sid, sid_string: str) -> None:
+    appcontainer._grant_directory_read_execute(path, sid)
 
 
-def _file_security_revoke(path: Path, sid, sid_string: str) -> None:
-    _rewrite_dacl(path, sid, grant=False, method="file_security")
+def _shipped_revoke(path: Path, sid, sid_string: str) -> None:
+    appcontainer._revoke_directory_read_execute(path, sid)
 
 
 SEQUENCES = (
     ("G0+R0", _icacls_grant, _icacls_revoke),
-    ("G1+R1", _candidate_grant, _candidate_revoke),
-    ("G1+R0", _candidate_grant, _icacls_revoke),
-    ("G2+R1", _unprotected_grant, _candidate_revoke),
-    ("G3+R3", _file_security_grant, _file_security_revoke),
+    ("PROD+PROD", _shipped_grant, _shipped_revoke),
+    ("G1+R1", _named_grant, _named_revoke),
+    ("G1+R0", _named_grant, _icacls_revoke),
+    ("G2+R1", _named_unprotected_grant, _named_revoke),
     ("none+R0", None, _icacls_revoke),
-    ("none+R1", None, _candidate_revoke),
+    ("none+R1", None, _named_revoke),
 )
 FUNCTIONAL = (
     ("F-none", None, None),
     ("F-deny", None, None),
-    ("F-G1", _candidate_grant, _candidate_revoke),
-    ("F-G3", _file_security_grant, _file_security_revoke),
+    ("F-PROD", _shipped_grant, _shipped_revoke),
 )
 
 
@@ -365,6 +315,52 @@ def functional_sequence(base: Path, index: int, name: str, sid,
     return row
 
 
+def production_check(base: Path) -> dict:
+    """Run the shipped secure path beside a sibling project and compare ACLs.
+
+    This is the parent-directory check for the code that ships: the workspace's
+    parent folder holds another project, and no object there may change.
+    """
+    from forgeos.secure_runner import _bootstrap_environment
+    from forgeos.test_runtime import (
+        create_windows_low_integrity_snapshot, remove_test_snapshot)
+
+    root = base / "production"
+    projects = root / "projects"
+    sibling = projects / "other-project"
+    sibling.mkdir(parents=True)
+    (sibling / "notes.txt").write_text("keep", encoding="ascii")
+    workspace = projects / "ForgeOS"
+    workspace.mkdir()
+    (workspace / "app.txt").write_text("workspace", encoding="ascii")
+    bin_dir = root / "bin"
+    bin_dir.mkdir()
+    cmd = str(bin_dir / "cmd.exe")
+    shutil.copy2(
+        os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
+                     "System32", "cmd.exe"), cmd)
+    watched = {"projects": projects, "sibling": sibling,
+               "notes": sibling / "notes.txt", "workspace": workspace}
+    before = {key: sddl(path) for key, path in watched.items()}
+    result = {"passed": None, "error": ""}
+    try:
+        runtime = create_windows_low_integrity_snapshot(workspace)
+        try:
+            outcome = appcontainer.run_secure_appcontainer(
+                [cmd, "/c", "exit 0"], runtime.path,
+                _bootstrap_environment(runtime), executable=cmd, timeout=60)
+            result["passed"] = outcome["passed"]
+        finally:
+            remove_test_snapshot(workspace)
+    except Exception as exc:  # recorded for the report, never hidden
+        result["error"] = f"{type(exc).__name__}: {exc}"[-300:]
+    after = {key: sddl(path) for key, path in watched.items()}
+    result["changed"] = {key: before[key] != after[key] for key in watched}
+    result["before"] = before
+    result["after"] = after
+    return result
+
+
 def run_probe(base: Path) -> dict:
     report = {
         "python": sys.version.split()[0],
@@ -384,6 +380,7 @@ def run_probe(base: Path) -> dict:
             report["functional"].append(functional_sequence(
                 base, 100 + index, name, sid, sid_string, command, grant,
                 revoke, deny=(name == "F-deny")))
+    report["production"] = production_check(base)
     return report
 
 
@@ -398,34 +395,57 @@ def _allowed(stage: dict) -> bool:
 def acceptance(report: dict) -> dict:
     fixtures = {row["sequence"]: row for row in report["fixtures"]}
     functional = {row["sequence"]: row for row in report["functional"]}
+    production = report["production"]
     control = fixtures["G0+R0"]
-    candidate = fixtures["G1+R1"]
+    shipped = fixtures["PROD+PROD"]
     none = functional["F-none"]["stages"]["initial"]
     denied = functional["F-deny"]["stages"]["denied"]
-    granted = functional["F-G1"]["stages"]["granted"]
+    prod = functional["F-PROD"]["stages"]
     checks = {
         "control_grant_rewrites_children": any(
             control["changed_by_grant"].values()),
-        "candidate_grant_leaves_children": not any(
-            candidate["changed_by_grant"].values()),
-        "candidate_revoke_leaves_children": not any(
-            candidate["changed_by_revoke"].values()),
-        "candidate_parent_restored": candidate["parent_restored"],
-        "candidate_fixture_clean": (
-            not candidate["grant_error"] and not candidate["revoke_error"]),
+        "shipped_grant_leaves_children": not any(
+            shipped["changed_by_grant"].values()),
+        "shipped_revoke_leaves_children": not any(
+            shipped["changed_by_revoke"].values()),
+        "shipped_parent_restored": shipped["parent_restored"],
+        "shipped_fixture_clean": (
+            not shipped["grant_error"] and not shipped["revoke_error"]),
+        "production_run_passed": (
+            production["passed"] is True and not production["error"]),
+        "production_parent_unchanged": not production["changed"]["projects"],
+        "production_sibling_unchanged": not (
+            production["changed"]["sibling"]
+            or production["changed"]["notes"]),
+        "production_workspace_unchanged": not production["changed"][
+            "workspace"],
+        "functional_shipped_grant_reads_snapshot": _allowed(
+            prod["granted"]["read_snap"]),
+        "functional_shipped_grant_blocks_sibling": _blocked(
+            prod["granted"]["read_sibling"]),
+        "functional_shipped_revoke_removes_listing": _blocked(
+            prod["revoked"]["list_parent"]),
+        "functional_shipped_clean": not (
+            functional["F-PROD"]["grant_error"]
+            or functional["F-PROD"]["revoke_error"]),
+    }
+    named = fixtures["G1+R1"]
+    info = {
+        "setnamedsecurityinfo_grant_changes_children": any(
+            named["changed_by_grant"].values()),
+        "setnamedsecurityinfo_parent_restored": named["parent_restored"],
+        "icacls_revoke_on_pristine_changes_children": any(
+            fixtures["none+R0"]["changed_by_revoke"].values()),
         "traversal_read_without_parent_ace": _allowed(none["read_snap"]),
         "traversal_sibling_blocked_without_grant": _blocked(
             none["read_sibling"]),
-        "traversal_read_with_deny_on_parent": _allowed(denied["read_snap"]),
-        "candidate_grant_blocks_sibling": _blocked(granted["read_sibling"]),
-    }
-    info = {
+        "traversal_read_with_deny_on_parent": _allowed(
+            denied["read_snap"]),
         "listing_blocked_without_grant": _blocked(none["list_parent"]),
-        "listing_allowed_with_candidate_grant": _allowed(
-            granted["list_parent"]),
-        "listing_blocked_after_candidate_revoke": _blocked(
-            functional["F-G1"]["stages"]["revoked"]["list_parent"]),
+        "listing_allowed_with_shipped_grant": _allowed(
+            prod["granted"]["list_parent"]),
         "deny_error": functional["F-deny"]["deny_error"],
+        "production_error": production["error"],
     }
     return {"checks": checks, "info": info}
 
@@ -435,25 +455,13 @@ def summarize(report: dict, result: dict) -> list[str]:
              f"icacls={report['icacls']}"]
     for row in report["fixtures"]:
         lines.append(
-            f"FIXTURE {row['sequence']:<8} "
+            f"FIXTURE {row['sequence']:<10} "
             f"grant_error={row['grant_error'][:160]!r} "
             f"revoke_error={row['revoke_error'][:160]!r} "
             f"changed_by_grant={row['changed_by_grant']} "
             f"changed_by_revoke={row['changed_by_revoke']} "
             f"parent_changed_by_grant={row['parent_changed_by_grant']} "
             f"parent_restored={row['parent_restored']}")
-    for row in report["fixtures"]:
-        if row["sequence"] not in ("G0+R0", "G1+R1"):
-            continue
-        for stage in ("before", "after_grant", "after_revoke"):
-            lines.append(
-                f"SDDL {row['sequence']} {stage} "
-                f"parent={row['sddl'][stage]['parent']}")
-            lines.append(
-                f"SDDL {row['sequence']} {stage} "
-                f"child={row['sddl'][stage]['child']} "
-                f"inner={row['sddl'][stage]['inner']} "
-                f"sibling={row['sddl'][stage]['sibling']}")
     for row in report["functional"]:
         for stage_name, stage in row["stages"].items():
             lines.append(
@@ -467,6 +475,16 @@ def summarize(report: dict, result: dict) -> list[str]:
             f"grant_error={row['grant_error'][:120]!r} "
             f"revoke_error={row['revoke_error'][:120]!r} "
             f"deny_error={row['deny_error'][:120]!r}")
+    production = report["production"]
+    lines.append(
+        f"PRODUCTION passed={production['passed']} "
+        f"error={production['error'][:160]!r} "
+        f"changed={production['changed']}")
+    for key in ("projects", "sibling"):
+        lines.append(
+            f"PRODUCTION sddl {key} before={production['before'][key]}")
+        lines.append(
+            f"PRODUCTION sddl {key} after={production['after'][key]}")
     for key, value in result["info"].items():
         lines.append(f"INFO {key}={value!r}")
     for key, value in result["checks"].items():
@@ -480,7 +498,7 @@ def main(argv=None) -> int:
     parser.add_argument("--report", type=Path, required=True,
                         help="JSON report path to write")
     parser.add_argument("--assert", dest="assert_checks", action="store_true",
-                        help="exit nonzero unless the acceptance checks hold")
+                        help="exit nonzero unless the required checks hold")
     args = parser.parse_args(argv)
     if os.name != "nt":
         parser.error("this probe must run on Windows")

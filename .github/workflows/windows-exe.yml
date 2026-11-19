@@ -130,6 +130,20 @@ jobs:
       - name: Sibling-ACL and non-propagating grant tests
         if: ${{ always() }}
         run: python -m unittest discover -s tests -p test_secure_run_sibling_acls.py -v
+      - name: Red-on-main check for the sibling tests (failures expected)
+        if: ${{ always() }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          git fetch --depth=1 origin main
+          $dir = Join-Path $env:RUNNER_TEMP "main-src"
+          $tar = Join-Path $env:RUNNER_TEMP "main-src.tar"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          git archive --format=tar --output=$tar FETCH_HEAD src
+          tar -xf $tar -C $dir
+          $env:PYTHONPATH = Join-Path $dir "src"
+          python -c "import forgeos.appcontainer as a; print('forgeos loaded from', a.__file__)"
+          python -m unittest discover -s tests -p test_secure_run_sibling_acls.py -v
       - name: Upload parent-folder probe report
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

@@ -20,6 +20,20 @@ import uuid
 
 from .file_security import read_bounded_file
 
+# Windows security constants for the folder DACL writer below.
+SE_FILE_OBJECT = 1
+DACL_SECURITY_INFORMATION = 0x00000004
+NO_INHERITANCE = 0
+GRANT_ACCESS = 1
+REVOKE_ACCESS = 4
+TRUSTEE_IS_SID = 0
+TRUSTEE_IS_UNKNOWN = 0
+ERROR_SUCCESS = 0
+SECURITY_DESCRIPTOR_REVISION = 1
+SECURITY_DESCRIPTOR_BYTES = 256
+# icacls "RX": FILE_GENERIC_READ | FILE_GENERIC_EXECUTE.
+READ_EXECUTE_MASK = 0x001200A9
+
 if os.name == "nt":
     from . import windows_containment as wc
 
@@ -62,6 +76,43 @@ if os.name == "nt":
     wc.advapi32.GetTokenInformation.restype = wintypes.BOOL
     wc.advapi32.FreeSid.argtypes = [ctypes.c_void_p]
     wc.advapi32.FreeSid.restype = ctypes.c_void_p
+
+    class TRUSTEE_W(ctypes.Structure):
+        _fields_ = [
+            ("pMultipleTrustee", ctypes.c_void_p),
+            ("MultipleTrusteeOperation", ctypes.c_int),
+            ("TrusteeForm", ctypes.c_int),
+            ("TrusteeType", ctypes.c_int),
+            ("ptstrName", ctypes.c_void_p),
+        ]
+
+    class EXPLICIT_ACCESS_W(ctypes.Structure):
+        _fields_ = [
+            ("grfAccessPermissions", wintypes.DWORD),
+            ("grfAccessMode", ctypes.c_int),
+            ("grfInheritance", wintypes.DWORD),
+            ("Trustee", TRUSTEE_W),
+        ]
+
+    wc.advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,
+        ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p)]
+    wc.advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    wc.advapi32.SetEntriesInAclW.argtypes = [
+        wintypes.DWORD, ctypes.POINTER(EXPLICIT_ACCESS_W),
+        ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    wc.advapi32.SetEntriesInAclW.restype = wintypes.DWORD
+    wc.advapi32.InitializeSecurityDescriptor.argtypes = [
+        ctypes.c_void_p, wintypes.DWORD]
+    wc.advapi32.InitializeSecurityDescriptor.restype = wintypes.BOOL
+    wc.advapi32.SetSecurityDescriptorDacl.argtypes = [
+        ctypes.c_void_p, wintypes.BOOL, ctypes.c_void_p, wintypes.BOOL]
+    wc.advapi32.SetSecurityDescriptorDacl.restype = wintypes.BOOL
+    wc.advapi32.SetFileSecurityW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p]
+    wc.advapi32.SetFileSecurityW.restype = wintypes.BOOL
 
 
 def _failed_hresult(value: int) -> bool:
@@ -116,6 +167,68 @@ def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -
         arguments.append("/T")
     arguments.append("/Q")
     _icacls(path, *arguments)
+
+
+def _rewrite_directory_dacl(path: Path, sid, *, grant: bool) -> None:
+    """Add or remove one SID's read/execute ACE on a folder, leaving children alone.
+
+    The folder's current DACL is merged with SetEntriesInAclW and written with
+    SetFileSecurityW from a fresh security descriptor that carries no
+    auto-inheritance request. Hosted probing on windows-latest measured that
+    icacls, and SetNamedSecurityInfoW with DACL only, each set the auto-inherited
+    flag on every child and could not restore the folder after a revoke, while
+    this write left the children and the folder unchanged through a grant and a
+    revoke (runs 44427344770 and 44428114422). The ACE has no inheritance flags,
+    so it is not inherited by any child.
+    """
+    descriptor = ctypes.c_void_p()
+    current_dacl = ctypes.c_void_p()
+    status = wc.advapi32.GetNamedSecurityInfoW(
+        str(path), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, None, None,
+        ctypes.byref(current_dacl), None, ctypes.byref(descriptor))
+    if status != ERROR_SUCCESS:
+        raise OSError(f"GetNamedSecurityInfoW failed for {path}: {status}")
+    try:
+        if not current_dacl.value:
+            raise OSError(f"{path} has no DACL to rewrite")
+        entry = EXPLICIT_ACCESS_W()
+        entry.grfAccessPermissions = READ_EXECUTE_MASK if grant else 0
+        entry.grfAccessMode = GRANT_ACCESS if grant else REVOKE_ACCESS
+        entry.grfInheritance = NO_INHERITANCE
+        entry.Trustee.TrusteeForm = TRUSTEE_IS_SID
+        entry.Trustee.TrusteeType = TRUSTEE_IS_UNKNOWN
+        entry.Trustee.ptstrName = sid.value
+        new_dacl = ctypes.c_void_p()
+        status = wc.advapi32.SetEntriesInAclW(
+            1, ctypes.byref(entry), current_dacl, ctypes.byref(new_dacl))
+        if status != ERROR_SUCCESS:
+            raise OSError(f"SetEntriesInAclW failed for {path}: {status}")
+        try:
+            security = ctypes.create_string_buffer(SECURITY_DESCRIPTOR_BYTES)
+            security_pointer = ctypes.cast(security, ctypes.c_void_p)
+            if not wc.advapi32.InitializeSecurityDescriptor(
+                    security_pointer, SECURITY_DESCRIPTOR_REVISION):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not wc.advapi32.SetSecurityDescriptorDacl(
+                    security_pointer, True, new_dacl, False):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not wc.advapi32.SetFileSecurityW(
+                    str(path), DACL_SECURITY_INFORMATION, security_pointer):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            wc.kernel32.LocalFree(new_dacl)
+    finally:
+        wc.kernel32.LocalFree(descriptor)
+
+
+def _grant_directory_read_execute(path: Path, sid) -> None:
+    """Grant the AppContainer SID read/execute on one folder, children untouched."""
+    _rewrite_directory_dacl(path, sid, grant=True)
+
+
+def _revoke_directory_read_execute(path: Path, sid) -> None:
+    """Remove the AppContainer SID's ACE from one folder, children untouched."""
+    _rewrite_directory_dacl(path, sid, grant=False)
 
 
 def _python_runtime_acl_targets() -> list[Path]:
@@ -838,8 +951,10 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
     """Run autonomous code with zero capabilities and no weaker fallback.
 
     Only the disposable execution snapshot and the ForgeOS-owned executable are
-    explicitly granted to the temporary AppContainer SID. Grants are revoked
-    before the temporary profile is deleted.
+    explicitly granted to the temporary AppContainer SID. The read/execute ACE on
+    the snapshot's parent folder and on the runner's folder is written by
+    _grant_directory_read_execute, which leaves those folders' children unchanged.
+    Grants are revoked before the temporary profile is deleted.
     """
     if os.name != "nt":
         raise OSError("Secure AppContainer execution is Windows-only")
@@ -889,18 +1004,23 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                     path, "/grant",
                     f"*{sid_string}:(OI)(CI)({permission})",
                     "/T", "/Q")
+            elif path.is_dir():
+                # A folder outside the snapshot never goes through icacls, which
+                # re-processes its children (see _rewrite_directory_dacl).
+                if permission != "RX":
+                    raise ValueError(
+                        "Folder grants outside the snapshot must be RX")
+                _grant_directory_read_execute(path, sid)
             else:
                 _icacls(
                     path, "/grant", f"*{sid_string}:({permission})", "/Q")
             grants.append((path, recursive))
 
         try:
-            # No grant touches the snapshot's parent or the runner's folder. On
-            # the hosted Windows runners measured in docs/ARCHITECTURE.md, the
-            # AppContainer reads through those folders without an ACE, while a
-            # grant there would add listing rights and rewrite the children of a
-            # folder the user owns.
+            grant(root.parent, "RX")
             grant(root, "M", recursive=True)
+            if runner.parent != root.parent:
+                grant(runner.parent, "RX")
             grant(runner, "RX")
             result = _run_appcontainer_process(
                 sid, argv, cwd=root, env=env, timeout=timeout,
@@ -909,8 +1029,11 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
             cleanup_errors = []
             for path, recursive in reversed(grants):
                 try:
-                    _revoke_path_grant(
-                        path, sid_string, recursive=recursive)
+                    if not recursive and path.is_dir():
+                        _revoke_directory_read_execute(path, sid)
+                    else:
+                        _revoke_path_grant(
+                            path, sid_string, recursive=recursive)
                 except OSError as exc:
                     cleanup_errors.append(str(exc))
             if cleanup_errors:
