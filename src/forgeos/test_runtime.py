@@ -488,15 +488,34 @@ def create_test_snapshot(
         raise
 
 
+# Shown when a secure snapshot cannot be Low-labelled. Labelling runs icacls,
+# which fails on paths past the Windows default limit. The cause is not always
+# that, so the message says "likely" and keeps the original error.
+_LABEL_FAILURE_HINT = (
+    "Secure run could not label the snapshot. If the project has a path longer "
+    "than the Windows 260-character limit inside the secure run folder, that is "
+    "the likely cause: shorten the project path. Windows long-path support may "
+    "not cover this step. Labelling error: "
+)
+
+
+def _label_snapshot(runtime_path: Path) -> None:
+    """Low-label the snapshot, and explain a failure without hiding the cause."""
+    from .windows_containment import prepare_low_integrity_workspace
+    try:
+        prepare_low_integrity_workspace(runtime_path)
+    except OSError as exc:
+        raise OSError(_LABEL_FAILURE_HINT + str(exc)[:400]) from exc
+
+
 def create_windows_low_integrity_snapshot(
         workspace: str | Path, *, runtime_root: Path | None = None) -> TestRuntime:
     """Create and Low-label a disposable Windows execution snapshot."""
     if os.name != "nt":
         raise OSError("Windows Low-integrity snapshots require Windows")
     runtime = create_test_snapshot(workspace, runtime_root=runtime_root)
-    from .windows_containment import prepare_low_integrity_workspace
     try:
-        prepare_low_integrity_workspace(runtime.path)
+        _label_snapshot(runtime.path)
         return runtime
     except BaseException:
         try:
