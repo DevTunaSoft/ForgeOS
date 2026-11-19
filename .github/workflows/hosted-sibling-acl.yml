@@ -31,5 +31,5 @@ jobs:
         shell: powershell
         run: |
           $env:PYTHONPATH = Join-Path $PWD 'src'
-          python -m unittest -v tests.test_secure_run_sibling_acls
+          python -m unittest -v tests.test_secure_run_sibling_acls tests.test_secure_run_deep_paths
           if ($LASTEXITCODE -ne 0) { throw "sibling ACL test failed with exit code $LASTEXITCODE" }
