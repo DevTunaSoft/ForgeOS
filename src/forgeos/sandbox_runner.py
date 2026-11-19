@@ -4,8 +4,20 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 import os
 from pathlib import Path
+import re
 import sys
 import unittest
+
+_MODULE_NAME = re.compile(r"test_[A-Za-z0-9_]{1,80}\.py")
+
+
+def selected_test_pattern(module: str) -> str:
+    """Return the discovery pattern: every test module, or one named module."""
+    if not module:
+        return "test*.py"
+    if not _MODULE_NAME.fullmatch(module):
+        raise RuntimeError("self-test module name is invalid")
+    return module
 
 
 def _output_stream(root: Path):
@@ -58,7 +70,10 @@ def run_unittest() -> int:
         sys.path.insert(0, str(root))
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
-            suite = loader.discover(str(root))
+            suite = loader.discover(
+                str(root),
+                pattern=selected_test_pattern(
+                    os.environ.get("FORGEOS_SELF_TEST_MODULE", "")))
             trace = os.environ.get("FORGEOS_SELF_TEST_TRACE") == "1"
             result = unittest.TextTestRunner(
                 stream=stream, verbosity=2,

@@ -116,6 +116,23 @@ class SandboxTraceTests(unittest.TestCase):
         self.assertIn("test_one", stream.getvalue())
 
 
+class SandboxModuleSelectionTests(unittest.TestCase):
+    def test_empty_selection_runs_every_module(self):
+        from forgeos import sandbox_runner
+        self.assertEqual(sandbox_runner.selected_test_pattern(""), "test*.py")
+
+    def test_named_module_is_selected(self):
+        from forgeos import sandbox_runner
+        self.assertEqual(
+            sandbox_runner.selected_test_pattern("test_core.py"), "test_core.py")
+
+    def test_invalid_module_names_are_refused(self):
+        from forgeos import sandbox_runner
+        for bad in ("../x.py", "test_*.py", "test_core.txt", "core.py", "test_a.py; rm"):
+            with self.subTest(bad=bad), self.assertRaises(RuntimeError):
+                sandbox_runner.selected_test_pattern(bad)
+
+
 class SelfTestProbeTests(unittest.TestCase):
     def test_generated_probe_is_valid_python(self):
         compile(self_test._PROBE_SOURCE, self_test.PROBE_NAME, "exec")

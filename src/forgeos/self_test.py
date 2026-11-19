@@ -1,10 +1,11 @@
 """Run ForgeOS's own test suite from the packaged app, inside the secure sandbox.
 
-windows-exe.yml bundles the test modules as data. Running them uses the same
-zero-capability runner as project tests, so the self-test exercises the sandbox
-as well as the code. Modules that read repository files or spawn the Python
-interpreter cannot run from the packaged app. The report lists each one with its
-reason. They still run in source mode (CI and the PC unit suite).
+windows-exe.yml bundles the test modules as data. Each module runs as its own
+secure run through the same zero-capability runner that runs project tests, so a
+module that hangs is recorded as a timeout and the rest still run. Modules that
+read repository files, spawn the Python interpreter, or launch an AppContainer
+cannot run from the packaged app. The report lists each one with its reason.
+They still run in source mode (CI and the PC unit suite).
 """
 from __future__ import annotations
 
@@ -14,39 +15,40 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
+from subprocess import TimeoutExpired
 
 BUNDLE_NAME = "forgeos_selftest"
-SELF_TEST_TIMEOUT_SECONDS = 420
+MODULE_TIMEOUT_SECONDS = 180
 
 EXCLUDED_MODULES = {
     "test_acceptance.py": "spawns the Python interpreter",
     "test_appcontainer.py": "runs a Python interpreter inside AppContainer",
     "test_build_info.py": "imports repository build tooling",
-    "test_cloud_supervisor.py": "imports repository scripts",
-    "test_secure_run_sibling_acls.py": "launches an AppContainer; nested AppContainers are not allowed",
-    "test_secure_run_deep_paths.py": "measures host path limits, not product behaviour",
-    "test_managed_llama.py": "spawns the Python interpreter",
-    "test_memory_benchmark.py": "spawns the Python interpreter",
-    "test_output_capture.py": "spawns the Python interpreter",
-    "test_windows_containment.py": "spawns the Python interpreter",
     "test_ci_policy.py": "reads repository files",
+    "test_cloud_supervisor.py": "imports repository scripts",
     "test_documentation.py": "reads repository files",
     "test_enhancement_audit.py": "reads repository files",
     "test_handoff_check.py": "reads repository files",
     "test_handoff_pdf_wrapping.py": "reads repository files",
     "test_handoff_snapshot.py": "reads repository files",
     "test_handoff_takeover.py": "reads repository files",
+    "test_managed_llama.py": "spawns the Python interpreter",
+    "test_memory_benchmark.py": "spawns the Python interpreter",
     "test_multillm_roadmap.py": "reads repository files",
+    "test_output_capture.py": "spawns the Python interpreter",
     "test_package_handoff.py": "reads repository files",
+    "test_secure_run_deep_paths.py": "measures host path limits, not product behaviour",
+    "test_secure_run_sibling_acls.py": "launches an AppContainer; nested AppContainers are not allowed",
+    "test_windows_containment.py": "spawns the Python interpreter",
 }
 
 _RAN = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
 _OUTCOME = re.compile(r"^(OK|FAILED)(?: \((.*)\))?$", re.MULTILINE)
-
+_STARTED = re.compile(r"STARTED (\S+)")
 
 # A diagnostic module generated only for the packaged self-test. It always fails
 # and reports which folders the sandboxed child can write, so the cause shows in
-# the report's failure list and output tail.
+# its output tail.
 PROBE_NAME = "test_zz_packaged_sandbox_probe.py"
 _PROBE_SOURCE = '''\
 import os
@@ -83,6 +85,10 @@ class PackagedSandboxProbe(unittest.TestCase):
         self.fail("PROBE " + " ".join(notes))
 '''
 
+_SEPARATOR = "=" * 70
+_SUMMARY_PREFIXES = ("Ran ", "OK", "FAILED")
+_PATH = re.compile(r"[A-Za-z]:[\\/][^\s'\"]*")
+
 
 def bundled_tests_root() -> Path:
     """Return the folder that holds the bundled test modules."""
@@ -107,11 +113,6 @@ def parse_unittest_output(text: str) -> dict:
         "outcome": outcome or None,
         "outcome_details": details,
     }
-
-
-_SEPARATOR = "=" * 70
-_SUMMARY_PREFIXES = ("Ran ", "OK", "FAILED")
-_PATH = re.compile(r"[A-Za-z]:[\\/][^\s'\"]*")
 
 
 def summarize_failures(text: str, group_limit: int = 25) -> dict:
@@ -170,47 +171,104 @@ def _trace_from_snapshot(runtime) -> dict:
             text = stream.read(4_000_000).decode("utf-8", errors="replace")
     except (OSError, ValueError) as exc:
         return {"trace_error": type(exc).__name__ + ": " + str(exc)[:200]}
-    started = [line for line in text.splitlines() if line.startswith("STARTED ")]
-    return {"last_started": started[-3:], "trace_tail": text[-3000:]}
+    started = _STARTED.findall(text)
+    return {"last_started": started[-3:], "trace_tail": text[-1500:]}
+
+
+def _run_module(runtime, module: str) -> tuple[dict, dict]:
+    """Run one module in its own secure run. A failure is recorded, not raised."""
+    from .secure_runner import run_secure_windows_test
+    runtime.env["FORGEOS_SELF_TEST_MODULE"] = module
+    try:
+        result = run_secure_windows_test(
+            runtime, "python-unittest", timeout=MODULE_TIMEOUT_SECONDS)
+    except Exception as exc:
+        entry = {
+            "module": module,
+            "passed": False,
+            "timed_out": isinstance(exc, TimeoutExpired),
+            "error": type(exc).__name__ + ": " + str(exc)[:300],
+            "tests_run": None,
+            "outcome": None,
+        }
+        entry.update(_trace_from_snapshot(runtime))
+        return entry, summarize_failures("")
+    output = result.get("output") if isinstance(result.get("output"), str) else ""
+    parsed = parse_unittest_output(output)
+    sandbox_passed = result.get("passed") is True
+    entry = {
+        "module": module,
+        "passed": sandbox_passed and parsed["outcome"] == "OK",
+        "timed_out": False,
+        "tests_run": parsed["tests_run"],
+        "outcome": parsed["outcome"],
+        "outcome_details": parsed["outcome_details"],
+        "sandbox_passed": sandbox_passed,
+    }
+    if module == PROBE_NAME:
+        entry["output_tail"] = output[-1500:]
+    elif not entry["passed"]:
+        entry["output_tail"] = output[-800:]
+    return entry, summarize_failures(output)
+
+
+def _aggregate_causes(summaries: list[dict], limit: int = 25) -> list[dict]:
+    totals: dict[str, dict] = {}
+    for summary in summaries:
+        for item in summary["causes"]:
+            entry = totals.setdefault(
+                item["cause"], {"count": 0, "example": item["example"]})
+            entry["count"] += item["count"]
+    ranked = sorted(totals.items(), key=lambda pair: -pair[1]["count"])[:limit]
+    return [{"count": v["count"], "cause": k, "example": v["example"]}
+            for k, v in ranked]
 
 
 def run_self_test(report_path: Path) -> int:
-    """Run the bundled suite in the secure sandbox and write a JSON report."""
-    from .secure_runner import run_secure_windows_test
+    """Run each bundled module in its own secure run and write a JSON report."""
     from .test_runtime import (
         create_windows_low_integrity_snapshot, remove_test_snapshot,
         secure_runtime_root)
 
     report: dict = {
         "suite": "ForgeOS packaged tests",
-        "runner": "secure AppContainer",
+        "runner": "secure AppContainer, one run per module",
         "passed": False,
     }
     workspace = None
     try:
         secure_root = secure_runtime_root()
         workspace = secure_root / f"self-test-{uuid.uuid4().hex}"
-        report.update(stage_test_modules(bundled_tests_root(), workspace))
+        staged = stage_test_modules(bundled_tests_root(), workspace)
         (workspace / PROBE_NAME).write_text(_PROBE_SOURCE, encoding="utf-8")
+        report.update(staged)
         report["diagnostic_probe"] = PROBE_NAME
         runtime = create_windows_low_integrity_snapshot(
             workspace, runtime_root=secure_root)
         runtime.env["FORGEOS_SELF_TEST_TRACE"] = "1"
         try:
-            try:
-                result = run_secure_windows_test(
-                    runtime, "python-unittest", timeout=SELF_TEST_TIMEOUT_SECONDS)
-            except BaseException:
-                report.update(_trace_from_snapshot(runtime))
-                raise
+            results: list[dict] = []
+            summaries: list[dict] = []
+            for module in staged["modules_run"]:
+                entry, summary = _run_module(runtime, module)
+                results.append(entry)
+                summaries.append(summary)
+            probe_entry, _ = _run_module(runtime, PROBE_NAME)
         finally:
             remove_test_snapshot(workspace, runtime_root=secure_root)
-        output = result.get("output") if isinstance(result.get("output"), str) else ""
-        report.update(parse_unittest_output(output))
-        report.update(summarize_failures(output))
-        report["sandbox_passed"] = result.get("passed") is True
-        report["passed"] = report["sandbox_passed"] and report.get("outcome") == "OK"
-        report["output_tail"] = output[-4000:]
+        report["module_results"] = results
+        report["modules_passed"] = sum(1 for e in results if e["passed"])
+        report["modules_failed"] = [e["module"] for e in results if not e["passed"]]
+        report["modules_timed_out"] = [e["module"] for e in results if e["timed_out"]]
+        report["tests_run"] = sum(e["tests_run"] or 0 for e in results)
+        report["failing_tests"] = sum(s["failing_tests"] for s in summaries)
+        report["causes"] = _aggregate_causes(summaries)
+        report["probe"] = {
+            "module": PROBE_NAME,
+            "output_tail": probe_entry.get("output_tail", ""),
+            "error": probe_entry.get("error"),
+        }
+        report["passed"] = bool(results) and not report["modules_failed"]
     except BaseException as exc:  # the report must record every failure
         report["error"] = type(exc).__name__ + ": " + str(exc)[:500]
     finally:
