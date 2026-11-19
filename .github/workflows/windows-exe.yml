@@ -127,6 +127,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Parent-folder grant probe on hosted Windows
         run: python tools/windows_parent_acl_probe.py --assert --report parent-acl-probe-${{ matrix.python-version }}.json
+      - name: AppContainer probe and grant unit tests
+        if: ${{ always() }}
+        run: python -m unittest discover -s tests -p test_appcontainer.py -v
       - name: Sibling-ACL and non-propagating grant tests
         if: ${{ always() }}
         run: python -m unittest discover -s tests -p test_secure_run_sibling_acls.py -v

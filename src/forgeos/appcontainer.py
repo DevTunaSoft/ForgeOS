@@ -261,10 +261,11 @@ def _python_runtime_acl_targets() -> list[Path]:
     return result
 
 
-def _grant_probe_access(root: Path, allowed: Path, sid_string: str) -> None:
-    # Root gets traverse/read attributes only, without inheritance. The writable
-    # child directory gets an inheritable modify ACE and Low mandatory label.
-    _icacls(root, "/grant", f"*{sid_string}:(RX)", "/Q")
+def _grant_probe_access(root: Path, allowed: Path, sid, sid_string: str) -> None:
+    # Root gets traverse/read attributes only, without inheritance, through the
+    # folder writer that leaves its children alone. The writable child directory
+    # gets an inheritable modify ACE and Low mandatory label.
+    _grant_directory_read_execute(root, sid)
     _icacls(
         allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/Q")
     wc.prepare_low_integrity_workspace(allowed)
@@ -492,7 +493,7 @@ def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
                 outside = root / "outside-secret.txt"
                 outside.write_text(
                     "must-not-be-readable", encoding="utf-8")
-                _grant_probe_access(root, allowed, sid_string)
+                _grant_probe_access(root, allowed, sid, sid_string)
 
                 created = allowed / "created-by-appcontainer.txt"
                 write_result = _launch_appcontainer_process(
@@ -659,7 +660,7 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
                 root = Path(tmp)
                 allowed = root / "allowed"
                 allowed.mkdir()
-                _grant_probe_access(root, allowed, sid_string)
+                _grant_probe_access(root, allowed, sid, sid_string)
 
                 command = [str(executable), "-I", "-S", "-c", "pass"]
                 before = _launch_appcontainer_process(
