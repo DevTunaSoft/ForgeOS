@@ -20,6 +20,18 @@ import uuid
 
 from .file_security import read_bounded_file
 
+# Windows security constants for the non-propagating DACL writes below.
+SE_FILE_OBJECT = 1
+DACL_SECURITY_INFORMATION = 0x00000004
+NO_INHERITANCE = 0
+GRANT_ACCESS = 1
+REVOKE_ACCESS = 4
+TRUSTEE_IS_SID = 0
+TRUSTEE_IS_UNKNOWN = 0
+ERROR_SUCCESS = 0
+# icacls "RX": FILE_GENERIC_READ | FILE_GENERIC_EXECUTE.
+READ_EXECUTE_MASK = 0x001200A9
+
 if os.name == "nt":
     from . import windows_containment as wc
 
@@ -62,6 +74,38 @@ if os.name == "nt":
     wc.advapi32.GetTokenInformation.restype = wintypes.BOOL
     wc.advapi32.FreeSid.argtypes = [ctypes.c_void_p]
     wc.advapi32.FreeSid.restype = ctypes.c_void_p
+
+    class TRUSTEE_W(ctypes.Structure):
+        _fields_ = [
+            ("pMultipleTrustee", ctypes.c_void_p),
+            ("MultipleTrusteeOperation", ctypes.c_int),
+            ("TrusteeForm", ctypes.c_int),
+            ("TrusteeType", ctypes.c_int),
+            ("ptstrName", ctypes.c_void_p),
+        ]
+
+    class EXPLICIT_ACCESS_W(ctypes.Structure):
+        _fields_ = [
+            ("grfAccessPermissions", wintypes.DWORD),
+            ("grfAccessMode", ctypes.c_int),
+            ("grfInheritance", wintypes.DWORD),
+            ("Trustee", TRUSTEE_W),
+        ]
+
+    wc.advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,
+        ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p)]
+    wc.advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    wc.advapi32.SetEntriesInAclW.argtypes = [
+        wintypes.DWORD, ctypes.POINTER(EXPLICIT_ACCESS_W),
+        ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    wc.advapi32.SetEntriesInAclW.restype = wintypes.DWORD
+    wc.advapi32.SetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    wc.advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
 
 
 def _failed_hresult(value: int) -> bool:
@@ -118,6 +162,61 @@ def _revoke_path_grant(path: Path, sid_string: str, *, recursive: bool = True) -
     _icacls(path, *arguments)
 
 
+def _rewrite_object_dacl(path: Path, sid, *, grant: bool) -> None:
+    """Add or remove one SID's read/execute ACE on one object's own DACL.
+
+    SetNamedSecurityInfoW with DACL_SECURITY_INFORMATION alone writes only this
+    object's DACL. It sets neither PROTECTED nor UNPROTECTED and does not ask for
+    automatic inheritance, so the object's children keep their ACLs. The ACE has
+    no inheritance flags. A hosted probe measured that icacls /grant on a folder
+    without /T re-inherits the explicit ACEs of every child, and that the later
+    revoke cannot restore them; parent-folder grants therefore avoid icacls.
+    """
+    descriptor = ctypes.c_void_p()
+    current_dacl = ctypes.c_void_p()
+    status = wc.advapi32.GetNamedSecurityInfoW(
+        str(path), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, None, None,
+        ctypes.byref(current_dacl), None, ctypes.byref(descriptor))
+    if status != ERROR_SUCCESS:
+        raise OSError(f"GetNamedSecurityInfoW failed for {path}: {status}")
+    try:
+        if not current_dacl.value:
+            raise OSError(f"{path} has no DACL to rewrite")
+        entry = EXPLICIT_ACCESS_W()
+        entry.grfAccessPermissions = READ_EXECUTE_MASK if grant else 0
+        entry.grfAccessMode = GRANT_ACCESS if grant else REVOKE_ACCESS
+        entry.grfInheritance = NO_INHERITANCE
+        entry.Trustee.TrusteeForm = TRUSTEE_IS_SID
+        entry.Trustee.TrusteeType = TRUSTEE_IS_UNKNOWN
+        entry.Trustee.ptstrName = sid.value
+        new_dacl = ctypes.c_void_p()
+        status = wc.advapi32.SetEntriesInAclW(
+            1, ctypes.byref(entry), current_dacl, ctypes.byref(new_dacl))
+        if status != ERROR_SUCCESS:
+            raise OSError(f"SetEntriesInAclW failed for {path}: {status}")
+        try:
+            status = wc.advapi32.SetNamedSecurityInfoW(
+                str(path), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+                None, None, new_dacl, None)
+            if status != ERROR_SUCCESS:
+                raise OSError(
+                    f"SetNamedSecurityInfoW failed for {path}: {status}")
+        finally:
+            wc.kernel32.LocalFree(new_dacl)
+    finally:
+        wc.kernel32.LocalFree(descriptor)
+
+
+def _grant_read_execute_no_propagation(path: Path, sid) -> None:
+    """Grant one AppContainer SID read/execute on one object, children untouched."""
+    _rewrite_object_dacl(path, sid, grant=True)
+
+
+def _revoke_read_execute_no_propagation(path: Path, sid) -> None:
+    """Remove the AppContainer SID's ACE from one object, children untouched."""
+    _rewrite_object_dacl(path, sid, grant=False)
+
+
 def _python_runtime_acl_targets() -> list[Path]:
     executable = Path(sys.executable).resolve()
     base = Path(sys.base_prefix).resolve()
@@ -148,10 +247,11 @@ def _python_runtime_acl_targets() -> list[Path]:
     return result
 
 
-def _grant_probe_access(root: Path, allowed: Path, sid_string: str) -> None:
-    # Root gets traverse/read attributes only, without inheritance. The writable
-    # child directory gets an inheritable modify ACE and Low mandatory label.
-    _icacls(root, "/grant", f"*{sid_string}:(RX)", "/Q")
+def _grant_probe_access(root: Path, allowed: Path, sid, sid_string: str) -> None:
+    # Root gets traverse/read attributes only, without inheritance and without
+    # rewriting its children. The writable child directory gets an inheritable
+    # modify ACE and Low mandatory label.
+    _grant_read_execute_no_propagation(root, sid)
     _icacls(
         allowed, "/grant", f"*{sid_string}:(OI)(CI)(M)", "/T", "/Q")
     wc.prepare_low_integrity_workspace(allowed)
@@ -379,7 +479,7 @@ def probe_appcontainer_filesystem(timeout: int = 15) -> dict:
                 outside = root / "outside-secret.txt"
                 outside.write_text(
                     "must-not-be-readable", encoding="utf-8")
-                _grant_probe_access(root, allowed, sid_string)
+                _grant_probe_access(root, allowed, sid, sid_string)
 
                 created = allowed / "created-by-appcontainer.txt"
                 write_result = _launch_appcontainer_process(
@@ -546,7 +646,7 @@ def probe_appcontainer_python_runtime(timeout: int = 20) -> dict:
                 root = Path(tmp)
                 allowed = root / "allowed"
                 allowed.mkdir()
-                _grant_probe_access(root, allowed, sid_string)
+                _grant_probe_access(root, allowed, sid, sid_string)
 
                 command = [str(executable), "-I", "-S", "-c", "pass"]
                 before = _launch_appcontainer_process(
@@ -890,8 +990,12 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
                     f"*{sid_string}:(OI)(CI)({permission})",
                     "/T", "/Q")
             else:
-                _icacls(
-                    path, "/grant", f"*{sid_string}:({permission})", "/Q")
+                # A non-recursive grant must never rewrite the children of a
+                # folder: the parent-folder traverse grant is written without
+                # auto-inheritance (see _rewrite_object_dacl).
+                if permission != "RX":
+                    raise ValueError("Non-recursive secure grants must be RX")
+                _grant_read_execute_no_propagation(path, sid)
             grants.append((path, recursive))
 
         try:
@@ -907,8 +1011,10 @@ def run_secure_appcontainer(argv, cwd: str | Path, env: dict[str, str], *,
             cleanup_errors = []
             for path, recursive in reversed(grants):
                 try:
-                    _revoke_path_grant(
-                        path, sid_string, recursive=recursive)
+                    if recursive:
+                        _revoke_path_grant(path, sid_string, recursive=True)
+                    else:
+                        _revoke_read_execute_no_propagation(path, sid)
                 except OSError as exc:
                     cleanup_errors.append(str(exc))
             if cleanup_errors:
