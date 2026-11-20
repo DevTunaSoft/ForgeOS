@@ -1,6 +1,6 @@
 # Microtask pipeline: P0 design specification
 
-**Status: design specification. Planned as a whole.** The pure validation substrate is implemented and Linux-verified: [`task_graph.py`](../src/forgeos/task_graph.py), [`requirement_trace.py`](../src/forgeos/requirement_trace.py) and [`repo_inventory.py`](../src/forgeos/repo_inventory.py). The engine, store and GUI do not use them yet. Decomposition, persistence, scheduling, integration and the GUI are **not started**. The P0 Windows baseline is **NOT RUN**. This document describes intent and contracts. It does not claim that any behavior exists beyond the modules named above.
+**Status: design specification. Planned as a whole.** The pure validation substrate is implemented and Linux-verified: [`task_graph.py`](../src/forgeos/task_graph.py), [`requirement_trace.py`](../src/forgeos/requirement_trace.py) and [`repo_inventory.py`](../src/forgeos/repo_inventory.py), and the bounded parser for model proposals, [`microtask_proposal.py`](../src/forgeos/microtask_proposal.py). The engine, store and GUI do not use them yet. Decomposition, persistence, scheduling, integration and the GUI are **not started**. The P0 Windows baseline is **NOT RUN**. This document describes intent and contracts. It does not claim that any behavior exists beyond the modules named above.
 
 Requirement source: [ROADMAP.md](ROADMAP.md), "Planned: Microtask Development Pipeline".
 
@@ -50,6 +50,10 @@ Output: `schema_version`, `files` (each with `path`, `bytes`, `kind`, `test`, `m
 | Content | metadata only; no file bodies, no absolute paths, no root name |
 | Exclusions | the walker shared with `context_index` (excluded folders in any letter case, dot entries, symlinks, `.env*`, oversized relative paths) |
 
+### 2.4 Model proposal envelope (`microtask_proposal.py`)
+
+A model answers with one JSON object whose keys are exactly `graph` (section 2.1) and `traceability` (section 2.2). The parser refuses text longer than 262,144 characters before decoding. It refuses malformed JSON, repeated keys and nesting deep enough to exhaust the decoder. Code fences and prose around the object are refused, so the answer must be the object alone. Both parts then go through their validators. The largest legal proposal is 188,219 characters, and its measured parse-time allocation peak is 1,358,543 bytes on Python 3.12, Linux.
+
 ## 3. Threat model
 
 | Threat | Mitigation in the contract | Status |
@@ -78,7 +82,7 @@ Output: `schema_version`, `files` (each with `path`, `bytes`, `kind`, `test`, `m
 | --- | --- | --- |
 | P0 | Design and baseline: this specification, plus a whole-prompt baseline on the target Windows laptop | Specification written. Baseline **NOT RUN** (needs hardware) |
 | P1 | Deterministic substrate: validation, traceability, bounded inventory, synthetic fixtures, and persistence with migration tests | Validation, traceability, inventory and synthetic fixtures implemented. Persistence **not started** |
-| P2 | Local-model decomposition: strict proposals validated by section 2, deterministic context retrieval, and quality checks against known requirements | **Not started** |
+| P2 | Local-model decomposition: strict proposals validated by section 2, deterministic context retrieval, and quality checks against known requirements | Proposal parser implemented (`microtask_proposal.py`, section 2.4). Model decomposition, deterministic context retrieval and quality checks **not started** |
 | P3 | Safe execution and integration: worktrees, leases, test and repair, checkpoints, dependency-aware scheduling, and crash and restart injection | **Not started** |
 | P4 | Hardware acceptance on the 20 GB and 32 GiB machines: whole-prompt versus microtask comparison | **Not started** (needs hardware) |
 

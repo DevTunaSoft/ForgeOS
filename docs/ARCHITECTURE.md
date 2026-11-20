@@ -35,6 +35,7 @@ flowchart TB
 | `src/forgeos/task_graph.py` | Deterministic microtask dependency-graph validation (roadmap P1 slice): schema version, identifiers, prerequisites, cycles, portable paths and unordered same-file edits. Pure and bounded; not yet used by the task engine |
 | `src/forgeos/requirement_trace.py` | Requirement IDs and traceability (roadmap P1): a separate versioned document links tasks to `REQ-` identifiers and refuses unknown, duplicate or uncovered requirements. Pure and bounded; not yet used by the task engine |
 | `src/forgeos/repo_inventory.py` | Bounded, deterministic metadata inventory for planning (roadmap P1): relative path, size, kind and test/manifest flags, at most 2,000 records. Never reads file bodies or reports absolute paths, and reuses the context walker. Not yet used by the task engine |
+| `src/forgeos/microtask_proposal.py` | Bounded parser for model-proposed microtask plans (roadmap P2 boundary): refuses oversized, malformed, deeply nested or key-repeating text, then applies the graph and traceability validators. Never runs or writes anything. Not yet connected to a model |
 | `src/forgeos/task_actions.py` | Canonical lease-fenced planning and manual-test operations reused by CLI and GUI; requires explicit trust opt-in for tests; failure bookkeeping never masks the triggering error |
 | `src/forgeos/workspace.py` | Git repository/worktree setup and ownership |
 | `src/forgeos/transactions.py` | Transactional edit journal, streamed bounded original-file backups (8 MiB/file), failure/rollback/recovery boundaries |

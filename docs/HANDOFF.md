@@ -4273,3 +4273,64 @@ Two test expectations were corrected during the work. The sort is by casefolded 
 - Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 853 tests OK, 23 Windows-only or symlink skips.
 - Real Windows and local-model acceptance: NOT RUN.
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — bounded parser for model-proposed microtask plans (P2 boundary)
+
+**Checkpoint:** `2026-11-20-proposal-parser`. **Branch:** `claude/fervent-mayer-w1xsso`, draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `3dc206e`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** No code in the repository parses model-produced plans. The engine's JSON edit manifest (`parse_edits`) is a different contract for file edits, and it was not changed.
+
+**Why it matters.** Model output is the least trusted input in the pipeline. Before the planning contracts can accept real model answers, the entry point needs size limits, strict decoding and the validators already written.
+
+**Design.**
+- The size limit is applied before decoding, so the decoder never sees more than 262,144 characters.
+- Repeated keys are refused through `object_pairs_hook`. The standard decoder would otherwise keep the last value silently, which could hide a second graph behind the first.
+- Fenced or prose-wrapped answers are refused, because the answer must be the object alone.
+- The parser reuses `validate_task_graph` and `validate_traceability` and adds no other checks, so each contract stays in one place.
+
+**Changed paths.**
+- `src/forgeos/microtask_proposal.py` (new) and `tests/test_microtask_proposal.py` (new, 8 tests).
+- Documentation: `ARCHITECTURE.md` (module row), `ROADMAP.md` (entry), `MEMORY_BUDGET.md` (measured peak), `MICROTASK_PIPELINE.md` (section 2.4, the status line and the P2 gate), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoints: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_microtask_proposal.py` | OK: 8 run |
+| Mutation, scratch copy: size check removed | FAIL in `test_non_text_and_oversized_text_are_refused_before_parsing` |
+| Largest legal proposal: 188,219 characters, 256 tasks, 128 requirements | Parsed; tracemalloc peak 1,358,543 bytes; about 0.11 s |
+| Full suite, Python 3.12 under Xvfb | OK: **861 run**, 23 skipped (853 before, plus 8) |
+| Python 3.10 grammar check on the two new files | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links`; `--base origin/main --head HEAD`; `scripts/check_handoff.py --json` | PASS; PASS; PASS |
+
+One test was corrected during the work. Its nesting input was over the size limit, so the size check refused it before the decoder ran. The input now stays under the limit, so the test reaches the decoder.
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. No model is connected. The parser was tested with fixed inputs, not with real model output.
+
+**Security and privacy.** Model text is untrusted at every step: size first, then decoding, then validation. Error messages are fixed strings or validator messages. Those validator messages name identifiers and paths from the proposal, and each is bounded in length. They never echo the raw text.
+
+**Resource impact.** The largest legal proposal costs about 1.36 MB at its peak. The 262,144-character limit bounds the text itself.
+
+**Rejected alternatives.**
+- Accepting fenced JSON by stripping the fences. The engine's JSON edit contract is strict, so this parser stays strict too.
+- Accepting the decoder's last-value behavior for repeated keys. It would let a model hide a second graph behind the first.
+
+**Remaining.** No model is connected. Quality checks against known requirements, deterministic context retrieval and the decomposition prompt are planned (P2). SQLite persistence needs the owner's decision recorded in the specification.
+
+**Next highest-priority unblocked tasks.**
+1. A fixed-fixture evaluation harness for proposals: valid, cyclic, uncovered and hostile inputs, so that later model runs are scored the same way.
+2. The owner's persistence decision (see `MICROTASK_PIPELINE.md`, section 7), then the migration and fault-injection work it implies.
+3. The P0 Windows baseline (needs the laptop).
+
+**Rollback.** Revert the commit. No runtime path imports `microtask_proposal`.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_microtask_proposal.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The planning contracts and the proposal boundary are implemented as pure, tested modules that the product does not use yet.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 861 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
