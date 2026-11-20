@@ -1,4 +1,5 @@
 """Linux-runnable checks for the packaged self-test's staging and parsing."""
+import os
 import shutil
 import sys
 import tempfile
@@ -138,6 +139,8 @@ class SelfTestProbeTests(unittest.TestCase):
         compile(self_test._PROBE_SOURCE, self_test.PROBE_NAME, "exec")
 
 
+@unittest.skipIf(os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") == "1",
+                 "runs a Python interpreter, which the sandboxed child cannot start")
 class SelfTestProbeRunTests(unittest.TestCase):
     def test_generated_probe_runs_and_reports_each_check(self):
         import os
@@ -164,6 +167,8 @@ class SelfTestProbeRunTests(unittest.TestCase):
         self.assertNotIn("SyntaxError", output)
 
 
+@unittest.skipIf(os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") == "1",
+                 "excluded modules are not staged into the sandboxed snapshot")
 class SelfTestExclusionTests(unittest.TestCase):
     def test_every_excluded_module_exists_in_the_repository(self):
         tests_dir = Path(__file__).resolve().parent
