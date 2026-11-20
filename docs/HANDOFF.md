@@ -4050,3 +4050,63 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
 - Highest-priority unblocked task: item 1 above.
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — anti-loop: an identical repair stops before another test run
+
+**Checkpoint:** `2026-11-20-identical-repair-stop`. **Branch:** `claude/fervent-mayer-w1xsso`, the same draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164) as the previous checkpoint. **Base:** the previous checkpoint's head `8214279`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** The previous checkpoint was pushed and its draft PR opened. The repeat-attempt (stagnation) item deferred on 2026-11-16 was the first unblocked task in that ledger. No open branch was checked against this exact change beyond the merge probe below. PR #142's branch touches `_execute_task` outside the lines this change edits.
+
+**Why it matters.** The autonomous repair loop could ask a model for a repair, apply the same edit that had just failed, and run the full test command again, until the repair budget ran out. On CPU-only local models each repeat costs one model generation and one test run. ENGINEERING_TAKEOVER section 22 requires the loop to stop after substantially identical failures, and the loop did not.
+
+**Root cause.** The loop compared nothing between attempts. Every attempt ran the tests, even when the workspace was byte-identical to the state last tested.
+
+**Behavior.** After a repair is applied, the engine compares the SHA-256 of each file it wrote with the state last tested. If every file matches, the workspace has not changed, and the engine:
+- does not run the tests again;
+- records the stopped repeat as one failed repair in repair learning, as a tested failure would be;
+- publishes `failed` with `stop_reason: "repeated-edit"`, a fixed note, and at most 3,000 characters of the last test output;
+- reports `iterations` as the attempts generated, which includes the stopped one.
+
+Only consecutive repeats are detected. An A-B-A cycle still ends at `max_repairs`. A resumed run starts with no tested state, so its first attempt always tests. This is conservative.
+
+**Changed paths.**
+- `src/forgeos/engine.py`: `_REPEAT_NOTE`; `workspace_hashes` and `tested_hashes` in `_execute_task`; the repeat branch before the test checkpoint; the update of `tested_hashes` after each test run.
+- `tests/test_engine.py`: `test_identical_repair_stops_without_another_test_run` (new); `test_changed_repairs_are_each_tested_until_exhausted` (new); one added assertion in `test_exhausted_repairs`. The existing assertions are unchanged. `iterations == 2` and `failed_repairs == 1` still hold, because the stopped repeat is counted and recorded.
+- Documentation: `ARCHITECTURE.md` (engine paragraph), `USER_GUIDE.md` (troubleshooting row for the new message), `MEMORY_BUDGET.md` (bounded allocation note), `ENGINEERING_TAKEOVER.md` (section 22 status), `ROADMAP.md` (2026-11-20 entry), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoint: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_engine.py` on the new tree | OK: 110 run, 1 skip (pre-existing) |
+| `test_engine.py` against the committed engine (`HEAD`, scratch copy) | ERROR as intended in `test_identical_repair_stops_without_another_test_run` and `test_exhausted_repairs` (no `stop_reason`). `test_changed_repairs_are_each_tested_until_exhausted` passes on both versions, which confirms that distinct repairs are unchanged |
+| Full suite, Python 3.12 under Xvfb | OK: **827 run**, 23 skipped. The engine tests run in `EngineIntegrationTests` and again in the inheriting `CheckpointResumeTests` |
+| `compileall -q src tests`; Python 3.10 grammar check on `engine.py` and `test_engine.py` | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links`; `scripts/check_handoff.py --json` | PASS; PASS |
+| Merge probe against PR #142's branch (`fragment/rtk3-git-output-integration`) | `engine.py` merges automatically. `tests/test_engine.py` conflicts textually, because both branches add tests inside `EngineIntegrationTests`. `ARCHITECTURE.md`, `HANDOFF.md` and `ROADMAP.md` conflict as recorded in the previous checkpoint. A manual merge is needed when #142 is rebased |
+| Merge probe against `origin/main` | clean |
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. NOT MEASURED with a real local model: the saving of one model generation and one test run per stopped repeat has not been timed on the target laptop.
+
+**Security and privacy.** The stop path makes no new write, network call or credential use. It adds no new evidence. The stored result carries a fixed note and a bounded tail of the last test output, which the existing failure path already stored.
+
+**Resource impact.** Two dictionaries of at most eight entries each, because a manifest holds at most `MAX_FILES` files, per task. No RAM benchmark was run for this path.
+
+**Rejected alternatives.**
+- Comparing failure signatures instead of file hashes. A different edit can produce the same failure text, and the same edit can produce different text. The file-hash comparison is exact and cheap.
+- Stopping on the first failed repair. Rejected: distinct repairs must still be tested, and `test_changed_repairs_are_each_tested_until_exhausted` checks that they are.
+
+**Remaining defects and deferred work.**
+- Stagnation signals beyond exact consecutive repeats, such as the same failure signature across different edits, are not implemented.
+- The rule's real-model effect (how often repeats occur, and what they save) needs measurement on the target laptop before any claim.
+- `tests/test_engine.py` and the shared documents conflict with PR #142 as described above.
+
+**Next highest-priority unblocked tasks.**
+1. Microtask pipeline P0 (ROADMAP "Planned: Microtask Development Pipeline"): the versioned task-graph schema, limits and threat model. The Windows baseline part needs the physical laptop.
+2. Bounded reads for the trusted packaged or kernel-supplied files listed in the previous checkpoint (low priority).
+
+**Rollback.** Revert the commit. The change adds no stored format. Results written by the stop path remain valid `failed` task results.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_engine.py' -v`

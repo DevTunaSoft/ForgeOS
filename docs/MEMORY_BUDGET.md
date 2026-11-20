@@ -248,6 +248,12 @@ source scan or model prompt allocation. Exhausted repair loops also avoid a
 final unused context scan. This is an allocation/wasted-work reduction, not a
 claim that overall ForgeOS or model peak memory has been benchmarked.
 
+Repeated identical repairs also stop before a test run. The repeat check keeps
+one path-to-SHA-256 map of at most eight files per task (`MAX_FILES`), so its
+allocation is bounded by the existing edit-manifest limit. It saves one test run
+and one model generation per stopped repeat. No peak-memory benchmark was run for
+this path.
+
 ## On-demand SQLite backup allocation boundary
 
 Explicit SQLite `Connection.backup(pages=64)` copies pages in native code

@@ -493,7 +493,7 @@ A task assignment should include: objective, owner, base SHA, permitted paths, f
 
 **Progress measurement:** a cycle counts as progress only when it produces a verified code change, a newly identified root cause, a resolved blocker, a meaningful new regression test or a concrete reduction in risk. Repeating an unchanged test or generating another status report is not progress.
 
-**Anti-loop rule:** after two substantially identical failures, stop the failing approach, inspect evidence and previous attempts, change strategy and verify. After two cycles without measurable progress, document the blocker and move to independent work when available.
+**Anti-loop rule:** after two substantially identical failures, stop the failing approach, inspect evidence and previous attempts, change strategy and verify. After two cycles without measurable progress, document the blocker and move to independent work when available. **Status (2026-11-20):** the engine now stops when a repair repeats the last tested edit exactly. Other stagnation signals, such as the same failure signature across different edits, are not implemented.
 
 ## 23. Decision records and change rationale
 

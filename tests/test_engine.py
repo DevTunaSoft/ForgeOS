@@ -163,6 +163,46 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual((self.repo / "app.py").read_text(), "def value():\n return 42\n")
         self.assertTrue((Path(result["workspace"]) / "app.py").exists())
 
+    def test_identical_repair_stops_without_another_test_run(self):
+        from unittest.mock import patch
+        manifest = json.dumps({"files": [{"path": "app.py",
+                              "content": "def value():\n return -1\n"}]})
+        failing = {"passed": False, "output": "expected 42, got -1", "returncode": 1}
+        prompts = []
+
+        def generate(model, prompt):
+            prompts.append(prompt)
+            return manifest
+
+        with patch("forgeos.engine._run_workspace_tests", return_value=failing) as runner:
+            result = execute_task(self.store, self.task, self.root, max_repairs=2,
+                                  allow_host_tests=True, generate=generate)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["stop_reason"], "repeated-edit")
+        self.assertEqual(result["iterations"], 2)
+        self.assertIn("same edit", result["error"])
+        self.assertIn("expected 42", result["error"])
+        self.assertEqual(runner.call_count, 1)  # the identical repair was not tested again
+        self.assertEqual(len(prompts), 2)       # and no third repair was requested
+        self.assertEqual(self.store.get(self.task)["status"], "failed")
+
+    def test_changed_repairs_are_each_tested_until_exhausted(self):
+        from unittest.mock import patch
+        manifests = iter([
+            json.dumps({"files": [{"path": "app.py", "content": "def value():\n return -1\n"}]}),
+            json.dumps({"files": [{"path": "app.py", "content": "def value():\n return -2\n"}]}),
+        ])
+        failing = {"passed": False, "output": "still wrong", "returncode": 1}
+        with patch("forgeos.engine._run_workspace_tests", return_value=failing) as runner:
+            result = execute_task(self.store, self.task, self.root, max_repairs=1,
+                                  allow_host_tests=True,
+                                  generate=lambda model, prompt: next(manifests))
+        self.assertFalse(result["passed"])
+        self.assertNotIn("stop_reason", result)
+        self.assertEqual(result["iterations"], 2)
+        self.assertEqual(runner.call_count, 2)
+        self.assertEqual(self.store.get(self.task)["status"], "failed")
+
     def test_new_run_ignores_oversized_legacy_history_blobs(self):
         from unittest.mock import patch
         prior = "old-history" * 200000
@@ -633,6 +673,9 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["model"], "qwen2.5-coder:3b")
         self.assertEqual(result["iterations"], 2)
+        # Identical repairs now stop at the first repeat, which is still recorded
+        # as one failed repair.
+        self.assertEqual(result["stop_reason"], "repeated-edit")
         from forgeos.error_learning import RepairMemory
         records = RepairMemory(self.root / "repair_memory.sqlite3").stats()
         self.assertEqual(records["failed_repairs"], 1)

@@ -524,6 +524,13 @@ marker is cleared; the active database is never moved.
 7. Bounded output capture feeds original evidence and a smaller AI-facing summary into a limited repair loop.
 8. A result or blocked checkpoint preserves the workspace so a person can inspect it. Automatic commit/push/merge/deploy is **not** enabled.
 
+Identical repairs stop early (2026-11-20). When a repair leaves every file it
+writes with the same SHA-256 as the state last tested, the engine returns a
+failed result with `stop_reason` set to `repeated-edit` and does not run the
+tests again. The stopped repeat is recorded once as a failed repair, and the
+result keeps at most 3,000 characters of the last test output. Only consecutive
+repeats are detected; an A-B-A cycle still ends at `max_repairs`.
+
 Failure publication never masks the triggering error. When generation, testing or repair fails, the engine tries to record a `blocked` checkpoint and then re-raises the original exception. A database error while reading optional recovery detail, while recording the blocked state, or while releasing the lease is absorbed on that path. The task keeps its last durable status, which start and resume both refuse while it is `editing` or `testing`, so nothing replays automatically; recovery goes through the existing checkpoint rules. On a successful run a lease-release failure is raised, because it would otherwise block new runs until the lease expires.
 
 The task engine does not hold an operating-system filesystem lock while generating/editing: a lease may expire during a long-running external call. Lease fencing prevents stale *database publications*, but a worktree touched before detecting the expired lease still requires careful inspection; recovery must not silently overwrite it.
