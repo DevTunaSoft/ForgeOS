@@ -133,9 +133,17 @@ def _private_mkdir(path):
 def _inspect(label, folder):
     """Dump one folder's ACL, then try what a test does inside it."""
     notes = [_acl(label, folder)]
-    notes.append(_op(label + ".mkdir_sub", (folder / "sub").mkdir))
+    sub = folder / "sub"
+    notes.append(_op(label + ".mkdir_sub", sub.mkdir))
+    notes.append(_op(label + ".sub_resolve", lambda: sub.resolve(strict=True)))
+    notes.append(_op(label + ".sub_stat", lambda: os.stat(sub)))
+    notes.append(_acl(label + ".sub", sub))
     notes.append(_op(label + ".write",
                      lambda: (folder / "f.txt").write_text("x", encoding="ascii")))
+    notes.append(_op(label + ".file_resolve",
+                     lambda: (folder / "f.txt").resolve(strict=True)))
+    notes.append(_op(label + ".replace",
+                     lambda: os.replace(folder / "f.txt", folder / "g.txt")))
     notes.append(_op(label + ".scandir", lambda: list(os.scandir(folder))))
     notes.append(_op(label + ".chmod", lambda: os.chmod(folder, 0o700)))
     notes.append(_op(label + ".rmtree", lambda: shutil.rmtree(folder)))
