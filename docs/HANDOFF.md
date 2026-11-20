@@ -3966,3 +3966,371 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-20 — coding principles, one portable-name policy and case-insensitive context exclusions
+
+**Checkpoint:** `2026-11-20-principles-portable-names`. **Repository / branch:** DevTunaSoft/ForgeOS, designated development branch `claude/fervent-mayer-w1xsso`. The remote copy had been pruned, so the branch was recreated from `origin/main`. **Base SHA:** `5107d467db96e7512f5d7126af745fb9c5c1bcdf` (`origin/main` and local `main` at session start). **Resulting SHA:** the head of the designated branch; the draft pull request records it.
+
+**Starting state and duplicate-work audit.** The working tree was clean and `git fetch origin --prune` succeeded. Nineteen pull requests were open: drafts #163, #162, #161, #160 (Windows/AppContainer and snapshot hardening), #159 (Ponytail coding-principles skill), #158, #156, #145, #142, #141, #140, #139, #138 (AGENTS.md index), #137, #68 and #67; and #152, #66 and #29, which are ready or older. Overlap check (`git diff --name-only origin/main...<branch>`): no open branch changes `gguf_download.py`, `runtime_installer.py` or `context_index.py`. PR #142's branch (`fragment/rtk3-git-output-integration`) changes `engine.py` only at the import block, one new helper and two `_execute_task` lines, none inside the device-name region this checkpoint rewrites; a merge simulation against that branch is recorded in the table below. Two branches with no merge base with `main` (PR #67, `chore/copilot-autonomy-bootstrap-20261112`, and PR #68, `fix/safe-resume-malformed-checkpoints`) could not be compared this way. PRs #158 and #160 change `test_runtime.py`, which this checkpoint does not touch. This checkpoint edits `ARCHITECTURE.md`, `ROADMAP.md`, `HANDOFF.md` and `ENGINEERING_TAKEOVER.md`, and several open PRs (for example #137, #152, #156, #158 and #160) also edit those files. The edits are append-style or sentence-level, so a later rebase must keep both sides.
+
+**Why it matters.** The user asked for coding principles to be added to the existing instructions without removing any requirement, and the previous checkpoint named the reserved-name consolidation as the next unblocked task. The installer also accepted `NUL .dll` because its check compared the raw stem with trailing spaces, and the GGUF downloader and installer did not refuse `COM0` or `LPT0`, which the engine already refused. The context inventory skipped `node_modules` and similar folders only when the case matched.
+
+**Principles source.** The request named the principles without giving their text. The principles used are the Ponytail set adapted in draft PR #159, whose `SKILL.md` states the same precedence order as this repository's requirements, together with the priority areas named in the request (autonomous execution, recovery, security, Windows compatibility and low memory). A reviewer should compare the wording with the intended text.
+
+**Root causes.**
+1. Three independent Windows-name lists (`engine.py`, `gguf_download.py`, `runtime_installer.py`) had drifted: the engine rejected `COM0`/`LPT0` and superscript forms, the others did not, and the installer compared the unstripped stem.
+2. `context_index.py` compared non-dot directory names case-sensitively, so case variants of excluded folders entered the metadata inventory on case-insensitive volumes.
+
+**Acceptance criteria.** Existing validator tests pass unchanged. New regression tests fail on the unchanged validators and pass after the change. No dependency is added. Engine rejection messages and tests are unchanged.
+
+**Changed paths.**
+- `src/forgeos/portable_names.py` (new): `DEVICE_STEMS`, `has_trailing_dot_or_space` and `is_device_name`.
+- `src/forgeos/engine.py`: removed the private device lists; `_check_portable_parts` calls the shared predicates; the protected-folder rule is unchanged.
+- `src/forgeos/gguf_download.py`: removed `WINDOWS_RESERVED_NAMES`; `_safe_name` calls the shared predicates.
+- `src/forgeos/runtime_installer.py`: `_safe_entry` calls the shared predicates in place of its inline set.
+- `src/forgeos/context_index.py`: `_EXCLUDE_FOLDED`; the directory filter compares casefolded names.
+- `tests/test_portable_names.py` (new): 6 tests (rule predicates, and agreement of the three validators on device names, space-before-extension and ordinary names).
+- `tests/test_context_index.py`: `test_excluded_directories_match_case_insensitively`.
+- Documentation: `CONTRIBUTING.md` ("Coding principles"), `.github/pull_request_template.md` (one checklist item), `docs/ENGINEERING_TAKEOVER.md` (section 12 pointer), `docs/ARCHITECTURE.md` (module row and "Shared rule"), `docs/ROADMAP.md` (three 2026-11-20 entries), this ledger.
+
+**Implementation summary.**
+- The shared module imports only `re`. Its predicates are pure string functions, so they behave the same on every platform. Stems are compared after `casefold()`, and the superscript forms of COM and LPT are included.
+- Each caller keeps its exception type and message: `EditError` in the engine, `ValueError` in the GGUF downloader, and `RuntimeError` with the existing "Unsafe" text in the installer.
+- The context inventory checks casefolded directory names against a casefolded copy of `EXCLUDE`. The public `EXCLUDE` constant is unchanged, and dot-prefixed folders are still excluded by the existing prefix rule.
+
+**Commands and results.** Environment: Linux container, `/usr/bin/python3.12` 3.12.3 with `python3-tk` installed through `apt-get`, Xvfb through `xvfb-run -a`. The default `python3` is 3.13.18 without Tk and was not used for suites. No Windows host, Ollama, llama.cpp or GGUF model was available.
+
+| Command | Result |
+| --- | --- |
+| `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -v` on untouched `main` (baseline) | OK: 816 run, 23 skipped; every skip is a Windows-only or symlink guard |
+| Same command after the change | OK: **823 run**, 23 skipped (7 new tests) |
+| `test_portable_names.py` against `HEAD`'s `engine.py`, `gguf_download.py` and `runtime_installer.py` (scratch copy) | FAIL as intended: `COM0` and `LPT0` (GGUF and installer), and `NUL .dll` (installer). Engine cases pass, as expected for a refactor |
+| `test_context_index.py` against `HEAD`'s `context_index.py` (scratch copy) | FAIL as intended: `test_excluded_directories_match_case_insensitively` |
+| Focused suites after the change: portable names, engine, GGUF download, runtime installer, worktree manifest, runtime, worktree archive, context index | OK |
+| `python3.12 -m compileall -q src tests` | PASS |
+| Python 3.10 grammar check (`ast.parse(..., feature_version=(3, 10))`) on the changed files | PASS. No 3.10 interpreter is installed here, so this is a grammar check, not a run |
+| `python3.12 tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0; tracemalloc peak 1,883,391 bytes; process RSS after GC about 23.4–23.6 MB |
+| `python3.12 tools/check_documentation.py --links` | PASS |
+| `python3.12 scripts/check_handoff.py --json` | PASS |
+| `git diff --check` | PASS |
+| `git merge-tree --write-tree` of this branch against PR #142's branch (`fragment/rtk3-git-output-integration`) | `engine.py` and `tests/test_engine.py` merge automatically. `ARCHITECTURE.md`, `HANDOFF.md` and `ROADMAP.md` conflict textually and need a manual merge when #142 is rebased |
+| `tools/check_documentation.py --base origin/main --head HEAD` | PASS (documentation changed with the implementation) |
+
+**Verification status.** PASS: the Linux Python 3.12 suite and every gate above. NOT RUN: any Windows test (the Windows-only tests are skipped here), the frozen EXE, hosted GitHub Actions on this head (the pull request is a draft, and CI runs full validation at ready-for-review), and real local-model acceptance. UNVERIFIED: that Windows treats `COM0`/`LPT0` as devices and normalizes trailing dots and spaces exactly as the documented rules assume.
+
+**Security and privacy.** The three validators now refuse a small set of names they previously accepted. The change is fail-closed, needs no migration, and adds no credential, network or evidence handling. The context inventory omits dependency and build folders in any letter case. It stores metadata only.
+
+**Resource impact.** One frozenset and one compiled regex are created at import. Each validated name costs a few string operations. The memory benchmark above shows no change beyond run-to-run variation.
+
+**Rejected attempts and deliberately unchanged items.**
+- Repeat-attempt (stagnation) detection in `engine._execute_task` remains deferred, as recorded on 2026-11-16. Its value is unmeasured, and the repair budget is already bounded at 0–5, default 2.
+- The exact-name runtime-directory checks in `sandbox_runner.py` and `output_capture.py` are unchanged on purpose. They are fail-closed trust-boundary checks around AppContainer paths, and case-folding them would widen the boundary.
+- Trusted-file reads that are not bounded: `acceptance._embedded_build_commit` (the packaged `build_info.json`), `gui.show_user_guide` (the bundled guide) and `model_routing` (small limit files). All three read small, packaged or kernel-supplied inputs, so the risk is low. They could move to `file_security.read_bounded_file`; that is a future hardening, not part of this change.
+- PR #159 is not merged and its skill file was not copied. If it is merged later, its precedence clause should point to CONTRIBUTING.md's "Coding principles" so there are not two diverging copies.
+- `AGENTS.md` (PR #138) is not on `main`. The principles do not depend on it.
+- `USER_GUIDE.md` is unchanged. No user-visible workflow changed, and its "Edit path limits" text remains accurate.
+- `MEMORY_BUDGET.md` is unchanged. No numerical limit changed.
+
+**Next highest-priority unblocked tasks.**
+1. Stagnation detection in `engine._execute_task`: when a repair leaves the workspace content identical to the previous attempt, block before a redundant test run. Requires an engine regression test with a fake model. Decide on the measured value first, as the 2026-11-16 entry required.
+2. Microtask pipeline P0 (ROADMAP "Planned: Microtask Development Pipeline"): the versioned task-graph schema, limits and threat model. The Windows baseline part needs the physical laptop.
+3. Bounded reads for the trusted packaged or kernel-supplied files listed above (low priority).
+
+**Rollback.** Revert the checkpoint commit. No data migration, schema or stored-format change is involved. Reverting restores the three inline lists and the previous context-index filter.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_portable_names.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`.
+- Product status: experimental prototype, unchanged in maturity. The portable-name policy is now a single canonical module and is Linux-verified.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 823 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Implemented / experimental / planned: the shared name policy and the context-inventory casefold are implemented and tested on Linux. The coding principles are documented policy. The microtask pipeline is planned, not started.
+- Active issue / PR / owner: the draft pull request from `claude/fervent-mayer-w1xsso`. The other open PRs listed above were not modified.
+- P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
+- Highest-priority unblocked task: item 1 above.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — anti-loop: an identical repair stops before another test run
+
+**Checkpoint:** `2026-11-20-identical-repair-stop`. **Branch:** `claude/fervent-mayer-w1xsso`, the same draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164) as the previous checkpoint. **Base:** the previous checkpoint's head `8214279`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** The previous checkpoint was pushed and its draft PR opened. The repeat-attempt (stagnation) item deferred on 2026-11-16 was the first unblocked task in that ledger. No open branch was checked against this exact change beyond the merge probe below. PR #142's branch touches `_execute_task` outside the lines this change edits.
+
+**Why it matters.** The autonomous repair loop could ask a model for a repair, apply the same edit that had just failed, and run the full test command again, until the repair budget ran out. On CPU-only local models each repeat costs one model generation and one test run. ENGINEERING_TAKEOVER section 22 requires the loop to stop after substantially identical failures, and the loop did not.
+
+**Root cause.** The loop compared nothing between attempts. Every attempt ran the tests, even when the workspace was byte-identical to the state last tested.
+
+**Behavior.** After a repair is applied, the engine compares the SHA-256 of each file it wrote with the state last tested. If every file matches, the workspace has not changed, and the engine:
+- does not run the tests again;
+- records the stopped repeat as one failed repair in repair learning, as a tested failure would be;
+- publishes `failed` with `stop_reason: "repeated-edit"`, a fixed note, and at most 3,000 characters of the last test output;
+- reports `iterations` as the attempts generated, which includes the stopped one.
+
+Only consecutive repeats are detected. An A-B-A cycle still ends at `max_repairs`. A resumed run starts with no tested state, so its first attempt always tests. This is conservative.
+
+**Changed paths.**
+- `src/forgeos/engine.py`: `_REPEAT_NOTE`; `workspace_hashes` and `tested_hashes` in `_execute_task`; the repeat branch before the test checkpoint; the update of `tested_hashes` after each test run.
+- `tests/test_engine.py`: `test_identical_repair_stops_without_another_test_run` (new); `test_changed_repairs_are_each_tested_until_exhausted` (new); one added assertion in `test_exhausted_repairs`. The existing assertions are unchanged. `iterations == 2` and `failed_repairs == 1` still hold, because the stopped repeat is counted and recorded.
+- Documentation: `ARCHITECTURE.md` (engine paragraph), `USER_GUIDE.md` (troubleshooting row for the new message), `MEMORY_BUDGET.md` (bounded allocation note), `ENGINEERING_TAKEOVER.md` (section 22 status), `ROADMAP.md` (2026-11-20 entry), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoint: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_engine.py` on the new tree | OK: 110 run, 1 skip (pre-existing) |
+| `test_engine.py` against the committed engine (`HEAD`, scratch copy) | ERROR as intended in `test_identical_repair_stops_without_another_test_run` and `test_exhausted_repairs` (no `stop_reason`). `test_changed_repairs_are_each_tested_until_exhausted` passes on both versions, which confirms that distinct repairs are unchanged |
+| Full suite, Python 3.12 under Xvfb | OK: **827 run**, 23 skipped. The engine tests run in `EngineIntegrationTests` and again in the inheriting `CheckpointResumeTests` |
+| `compileall -q src tests`; Python 3.10 grammar check on `engine.py` and `test_engine.py` | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links`; `scripts/check_handoff.py --json` | PASS; PASS |
+| Merge probe against PR #142's branch (`fragment/rtk3-git-output-integration`) | `engine.py` merges automatically. `tests/test_engine.py` conflicts textually, because both branches add tests inside `EngineIntegrationTests`. `ARCHITECTURE.md`, `HANDOFF.md` and `ROADMAP.md` conflict as recorded in the previous checkpoint. A manual merge is needed when #142 is rebased |
+| Merge probe against `origin/main` | clean |
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. NOT MEASURED with a real local model: the saving of one model generation and one test run per stopped repeat has not been timed on the target laptop.
+
+**Security and privacy.** The stop path makes no new write, network call or credential use. It adds no new evidence. The stored result carries a fixed note and a bounded tail of the last test output, which the existing failure path already stored.
+
+**Resource impact.** Two dictionaries of at most eight entries each, because a manifest holds at most `MAX_FILES` files, per task. No RAM benchmark was run for this path.
+
+**Rejected alternatives.**
+- Comparing failure signatures instead of file hashes. A different edit can produce the same failure text, and the same edit can produce different text. The file-hash comparison is exact and cheap.
+- Stopping on the first failed repair. Rejected: distinct repairs must still be tested, and `test_changed_repairs_are_each_tested_until_exhausted` checks that they are.
+
+**Remaining defects and deferred work.**
+- Stagnation signals beyond exact consecutive repeats, such as the same failure signature across different edits, are not implemented.
+- The rule's real-model effect (how often repeats occur, and what they save) needs measurement on the target laptop before any claim.
+- `tests/test_engine.py` and the shared documents conflict with PR #142 as described above.
+
+**Next highest-priority unblocked tasks.**
+1. Microtask pipeline P0 (ROADMAP "Planned: Microtask Development Pipeline"): the versioned task-graph schema, limits and threat model. The Windows baseline part needs the physical laptop.
+2. Bounded reads for the trusted packaged or kernel-supplied files listed in the previous checkpoint (low priority).
+
+**Rollback.** Revert the commit. The change adds no stored format. Results written by the stop path remain valid `failed` task results.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_engine.py' -v`
+
+
+## 2026-11-20 — microtask graph validation (roadmap P1 slice)
+
+**Checkpoint:** `2026-11-20-microtask-graph-validation`. **Branch:** `claude/fervent-mayer-w1xsso`, the same draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `499f926`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** A source search of `src/`, `tests/`, `scripts/`, `tools/` and `forgeos_build/` for topological ordering, prerequisites, DAG and decomposition found no microtask or dependency-graph code. The only matches were unrelated local-prerequisite text in the GUI, readiness and model-benchmark modules. No remote branch contains a `task_graph`, microtask or decomposition file. The ROADMAP's microtask pipeline was the next planned item after the anti-loop checkpoint.
+
+**Why it matters.** ROADMAP "Planned: Microtask Development Pipeline", required behavior 3, requires a dependency graph with cycle and conflict checks before execution. Without that gate, a planner's output could schedule a cycle, a missing prerequisite, or two unordered edits to one file.
+
+**Scope.** This is the P1 validation slice only: a pure module that checks a graph and returns a deterministic order. It is not wired into the task engine, the store, or the GUI, and it does not decompose requests with a model.
+
+**Design.**
+- The input is a versioned mapping (`schema_version` 1 and `tasks`). Unknown keys are refused at every level.
+- Pass 1 validates identifiers and refuses duplicates. Pass 2 validates prerequisites and files.
+- Kahn's algorithm with a heap orders the tasks and detects cycles. Ties break by identifier, so the order is deterministic and does not depend on input order.
+- Each task's transitive ancestors are a bitmask, computed in topological order. The same-file check is one bit test per pair.
+- Files are grouped by casefolded path. Any two tasks that edit the same file must be ordered by dependency.
+- Path and device-name checks reuse `portable_names`, so the edit engine and the graph use one policy.
+
+**Rejected alternatives.**
+- Importing the engine's protected-folder list. Importing `engine.py` would pull in the SQLite, workspace and runner stack, which a pure validator should not need. The protected-path policy stays enforced at edit time in the engine. The graph validator checks structure and portability only.
+- Recursive depth-first search for cycles. Kahn's algorithm yields the topological order the ancestor computation needs, and it avoids recursion limits.
+
+**Changed paths.**
+- `src/forgeos/task_graph.py` (new): `SCHEMA_VERSION`, the limits, `TaskGraphError` and `validate_task_graph`.
+- `tests/test_task_graph.py` (new): nine tests covering order, transitive ordering, cycles, self-dependencies, identifiers, same-file conflicts, paths, duplicates, schema shape and bounds, and a memory test at the task limit.
+- Documentation: `ARCHITECTURE.md` (module row), `ROADMAP.md` (microtask status line and a 2026-11-20 entry), `MEMORY_BUDGET.md` (measured allocation note), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoints: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_task_graph.py` on the new tree | OK: 9 run |
+| Mutation, scratch copy: ancestors reduced to direct prerequisites | ERROR in `test_transitive_ordering_satisfies_the_same_file_rule` (FAILED, errors=1) |
+| Mutation, scratch copy: cycle check removed | FAIL in `test_cycles_and_self_dependencies_are_refused` (FAILED, failures=1) |
+| `tracemalloc` at the limit: 256 tasks, 4,096 prerequisite edges, one file each | Peak 217,173 bytes; retained 21,903 bytes. Python allocations only, not process RSS |
+| Full suite, Python 3.12 under Xvfb | OK: **836 run**, 23 skipped (827 before plus the nine new tests) |
+| `compileall -q src tests`; Python 3.10 grammar check on `task_graph.py` and `test_task_graph.py` | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links`; `scripts/check_handoff.py --json` | PASS; PASS |
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. The module is pure string and integer logic, and no Windows-specific behavior is claimed. NOT USED by the task engine yet, so it has no real-model or end-to-end evidence.
+
+**Security and privacy.** Planner output is untrusted. The validator refuses traversal, absolute, backslash, drive-letter, device-name, trailing-dot and trailing-space paths before any use. It performs no I/O and writes nothing.
+
+**Resource impact.** The bounds are 256 tasks, 4,096 prerequisite entries (256 times 16), and 2,048 file entries (256 times 8). The measured peak is in the table above.
+
+**Remaining and deferred.**
+- Not implemented: model decomposition (P2), requirement IDs and the bounded deterministic inventory built on `context_index.py`, SQLite persistence, scheduling, integration review, context budgeting, and the GUI view.
+- The P0 whole-prompt baseline needs the target Windows laptop.
+
+**Next highest-priority unblocked tasks.**
+1. P1 continuation: requirement IDs and a bounded deterministic inventory built on `context_index.py` metadata, feeding this validator.
+2. P0 baseline on the target laptop (needs hardware).
+3. Bounded reads for trusted packaged inputs (low priority; see the 2026-11-20 principles checkpoint).
+
+**Rollback.** Revert the commit. No runtime path imports `task_graph`, so reverting removes nothing that is in use.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_task_graph.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The graph validator is a pure, tested substrate that the product does not use yet.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 836 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Implemented / experimental / planned: the name policy, the context-exclusion casefold, the principles, the identical-repair stop and the graph validator are implemented and tested on Linux. The decomposer, scheduler and GUI are planned.
+- P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
+- Highest-priority unblocked task: item 1 above.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — requirement traceability and bounded repository inventory (roadmap P1 slice)
+
+**Checkpoint:** `2026-11-20-traceability-inventory`. **Branch:** `claude/fervent-mayer-w1xsso`, draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `c23e924`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** The tree was clean. The source audit from the previous checkpoint still holds: no requirement-ID, traceability or inventory code exists. The roadmap specifies the inventory as "built on `context_index.py`, not a new scanner", so the walker is shared rather than copied.
+
+**Why it matters.** Planned microtasks must stay aligned with the product contract (required behavior 2), and a bounded, deterministic inventory is the first step before any model sees a repository (required behavior 1).
+
+**Design decisions.**
+- Traceability is a separate versioned document. Adding a field to the task-graph schema would have changed a versioned contract. Graph version 1 is unchanged.
+- The inventory returns metadata only. Reading bodies would require budgets the planner does not need yet.
+- `candidate_sources` is the shared walker. Its behavior is unchanged: the same casefolded exclusions, dot-entry skipping, symlink skipping, relative-path bound and scan budget. The eight existing context tests pass unchanged.
+- Results sort by casefolded path, so an unchanged tree gives the same inventory.
+
+**Changed paths.**
+- `src/forgeos/context_index.py`: `candidate_sources` extracted from `render_context`, which now calls it.
+- `src/forgeos/requirement_trace.py` (new) and `tests/test_requirement_trace.py` (new, 9 tests).
+- `src/forgeos/repo_inventory.py` (new) and `tests/test_repo_inventory.py` (new, 8 tests).
+- Documentation: `ARCHITECTURE.md` (two module rows and the context row), `ROADMAP.md` (microtask status and a 2026-11-20 entry), `MEMORY_BUDGET.md` (inventory measurement), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoints: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_context_index.py` after the refactor | OK (8 existing tests, unchanged) |
+| `test_requirement_trace.py`; `test_repo_inventory.py` | OK: 9 and 8 run |
+| Mutation, scratch copy: uncovered-requirement check removed | FAIL in `test_uncovered_requirement_is_refused` |
+| Mutation, scratch copy: inventory limit removed | FAIL in `test_limit_truncates_in_sorted_order` and `test_large_tree_stays_within_the_fixed_limit_and_allocation_guard` |
+| Synthetic tree: 21 folders of 100 files (2,100 candidates) | 2,000 records returned; `truncated` True; tracemalloc peak 2,051,225 bytes; about 0.38 s |
+| Full suite, Python 3.12 under Xvfb | OK: **853 run**, 23 skipped (836 before, plus 17) |
+| `compileall -q src tests`; Python 3.10 grammar check on the five changed Python files | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links` | PASS |
+
+Two test expectations were corrected during the work. The sort is by casefolded path, so `pyproject.toml` precedes `README.md`. The implementation was right, and the expectations were wrong.
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. The walk and sort rely on `os.walk`, and Windows path behavior was not exercised.
+
+**Security and privacy.** The inventory reports no absolute paths and no file bodies. The walker's exclusions apply unchanged. The symlink test confirms that a link to an outside file is not listed.
+
+**Resource impact.** Bounded by 3,000 scanned entries and 2,000 records. The measured peak for 2,100 candidates is 2.05 MB of Python allocations. Reducing it further would mean having the walker return relative paths only, which has not been done.
+
+**Rejected alternatives.**
+- Adding a `requirements` key to task-graph schema version 1. That would change a versioned contract. A separate document keeps version 1 stable.
+- A second walker for the inventory. It would duplicate the exclusion rules, and the roadmap says to build on `context_index`.
+
+**Remaining.** Neither module is used by the engine, store or GUI. The validated graph is not persisted in SQLite, and no decomposer exists.
+
+**Next highest-priority unblocked tasks.**
+1. P0 design specification for the microtask pipeline (documentation only; the Windows baseline still needs the laptop).
+2. Persist the validated graph and traceability in the SQLite store, with migration and fault-injection tests (remaining P1 item).
+3. Bounded reads for trusted packaged inputs (low priority).
+
+**Rollback.** Revert the commit. The walker extraction has no behavior change, so reverting restores the inline loop.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_repo_inventory.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The P1 substrate is four pure, tested modules that the product does not use yet.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 853 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Implemented / experimental / planned: the name policy, context casefold, principles, identical-repair stop, graph validator, traceability and inventory are implemented and tested on Linux. Persistence, decomposition, scheduling and the GUI are planned.
+- P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
+- Highest-priority unblocked task: item 1 above.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — microtask pipeline P0 design specification
+
+**Checkpoint:** `2026-11-20-microtask-p0-spec`. **Branch:** `claude/fervent-mayer-w1xsso`, draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `d01b6eb`. **Resulting SHA:** the head of the branch after this commit.
+
+**What it adds.** `docs/MICROTASK_PIPELINE.md` is the P0 design specification from the roadmap section "Planned: Microtask Development Pipeline". It records the three versioned contracts that now exist (the task graph, traceability and the inventory, with their limits and invariants). It also has a threat model with the status of each mitigation, planned scheduling invariants, phase gates with honest status, a P0 and P4 measurement plan, and three open decisions for the owner: persistence, model-proposed links and inventory exposure.
+
+**Verification.** Documentation only. The limits in the specification were checked against the code by reading the constants in the validators: `MAX_TASKS`, `MAX_PREREQUISITES`, `MAX_FILES`, `MAX_PATH_LENGTH`, `MAX_REQUIREMENTS`, `MAX_LINKS`, `MAX_TEXT_LENGTH`, `MAX_INVENTORY_FILES` and `MAX_SCAN`. The documentation gates were run: `tools/check_documentation.py --links`, `tools/check_documentation.py --base origin/main --head HEAD` and `scripts/check_handoff.py --json`. NOT RUN: the Windows baseline and any model measurement (P0 benchmark and P4 hardware acceptance). No test was added, because the specification is not code.
+
+**Open decisions for the owner.**
+1. SQLite persistence in new tables with migration tests, or a single versioned checkpoint field. The specification recommends the first option.
+2. Confirmation that model-proposed requirement links pass the same validation as all other model output.
+3. Whether the decomposer receives the full inventory (up to 2,000 records) or a relevance-ranked slice. The specification recommends the slice.
+
+**Next highest-priority unblocked task.** Persistence of the validated graph and traceability in the SQLite store, with migration and fault-injection tests, once decision 1 is accepted. Without that decision, the next unblocked item is the decomposer's proposal schema for P2.
+
+**Rollback.** Revert the commit. The specification changes no code, so reverting it removes documentation only.
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The microtask pipeline is specified, and four pure modules are implemented and tested on Linux.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 853 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — bounded parser for model-proposed microtask plans (P2 boundary)
+
+**Checkpoint:** `2026-11-20-proposal-parser`. **Branch:** `claude/fervent-mayer-w1xsso`, draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `3dc206e`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** No code in the repository parses model-produced plans. The engine's JSON edit manifest (`parse_edits`) is a different contract for file edits, and it was not changed.
+
+**Why it matters.** Model output is the least trusted input in the pipeline. Before the planning contracts can accept real model answers, the entry point needs size limits, strict decoding and the validators already written.
+
+**Design.**
+- The size limit is applied before decoding, so the decoder never sees more than 262,144 characters.
+- Repeated keys are refused through `object_pairs_hook`. The standard decoder would otherwise keep the last value silently, which could hide a second graph behind the first.
+- Fenced or prose-wrapped answers are refused, because the answer must be the object alone.
+- The parser reuses `validate_task_graph` and `validate_traceability` and adds no other checks, so each contract stays in one place.
+
+**Changed paths.**
+- `src/forgeos/microtask_proposal.py` (new) and `tests/test_microtask_proposal.py` (new, 8 tests).
+- Documentation: `ARCHITECTURE.md` (module row), `ROADMAP.md` (entry), `MEMORY_BUDGET.md` (measured peak), `MICROTASK_PIPELINE.md` (section 2.4, the status line and the P2 gate), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoints: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_microtask_proposal.py` | OK: 8 run |
+| Mutation, scratch copy: size check removed | FAIL in `test_non_text_and_oversized_text_are_refused_before_parsing` |
+| Largest legal proposal: 188,219 characters, 256 tasks, 128 requirements | Parsed; tracemalloc peak 1,358,543 bytes; about 0.11 s |
+| Full suite, Python 3.12 under Xvfb | OK: **861 run**, 23 skipped (853 before, plus 8) |
+| Python 3.10 grammar check on the two new files | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links`; `--base origin/main --head HEAD`; `scripts/check_handoff.py --json` | PASS; PASS; PASS |
+
+One test was corrected during the work. Its nesting input was over the size limit, so the size check refused it before the decoder ran. The input now stays under the limit, so the test reaches the decoder.
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. No model is connected. The parser was tested with fixed inputs, not with real model output.
+
+**Security and privacy.** Model text is untrusted at every step: size first, then decoding, then validation. Error messages are fixed strings or validator messages. Those validator messages name identifiers and paths from the proposal, and each is bounded in length. They never echo the raw text.
+
+**Resource impact.** The largest legal proposal costs about 1.36 MB at its peak. The 262,144-character limit bounds the text itself.
+
+**Rejected alternatives.**
+- Accepting fenced JSON by stripping the fences. The engine's JSON edit contract is strict, so this parser stays strict too.
+- Accepting the decoder's last-value behavior for repeated keys. It would let a model hide a second graph behind the first.
+
+**Remaining.** No model is connected. Quality checks against known requirements, deterministic context retrieval and the decomposition prompt are planned (P2). SQLite persistence needs the owner's decision recorded in the specification.
+
+**Next highest-priority unblocked tasks.**
+1. A fixed-fixture evaluation harness for proposals: valid, cyclic, uncovered and hostile inputs, so that later model runs are scored the same way.
+2. The owner's persistence decision (see `MICROTASK_PIPELINE.md`, section 7), then the migration and fault-injection work it implies.
+3. The P0 Windows baseline (needs the laptop).
+
+**Rollback.** Revert the commit. No runtime path imports `microtask_proposal`.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_microtask_proposal.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The planning contracts and the proposal boundary are implemented as pure, tested modules that the product does not use yet.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 861 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.

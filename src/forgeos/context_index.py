@@ -9,6 +9,8 @@ from forgeos.file_security import read_bounded_file
 
 EXCLUDE = {".git", ".github", ".env", ".forgeos", ".venv", "venv", "node_modules",
            "__pycache__", "dist", "build", ".idea", ".vscode", ".pytest_cache"}
+# Windows folds case, so NODE_MODULES is the same directory as node_modules there.
+_EXCLUDE_FOLDED = frozenset(name.casefold() for name in EXCLUDE)
 EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".cs",
               ".java", ".md", ".json", ".toml", ".yaml", ".yml"}
 MAX_FILES, MAX_SCAN, MAX_BYTES, MAX_CONTEXT = 80, 3000, 100_000, 8000
@@ -41,19 +43,18 @@ def _signatures(path: Path) -> list[str]:
             break
     return result[:40]
 
-def render_context(root: str | Path, question: str = "", *, max_chars: int = MAX_CONTEXT) -> str:
-    """Sort safe file paths by request relevance and extract Python AST names only."""
-    if type(max_chars) is not int or not 512 <= max_chars <= MAX_CONTEXT:
-        raise ValueError("Context budget must be 512..8000 characters")
-    origin = Path(root).resolve(strict=True)
-    if not origin.is_dir():
-        raise ValueError("Context root is not a directory")
-    query = set(re.findall(r"[a-z0-9]{2,}", question.lower()))
-    candidates, scanned = [], 0
+def candidate_sources(origin: Path) -> tuple[list[tuple[Path, Path]], bool]:
+    """Return (relative, absolute) pairs for allowed source files, and whether the scan budget ran out.
+
+    Symlinks, dot entries, excluded folders and oversized relative paths are skipped.
+    At most MAX_SCAN file entries are examined, so the walk has a fixed cost.
+    """
+    candidates: list[tuple[Path, Path]] = []
+    scanned = 0
     for directory, directories, filenames in os.walk(origin, followlinks=False):
         current = Path(directory)
         directories[:] = sorted(
-            part for part in directories if part not in EXCLUDE
+            part for part in directories if part.casefold() not in _EXCLUDE_FOLDED
             and not part.startswith(".") and not (current / part).is_symlink())
         for name in sorted(filenames):
             scanned += 1
@@ -70,6 +71,18 @@ def render_context(root: str | Path, question: str = "", *, max_chars: int = MAX
             candidates.append((relative, source))
         if scanned > MAX_SCAN:
             break
+    return candidates, scanned > MAX_SCAN
+
+
+def render_context(root: str | Path, question: str = "", *, max_chars: int = MAX_CONTEXT) -> str:
+    """Sort safe file paths by request relevance and extract Python AST names only."""
+    if type(max_chars) is not int or not 512 <= max_chars <= MAX_CONTEXT:
+        raise ValueError("Context budget must be 512..8000 characters")
+    origin = Path(root).resolve(strict=True)
+    if not origin.is_dir():
+        raise ValueError("Context root is not a directory")
+    query = set(re.findall(r"[a-z0-9]{2,}", question.lower()))
+    candidates, _ = candidate_sources(origin)
     candidates.sort(key=lambda item: (-_score(item[0], query),
                                       item[0].as_posix().casefold()))
     selected = candidates[:MAX_FILES]

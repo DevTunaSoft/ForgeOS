@@ -438,6 +438,7 @@ The packaged Windows AppContainer runner enforces its separate native output-fil
 | Task is Blocked after restart | Run `recover`, inspect workspace/journal/checkpoint, then use eligible guarded recovery |
 | Task is already being planned or completed | Wait for the active planner or inspect task history. GUI and CLI now share lease-fenced plan/test actions; passed/blocked work is not silently retested or overwritten |
 | Diagnostic evidence cannot be opened | Archive may be missing, truncated, over size limit or fail integrity validation; do not treat an incomplete report as successful acceptance |
+| Task failed with “Repair stopped: the model returned the same edit” | The model's repair repeated the edit whose tests had already failed, so ForgeOS stopped without another test run. Read the test output in the task result, choose a larger or different installed model, or reword the request and run again. The workspace is kept for inspection, as with other failed runs |
 | App feels slow or low on memory | Choose a smaller local model, reduce context, review `memory`; telemetry covers ForgeOS only, not Ollama or compilers |
 
 ## 9. Limits to understand before relying on ForgeOS

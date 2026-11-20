@@ -248,6 +248,34 @@ source scan or model prompt allocation. Exhausted repair loops also avoid a
 final unused context scan. This is an allocation/wasted-work reduction, not a
 claim that overall ForgeOS or model peak memory has been benchmarked.
 
+Repeated identical repairs also stop before a test run. The repeat check keeps
+one path-to-SHA-256 map of at most eight files per task (`MAX_FILES`), so its
+allocation is bounded by the existing edit-manifest limit. It saves one test run
+and one model generation per stopped repeat. No peak-memory benchmark was run for
+this path.
+
+The microtask graph validator (`src/forgeos/task_graph.py`, 2026-11-20) has fixed
+limits of 256 tasks, 16 prerequisites and 8 files per task. Its synthetic
+256-task, 4,096-edge fixture measured a tracemalloc peak of 217,173 bytes and
+21,903 bytes retained on Python 3.12, Linux. The regression guard is 1 MiB. This
+measures Python allocations only, not process RSS, and was not measured on
+Windows.
+
+The planning inventory (`repo_inventory.py`, 2026-11-20) returns at most 2,000
+records and walks at most the 3,000 entries that `context_index` already allows.
+A synthetic 2,100-file tree measured a tracemalloc peak of 2,051,225 bytes on
+Python 3.12 under Linux, with an 8 MiB regression guard. The measurement covers
+Python allocations only and was not taken on Windows. The traceability document
+(`requirement_trace.py`) is bounded at 128 requirements, 1,024 links and 500
+characters per statement and was not benchmarked separately.
+
+The proposal parser (`microtask_proposal.py`, 2026-11-20) refuses text over
+262,144 characters before decoding. The largest legal proposal (256 tasks, each
+with 16 prerequisites and 8 files, plus 128 requirements and 1,024 links) is
+188,219 characters. It parsed with a tracemalloc peak of 1,358,543 bytes on
+Python 3.12 under Linux. The regression guard is 16 MiB. The measurement covers
+Python allocations only and was not taken on Windows.
+
 ## On-demand SQLite backup allocation boundary
 
 Explicit SQLite `Connection.backup(pages=64)` copies pages in native code

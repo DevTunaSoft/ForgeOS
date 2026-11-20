@@ -29,6 +29,21 @@ class ContextIndexTests(unittest.TestCase):
         self.assertNotIn("DB_PASSWORD", out)
         self.assertNotIn(".env", out)
 
+    def test_excluded_directories_match_case_insensitively(self):
+        # Windows folds case, so these are the same folders as node_modules, venv and so on.
+        for name in ("NODE_MODULES", "Build", "VENV", "Dist", "__PYCACHE__"):
+            folder = self.root / name / "pkg"
+            folder.mkdir(parents=True)
+            (folder / "hidden.py").write_text("def vendored_symbol():\n    pass\n")
+        (self.root / "src").mkdir()
+        (self.root / "src" / "kept.py").write_text("def kept_symbol():\n    pass\n")
+        out = render_context(self.root, "vendored hidden kept")
+        self.assertIn("kept.py", out)
+        self.assertIn("kept_symbol", out)
+        for leaked in ("NODE_MODULES", "Build", "VENV", "Dist", "__PYCACHE__",
+                       "hidden.py", "vendored_symbol"):
+            self.assertNotIn(leaked, out)
+
     def test_repeatable_relevance_order(self):
         a = render_context(self.root, "ui")
         self.assertEqual(a, render_context(self.root, "ui"))

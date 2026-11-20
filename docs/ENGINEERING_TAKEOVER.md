@@ -235,6 +235,8 @@ The cumulative handoff is a chronological engineering ledger. This dossier is a 
 
 Never confuse historical intention with implemented behavior. Never confuse a merged PR with physical-machine acceptance. Never confuse a model response with a successful software build. Preserve user work. Prefer one well-tested implementation over two competing ones. Measure resource usage instead of guessing. Do not restart already completed tasks. Record why an approach failed and switch strategy when it stops producing progress. Keep the original mission visible: **ForgeOS exists to make reliable AI-driven software development accessible through one local-first, efficient Windows application.**
 
+**Coding principles (added 2026-11-20).** The [coding principles in CONTRIBUTING.md](../CONTRIBUTING.md#coding-principles) add a smallest-complete-change discipline to the existing requirements. They do not relax tests, documentation, memory bounds, trust boundaries or the regression requirement. Read them with the rest of this section.
+
 
 ---
 
@@ -491,7 +493,7 @@ A task assignment should include: objective, owner, base SHA, permitted paths, f
 
 **Progress measurement:** a cycle counts as progress only when it produces a verified code change, a newly identified root cause, a resolved blocker, a meaningful new regression test or a concrete reduction in risk. Repeating an unchanged test or generating another status report is not progress.
 
-**Anti-loop rule:** after two substantially identical failures, stop the failing approach, inspect evidence and previous attempts, change strategy and verify. After two cycles without measurable progress, document the blocker and move to independent work when available.
+**Anti-loop rule:** after two substantially identical failures, stop the failing approach, inspect evidence and previous attempts, change strategy and verify. After two cycles without measurable progress, document the blocker and move to independent work when available. **Status (2026-11-20):** the engine now stops when a repair repeats the last tested edit exactly. Other stagnation signals, such as the same failure signature across different edits, are not implemented.
 
 ## 23. Decision records and change rationale
 

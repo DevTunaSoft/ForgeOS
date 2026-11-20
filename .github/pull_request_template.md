@@ -7,6 +7,7 @@
 - [ ] Reused the canonical ForgeOS GUI, model, storage, diagnostics and test infrastructure where applicable
 - [ ] Checked existing PRs/issues and the enhancement deduplication audit
 - [ ] Kept local-first operation, bounded RAM and Docker-free design intact
+- [ ] Applied the smallest-complete-change rule in CONTRIBUTING.md (no speculative abstraction or dependency; every affected caller, test and document updated)
 
 ## Verification and safety
 

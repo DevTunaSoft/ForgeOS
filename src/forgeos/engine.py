@@ -16,10 +16,13 @@ from typing import Callable
 from .core import LeaseLostError, Ollama, Store, run_test, validate_task_description
 from .workspace import Workspace, create_workspace
 from .transactions import apply_transaction, recover_edits, _hash_file
+from .portable_names import has_trailing_dot_or_space, is_device_name
 
 MAX_FILES = 8
 MAX_FILE_BYTES = 128_000
 MAX_RESPONSE = 600_000
+_REPEAT_NOTE = ("Repair stopped: the model returned the same edit as the last tested "
+                "attempt, so no further test run was made.\n")
 EXTENSIONS = {".py", ".md", ".txt", ".json", ".toml", ".yaml", ".yml",
               ".js", ".ts", ".tsx", ".jsx", ".css", ".html", ".xml", ".sh"}
 FORBIDDEN = {".git", ".github", ".env", "node_modules", ".venv", "venv",
@@ -30,11 +33,6 @@ class EditError(ValueError):
     """A model response violates the edit contract."""
 
 
-# Win32 reserves these stems as devices even when an extension is present
-# (for example "NUL.txt"). COM and LPT also reserve superscript-digit forms.
-_WINDOWS_DEVICE_STEMS = frozenset({"con", "prn", "aux", "nul", "conin$", "conout$"})
-_WINDOWS_NUMBERED_DEVICE = re.compile(
-    "(?:com|lpt)[0-9\N{SUPERSCRIPT ONE}\N{SUPERSCRIPT TWO}\N{SUPERSCRIPT THREE}]")
 _PROTECTED_FOLDED = frozenset(name.casefold() for name in FORBIDDEN)
 
 
@@ -51,10 +49,9 @@ def _check_portable_parts(parts) -> None:
     on every platform so that model manifests remain portable to the product.
     """
     for part in parts:
-        if part != part.rstrip(" ."):
+        if has_trailing_dot_or_space(part):
             raise EditError("Non-portable trailing dot or space")
-        stem = part.split(".", 1)[0].rstrip(" ").casefold()
-        if stem in _WINDOWS_DEVICE_STEMS or _WINDOWS_NUMBERED_DEVICE.fullmatch(stem):
+        if is_device_name(part):
             raise EditError("Windows device name")
         if _is_protected_part(part):
             raise EditError("Protected path")
@@ -367,6 +364,9 @@ def _execute_task(
                 f"Test failure (untrusted text):\n{last_output[-6000:]}\n"
                 f"Repository file inventory:\n{_context(ws.path, task['description'])}"
             )
+        # Hashes of every file this task has written, and of the state last tested.
+        workspace_hashes: dict[str, str] = {}
+        tested_hashes: dict[str, str] = {}
         for attempt in range(start_attempt - 1, max_repairs + 1):
             if resume and phase == "test_pending" and attempt == start_attempt - 1:
                 paths = checkpoint["edited"]
@@ -385,15 +385,40 @@ def _execute_task(
                 heartbeat()
                 paths = apply_edits(ws.path, manifest)
                 heartbeat()
+            digests = {name: _checkpoint_file_hash(_validate_path(ws.path, name))
+                       for name in paths}
+            if (attempt > 0 and tested_hashes
+                    and all(tested_hashes.get(name) == digest
+                            for name, digest in digests.items())):
+                # The model repeated the tested edit. The workspace is unchanged,
+                # so another test run and repair would reproduce the same evidence.
+                if last_output:
+                    try:
+                        from .error_learning import RepairMemory
+                        RepairMemory(store.path.with_name(
+                            "repair_memory.sqlite3")).record(
+                            last_output, preset=preset, model=model_name,
+                            verified_success=False)
+                    except Exception:
+                        # Repair statistics are never a substitute for test outcomes.
+                        pass
+                stopped = {"passed": False, "workspace": str(ws.path),
+                           "branch": ws.branch, "model": model_name,
+                           "iterations": attempt + 1, "stop_reason": "repeated-edit",
+                           "error": _REPEAT_NOTE + last_output[-3000:]}
+                publish({"editing"}, "failed", error=stopped["error"],
+                        result=json.dumps(stopped), event_action="test",
+                        event_attempt=attempt + 1)
+                return stopped
+            workspace_hashes.update(digests)
             publish({"editing"}, "testing", result=json.dumps({
                 "workspace": str(ws.path), "branch": ws.branch,
                 "edited": paths, "attempt": attempt + 1, "phase": "test_pending",
-                "contract": contract,
-                "sha256": {name: _checkpoint_file_hash(_validate_path(ws.path, name))
-                           for name in paths},
+                "contract": contract, "sha256": digests,
             }), event_action="test", event_attempt=attempt + 1)
             heartbeat()
             outcome = _run_workspace_tests(ws.path, preset)
+            tested_hashes = dict(workspace_hashes)
             heartbeat()
             # Incomplete capture is non-resumable even if the runner could not
             # return a normal output field. Validate ordinary results next.

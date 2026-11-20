@@ -31,6 +31,11 @@ flowchart TB
 | `src/forgeos/cli.py` | Scriptable commands for tasks, testing, recovery, diagnostics, memory, filters and learning |
 | `src/forgeos/core.py` | SQLite task state, leases, local Ollama connector, test orchestration primitives |
 | `src/forgeos/engine.py` | Edit constraints, structured prompt/edit manifest, bounded local task cycle, checkpoint validation and chosen test-runtime routing |
+| `src/forgeos/portable_names.py` | Canonical Win32 device-stem and trailing dot/space predicates shared by the edit engine, the GGUF downloader and the runtime installer; each caller keeps its own exception type |
+| `src/forgeos/task_graph.py` | Deterministic microtask dependency-graph validation (roadmap P1 slice): schema version, identifiers, prerequisites, cycles, portable paths and unordered same-file edits. Pure and bounded; not yet used by the task engine |
+| `src/forgeos/requirement_trace.py` | Requirement IDs and traceability (roadmap P1): a separate versioned document links tasks to `REQ-` identifiers and refuses unknown, duplicate or uncovered requirements. Pure and bounded; not yet used by the task engine |
+| `src/forgeos/repo_inventory.py` | Bounded, deterministic metadata inventory for planning (roadmap P1): relative path, size, kind and test/manifest flags, at most 2,000 records. Never reads file bodies or reports absolute paths, and reuses the context walker. Not yet used by the task engine |
+| `src/forgeos/microtask_proposal.py` | Bounded parser for model-proposed microtask plans (roadmap P2 boundary): refuses oversized, malformed, deeply nested or key-repeating text, then applies the graph and traceability validators. Never runs or writes anything. Not yet connected to a model |
 | `src/forgeos/task_actions.py` | Canonical lease-fenced planning and manual-test operations reused by CLI and GUI; requires explicit trust opt-in for tests; failure bookkeeping never masks the triggering error |
 | `src/forgeos/workspace.py` | Git repository/worktree setup and ownership |
 | `src/forgeos/transactions.py` | Transactional edit journal, streamed bounded original-file backups (8 MiB/file), failure/rollback/recovery boundaries |
@@ -40,7 +45,7 @@ flowchart TB
 | `src/forgeos/diagnostics.py`, `output_capture.py`, `output_rules.py` | Evidence archive, bounded output, summaries, trusted filters; Windows evidence temp allocation fails fast rather than retrying indefinitely on denied storage |
 | `src/forgeos/worktree_manifest.py` | Database-free, bounded regular-file worktree hashing and exact manifest verification; excludes operational metadata and rejects links/reparse points |
 | `src/forgeos/error_learning.py`, `optimizer_metrics.py`, `insights.py` | Test-verified repair signatures, efficiency and advisory diagnostic views |
-| `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
+| `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts; `candidate_sources` is the shared, bounded walker that the planning inventory also uses |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
 | `src/forgeos/local_models.py` | Experimental loopback-only chat adapter for llama.cpp, LM Studio and configurable local OpenAI-style endpoints; bounded requests/responses, no proxy/redirects |
 | `src/forgeos/huggingface_catalog.py` | Opt-in public GGUF metadata, pinned commit revision, hash/size inspection |
@@ -523,6 +528,13 @@ marker is cleared; the active database is never moved.
 7. Bounded output capture feeds original evidence and a smaller AI-facing summary into a limited repair loop.
 8. A result or blocked checkpoint preserves the workspace so a person can inspect it. Automatic commit/push/merge/deploy is **not** enabled.
 
+Identical repairs stop early (2026-11-20). When a repair leaves every file it
+writes with the same SHA-256 as the state last tested, the engine returns a
+failed result with `stop_reason` set to `repeated-edit` and does not run the
+tests again. The stopped repeat is recorded once as a failed repair, and the
+result keeps at most 3,000 characters of the last test output. Only consecutive
+repeats are detected; an A-B-A cycle still ends at `max_repairs`.
+
 Failure publication never masks the triggering error. When generation, testing or repair fails, the engine tries to record a `blocked` checkpoint and then re-raises the original exception. A database error while reading optional recovery detail, while recording the blocked state, or while releasing the lease is absorbed on that path. The task keeps its last durable status, which start and resume both refuse while it is `editing` or `testing`, so nothing replays automatically; recovery goes through the existing checkpoint rules. On a successful run a lease-release failure is raised, because it would otherwise block new runs until the lease expires.
 
 The task engine does not hold an operating-system filesystem lock while generating/editing: a lease may expire during a long-running external call. Lease fencing prevents stale *database publications*, but a worktree touched before detecting the expired lease still requires careful inspection; recovery must not silently overwrite it.
@@ -566,9 +578,19 @@ Their exclusions now match case-insensitively as well.
 `tests/test_engine.py`) cover these rules on every platform. The Windows behavior
 follows documented Win32 name normalization and has **not** been reproduced on
 Windows hardware. This is a validation boundary, not a sandbox: enabled host
-tests still run with host privileges. The GGUF downloader and the runtime
-installer keep their own reserved-name checks; the three device-name lists are a
-consolidation candidate recorded in HANDOFF.
+tests still run with host privileges. 
+
+**Shared rule (2026-11-20).** The device-name and trailing dot/space predicates
+live in `src/forgeos/portable_names.py`. The edit engine, the GGUF downloader
+(`gguf_download._safe_name`) and the runtime installer
+(`runtime_installer._safe_entry`) all call it, so the three validators agree.
+Each keeps its own exception type and its own extra rules, such as the engine's
+protected folders. Two deliberate tightenings: the GGUF downloader and the
+installer now refuse `COM0` and `LPT0` (the engine already did), and the
+installer now refuses `NUL .dll`, which its earlier raw-stem comparison accepted.
+The context inventory (`context_index.py`) also excludes non-dot directories such
+as `node_modules`, `venv`, `build` and `dist` case-insensitively. It stores
+metadata only, never source bodies.
 
 ## Execution security: differentiate the environments
 
