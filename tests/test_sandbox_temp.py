@@ -68,3 +68,61 @@ class InheritingMkdirTests(unittest.TestCase):
         original = os.mkdir
         sandbox_runner._install_inheriting_mkdir()
         self.assertIs(os.mkdir, original)
+
+
+class PathResolverTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="forgeos-resolver-")).resolve()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        (self.root / "folder").mkdir()
+        (self.root / "folder" / "file.txt").write_text("x", encoding="ascii")
+
+    @staticmethod
+    def _error(winerror):
+        error = OSError(13, "Windows error")
+        error.winerror = winerror
+        return error
+
+    def _resolver(self, original):
+        return sandbox_runner._links_checked_path_resolver(original, base=str(self.root))
+
+    def test_access_denied_gives_the_absolute_path_when_nothing_is_a_link(self):
+        def denied(path):
+            raise self._error(5)
+
+        target = self.root / "folder" / "file.txt"
+        self.assertEqual(self._resolver(denied)(str(target)), os.path.abspath(target))
+
+    def test_other_failures_still_raise(self):
+        def missing(path):
+            raise self._error(2)
+
+        with self.assertRaises(OSError):
+            self._resolver(missing)(str(self.root / "folder"))
+
+    def test_paths_outside_the_snapshot_still_raise(self):
+        def denied(path):
+            raise self._error(5)
+
+        outside = Path(tempfile.mkdtemp(prefix="forgeos-outside-")).resolve()
+        self.addCleanup(shutil.rmtree, outside, True)
+        with self.assertRaises(OSError):
+            self._resolver(denied)(str(outside))
+
+    @unittest.skipIf(os.name == "nt", "creating a symlink needs privilege on Windows")
+    def test_a_link_inside_the_snapshot_still_raises(self):
+        def denied(path):
+            raise self._error(5)
+
+        link = self.root / "link"
+        os.symlink(self.root / "folder", link, target_is_directory=True)
+        with self.assertRaises(OSError):
+            self._resolver(denied)(str(link / "file.txt"))
+
+    @unittest.skipIf(os.name == "nt", "the install is only active on Windows")
+    def test_resolver_install_is_a_no_op_outside_windows(self):
+        import ntpath
+
+        before = getattr(ntpath, "_getfinalpathname", None)
+        sandbox_runner._install_windows_path_resolver()
+        self.assertIs(getattr(ntpath, "_getfinalpathname", None), before)

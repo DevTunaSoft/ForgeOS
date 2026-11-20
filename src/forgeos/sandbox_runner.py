@@ -6,6 +6,7 @@ import faulthandler
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 import unittest
 
@@ -41,6 +42,61 @@ def _install_inheriting_mkdir() -> None:
     if os.name != "nt":
         return
     os.mkdir = _inheriting_mkdir(os.mkdir)
+
+
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+_WINDOWS_ACCESS_DENIED = 5
+
+
+def _links_checked_path_resolver(original, base=None):
+    """Wrap ntpath._getfinalpathname so a sandboxed child can still resolve paths.
+
+    Inside the AppContainer, GetFinalPathNameByHandle fails with access denied
+    when it builds the drive-letter name of a path that opens and stats fine,
+    so Path.resolve(strict=True) failed everywhere. This wrapper answers only
+    that failure: it returns the absolute path as written, provided no part of
+    the path inside the snapshot is a link. Other failures, paths outside the
+    snapshot, and paths through a link still raise. It grants no new access.
+    """
+    snapshot = os.path.abspath(base if base is not None else os.getcwd())
+
+    def _getfinalpathname(path):
+        try:
+            return original(path)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) != _WINDOWS_ACCESS_DENIED:
+                raise
+            absolute = os.path.abspath(path)
+            try:
+                relative = os.path.relpath(absolute, snapshot)
+            except ValueError:
+                raise exc
+            if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+                raise exc
+            parts = [] if relative == os.curdir else relative.split(os.sep)
+            current = snapshot
+            for part in [None] + parts:
+                if part is not None:
+                    current = os.path.join(current, part)
+                try:
+                    info = os.lstat(current)
+                except OSError:
+                    raise exc
+                if (stat.S_ISLNK(info.st_mode)
+                        or getattr(info, "st_file_attributes", 0)
+                        & _FILE_ATTRIBUTE_REPARSE_POINT):
+                    raise exc
+            return absolute
+
+    return _getfinalpathname
+
+
+def _install_windows_path_resolver() -> None:
+    """Install the path resolver in the sandboxed child, on Windows only."""
+    if os.name != "nt":
+        return
+    import ntpath
+    ntpath._getfinalpathname = _links_checked_path_resolver(ntpath._getfinalpathname)
 
 
 def selected_test_pattern(module: str) -> str:
@@ -106,6 +162,7 @@ def run_unittest() -> int:
     try:
         _scrub_bootstrap_environment(root)
         _install_inheriting_mkdir()
+        _install_windows_path_resolver()
         sys.path.insert(0, str(root))
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
@@ -159,6 +216,7 @@ def run_pytest() -> int:
     try:
         _scrub_bootstrap_environment(root)
         _install_inheriting_mkdir()
+        _install_windows_path_resolver()
         from .test_runtime import RUNTIME_DIR
         logfile = root / RUNTIME_DIR / "pytest-log.txt"
         raw_log = os.environ.get("FORGEOS_TEST_LOG_FILE", "")
