@@ -589,6 +589,8 @@ class ForgeOSTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.store.get(999)
     def test_allowlist_rejects_injection(self):
         with self.assertRaises(ValueError): run_test(str(self.repo),'npm test; echo hacked')
+    @unittest.skipIf(os.environ.get("FORGEOS_EXECUTION_SNAPSHOT") == "1",
+                     "starts a nested AppContainer, which the sandbox does not allow")
     def test_unittest_preset_passes(self):
         (self.repo/'test_example.py').write_text('import unittest\nclass T(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
         result=run_test(str(self.repo),'python-unittest')
