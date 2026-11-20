@@ -130,18 +130,72 @@ def _private_mkdir(path):
     return path
 
 
+def _win_open(path, access, share, final):
+    """Open a path with one access and share mask, as CPython's realpath does."""
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                     ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                                     wintypes.HANDLE]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.CreateFileW(path, access, share, None, 3, 0x02000000, None)
+    if not handle or handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if not final:
+            return ""
+        kernel32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+        kernel32.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR,
+                                                       wintypes.DWORD, wintypes.DWORD]
+        buffer = ctypes.create_unicode_buffer(32768)
+        size = kernel32.GetFinalPathNameByHandleW(handle, buffer, 32768, 0)
+        if not size:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return buffer.value[-48:]
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _opens(label, path):
+    """Report which handle opens and final-path lookups succeed for one path."""
+    if os.name != "nt":
+        return label + " opens=skipped"
+    import nt
+    parts = []
+    for name, access, share in (("open00", 0, 0), ("open07", 0, 7),
+                                ("openra0", 0x80, 0), ("openra7", 0x80, 7)):
+        try:
+            _win_open(str(path), access, share, False)
+            parts.append(name + "=ok")
+        except OSError as exc:
+            parts.append(name + "=" + _code(exc))
+    try:
+        parts.append("nt_final=ok:" + nt._getfinalpathname(str(path))[-48:])
+    except OSError as exc:
+        parts.append("nt_final=" + _code(exc))
+    try:
+        parts.append("ctypes_final=ok:" + _win_open(str(path), 0x80, 7, True))
+    except OSError as exc:
+        parts.append("ctypes_final=" + _code(exc))
+    return label + " opens: " + " ".join(parts)
+
+
 def _inspect(label, folder):
     """Dump one folder's ACL, then try what a test does inside it."""
-    notes = [_acl(label, folder)]
+    notes = [_acl(label, folder), _opens(label, folder)]
     sub = folder / "sub"
     notes.append(_op(label + ".mkdir_sub", sub.mkdir))
     notes.append(_op(label + ".sub_resolve", lambda: sub.resolve(strict=True)))
     notes.append(_op(label + ".sub_stat", lambda: os.stat(sub)))
     notes.append(_acl(label + ".sub", sub))
+    notes.append(_opens(label + ".sub", sub))
     notes.append(_op(label + ".write",
                      lambda: (folder / "f.txt").write_text("x", encoding="ascii")))
     notes.append(_op(label + ".file_resolve",
                      lambda: (folder / "f.txt").resolve(strict=True)))
+    notes.append(_opens(label + ".file", folder / "f.txt"))
     notes.append(_op(label + ".replace",
                      lambda: os.replace(folder / "f.txt", folder / "g.txt")))
     notes.append(_op(label + ".scandir", lambda: list(os.scandir(folder))))
