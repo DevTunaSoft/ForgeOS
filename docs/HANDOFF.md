@@ -4110,3 +4110,73 @@ Only consecutive repeats are detected. An A-B-A cycle still ends at `max_repairs
 **Rollback.** Revert the commit. The change adds no stored format. Results written by the stop path remain valid `failed` task results.
 
 **Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_engine.py' -v`
+
+
+## 2026-11-20 — microtask graph validation (roadmap P1 slice)
+
+**Checkpoint:** `2026-11-20-microtask-graph-validation`. **Branch:** `claude/fervent-mayer-w1xsso`, the same draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `499f926`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** A source search of `src/`, `tests/`, `scripts/`, `tools/` and `forgeos_build/` for topological ordering, prerequisites, DAG and decomposition found no microtask or dependency-graph code. The only matches were unrelated local-prerequisite text in the GUI, readiness and model-benchmark modules. No remote branch contains a `task_graph`, microtask or decomposition file. The ROADMAP's microtask pipeline was the next planned item after the anti-loop checkpoint.
+
+**Why it matters.** ROADMAP "Planned: Microtask Development Pipeline", required behavior 3, requires a dependency graph with cycle and conflict checks before execution. Without that gate, a planner's output could schedule a cycle, a missing prerequisite, or two unordered edits to one file.
+
+**Scope.** This is the P1 validation slice only: a pure module that checks a graph and returns a deterministic order. It is not wired into the task engine, the store, or the GUI, and it does not decompose requests with a model.
+
+**Design.**
+- The input is a versioned mapping (`schema_version` 1 and `tasks`). Unknown keys are refused at every level.
+- Pass 1 validates identifiers and refuses duplicates. Pass 2 validates prerequisites and files.
+- Kahn's algorithm with a heap orders the tasks and detects cycles. Ties break by identifier, so the order is deterministic and does not depend on input order.
+- Each task's transitive ancestors are a bitmask, computed in topological order. The same-file check is one bit test per pair.
+- Files are grouped by casefolded path. Any two tasks that edit the same file must be ordered by dependency.
+- Path and device-name checks reuse `portable_names`, so the edit engine and the graph use one policy.
+
+**Rejected alternatives.**
+- Importing the engine's protected-folder list. Importing `engine.py` would pull in the SQLite, workspace and runner stack, which a pure validator should not need. The protected-path policy stays enforced at edit time in the engine. The graph validator checks structure and portability only.
+- Recursive depth-first search for cycles. Kahn's algorithm yields the topological order the ancestor computation needs, and it avoids recursion limits.
+
+**Changed paths.**
+- `src/forgeos/task_graph.py` (new): `SCHEMA_VERSION`, the limits, `TaskGraphError` and `validate_task_graph`.
+- `tests/test_task_graph.py` (new): nine tests covering order, transitive ordering, cycles, self-dependencies, identifiers, same-file conflicts, paths, duplicates, schema shape and bounds, and a memory test at the task limit.
+- Documentation: `ARCHITECTURE.md` (module row), `ROADMAP.md` (microtask status line and a 2026-11-20 entry), `MEMORY_BUDGET.md` (measured allocation note), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoints: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_task_graph.py` on the new tree | OK: 9 run |
+| Mutation, scratch copy: ancestors reduced to direct prerequisites | ERROR in `test_transitive_ordering_satisfies_the_same_file_rule` (FAILED, errors=1) |
+| Mutation, scratch copy: cycle check removed | FAIL in `test_cycles_and_self_dependencies_are_refused` (FAILED, failures=1) |
+| `tracemalloc` at the limit: 256 tasks, 4,096 prerequisite edges, one file each | Peak 217,173 bytes; retained 21,903 bytes. Python allocations only, not process RSS |
+| Full suite, Python 3.12 under Xvfb | OK: **836 run**, 23 skipped (827 before plus the nine new tests) |
+| `compileall -q src tests`; Python 3.10 grammar check on `task_graph.py` and `test_task_graph.py` | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links`; `scripts/check_handoff.py --json` | PASS; PASS |
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. The module is pure string and integer logic, and no Windows-specific behavior is claimed. NOT USED by the task engine yet, so it has no real-model or end-to-end evidence.
+
+**Security and privacy.** Planner output is untrusted. The validator refuses traversal, absolute, backslash, drive-letter, device-name, trailing-dot and trailing-space paths before any use. It performs no I/O and writes nothing.
+
+**Resource impact.** The bounds are 256 tasks, 4,096 prerequisite entries (256 times 16), and 2,048 file entries (256 times 8). The measured peak is in the table above.
+
+**Remaining and deferred.**
+- Not implemented: model decomposition (P2), requirement IDs and the bounded deterministic inventory built on `context_index.py`, SQLite persistence, scheduling, integration review, context budgeting, and the GUI view.
+- The P0 whole-prompt baseline needs the target Windows laptop.
+
+**Next highest-priority unblocked tasks.**
+1. P1 continuation: requirement IDs and a bounded deterministic inventory built on `context_index.py` metadata, feeding this validator.
+2. P0 baseline on the target laptop (needs hardware).
+3. Bounded reads for trusted packaged inputs (low priority; see the 2026-11-20 principles checkpoint).
+
+**Rollback.** Revert the commit. No runtime path imports `task_graph`, so reverting removes nothing that is in use.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_task_graph.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The graph validator is a pure, tested substrate that the product does not use yet.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 836 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Implemented / experimental / planned: the name policy, the context-exclusion casefold, the principles, the identical-repair stop and the graph validator are implemented and tested on Linux. The decomposer, scheduler and GUI are planned.
+- P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
+- Highest-priority unblocked task: item 1 above.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.

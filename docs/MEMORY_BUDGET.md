@@ -254,6 +254,13 @@ allocation is bounded by the existing edit-manifest limit. It saves one test run
 and one model generation per stopped repeat. No peak-memory benchmark was run for
 this path.
 
+The microtask graph validator (`src/forgeos/task_graph.py`, 2026-11-20) has fixed
+limits of 256 tasks, 16 prerequisites and 8 files per task. Its synthetic
+256-task, 4,096-edge fixture measured a tracemalloc peak of 217,173 bytes and
+21,903 bytes retained on Python 3.12, Linux. The regression guard is 1 MiB. This
+measures Python allocations only, not process RSS, and was not measured on
+Windows.
+
 ## On-demand SQLite backup allocation boundary
 
 Explicit SQLite `Connection.backup(pages=64)` copies pages in native code

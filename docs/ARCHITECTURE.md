@@ -32,6 +32,7 @@ flowchart TB
 | `src/forgeos/core.py` | SQLite task state, leases, local Ollama connector, test orchestration primitives |
 | `src/forgeos/engine.py` | Edit constraints, structured prompt/edit manifest, bounded local task cycle, checkpoint validation and chosen test-runtime routing |
 | `src/forgeos/portable_names.py` | Canonical Win32 device-stem and trailing dot/space predicates shared by the edit engine, the GGUF downloader and the runtime installer; each caller keeps its own exception type |
+| `src/forgeos/task_graph.py` | Deterministic microtask dependency-graph validation (roadmap P1 slice): schema version, identifiers, prerequisites, cycles, portable paths and unordered same-file edits. Pure and bounded; not yet used by the task engine |
 | `src/forgeos/task_actions.py` | Canonical lease-fenced planning and manual-test operations reused by CLI and GUI; requires explicit trust opt-in for tests; failure bookkeeping never masks the triggering error |
 | `src/forgeos/workspace.py` | Git repository/worktree setup and ownership |
 | `src/forgeos/transactions.py` | Transactional edit journal, streamed bounded original-file backups (8 MiB/file), failure/rollback/recovery boundaries |
