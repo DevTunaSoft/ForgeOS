@@ -28,10 +28,13 @@ EXCLUDED_MODULES = {
     "test_cloud_supervisor.py": "imports repository scripts",
     "test_documentation.py": "reads repository files",
     "test_enhancement_audit.py": "reads repository files",
+    "test_gui_acceptance.py": "imports repository build tooling",
+    "test_gui_contract.py": "reads repository source files",
     "test_handoff_check.py": "reads repository files",
     "test_handoff_pdf_wrapping.py": "reads repository files",
     "test_handoff_snapshot.py": "reads repository files",
     "test_handoff_takeover.py": "reads repository files",
+    "test_launcher.py": "imports repository build tooling",
     "test_managed_llama.py": "spawns the Python interpreter",
     "test_memory_benchmark.py": "spawns the Python interpreter",
     "test_multillm_roadmap.py": "reads repository files",
@@ -276,7 +279,7 @@ def _trace_from_snapshot(runtime) -> dict:
     except (OSError, ValueError) as exc:
         return {"trace_error": type(exc).__name__ + ": " + str(exc)[:200]}
     started = _STARTED.findall(text)
-    return {"last_started": started[-3:], "trace_tail": text[-1500:]}
+    return {"last_started": started[-3:], "trace_tail": text[-6000:]}
 
 
 def _run_module(runtime, module: str) -> tuple[dict, dict]:

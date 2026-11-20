@@ -164,6 +164,14 @@ class SelfTestProbeRunTests(unittest.TestCase):
         self.assertNotIn("SyntaxError", output)
 
 
+class SelfTestExclusionTests(unittest.TestCase):
+    def test_every_excluded_module_exists_in_the_repository(self):
+        tests_dir = Path(__file__).resolve().parent
+        for name in self_test.EXCLUDED_MODULES:
+            with self.subTest(module=name):
+                self.assertTrue((tests_dir / name).is_file(), name)
+
+
 @unittest.skipIf(getattr(sys, "frozen", False),
                  "the refusal is checked from source mode")
 class SelfTestRefusalTests(unittest.TestCase):

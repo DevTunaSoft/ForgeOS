@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+import faulthandler
 import os
 from pathlib import Path
 import re
@@ -9,6 +10,9 @@ import sys
 import unittest
 
 _MODULE_NAME = re.compile(r"test_[A-Za-z0-9_]{1,80}\.py")
+# In trace mode, a test still running after this many seconds has its stack
+# written to the output, before the host's module timeout ends the run.
+_HANG_DUMP_SECONDS = 120
 
 
 def selected_test_pattern(module: str) -> str:
@@ -82,10 +86,16 @@ def run_unittest() -> int:
                 pattern=selected_test_pattern(
                     os.environ.get("FORGEOS_SELF_TEST_MODULE", "")))
             trace = os.environ.get("FORGEOS_SELF_TEST_TRACE") == "1"
-            result = unittest.TextTestRunner(
-                stream=stream, verbosity=2,
-                resultclass=_TraceResult if trace else unittest.TextTestResult,
-            ).run(suite)
+            if trace:
+                faulthandler.dump_traceback_later(_HANG_DUMP_SECONDS, file=stream)
+            try:
+                result = unittest.TextTestRunner(
+                    stream=stream, verbosity=2,
+                    resultclass=_TraceResult if trace else unittest.TextTestResult,
+                ).run(suite)
+            finally:
+                if trace:
+                    faulthandler.cancel_dump_traceback_later()
             stream.flush()
             return 0 if result.wasSuccessful() else 1
     except BaseException as exc:
