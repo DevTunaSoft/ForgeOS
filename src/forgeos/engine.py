@@ -16,6 +16,7 @@ from typing import Callable
 from .core import LeaseLostError, Ollama, Store, run_test, validate_task_description
 from .workspace import Workspace, create_workspace
 from .transactions import apply_transaction, recover_edits, _hash_file
+from .portable_names import has_trailing_dot_or_space, is_device_name
 
 MAX_FILES = 8
 MAX_FILE_BYTES = 128_000
@@ -30,11 +31,6 @@ class EditError(ValueError):
     """A model response violates the edit contract."""
 
 
-# Win32 reserves these stems as devices even when an extension is present
-# (for example "NUL.txt"). COM and LPT also reserve superscript-digit forms.
-_WINDOWS_DEVICE_STEMS = frozenset({"con", "prn", "aux", "nul", "conin$", "conout$"})
-_WINDOWS_NUMBERED_DEVICE = re.compile(
-    "(?:com|lpt)[0-9\N{SUPERSCRIPT ONE}\N{SUPERSCRIPT TWO}\N{SUPERSCRIPT THREE}]")
 _PROTECTED_FOLDED = frozenset(name.casefold() for name in FORBIDDEN)
 
 
@@ -51,10 +47,9 @@ def _check_portable_parts(parts) -> None:
     on every platform so that model manifests remain portable to the product.
     """
     for part in parts:
-        if part != part.rstrip(" ."):
+        if has_trailing_dot_or_space(part):
             raise EditError("Non-portable trailing dot or space")
-        stem = part.split(".", 1)[0].rstrip(" ").casefold()
-        if stem in _WINDOWS_DEVICE_STEMS or _WINDOWS_NUMBERED_DEVICE.fullmatch(stem):
+        if is_device_name(part):
             raise EditError("Windows device name")
         if _is_protected_part(part):
             raise EditError("Protected path")

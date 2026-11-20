@@ -9,6 +9,8 @@ from forgeos.file_security import read_bounded_file
 
 EXCLUDE = {".git", ".github", ".env", ".forgeos", ".venv", "venv", "node_modules",
            "__pycache__", "dist", "build", ".idea", ".vscode", ".pytest_cache"}
+# Windows folds case, so NODE_MODULES is the same directory as node_modules there.
+_EXCLUDE_FOLDED = frozenset(name.casefold() for name in EXCLUDE)
 EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".cs",
               ".java", ".md", ".json", ".toml", ".yaml", ".yml"}
 MAX_FILES, MAX_SCAN, MAX_BYTES, MAX_CONTEXT = 80, 3000, 100_000, 8000
@@ -53,7 +55,7 @@ def render_context(root: str | Path, question: str = "", *, max_chars: int = MAX
     for directory, directories, filenames in os.walk(origin, followlinks=False):
         current = Path(directory)
         directories[:] = sorted(
-            part for part in directories if part not in EXCLUDE
+            part for part in directories if part.casefold() not in _EXCLUDE_FOLDED
             and not part.startswith(".") and not (current / part).is_symlink())
         for name in sorted(filenames):
             scanned += 1

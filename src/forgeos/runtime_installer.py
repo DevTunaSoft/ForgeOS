@@ -27,6 +27,7 @@ from .gguf_download import (
     _exclusive_download_lock, _reject_existing_link, _safe_storage_root,
 )
 from .file_security import read_bounded_file
+from .portable_names import has_trailing_dot_or_space, is_device_name
 
 MIB = 1024 * 1024
 ZIP_LIMIT = 64 * MIB
@@ -140,11 +141,7 @@ def _safe_entry(name: str) -> tuple[str, ...]:
     parts = candidate.split("/")
     if (len(parts) > 4
             or any(not SAFE_SEGMENT.fullmatch(p) or p in (".", "..")
-                   or p.endswith((" ", "."))
-                   or p.split(".", 1)[0].upper() in
-                   {"CON", "AUX", "NUL", "PRN",
-                    *(f"COM{x}" for x in range(1, 10)),
-                    *(f"LPT{x}" for x in range(1, 10))}
+                   or has_trailing_dot_or_space(p) or is_device_name(p)
                    for p in parts)
             or name in (MANIFEST_FILE, ARCHIVE_FILE)):
         raise RuntimeError("Unsafe official runtime ZIP member name")

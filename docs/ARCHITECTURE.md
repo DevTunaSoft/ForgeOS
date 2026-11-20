@@ -31,6 +31,7 @@ flowchart TB
 | `src/forgeos/cli.py` | Scriptable commands for tasks, testing, recovery, diagnostics, memory, filters and learning |
 | `src/forgeos/core.py` | SQLite task state, leases, local Ollama connector, test orchestration primitives |
 | `src/forgeos/engine.py` | Edit constraints, structured prompt/edit manifest, bounded local task cycle, checkpoint validation and chosen test-runtime routing |
+| `src/forgeos/portable_names.py` | Canonical Win32 device-stem and trailing dot/space predicates shared by the edit engine, the GGUF downloader and the runtime installer; each caller keeps its own exception type |
 | `src/forgeos/task_actions.py` | Canonical lease-fenced planning and manual-test operations reused by CLI and GUI; requires explicit trust opt-in for tests; failure bookkeeping never masks the triggering error |
 | `src/forgeos/workspace.py` | Git repository/worktree setup and ownership |
 | `src/forgeos/transactions.py` | Transactional edit journal, streamed bounded original-file backups (8 MiB/file), failure/rollback/recovery boundaries |
@@ -566,9 +567,19 @@ Their exclusions now match case-insensitively as well.
 `tests/test_engine.py`) cover these rules on every platform. The Windows behavior
 follows documented Win32 name normalization and has **not** been reproduced on
 Windows hardware. This is a validation boundary, not a sandbox: enabled host
-tests still run with host privileges. The GGUF downloader and the runtime
-installer keep their own reserved-name checks; the three device-name lists are a
-consolidation candidate recorded in HANDOFF.
+tests still run with host privileges. 
+
+**Shared rule (2026-11-20).** The device-name and trailing dot/space predicates
+live in `src/forgeos/portable_names.py`. The edit engine, the GGUF downloader
+(`gguf_download._safe_name`) and the runtime installer
+(`runtime_installer._safe_entry`) all call it, so the three validators agree.
+Each keeps its own exception type and its own extra rules, such as the engine's
+protected folders. Two deliberate tightenings: the GGUF downloader and the
+installer now refuse `COM0` and `LPT0` (the engine already did), and the
+installer now refuses `NUL .dll`, which its earlier raw-stem comparison accepted.
+The context inventory (`context_index.py`) also excludes non-dot directories such
+as `node_modules`, `venv`, `build` and `dist` case-insensitively. It stores
+metadata only, never source bodies.
 
 ## Execution security: differentiate the environments
 

@@ -1351,3 +1351,15 @@ patched the process-wide `os.name` before importing its patch targets. The
 three Windows device-name lists in the engine, the GGUF downloader and the
 runtime installer should be consolidated into one canonical helper; that is a
 follow-up, not part of this change.
+
+### 2026-11-20 — coding principles added to the contribution rules
+
+`CONTRIBUTING.md` has a new "Coding principles" section. It carries the smallest-complete-change discipline from the Ponytail principles proposed in draft PR #159: reuse before new code, no speculative abstraction or dependency, every affected caller, test and document updated, one-line shortcut comments, and a closing line that names what was skipped. The section lists the existing requirements first (clean modular code, bounded memory, autonomous testing, thorough regression checks and continuous development). It states that the principles add to those requirements and never relax tests, documentation, memory bounds or trust boundaries. The pull request template gained one checklist item, and `docs/ENGINEERING_TAKEOVER.md` section 12 points to the section. Status: **documentation implemented; checked by the documentation gate**. PR #159 is not merged and its skill file was not copied.
+
+### 2026-11-20 — one canonical portable-name policy
+
+This resolves the follow-up recorded on 2026-11-16. `src/forgeos/portable_names.py` owns the Win32 device-stem and trailing dot/space predicates. `engine.py`, `gguf_download.py` and `runtime_installer.py` call it and keep their own exceptions and extra rules. Two deliberate tightenings: the GGUF downloader and the installer now refuse `COM0` and `LPT0`, which the engine already refused, and the installer now refuses `NUL .dll`, which its raw-stem comparison accepted. The new validator-agreement tests in `tests/test_portable_names.py` fail on the unchanged validators for the `COM0`, `LPT0` and `NUL .dll` cases and pass after the change. Status: **implemented prototype, Linux-verified**. The Windows behavior follows documented Win32 normalization and has not been reproduced on Windows hardware.
+
+### 2026-11-20 — case-insensitive context inventory exclusions
+
+`context_index.render_context` now skips non-dot directories in its exclusion set (`node_modules`, `venv`, `__pycache__`, `dist`, `build` and the rest) when the on-disk name differs only by case. Dot-prefixed folders were already skipped in any case. The inventory stores metadata only, so the exposure was names and symbols shown to the local model, not source bodies. The exact-name runtime-directory checks in `sandbox_runner.py` and `output_capture.py` are intentionally unchanged: they are fail-closed trust-boundary checks around AppContainer paths, and case-folding them would widen that boundary. Regression coverage is `test_excluded_directories_match_case_insensitively`, which fails on the unchanged code. Status: **implemented prototype, Linux-verified**.

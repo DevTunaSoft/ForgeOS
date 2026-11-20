@@ -3966,3 +3966,87 @@ The 3.13 runs were executed before the final regex-escape rewrite was verified b
 - Expected acceptance evidence: hosted Linux and Windows workflows on the pull request when it is marked ready for review; a real Windows run of `py -m unittest discover -s tests -v`.
 - Latest authoritative documentation: [ARCHITECTURE](ARCHITECTURE.md) section "Protected-name and portable-path boundary"; [ROADMAP](ROADMAP.md) entry 2026-11-16; [USER_GUIDE](USER_GUIDE.md) "Edit path limits".
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+## 2026-11-20 — coding principles, one portable-name policy and case-insensitive context exclusions
+
+**Checkpoint:** `2026-11-20-principles-portable-names`. **Repository / branch:** DevTunaSoft/ForgeOS, designated development branch `claude/fervent-mayer-w1xsso`. The remote copy had been pruned, so the branch was recreated from `origin/main`. **Base SHA:** `5107d467db96e7512f5d7126af745fb9c5c1bcdf` (`origin/main` and local `main` at session start). **Resulting SHA:** the head of the designated branch; the draft pull request records it.
+
+**Starting state and duplicate-work audit.** The working tree was clean and `git fetch origin --prune` succeeded. Nineteen pull requests were open: drafts #163, #162, #161, #160 (Windows/AppContainer and snapshot hardening), #159 (Ponytail coding-principles skill), #158, #156, #145, #142, #141, #140, #139, #138 (AGENTS.md index), #137, #68 and #67; and #152, #66 and #29, which are ready or older. Overlap check (`git diff --name-only origin/main...<branch>`): no open branch changes `gguf_download.py`, `runtime_installer.py` or `context_index.py`. PR #142's branch (`fragment/rtk3-git-output-integration`) changes `engine.py` only at the import block, one new helper and two `_execute_task` lines, none inside the device-name region this checkpoint rewrites; a merge simulation against that branch is recorded in the table below. Two branches with no merge base with `main` (PR #67, `chore/copilot-autonomy-bootstrap-20261112`, and PR #68, `fix/safe-resume-malformed-checkpoints`) could not be compared this way. PRs #158 and #160 change `test_runtime.py`, which this checkpoint does not touch. This checkpoint edits `ARCHITECTURE.md`, `ROADMAP.md`, `HANDOFF.md` and `ENGINEERING_TAKEOVER.md`, and several open PRs (for example #137, #152, #156, #158 and #160) also edit those files. The edits are append-style or sentence-level, so a later rebase must keep both sides.
+
+**Why it matters.** The user asked for coding principles to be added to the existing instructions without removing any requirement, and the previous checkpoint named the reserved-name consolidation as the next unblocked task. The installer also accepted `NUL .dll` because its check compared the raw stem with trailing spaces, and the GGUF downloader and installer did not refuse `COM0` or `LPT0`, which the engine already refused. The context inventory skipped `node_modules` and similar folders only when the case matched.
+
+**Principles source.** The request named the principles without giving their text. The principles used are the Ponytail set adapted in draft PR #159, whose `SKILL.md` states the same precedence order as this repository's requirements, together with the priority areas named in the request (autonomous execution, recovery, security, Windows compatibility and low memory). A reviewer should compare the wording with the intended text.
+
+**Root causes.**
+1. Three independent Windows-name lists (`engine.py`, `gguf_download.py`, `runtime_installer.py`) had drifted: the engine rejected `COM0`/`LPT0` and superscript forms, the others did not, and the installer compared the unstripped stem.
+2. `context_index.py` compared non-dot directory names case-sensitively, so case variants of excluded folders entered the metadata inventory on case-insensitive volumes.
+
+**Acceptance criteria.** Existing validator tests pass unchanged. New regression tests fail on the unchanged validators and pass after the change. No dependency is added. Engine rejection messages and tests are unchanged.
+
+**Changed paths.**
+- `src/forgeos/portable_names.py` (new): `DEVICE_STEMS`, `has_trailing_dot_or_space` and `is_device_name`.
+- `src/forgeos/engine.py`: removed the private device lists; `_check_portable_parts` calls the shared predicates; the protected-folder rule is unchanged.
+- `src/forgeos/gguf_download.py`: removed `WINDOWS_RESERVED_NAMES`; `_safe_name` calls the shared predicates.
+- `src/forgeos/runtime_installer.py`: `_safe_entry` calls the shared predicates in place of its inline set.
+- `src/forgeos/context_index.py`: `_EXCLUDE_FOLDED`; the directory filter compares casefolded names.
+- `tests/test_portable_names.py` (new): 6 tests (rule predicates, and agreement of the three validators on device names, space-before-extension and ordinary names).
+- `tests/test_context_index.py`: `test_excluded_directories_match_case_insensitively`.
+- Documentation: `CONTRIBUTING.md` ("Coding principles"), `.github/pull_request_template.md` (one checklist item), `docs/ENGINEERING_TAKEOVER.md` (section 12 pointer), `docs/ARCHITECTURE.md` (module row and "Shared rule"), `docs/ROADMAP.md` (three 2026-11-20 entries), this ledger.
+
+**Implementation summary.**
+- The shared module imports only `re`. Its predicates are pure string functions, so they behave the same on every platform. Stems are compared after `casefold()`, and the superscript forms of COM and LPT are included.
+- Each caller keeps its exception type and message: `EditError` in the engine, `ValueError` in the GGUF downloader, and `RuntimeError` with the existing "Unsafe" text in the installer.
+- The context inventory checks casefolded directory names against a casefolded copy of `EXCLUDE`. The public `EXCLUDE` constant is unchanged, and dot-prefixed folders are still excluded by the existing prefix rule.
+
+**Commands and results.** Environment: Linux container, `/usr/bin/python3.12` 3.12.3 with `python3-tk` installed through `apt-get`, Xvfb through `xvfb-run -a`. The default `python3` is 3.13.18 without Tk and was not used for suites. No Windows host, Ollama, llama.cpp or GGUF model was available.
+
+| Command | Result |
+| --- | --- |
+| `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -v` on untouched `main` (baseline) | OK: 816 run, 23 skipped; every skip is a Windows-only or symlink guard |
+| Same command after the change | OK: **823 run**, 23 skipped (7 new tests) |
+| `test_portable_names.py` against `HEAD`'s `engine.py`, `gguf_download.py` and `runtime_installer.py` (scratch copy) | FAIL as intended: `COM0` and `LPT0` (GGUF and installer), and `NUL .dll` (installer). Engine cases pass, as expected for a refactor |
+| `test_context_index.py` against `HEAD`'s `context_index.py` (scratch copy) | FAIL as intended: `test_excluded_directories_match_case_insensitively` |
+| Focused suites after the change: portable names, engine, GGUF download, runtime installer, worktree manifest, runtime, worktree archive, context index | OK |
+| `python3.12 -m compileall -q src tests` | PASS |
+| Python 3.10 grammar check (`ast.parse(..., feature_version=(3, 10))`) on the changed files | PASS. No 3.10 interpreter is installed here, so this is a grammar check, not a run |
+| `python3.12 tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0; tracemalloc peak 1,883,391 bytes; process RSS after GC about 23.4–23.6 MB |
+| `python3.12 tools/check_documentation.py --links` | PASS |
+| `python3.12 scripts/check_handoff.py --json` | PASS |
+| `git diff --check` | PASS |
+| `git merge-tree --write-tree` of this branch against PR #142's branch (`fragment/rtk3-git-output-integration`) | `engine.py` and `tests/test_engine.py` merge automatically. `ARCHITECTURE.md`, `HANDOFF.md` and `ROADMAP.md` conflict textually and need a manual merge when #142 is rebased |
+| `tools/check_documentation.py --base origin/main --head HEAD` | PASS (documentation changed with the implementation) |
+
+**Verification status.** PASS: the Linux Python 3.12 suite and every gate above. NOT RUN: any Windows test (the Windows-only tests are skipped here), the frozen EXE, hosted GitHub Actions on this head (the pull request is a draft, and CI runs full validation at ready-for-review), and real local-model acceptance. UNVERIFIED: that Windows treats `COM0`/`LPT0` as devices and normalizes trailing dots and spaces exactly as the documented rules assume.
+
+**Security and privacy.** The three validators now refuse a small set of names they previously accepted. The change is fail-closed, needs no migration, and adds no credential, network or evidence handling. The context inventory omits dependency and build folders in any letter case. It stores metadata only.
+
+**Resource impact.** One frozenset and one compiled regex are created at import. Each validated name costs a few string operations. The memory benchmark above shows no change beyond run-to-run variation.
+
+**Rejected attempts and deliberately unchanged items.**
+- Repeat-attempt (stagnation) detection in `engine._execute_task` remains deferred, as recorded on 2026-11-16. Its value is unmeasured, and the repair budget is already bounded at 0–5, default 2.
+- The exact-name runtime-directory checks in `sandbox_runner.py` and `output_capture.py` are unchanged on purpose. They are fail-closed trust-boundary checks around AppContainer paths, and case-folding them would widen the boundary.
+- Trusted-file reads that are not bounded: `acceptance._embedded_build_commit` (the packaged `build_info.json`), `gui.show_user_guide` (the bundled guide) and `model_routing` (small limit files). All three read small, packaged or kernel-supplied inputs, so the risk is low. They could move to `file_security.read_bounded_file`; that is a future hardening, not part of this change.
+- PR #159 is not merged and its skill file was not copied. If it is merged later, its precedence clause should point to CONTRIBUTING.md's "Coding principles" so there are not two diverging copies.
+- `AGENTS.md` (PR #138) is not on `main`. The principles do not depend on it.
+- `USER_GUIDE.md` is unchanged. No user-visible workflow changed, and its "Edit path limits" text remains accurate.
+- `MEMORY_BUDGET.md` is unchanged. No numerical limit changed.
+
+**Next highest-priority unblocked tasks.**
+1. Stagnation detection in `engine._execute_task`: when a repair leaves the workspace content identical to the previous attempt, block before a redundant test run. Requires an engine regression test with a fake model. Decide on the measured value first, as the 2026-11-16 entry required.
+2. Microtask pipeline P0 (ROADMAP "Planned: Microtask Development Pipeline"): the versioned task-graph schema, limits and threat model. The Windows baseline part needs the physical laptop.
+3. Bounded reads for the trusted packaged or kernel-supplied files listed above (low priority).
+
+**Rollback.** Revert the checkpoint commit. No data migration, schema or stored-format change is involved. Reverting restores the three inline lists and the previous context-index filter.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_portable_names.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`.
+- Product status: experimental prototype, unchanged in maturity. The portable-name policy is now a single canonical module and is Linux-verified.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 823 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Implemented / experimental / planned: the shared name policy and the context-inventory casefold are implemented and tested on Linux. The coding principles are documented policy. The microtask pipeline is planned, not started.
+- Active issue / PR / owner: the draft pull request from `claude/fervent-mayer-w1xsso`. The other open PRs listed above were not modified.
+- P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
+- Highest-priority unblocked task: item 1 above.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.

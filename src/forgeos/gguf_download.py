@@ -20,6 +20,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 from .file_security import read_bounded_file
 from .huggingface_catalog import REPO_ID, list_gguf_files, model_revision
+from .portable_names import has_trailing_dot_or_space, is_device_name
 
 GIB = 1024 ** 3
 MAX_MODEL_BYTES = 16 * GIB
@@ -29,11 +30,6 @@ MAX_METADATA_BYTES = 4096
 SAFE_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
 ALLOWED_CDN = ("huggingface.co", "cdn-lfs.huggingface.co",
                "cas-bridge.xethub.hf.co", "cas-server.xethub.hf.co")
-WINDOWS_RESERVED_NAMES = frozenset({
-    "CON", "PRN", "AUX", "NUL",
-    *(f"COM{x}" for x in range(1, 10)),
-    *(f"LPT{x}" for x in range(1, 10)),
-})
 
 
 def _safe_name(name: str) -> tuple[str, ...]:
@@ -44,9 +40,8 @@ def _safe_name(name: str) -> tuple[str, ...]:
     segments = name.split("/")
     if len(segments) > 8 or not all(SAFE_PART.fullmatch(x) and
                                     x not in (".", "..") and
-                                    not x.endswith((".", " ")) and
-                                    x.split(".", 1)[0].upper()
-                                    not in WINDOWS_RESERVED_NAMES
+                                    not has_trailing_dot_or_space(x) and
+                                    not is_device_name(x)
                                     for x in segments):
         raise ValueError("Unsafe GGUF file path")
     return tuple(segments)
