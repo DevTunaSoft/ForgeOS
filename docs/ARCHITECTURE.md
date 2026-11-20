@@ -33,6 +33,8 @@ flowchart TB
 | `src/forgeos/engine.py` | Edit constraints, structured prompt/edit manifest, bounded local task cycle, checkpoint validation and chosen test-runtime routing |
 | `src/forgeos/portable_names.py` | Canonical Win32 device-stem and trailing dot/space predicates shared by the edit engine, the GGUF downloader and the runtime installer; each caller keeps its own exception type |
 | `src/forgeos/task_graph.py` | Deterministic microtask dependency-graph validation (roadmap P1 slice): schema version, identifiers, prerequisites, cycles, portable paths and unordered same-file edits. Pure and bounded; not yet used by the task engine |
+| `src/forgeos/requirement_trace.py` | Requirement IDs and traceability (roadmap P1): a separate versioned document links tasks to `REQ-` identifiers and refuses unknown, duplicate or uncovered requirements. Pure and bounded; not yet used by the task engine |
+| `src/forgeos/repo_inventory.py` | Bounded, deterministic metadata inventory for planning (roadmap P1): relative path, size, kind and test/manifest flags, at most 2,000 records. Never reads file bodies or reports absolute paths, and reuses the context walker. Not yet used by the task engine |
 | `src/forgeos/task_actions.py` | Canonical lease-fenced planning and manual-test operations reused by CLI and GUI; requires explicit trust opt-in for tests; failure bookkeeping never masks the triggering error |
 | `src/forgeos/workspace.py` | Git repository/worktree setup and ownership |
 | `src/forgeos/transactions.py` | Transactional edit journal, streamed bounded original-file backups (8 MiB/file), failure/rollback/recovery boundaries |
@@ -42,7 +44,7 @@ flowchart TB
 | `src/forgeos/diagnostics.py`, `output_capture.py`, `output_rules.py` | Evidence archive, bounded output, summaries, trusted filters; Windows evidence temp allocation fails fast rather than retrying indefinitely on denied storage |
 | `src/forgeos/worktree_manifest.py` | Database-free, bounded regular-file worktree hashing and exact manifest verification; excludes operational metadata and rejects links/reparse points |
 | `src/forgeos/error_learning.py`, `optimizer_metrics.py`, `insights.py` | Test-verified repair signatures, efficiency and advisory diagnostic views |
-| `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts |
+| `src/forgeos/context_index.py` | Bounded, relevance-ranked file/symbol metadata for prompts; `candidate_sources` is the shared, bounded walker that the planning inventory also uses |
 | `src/forgeos/model_routing.py` | Installed Ollama model routing, local memory preflight and one-shot process memory report |
 | `src/forgeos/local_models.py` | Experimental loopback-only chat adapter for llama.cpp, LM Studio and configurable local OpenAI-style endpoints; bounded requests/responses, no proxy/redirects |
 | `src/forgeos/huggingface_catalog.py` | Opt-in public GGUF metadata, pinned commit revision, hash/size inspection |

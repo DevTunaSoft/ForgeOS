@@ -261,6 +261,14 @@ limits of 256 tasks, 16 prerequisites and 8 files per task. Its synthetic
 measures Python allocations only, not process RSS, and was not measured on
 Windows.
 
+The planning inventory (`repo_inventory.py`, 2026-11-20) returns at most 2,000
+records and walks at most the 3,000 entries that `context_index` already allows.
+A synthetic 2,100-file tree measured a tracemalloc peak of 2,051,225 bytes on
+Python 3.12 under Linux, with an 8 MiB regression guard. The measurement covers
+Python allocations only and was not taken on Windows. The traceability document
+(`requirement_trace.py`) is bounded at 128 requirements, 1,024 links and 500
+characters per statement and was not benchmarked separately.
+
 ## On-demand SQLite backup allocation boundary
 
 Explicit SQLite `Connection.backup(pages=64)` copies pages in native code

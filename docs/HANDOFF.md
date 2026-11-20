@@ -4180,3 +4180,71 @@ Only consecutive repeats are detected. An A-B-A cycle still ends at `max_repairs
 - P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
 - Highest-priority unblocked task: item 1 above.
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — requirement traceability and bounded repository inventory (roadmap P1 slice)
+
+**Checkpoint:** `2026-11-20-traceability-inventory`. **Branch:** `claude/fervent-mayer-w1xsso`, draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `c23e924`. **Resulting SHA:** the head of the branch after this commit.
+
+**Starting state and duplicate-work audit.** The tree was clean. The source audit from the previous checkpoint still holds: no requirement-ID, traceability or inventory code exists. The roadmap specifies the inventory as "built on `context_index.py`, not a new scanner", so the walker is shared rather than copied.
+
+**Why it matters.** Planned microtasks must stay aligned with the product contract (required behavior 2), and a bounded, deterministic inventory is the first step before any model sees a repository (required behavior 1).
+
+**Design decisions.**
+- Traceability is a separate versioned document. Adding a field to the task-graph schema would have changed a versioned contract. Graph version 1 is unchanged.
+- The inventory returns metadata only. Reading bodies would require budgets the planner does not need yet.
+- `candidate_sources` is the shared walker. Its behavior is unchanged: the same casefolded exclusions, dot-entry skipping, symlink skipping, relative-path bound and scan budget. The eight existing context tests pass unchanged.
+- Results sort by casefolded path, so an unchanged tree gives the same inventory.
+
+**Changed paths.**
+- `src/forgeos/context_index.py`: `candidate_sources` extracted from `render_context`, which now calls it.
+- `src/forgeos/requirement_trace.py` (new) and `tests/test_requirement_trace.py` (new, 9 tests).
+- `src/forgeos/repo_inventory.py` (new) and `tests/test_repo_inventory.py` (new, 8 tests).
+- Documentation: `ARCHITECTURE.md` (two module rows and the context row), `ROADMAP.md` (microtask status and a 2026-11-20 entry), `MEMORY_BUDGET.md` (inventory measurement), this ledger.
+
+**Commands and results.** Environment as in the previous checkpoints: `/usr/bin/python3.12` 3.12.3 with Tk under `xvfb-run -a`.
+
+| Command | Result |
+| --- | --- |
+| `test_context_index.py` after the refactor | OK (8 existing tests, unchanged) |
+| `test_requirement_trace.py`; `test_repo_inventory.py` | OK: 9 and 8 run |
+| Mutation, scratch copy: uncovered-requirement check removed | FAIL in `test_uncovered_requirement_is_refused` |
+| Mutation, scratch copy: inventory limit removed | FAIL in `test_limit_truncates_in_sorted_order` and `test_large_tree_stays_within_the_fixed_limit_and_allocation_guard` |
+| Synthetic tree: 21 folders of 100 files (2,100 candidates) | 2,000 records returned; `truncated` True; tracemalloc peak 2,051,225 bytes; about 0.38 s |
+| Full suite, Python 3.12 under Xvfb | OK: **853 run**, 23 skipped (836 before, plus 17) |
+| `compileall -q src tests`; Python 3.10 grammar check on the five changed Python files | PASS |
+| `tools/memory_benchmark.py --mib 12 --cycles 3 --check` | exit 0 |
+| `tools/check_documentation.py --links` | PASS |
+
+Two test expectations were corrected during the work. The sort is by casefolded path, so `pyproject.toml` precedes `README.md`. The implementation was right, and the expectations were wrong.
+
+**Verification status.** PASS on Linux. NOT RUN on Windows. The walk and sort rely on `os.walk`, and Windows path behavior was not exercised.
+
+**Security and privacy.** The inventory reports no absolute paths and no file bodies. The walker's exclusions apply unchanged. The symlink test confirms that a link to an outside file is not listed.
+
+**Resource impact.** Bounded by 3,000 scanned entries and 2,000 records. The measured peak for 2,100 candidates is 2.05 MB of Python allocations. Reducing it further would mean having the walker return relative paths only, which has not been done.
+
+**Rejected alternatives.**
+- Adding a `requirements` key to task-graph schema version 1. That would change a versioned contract. A separate document keeps version 1 stable.
+- A second walker for the inventory. It would duplicate the exclusion rules, and the roadmap says to build on `context_index`.
+
+**Remaining.** Neither module is used by the engine, store or GUI. The validated graph is not persisted in SQLite, and no decomposer exists.
+
+**Next highest-priority unblocked tasks.**
+1. P0 design specification for the microtask pipeline (documentation only; the Windows baseline still needs the laptop).
+2. Persist the validated graph and traceability in the SQLite store, with migration and fault-injection tests (remaining P1 item).
+3. Bounded reads for trusted packaged inputs (low priority).
+
+**Rollback.** Revert the commit. The walker extraction has no behavior change, so reverting restores the inline loop.
+
+**Next exact command.** `PYTHONPATH=src xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -p 'test_repo_inventory.py' -v`
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The P1 substrate is four pure, tested modules that the product does not use yet.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 853 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Implemented / experimental / planned: the name policy, context casefold, principles, identical-repair stop, graph validator, traceability and inventory are implemented and tested on Linux. Persistence, decomposition, scheduling and the GUI are planned.
+- P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
+- Highest-priority unblocked task: item 1 above.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
