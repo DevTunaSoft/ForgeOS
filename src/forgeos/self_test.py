@@ -125,6 +125,11 @@ def _mkdir(path):
     return path
 
 
+def _private_mkdir(path):
+    os.mkdir(path, 0o700)
+    return path
+
+
 def _inspect(label, folder):
     """Dump one folder's ACL, then try what a test does inside it."""
     notes = [_acl(label, folder)]
@@ -154,6 +159,7 @@ class PackagedSandboxProbe(unittest.TestCase):
         locations = [
             ("root", lambda: _mkdir(cwd / "probe-root")),
             ("plain", lambda: _mkdir(temp / "probe-plain")),
+            ("private", lambda: _private_mkdir(temp / "probe-private")),
             ("mkdtemp", lambda: Path(tempfile.mkdtemp(dir=str(temp)))),
         ]
         for label, make in locations:

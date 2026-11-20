@@ -40,3 +40,31 @@ class SandboxTempTests(unittest.TestCase):
         folder = Path(tempfile.mkdtemp())
         self.assertTrue(folder.is_dir())
         self.assertTrue(folder.is_relative_to(expected))
+
+
+class InheritingMkdirTests(unittest.TestCase):
+    def test_private_mode_is_replaced_with_the_default_mode(self):
+        calls = []
+
+        def fake_mkdir(path, mode=0o777, *, dir_fd=None):
+            calls.append((path, mode, dir_fd))
+
+        wrapped = sandbox_runner._inheriting_mkdir(fake_mkdir)
+        wrapped("private", 0o700)
+        wrapped("shared", 0o755)
+        wrapped("default")
+        self.assertEqual(calls, [("private", 0o777, None),
+                                 ("shared", 0o755, None),
+                                 ("default", 0o777, None)])
+
+    def test_private_mode_creates_a_real_folder(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = Path(parent) / "private"
+            sandbox_runner._inheriting_mkdir(os.mkdir)(str(target), 0o700)
+            self.assertTrue(target.is_dir())
+
+    @unittest.skipIf(os.name == "nt", "the install is only active on Windows")
+    def test_install_is_a_no_op_outside_windows(self):
+        original = os.mkdir
+        sandbox_runner._install_inheriting_mkdir()
+        self.assertIs(os.mkdir, original)

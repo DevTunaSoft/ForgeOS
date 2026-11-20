@@ -14,6 +14,34 @@ _MODULE_NAME = re.compile(r"test_[A-Za-z0-9_]{1,80}\.py")
 # written to the output, before the host's module timeout ends the run.
 _HANG_DUMP_SECONDS = 120
 
+# On Windows, CPython creates a folder made with mode 0o700 under a protected
+# owner-only DACL. The sandboxed child has no entry in that DACL, so it cannot
+# use any folder made that way: tempfile.mkdtemp, and private folders the code
+# makes with mode 0o700, all failed inside the sandbox.
+_WINDOWS_PRIVATE_MODE = 0o700
+
+
+def _inheriting_mkdir(real_mkdir):
+    """Wrap os.mkdir so a folder made with mode 0o700 takes the snapshot's rules.
+
+    The default mode gives the folder the access its parent grants, which is
+    the access the sandboxed child already has throughout the snapshot.
+    """
+
+    def mkdir(path, mode=0o777, *, dir_fd=None):
+        if mode == _WINDOWS_PRIVATE_MODE:
+            mode = 0o777
+        return real_mkdir(path, mode, dir_fd=dir_fd)
+
+    return mkdir
+
+
+def _install_inheriting_mkdir() -> None:
+    """Install the wrapper in the sandboxed child, on Windows only."""
+    if os.name != "nt":
+        return
+    os.mkdir = _inheriting_mkdir(os.mkdir)
+
 
 def selected_test_pattern(module: str) -> str:
     """Return the discovery pattern: every test module, or one named module."""
@@ -50,9 +78,8 @@ def _scrub_bootstrap_environment(root: Path) -> None:
     roaming.mkdir(parents=True, exist_ok=True)
     os.environ["LOCALAPPDATA"] = str(local)
     os.environ["APPDATA"] = str(roaming)
-    # The snapshot's own temp folder accepts files but refuses new subfolders for
-    # the sandboxed child, so tempfile.mkdtemp failed there. A Temp folder under
-    # the child's AppData, which it can create subfolders in, is used instead.
+    # TEMP is a folder under the child's AppData. The child creates it with the
+    # default mode, so it takes the snapshot's access rules like the rest of it.
     temp = local / "Temp"
     temp.mkdir(parents=True, exist_ok=True)
     for name in ("TEMP", "TMP", "TMPDIR"):
@@ -78,6 +105,7 @@ def run_unittest() -> int:
     original_path = list(sys.path)
     try:
         _scrub_bootstrap_environment(root)
+        _install_inheriting_mkdir()
         sys.path.insert(0, str(root))
         with _output_stream(root) as stream:
             loader = unittest.TestLoader()
@@ -130,6 +158,7 @@ def run_pytest() -> int:
     original_path = list(sys.path)
     try:
         _scrub_bootstrap_environment(root)
+        _install_inheriting_mkdir()
         from .test_runtime import RUNTIME_DIR
         logfile = root / RUNTIME_DIR / "pytest-log.txt"
         raw_log = os.environ.get("FORGEOS_TEST_LOG_FILE", "")
