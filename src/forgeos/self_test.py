@@ -47,74 +47,137 @@ _OUTCOME = re.compile(r"^(OK|FAILED)(?: \((.*)\))?$", re.MULTILINE)
 _STARTED = re.compile(r"STARTED (\S+)")
 
 # A diagnostic module generated only for the packaged self-test. It always fails
-# and reports which folders the sandboxed child can write, so the cause shows in
-# its output tail.
+# and reports, for each folder a test would use, its ACL and the file and folder
+# operations the sandboxed child can perform there, so the cause shows in its
+# output tail. Each check is independent, so one failure does not hide the rest.
 PROBE_NAME = "test_zz_packaged_sandbox_probe.py"
+PROBE_TAIL_CHARS = 16_000
 _PROBE_SOURCE = '''\
 import os
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 
+SYSTEM = os.environ.get("SystemRoot", "C:/Windows") + "/System32/"
+ICACLS = SYSTEM + "icacls.exe"
+WHOAMI = SYSTEM + "whoami.exe"
+
 
 def _code(exc):
-    return type(exc).__name__ + "/" + str(getattr(exc, "winerror", ""))
+    return (type(exc).__name__ + "/w" + str(getattr(exc, "winerror", "-"))
+            + "/e" + str(getattr(exc, "errno", "-")))
 
 
 def _op(label, action):
     try:
         action()
         return label + "=ok"
-    except OSError as exc:
+    except Exception as exc:
         return label + "=" + _code(exc)
+
+
+def _run(args):
+    try:
+        done = subprocess.run(args, capture_output=True, text=True,
+                              errors="replace", timeout=30)
+        return done.stdout + done.stderr
+    except Exception as exc:
+        return "run-error " + _code(exc)
+
+
+def _acl(label, folder):
+    prefix = str(folder)
+    kept = []
+    for line in _run([ICACLS, prefix]).splitlines():
+        if line.startswith(prefix):
+            line = label + line[len(prefix):]
+        line = " ".join(line.split())
+        if line and "processed" not in line:
+            kept.append(line)
+    return "ACL " + label + ": " + " / ".join(kept)
+
+
+def _identity():
+    groups = _run([WHOAMI, "/groups"])
+    user = _run([WHOAMI, "/user"])
+    kept = [" ".join(line.split()) for line in groups.splitlines()
+            if any(tag in line for tag in ("S-1-15-", "S-1-16-", "Label"))]
+    kept += [" ".join(line.split()) for line in user.splitlines() if "S-1-" in line]
+    if groups.startswith("run-error") or user.startswith("run-error"):
+        kept.append(groups[:200] + " " + user[:200])
+    return "IDENTITY " + " / ".join(kept)
+
+
+def _write_and_remove(folder):
+    probe = folder / "forgeos-write-probe.txt"
+    probe.write_text("x", encoding="ascii")
+    probe.unlink()
+
+
+def _mkdir(path):
+    path.mkdir()
+    return path
+
+
+def _inspect(label, folder):
+    """Dump one folder's ACL, then try what a test does inside it."""
+    notes = [_acl(label, folder)]
+    notes.append(_op(label + ".mkdir_sub", (folder / "sub").mkdir))
+    notes.append(_op(label + ".write",
+                     lambda: (folder / "f.txt").write_text("x", encoding="ascii")))
+    notes.append(_op(label + ".scandir", lambda: list(os.scandir(folder))))
+    notes.append(_op(label + ".chmod", lambda: os.chmod(folder, 0o700)))
+    notes.append(_op(label + ".rmtree", lambda: shutil.rmtree(folder)))
+    return notes
 
 
 class PackagedSandboxProbe(unittest.TestCase):
     def test_report_sandbox_directories(self):
         notes = []
-        for name in ("TEMP", "TMP", "HOME", "LOCALAPPDATA", "APPDATA", "cwd"):
-            value = os.getcwd() if name == "cwd" else os.environ.get(name, "")
-            if not value:
+        cwd = Path(os.getcwd())
+        temp_value = os.environ.get("TEMP", "")
+        temp = Path(temp_value) if temp_value else cwd
+        for name in ("TEMP", "TMP", "HOME", "LOCALAPPDATA", "APPDATA"):
+            value = os.environ.get(name, "")
+            if value:
+                notes.append(_op(name + ".write",
+                                 lambda value=value: _write_and_remove(Path(value))))
+            else:
                 notes.append(name + "=unset")
-                continue
+        notes.append(_op("cwd.write", lambda: _write_and_remove(cwd)))
+        locations = [
+            ("root", lambda: _mkdir(cwd / "probe-root")),
+            ("plain", lambda: _mkdir(temp / "probe-plain")),
+            ("mkdtemp", lambda: Path(tempfile.mkdtemp(dir=str(temp)))),
+        ]
+        for label, make in locations:
             try:
-                probe = Path(value) / "forgeos-write-probe.txt"
-                probe.write_text("x", encoding="ascii")
-                probe.unlink()
-                notes.append(name + "=file-ok")
-            except OSError as exc:
-                notes.append(name + "=" + _code(exc))
-        base = Path(os.getcwd()) / "probe-ops"
-        notes.append(_op("mkdir", base.mkdir))
-        notes.append(_op("write", lambda: (base / "f.txt").write_text("x", encoding="ascii")))
-        notes.append(_op("unlink", lambda: (base / "f.txt").unlink()))
-        notes.append(_op("mkdir_nested", (base / "n").mkdir))
-        notes.append(_op("rmdir_nested", (base / "n").rmdir))
-        notes.append(_op("chmod_dir", lambda: os.chmod(base, 0o700)))
-        notes.append(_op("rmdir_base", base.rmdir))
-        base4 = Path(os.getcwd()) / "probe-ops2"
-        notes.append(_op("mkdir2", base4.mkdir))
-        notes.append(_op("chmod_nofollow", lambda: os.chmod(base4, 0o700, follow_symlinks=False)))
-        notes.append(_op("scandir", lambda: list(os.scandir(base4))))
-        notes.append(_op("rmdir2", base4.rmdir))
+                folder = make()
+            except Exception as exc:
+                notes.append(label + ".create=" + _code(exc))
+                continue
+            notes.extend(_inspect(label, folder))
+        chain = [temp] + list(temp.parents)[:4]
+        for name, folder in zip(("temp", "local", "appdata", "home", "runtime"), chain):
+            notes.append(_acl(name, folder))
+        notes.append(_acl("cwd", cwd))
+        notes.append(_identity())
 
         def temp_cleanup():
-            folder = tempfile.TemporaryDirectory()
+            folder = tempfile.TemporaryDirectory(dir=str(temp))
             (Path(folder.name) / "inner").mkdir()
             folder.cleanup()
 
         notes.append(_op("tempdir_cleanup", temp_cleanup))
-        temp_dir = Path(os.environ.get("TEMP", os.getcwd()))
-        notes.append(_op("temp_mkdir", (temp_dir / "probe-temp").mkdir))
-        notes.append(_op("temp_rmdir", (temp_dir / "probe-temp").rmdir))
         outcome = {}
 
         def run_keygen():
             try:
                 from forgeos.recovery_auth import generate_recovery_bundle_auth_key
-                generate_recovery_bundle_auth_key(
-                    Path(os.getcwd()) / "probe-key.bin", size=48)
+                generate_recovery_bundle_auth_key(cwd / "probe-key.bin", size=48)
                 outcome["keygen"] = "ok"
             except BaseException as exc:
                 outcome["keygen"] = type(exc).__name__ + ":" + str(exc)[:120]
@@ -123,7 +186,7 @@ class PackagedSandboxProbe(unittest.TestCase):
         worker.start()
         worker.join(20)
         notes.append("keygen=" + outcome.get("keygen", "timeout"))
-        self.fail("PROBE " + " ".join(notes))
+        self.fail("PROBE " + " ; ".join(notes))
 '''
 
 _SEPARATOR = "=" * 70
@@ -247,7 +310,7 @@ def _run_module(runtime, module: str) -> tuple[dict, dict]:
         "sandbox_passed": sandbox_passed,
     }
     if module == PROBE_NAME:
-        entry["output_tail"] = output[-1500:]
+        entry["output_tail"] = output[-PROBE_TAIL_CHARS:]
     elif not entry["passed"]:
         entry["output_tail"] = output[-800:]
     return entry, summarize_failures(output)

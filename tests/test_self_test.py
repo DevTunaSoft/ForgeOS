@@ -138,6 +138,32 @@ class SelfTestProbeTests(unittest.TestCase):
         compile(self_test._PROBE_SOURCE, self_test.PROBE_NAME, "exec")
 
 
+class SelfTestProbeRunTests(unittest.TestCase):
+    def test_generated_probe_runs_and_reports_each_check(self):
+        import os
+        import subprocess
+        import sys
+        import tempfile as temp_files
+
+        source_root = Path(self_test.__file__).resolve().parents[1]
+        with temp_files.TemporaryDirectory(prefix="forgeos-probe-run-") as folder:
+            Path(folder, self_test.PROBE_NAME).write_text(
+                self_test._PROBE_SOURCE, encoding="utf-8")
+            env = dict(os.environ, PYTHONPATH=str(source_root))
+            done = subprocess.run(
+                [sys.executable, "-m", "unittest",
+                 self_test.PROBE_NAME[:-len(".py")]],
+                cwd=folder, env=env, capture_output=True, text=True,
+                errors="replace", timeout=120)
+        output = done.stdout + done.stderr
+        self.assertIn("PROBE ", output)
+        self.assertIn("ACL root:", output)
+        self.assertIn("mkdtemp.mkdir_sub=", output)
+        self.assertIn("keygen=ok", output)
+        self.assertNotIn("NameError", output)
+        self.assertNotIn("SyntaxError", output)
+
+
 @unittest.skipIf(getattr(sys, "frozen", False),
                  "the refusal is checked from source mode")
 class SelfTestRefusalTests(unittest.TestCase):
