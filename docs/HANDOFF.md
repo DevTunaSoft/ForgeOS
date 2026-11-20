@@ -4248,3 +4248,28 @@ Two test expectations were corrected during the work. The sort is by casefolded 
 - P0 blockers: physical Windows acceptance (#56) and real-model acceptance (#53–#55). Not addressed here.
 - Highest-priority unblocked task: item 1 above.
 - Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
+
+
+## 2026-11-20 — microtask pipeline P0 design specification
+
+**Checkpoint:** `2026-11-20-microtask-p0-spec`. **Branch:** `claude/fervent-mayer-w1xsso`, draft [PR #164](https://github.com/DevTunaSoft/ForgeOS/pull/164). **Base:** the previous checkpoint head `d01b6eb`. **Resulting SHA:** the head of the branch after this commit.
+
+**What it adds.** `docs/MICROTASK_PIPELINE.md` is the P0 design specification from the roadmap section "Planned: Microtask Development Pipeline". It records the three versioned contracts that now exist (the task graph, traceability and the inventory, with their limits and invariants). It also has a threat model with the status of each mitigation, planned scheduling invariants, phase gates with honest status, a P0 and P4 measurement plan, and three open decisions for the owner: persistence, model-proposed links and inventory exposure.
+
+**Verification.** Documentation only. The limits in the specification were checked against the code by reading the constants in the validators: `MAX_TASKS`, `MAX_PREREQUISITES`, `MAX_FILES`, `MAX_PATH_LENGTH`, `MAX_REQUIREMENTS`, `MAX_LINKS`, `MAX_TEXT_LENGTH`, `MAX_INVENTORY_FILES` and `MAX_SCAN`. The documentation gates were run: `tools/check_documentation.py --links`, `tools/check_documentation.py --base origin/main --head HEAD` and `scripts/check_handoff.py --json`. NOT RUN: the Windows baseline and any model measurement (P0 benchmark and P4 hardware acceptance). No test was added, because the specification is not code.
+
+**Open decisions for the owner.**
+1. SQLite persistence in new tables with migration tests, or a single versioned checkpoint field. The specification recommends the first option.
+2. Confirmation that model-proposed requirement links pass the same validation as all other model output.
+3. Whether the decomposer receives the full inventory (up to 2,000 records) or a relevance-ranked slice. The specification recommends the slice.
+
+**Next highest-priority unblocked task.** Persistence of the validated graph and traceability in the SQLite store, with migration and fault-injection tests, once decision 1 is accepted. Without that decision, the next unblocked item is the decomposer's proposal schema for P2.
+
+**Rollback.** Revert the commit. The specification changes no code, so reverting it removes documentation only.
+
+**Snapshot (Layer C).**
+- Checked at: 2026-11-20. Repository / branch / HEAD: DevTunaSoft/ForgeOS, `claude/fervent-mayer-w1xsso` based on `origin/main` `5107d46`, with the draft PR recording the head.
+- Product status: experimental prototype, unchanged in maturity. The microtask pipeline is specified, and four pure modules are implemented and tested on Linux.
+- Latest verified checks: Linux Python 3.12 with Tk under Xvfb, 853 tests OK, 23 Windows-only or symlink skips.
+- Real Windows and local-model acceptance: NOT RUN.
+- Handoff export source SHA / PDF pages / status: not exported in this session; PDF page count NOT RUN.
